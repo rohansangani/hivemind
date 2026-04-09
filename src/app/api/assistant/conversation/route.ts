@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
       id: conversation.id,
       title: conversation.title,
       updatedAt: conversation.updatedAt,
-      messages: conversation.messages.map(m => ({ id: m.id, role: m.role, content: m.content, createdAt: m.createdAt })),
+      messages: conversation.messages.map((m: { id: string; role: string; content: string; createdAt: Date }) => ({ id: m.id, role: m.role, content: m.content, createdAt: m.createdAt })),
     });
   } catch (error) {
     console.error("Conversation load error:", error);
