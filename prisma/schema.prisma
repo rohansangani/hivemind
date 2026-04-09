@@ -1,0 +1,345 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+  output          = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ═══════════════════════════════════════
+// AUTH & USERS
+// ═══════════════════════════════════════
+
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  website     String?
+  industry    String?
+  subIndustry String?
+  description String?
+  size        String?
+  hqCity      String?
+  hqCountry   String?
+  yearFounded Int?
+  mission     String?
+  vision      String?
+  allowedDomains          String[]
+  setupComplete           Boolean   @default(false)
+  insightLastRefreshedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users            User[]
+  products         Product[]
+  markets          Market[]
+  personas         Persona[]
+  competitors      Competitor[]
+  brandProfile     BrandProfile?
+  skills           Skill[]
+  contentAssets    ContentAsset[]
+  contentPieces    GeneratedContent[]
+  insights           IndustryInsight[]
+  learningLogs       LearningLog[]
+  knowledgeEntries   KnowledgeEntry[]
+  knowledgeDocuments KnowledgeDocument[]
+}
+
+model User {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  name           String?
+  password       String?
+  image          String?
+  role           String    @default("member")
+  department     String?
+  jobTitle       String?
+  jobRole        String?
+  onboarded      Boolean   @default(false)
+  inviteStatus   String?
+  inviteToken    String?   @unique
+  lastActiveAt   DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+
+  contentAssets    ContentAsset[]
+  generatedContent GeneratedContent[]
+  conversations    Conversation[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+}
+
+// ═══════════════════════════════════════
+// KNOWLEDGE BASE
+// ═══════════════════════════════════════
+
+model Market {
+  id             String   @id @default(cuid())
+  name           String
+  type           String   @default("primary")
+  notes          String?
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  products       ProductMarket[]
+  createdAt      DateTime @default(now())
+}
+
+model Product {
+  id              String   @id @default(cuid())
+  name            String
+  description     String?
+  category        String?
+  classification  String?
+  scope           String   @default("global")
+  features        String[]
+  useCases        String?
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  markets         ProductMarket[]
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model ProductMarket {
+  productId String
+  marketId  String
+  product   Product @relation(fields: [productId], references: [id])
+  market    Market  @relation(fields: [marketId], references: [id])
+  @@id([productId, marketId])
+}
+
+model Persona {
+  id              String   @id @default(cuid())
+  title           String
+  department      String?
+  seniority       String?
+  kras            String[]
+  kpis            String[]
+  painPoints      String?
+  howWeHelp       String?
+  contentPrefs    String[]
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Competitor {
+  id              String   @id @default(cuid())
+  name            String
+  website         String?
+  marketOverlap   String[]
+  positioning     String?
+  differentiator  String?
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model BrandProfile {
+  id               String   @id @default(cuid())
+  traits           String[]
+  archetype        String?
+  toneFormal       Int      @default(30)
+  toneTechnical    Int      @default(25)
+  toneSerious      Int      @default(35)
+  toneCorporate    Int      @default(45)
+  voiceDescription String?
+  wordsWeUse       String[]
+  wordsWeAvoid     String[]
+  competitiveMoat  String?
+  organizationId   String   @unique
+  organization     Organization @relation(fields: [organizationId], references: [id])
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model KnowledgeEntry {
+  id              String   @id @default(cuid())
+  category        String
+  title           String
+  content         String
+  source          String   @default("wizard")
+  isAIGenerated   Boolean  @default(false)
+  isApproved      Boolean  @default(true)
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ═══════════════════════════════════════
+// SKILLS ENGINE
+// ═══════════════════════════════════════
+
+model Skill {
+  id              String   @id @default(cuid())
+  name            String
+  category        String
+  linkedFeature   String
+  instructions    String
+  description     String?
+  isActive        Boolean  @default(true)
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ═══════════════════════════════════════
+// CONTENT LIBRARY
+// ═══════════════════════════════════════
+
+model ContentAsset {
+  id               String   @id @default(cuid())
+  name             String
+  fileName         String?
+  fileUrl          String?
+  fileType         String?
+  fileSize         Int?
+  contentType      String?
+  linkedUrl        String?
+  productTags      String[]
+  marketTags       String[]
+  personaTags      String[]
+  customTags       String[]
+  brandScore       Float?
+  scoreVoice       Float?
+  scoreTerminology Float?
+  scoreMessaging   Float?
+  scorePersonality Float?
+  scoreCompleteness Float?
+  scoreSuggestions  String[]
+  scoreStatus      String   @default("pending")
+  aiSummary        String?
+  uploadedById     String
+  uploadedBy       User     @relation(fields: [uploadedById], references: [id])
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id])
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+// ═══════════════════════════════════════
+// CONTENT GENERATOR
+// ═══════════════════════════════════════
+
+model GeneratedContent {
+  id              String   @id @default(cuid())
+  topic           String
+  formats         String[]
+  targetProduct   String?
+  targetMarket    String?
+  targetPersona   String?
+  positionAgainst String?
+  toneOverride    String?
+  keyPoints       String?
+  referenceAssets String[]
+  outputs         Json     @default("{}")
+  generatedById   String
+  generatedBy     User     @relation(fields: [generatedById], references: [id])
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  createdAt       DateTime @default(now())
+}
+
+// ═══════════════════════════════════════
+// AI ASSISTANT
+// ═══════════════════════════════════════
+
+model Conversation {
+  id        String    @id @default(cuid())
+  title     String?
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  messages  Message[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  role           String
+  content        String
+  citations      Json?
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  createdAt      DateTime     @default(now())
+}
+
+// ═══════════════════════════════════════
+// INDUSTRY INTELLIGENCE
+// ═══════════════════════════════════════
+
+model IndustryInsight {
+  id              String   @id @default(cuid())
+  signalType      String
+  priority        String   @default("medium")
+  relevanceScore  Int      @default(50)
+  title           String
+  summary         String
+  sourceUrl       String?
+  sourceName      String?
+  takeaway        String?
+  tags            String[]
+  addedToKB       Boolean  @default(false)
+  kbCategories    String[]
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  createdAt       DateTime @default(now())
+}
+
+model LearningLog {
+  id              String   @id @default(cuid())
+  sourceType      String
+  title           String
+  summary         String
+  takeaway        String?
+  kbCategories    String[]
+  tags            String[]
+  sourceDocumentId String?
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  createdAt       DateTime @default(now())
+}
+
+model KnowledgeDocument {
+  id              String   @id @default(cuid())
+  name            String
+  fileName        String
+  fileUrl         String
+  fileType        String
+  fileSize        Int?
+  status          String   @default("processing")
+  learningsCount  Int      @default(0)
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  createdAt       DateTime @default(now())
+}

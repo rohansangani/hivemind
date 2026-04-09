@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <path d="M16 2L28 9v14l-12 7L4 23V9z" fill="#4361EE" />
+  <circle cx="16" cy="16" r="4" fill="white" opacity="0.9" />
+  <line x1="16" y1="12" x2="16" y2="6" stroke="white" stroke-width="1.5" opacity="0.6" />
+  <line x1="19.5" y1="14" x2="24" y2="10" stroke="white" stroke-width="1.5" opacity="0.6" />
+  <line x1="19.5" y1="18" x2="24" y2="22" stroke="white" stroke-width="1.5" opacity="0.6" />
+  <line x1="16" y1="20" x2="16" y2="26" stroke="white" stroke-width="1.5" opacity="0.6" />
+  <line x1="12.5" y1="18" x2="8" y2="22" stroke="white" stroke-width="1.5" opacity="0.6" />
+  <line x1="12.5" y1="14" x2="8" y2="10" stroke="white" stroke-width="1.5" opacity="0.6" />
+</svg>

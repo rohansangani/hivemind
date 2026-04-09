@@ -1,0 +1,70 @@
+import { NextRequest, NextResponse } from "next/server";
+import { db } from "@/lib/db";
+import jwt from "jsonwebtoken";
+import { unlink } from "fs/promises";
+import path from "path";
+
+export async function PUT(req: NextRequest) {
+  try {
+    const token = req.cookies.get("hm-token")?.value;
+    if (!token) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    const decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as { orgId: string };
+
+    const { id, name, contentType, productTags, marketTags } = await req.json();
+    if (!id) return NextResponse.json({ error: "Asset ID required" }, { status: 400 });
+
+    const asset = await db.contentAsset.findUnique({ where: { id } });
+    if (!asset || asset.organizationId !== decoded.orgId) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    await db.contentAsset.update({
+      where: { id },
+      data: { name, contentType, productTags: productTags || asset.productTags, marketTags: marketTags || asset.marketTags },
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Asset update error:", error);
+    return NextResponse.json({ error: "Something went wrong" }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const token = req.cookies.get("hm-token")?.value;
+    if (!token) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    const decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as { orgId: string };
+
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    if (!id) return NextResponse.json({ error: "Asset ID required" }, { status: 400 });
+
+    const asset = await db.contentAsset.findUnique({ where: { id } });
+    if (!asset || asset.organizationId !== decoded.orgId) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    if (asset.fileUrl) {
+      try {
+        await unlink(path.join(process.cwd(), "public", asset.fileUrl));
+      } catch (err: unknown) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code !== "ENOENT") {
+          console.error("File unlink error for asset", id, err);
+        }
+      }
+    }
+
+    // Clean up knowledge entries created from this asset's analysis (matched by asset name in title)
+    await db.knowledgeEntry.deleteMany({
+      where: {
+        organizationId: decoded.orgId,
+        source: { in: ["content_library", "content_analysis"] },
+        title: { contains: asset.name, mode: "insensitive" },
+      },
+    });
+    await db.contentAsset.delete({ where: { id } });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Asset delete error:", error);
+    return NextResponse.json({ error: "Something went wrong" }, { status: 500 });
+  }
+}

@@ -39,3 +39,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+/src/generated/prisma
+
+# local uploads (use Vercel Blob in production)
+/public/uploads/
+
+# Claude Code config
+/.claude/
