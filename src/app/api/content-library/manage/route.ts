@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import jwt from "jsonwebtoken";
-import { unlink } from "fs/promises";
-import path from "path";
+import { del } from "@vercel/blob";
 
 export async function PUT(req: NextRequest) {
   try {
@@ -41,14 +40,11 @@ export async function DELETE(req: NextRequest) {
     const asset = await db.contentAsset.findUnique({ where: { id } });
     if (!asset || asset.organizationId !== decoded.orgId) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    if (asset.fileUrl) {
+    if (asset.fileUrl?.startsWith("https://")) {
       try {
-        await unlink(path.join(process.cwd(), "public", asset.fileUrl));
-      } catch (err: unknown) {
-        const code = (err as NodeJS.ErrnoException).code;
-        if (code !== "ENOENT") {
-          console.error("File unlink error for asset", id, err);
-        }
+        await del(asset.fileUrl);
+      } catch (err) {
+        console.error("Blob delete error for asset", id, err);
       }
     }
 

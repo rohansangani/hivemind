@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import jwt from "jsonwebtoken";
-import { readFile } from "fs/promises";
-import path from "path";
 
 function cuid() {
   return crypto.randomUUID().replace(/-/g, "");
@@ -23,35 +21,23 @@ async function callClaude(
   return data.content?.[0]?.text || "";
 }
 
-async function extractTextFromFile(filePath: string, ext: string): Promise<string> {
+async function fetchBuf(url: string): Promise<Buffer> {
+  const r = await fetch(url, { signal: AbortSignal.timeout(15000) });
+  if (!r.ok) throw new Error(`Fetch failed: ${r.status}`);
+  return Buffer.from(await r.arrayBuffer());
+}
+
+async function extractTextFromUrl(url: string, ext: string): Promise<string> {
   if (["txt", "md", "csv"].includes(ext)) {
-    return (await readFile(filePath, "utf-8")).slice(0, 15000);
+    const r = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    return (await r.text()).slice(0, 15000);
   }
   if (["html", "htm"].includes(ext)) {
     const cheerio = await import("cheerio");
-    const raw = await readFile(filePath, "utf-8");
-    const $ = cheerio.load(raw);
+    const r = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    const $ = cheerio.load(await r.text());
     $("script, style").remove();
     return $.text().replace(/\s+/g, " ").trim().slice(0, 15000);
-  }
-  if (ext === "pdf") {
-    // Use pdf-parse to extract text from PDF files when not using Claude vision
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const pdfParse = require("pdf-parse") as (buf: Buffer) => Promise<{ text: string }>;
-      const buf = await readFile(filePath);
-      const data = await pdfParse(buf);
-      return (data.text || "").slice(0, 15000);
-    } catch (e) {
-      console.error("pdf-parse error:", e);
-      return "";
-    }
-  }
-  if (["docx", "pptx", "xlsx"].includes(ext)) {
-    // These are ZIP-based binary formats — raw buffer-to-string produces garbage.
-    // Without mammoth/unzipper, we cannot reliably extract text.
-    // Return empty string so the caller falls back to asset metadata context.
-    return "";
   }
   return "";
 }
@@ -226,13 +212,12 @@ Rules:
     let messages: Array<{ role: string; content: unknown }>;
 
     if (ext === "pdf" && asset.fileUrl) {
-      const filePath = path.join(process.cwd(), "public", asset.fileUrl);
       let b64 = "";
       try {
-        const buf = await readFile(filePath);
+        const buf = await fetchBuf(asset.fileUrl);
         b64 = buf.toString("base64");
       } catch (e) {
-        console.error("PDF read error:", e);
+        console.error("PDF fetch error:", e);
       }
       if (b64) {
         messages = [{ role: "user", content: [
@@ -240,28 +225,16 @@ Rules:
           { type: "text", text: prompt },
         ]}];
       } else {
-        // PDF file unreadable — fall back to pdf-parse text extraction, then asset context
-        let fallbackText = "";
-        try {
-          // eslint-disable-next-line @typescript-eslint/no-require-imports
-          const pdfParse = require("pdf-parse") as (buf: Buffer) => Promise<{ text: string }>;
-          const buf = await readFile(filePath);
-          const parsed = await pdfParse(buf);
-          fallbackText = (parsed.text || "").slice(0, 15000);
-        } catch { /* ignore secondary failure */ }
-        const content = fallbackText.length > 30
-          ? fallbackText
-          : `Asset: ${asset.name} | Type: ${asset.contentType} | Tags: ${[...(asset.productTags || []), ...(asset.marketTags || [])].join(", ")}`;
+        const content = `Asset: ${asset.name} | Type: ${asset.contentType} | Tags: ${[...(asset.productTags || []), ...(asset.marketTags || [])].join(", ")}`;
         messages = [{ role: "user", content: prompt + "\n\nCONTENT TO REVIEW:\n" + content }];
       }
     } else {
       let fileText = "";
       if (asset.fileUrl) {
-        const filePath = path.join(process.cwd(), "public", asset.fileUrl);
         try {
-          fileText = await extractTextFromFile(filePath, ext);
+          fileText = await extractTextFromUrl(asset.fileUrl, ext);
         } catch (e) {
-          console.error("File read error:", e);
+          console.error("File fetch error:", e);
         }
       }
       const content = fileText.length > 30

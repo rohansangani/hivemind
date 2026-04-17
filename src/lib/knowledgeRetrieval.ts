@@ -7,8 +7,6 @@
  */
 
 import { db } from "@/lib/db";
-import { readFile } from "fs/promises";
-import path from "path";
 import type { QueryEntities } from "@/lib/intentEngine";
 
 // ─────────────────────────────────────────────────────────
@@ -178,9 +176,9 @@ async function searchDocumentFiles(
       if (!["txt", "md", "csv"].includes(ext)) continue; // Only plain-text searchable
 
       try {
-        const filePath = path.join(process.cwd(), "public", doc.fileUrl);
-        const raw = await readFile(filePath, "utf-8");
-        const text = raw.slice(0, 20000); // Cap at 20k chars
+        const r = await fetch(doc.fileUrl, { signal: AbortSignal.timeout(10000) });
+        if (!r.ok) continue;
+        const text = (await r.text()).slice(0, 20000); // Cap at 20k chars
 
         // Split into paragraphs (~300 char chunks)
         const chunks = text

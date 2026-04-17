@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import jwt from "jsonwebtoken";
-import { readFile } from "fs/promises";
-import path from "path";
 import pg from "pg";
 
 function cuid() {
@@ -24,19 +22,26 @@ async function callClaude(
   return data.content?.[0]?.text || "";
 }
 
-async function extractTextFromFile(filePath: string, ext: string): Promise<string> {
+async function fetchBuf(url: string): Promise<Buffer> {
+  const r = await fetch(url, { signal: AbortSignal.timeout(15000) });
+  if (!r.ok) throw new Error(`Fetch failed: ${r.status}`);
+  return Buffer.from(await r.arrayBuffer());
+}
+
+async function extractTextFromUrl(url: string, ext: string): Promise<string> {
   if (["txt", "md", "csv"].includes(ext)) {
-    return (await readFile(filePath, "utf-8")).slice(0, 12000);
+    const r = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    return (await r.text()).slice(0, 12000);
   }
   if (["html", "htm"].includes(ext)) {
     const cheerio = await import("cheerio");
-    const raw = await readFile(filePath, "utf-8");
-    const $ = cheerio.load(raw);
+    const r = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    const $ = cheerio.load(await r.text());
     $("script, style").remove();
     return $.text().replace(/\s+/g, " ").trim().slice(0, 12000);
   }
   if (["docx", "pptx", "xlsx"].includes(ext)) {
-    const buf = await readFile(filePath);
+    const buf = await fetchBuf(url);
     return buf
       .toString("utf-8", 0, Math.min(buf.length, 25000))
       .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, " ")
@@ -135,13 +140,12 @@ For learnings: extract 3–6 SPECIFIC, CONCRETE items grounded in something expl
     let combinedMessages: Array<{ role: string; content: unknown }>;
 
     if (ext === "pdf" && asset.fileUrl) {
-      const filePath = path.join(process.cwd(), "public", asset.fileUrl);
       let b64 = "";
       try {
-        const buf = await readFile(filePath);
+        const buf = await fetchBuf(asset.fileUrl);
         b64 = buf.toString("base64");
       } catch (e) {
-        console.error("PDF read error:", e);
+        console.error("PDF fetch error:", e);
       }
 
       if (b64) {
@@ -156,11 +160,10 @@ For learnings: extract 3–6 SPECIFIC, CONCRETE items grounded in something expl
     } else {
       let fileText = "";
       if (asset.fileUrl) {
-        const filePath = path.join(process.cwd(), "public", asset.fileUrl);
         try {
-          fileText = await extractTextFromFile(filePath, ext);
+          fileText = await extractTextFromUrl(asset.fileUrl, ext);
         } catch (e) {
-          console.error("File read error:", e);
+          console.error("File fetch error:", e);
         }
       }
       const content = fileText.length > 30
