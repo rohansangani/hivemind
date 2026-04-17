@@ -23,9 +23,7 @@ function getOrCreateClient(): PrismaClient {
   if (cached && "knowledgeDocument" in cached) return cached;
   // Cached client is stale or missing — create a fresh one
   const client = createPrismaClient();
-  if (process.env.NODE_ENV !== "production") {
-    globalForPrisma.prisma = client;
-  }
+  globalForPrisma.prisma = client;
   return client;
 }
 

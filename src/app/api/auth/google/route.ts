@@ -6,7 +6,7 @@ export async function GET() {
     return NextResponse.json({ error: "Google OAuth not configured" }, { status: 500 });
   }
 
-  const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
+  const baseUrl = process.env.NEXTAUTH_URL || `https://${process.env.VERCEL_URL}` || "http://localhost:3000";
   const redirectUri = `${baseUrl}/api/auth/google/callback`;
 
   const params = new URLSearchParams({

@@ -111,7 +111,7 @@ export async function POST(req: NextRequest) {
     console.error("Signup error:", error);
     const msg = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
-      { error: "Something went wrong. Please try again.", detail: msg },
+      { error: process.env.NODE_ENV === "development" ? msg : "Something went wrong. Please try again." },
       { status: 500 }
     );
   }
