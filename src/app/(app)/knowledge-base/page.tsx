@@ -726,7 +726,7 @@ export default function KnowledgeBasePage() {
                   </div>
 
                   {/* Col 3 — Detail / editor */}
-                  <div className="flex-1 flex flex-col min-w-0">
+                  <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
                     {!editingSkill && !showAddSkill ? (
                       <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
                         <div className="w-12 h-12 rounded-xl bg-[var(--hm-bg-secondary)] flex items-center justify-center mb-3">
@@ -736,12 +736,12 @@ export default function KnowledgeBasePage() {
                         <p className="text-[11px] text-[var(--hm-text-tertiary)]">Or click + New skill to create one</p>
                       </div>
                     ) : showAddSkill ? (
-                      <div className="flex-1 flex flex-col p-5">
-                        <div className="flex items-center justify-between mb-4">
+                      <div className="flex-1 flex flex-col overflow-hidden">
+                        <div className="flex items-center justify-between p-5 pb-4 flex-shrink-0">
                           <p className="text-[13px] font-semibold">New skill</p>
                           <button onClick={() => setShowAddSkill(false)} className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-[var(--hm-bg-secondary)] text-[var(--hm-text-tertiary)] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee]">✕</button>
                         </div>
-                        <div className="space-y-3 flex-1">
+                        <div className="flex-1 overflow-y-auto px-5 space-y-3">
                           <div><label className="block text-[11px] text-[var(--hm-text-secondary)] mb-1 font-medium">Name *</label><input type="text" value={newSkill.name} onChange={e => setNewSkill({ ...newSkill, name: e.target.value })} className="w-full text-[13px]" placeholder="e.g. Email subject lines" /></div>
                           <div className="grid grid-cols-2 gap-3">
                             <div><label className="block text-[11px] text-[var(--hm-text-secondary)] mb-1 font-medium">Category</label><select value={newSkill.category} onChange={e => setNewSkill({ ...newSkill, category: e.target.value })} className="w-full text-[13px]"><option value="writing">Writing</option><option value="brand_design">Brand & Design</option><option value="ai_behavior">AI Behavior</option><option value="seo">SEO</option></select></div>
@@ -750,15 +750,15 @@ export default function KnowledgeBasePage() {
                           <div><label className="block text-[11px] text-[var(--hm-text-secondary)] mb-1 font-medium">Description</label><input type="text" value={newSkill.description} onChange={e => setNewSkill({ ...newSkill, description: e.target.value })} className="w-full text-[13px]" placeholder="One-line summary" /></div>
                           <div className="flex-1"><label className="block text-[11px] text-[var(--hm-text-secondary)] mb-1 font-medium">Instructions *</label><textarea value={newSkill.instructions} onChange={e => setNewSkill({ ...newSkill, instructions: e.target.value })} className="w-full text-[13px] min-h-[180px]" placeholder="Describe exactly how the AI should behave for this skill..." /></div>
                         </div>
-                        <div className="flex justify-end gap-2 pt-3 border-t border-[var(--hm-border)] mt-3">
+                        <div className="flex justify-end gap-2 px-5 py-3 border-t border-[var(--hm-border)] flex-shrink-0">
                           <button onClick={() => setShowAddSkill(false)} className="h-8 px-3 border border-[var(--hm-border)] rounded-lg text-[12px] hover:bg-[var(--hm-bg-secondary)] hover:border-[#4361ee]/40 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-1">Cancel</button>
                           <button onClick={addSkill} disabled={saving || !newSkill.name || !newSkill.instructions} className="h-8 px-4 bg-[#4361ee] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-2">Add skill</button>
                         </div>
                       </div>
                     ) : editingSkill ? (
                       editingSkill.linkedFeature === "synthesized" ? (
-                        <div className="flex-1 flex flex-col p-5">
-                          <div className="flex items-start justify-between gap-3 mb-4">
+                        <div className="flex-1 flex flex-col overflow-hidden">
+                          <div className="flex items-start justify-between gap-3 p-5 pb-4 flex-shrink-0">
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-1">
                                 <span className="text-[9px] px-2 py-0.5 bg-violet-50 text-violet-600 border border-violet-100 rounded-full font-medium">Auto-synthesized</span>
@@ -781,12 +781,12 @@ export default function KnowledgeBasePage() {
                               </button>
                             </div>
                           </div>
-                          <div className="border-t border-[var(--hm-border)] mb-4" />
-                          <div className="flex-1">
+                          <div className="border-t border-[var(--hm-border)] flex-shrink-0" />
+                          <div className="flex-1 overflow-y-auto px-5 py-4">
                             <p className="text-[12px] text-[var(--hm-text-tertiary)] mb-2">Auto-synthesized from learnings — read only</p>
                             <p className="text-[13px] leading-[1.65] text-[var(--hm-text-secondary)]">{editingSkill.instructions}</p>
                           </div>
-                          <div className="flex items-center justify-between pt-3 border-t border-[var(--hm-border)] mt-3">
+                          <div className="flex items-center justify-between px-5 py-3 border-t border-[var(--hm-border)] flex-shrink-0">
                             <button
                               onClick={() => downloadOneMd(editingSkill)}
                               className="h-8 px-3 border border-[var(--hm-border)] rounded-lg text-[12px] flex items-center gap-1.5 hover:border-[#4361ee] hover:text-[#4361ee] transition-all"
@@ -798,9 +798,9 @@ export default function KnowledgeBasePage() {
                           </div>
                         </div>
                       ) : (
-                      <div className="flex-1 flex flex-col p-5">
+                      <div className="flex-1 flex flex-col overflow-hidden">
                         {/* Skill header */}
-                        <div className="flex items-start justify-between gap-3 mb-4">
+                        <div className="flex items-start justify-between gap-3 p-5 pb-4 flex-shrink-0">
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1">
                               <span className="text-[9px] text-[var(--hm-text-tertiary)]">{fl(editingSkill.linkedFeature)}</span>
@@ -828,20 +828,20 @@ export default function KnowledgeBasePage() {
                           </div>
                         </div>
 
-                        <div className="border-t border-[var(--hm-border)] mb-4" />
+                        <div className="border-t border-[var(--hm-border)] flex-shrink-0" />
 
                         {/* Instructions editor */}
-                        <div className="flex-1 flex flex-col">
+                        <div className="flex-1 overflow-y-auto px-5 py-4">
                           <label className="block text-[11px] text-[var(--hm-text-secondary)] mb-1.5 font-medium">Instructions</label>
                           <textarea
                             value={editingSkill.instructions}
                             onChange={e => setEditingSkill({ ...editingSkill, instructions: e.target.value })}
-                            className="flex-1 w-full text-[13px] leading-[1.7] resize-none border border-[var(--hm-border)] rounded-lg p-3 bg-[var(--hm-bg-secondary)] focus:bg-white focus:border-[#4361ee] transition-all min-h-[260px]"
+                            className="w-full text-[13px] leading-[1.7] resize-none border border-[var(--hm-border)] rounded-lg p-3 bg-[var(--hm-bg-secondary)] focus:bg-white focus:border-[#4361ee] transition-all min-h-[260px]"
                           />
                         </div>
 
                         {/* Actions */}
-                        <div className="flex items-center justify-between pt-3 border-t border-[var(--hm-border)] mt-3">
+                        <div className="flex items-center justify-between px-5 py-3 border-t border-[var(--hm-border)] flex-shrink-0">
                           <div className="flex items-center gap-2">
                             <button onClick={() => confirmAndDelSkill(editingSkill.id, editingSkill.name)} className="h-8 px-3 text-red-500 text-[12px] hover:bg-red-50 active:bg-red-100 rounded-lg transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:ring-offset-1">Delete</button>
                             <button
