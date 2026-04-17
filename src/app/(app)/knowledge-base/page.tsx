@@ -568,7 +568,9 @@ export default function KnowledgeBasePage() {
             ];
             const activeGroup = activeSkillGroup;
             const setActiveGroup = (v: string) => { setActiveSkillGroup(v); setEditingSkill(null); setShowAddSkill(false); };
-            const groupSkills = (key: string) => skills.filter(s => s.category === key);
+            const groupSkills = (key: string) => key === "synthesized"
+              ? skills.filter(s => s.linkedFeature === "synthesized")
+              : skills.filter(s => s.category === key && s.linkedFeature !== "synthesized");
             const visibleSkills = groupSkills(activeGroup);
 
             const downloadAllMd = () => {
@@ -700,7 +702,7 @@ export default function KnowledgeBasePage() {
                         </div>
                       ) : visibleSkills.map(s => {
                         const isSelected = editingSkill?.id === s.id;
-                        const isSynth = s.category === "synthesized";
+                        const isSynth = s.linkedFeature === "synthesized";
                         return (
                           <button
                             key={s.id}
@@ -754,7 +756,7 @@ export default function KnowledgeBasePage() {
                         </div>
                       </div>
                     ) : editingSkill ? (
-                      editingSkill.category === "synthesized" ? (
+                      editingSkill.linkedFeature === "synthesized" ? (
                         <div className="flex-1 flex flex-col p-5">
                           <div className="flex items-start justify-between gap-3 mb-4">
                             <div className="flex-1 min-w-0">
