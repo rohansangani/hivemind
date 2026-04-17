@@ -119,7 +119,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <Breadcrumb />
 
           {/* Page content */}
-          <div className="flex-1 overflow-auto">
+          <div className="flex-1 overflow-hidden flex flex-col min-h-0">
             {children}
           </div>
         </div>

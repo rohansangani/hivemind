@@ -149,6 +149,8 @@ export default function SetupWizardPage() {
   const [icpDescription, setIcpDescription] = useState("");
   const [showMoreArchetypes, setShowMoreArchetypes] = useState(false);
   const [showOptional, setShowOptional] = useState(false);
+  const [aiPopulating, setAiPopulating] = useState(false);
+  const [aiPopulateError, setAiPopulateError] = useState("");
   const [featureInput, setFeatureInput] = useState("");
   const [kraInput, setKraInput] = useState("");
   const [kpiInput, setKpiInput] = useState("");
@@ -354,6 +356,26 @@ export default function SetupWizardPage() {
     if (expandedCompetitor === index) setExpandedCompetitor(null);
   };
 
+  const fillWithAI = async () => {
+    if (!orgInfo.website) return;
+    setAiPopulating(true);
+    setAiPopulateError("");
+    try {
+      const res = await fetch("/api/setup-wizard/auto-populate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ website: orgInfo.website }),
+      });
+      const json = await res.json();
+      if (!res.ok) { setAiPopulateError(json.error || "AI fill failed"); return; }
+      const d = json.data;
+      if (d.description) setCompany(prev => ({ ...prev, description: d.description || prev.description, industry: d.industry || prev.industry, subIndustry: d.subIndustry || prev.subIndustry, size: d.size || prev.size, hqCity: d.hqCity || prev.hqCity, hqCountry: d.hqCountry || prev.hqCountry, mission: d.mission || prev.mission }));
+      if (d.products?.length) setProducts(d.products.map((p: { name: string; description: string; category: string; classification: string; scope: string; features: string[]; useCases: string }) => ({ name: p.name || "", description: p.description || "", category: p.category || "core", classification: p.classification || "", scope: p.scope || "global", features: p.features || [], useCases: p.useCases || "", markets: [] })));
+      if (d.brandTraits?.length || d.voiceDescription) setBrand(prev => ({ ...prev, traits: d.brandTraits?.length ? d.brandTraits.slice(0, 5) : prev.traits, voiceDescription: d.voiceDescription || prev.voiceDescription }));
+    } catch { setAiPopulateError("Something went wrong"); }
+    finally { setAiPopulating(false); }
+  };
+
   const validateStep = (step: number): string[] => {
     const errors: string[] = [];
     if (step === 0) {
@@ -552,10 +574,29 @@ export default function SetupWizardPage() {
             {/* ═══════ STEP 0: COMPANY INFO ═══════ */}
             {currentStep === 0 && (
               <>
-                <h2 className="text-[22px] font-medium mb-1.5">Tell us about your company</h2>
+                <div className="flex items-start justify-between gap-4 mb-1.5">
+                  <h2 className="text-[22px] font-medium">Tell us about your company</h2>
+                  {orgInfo.website && (
+                    <button
+                      onClick={fillWithAI}
+                      disabled={aiPopulating}
+                      className="flex-shrink-0 h-9 px-4 bg-gradient-to-r from-[#4361ee] to-[#7c3aed] text-white rounded-lg text-[12px] font-medium flex items-center gap-1.5 hover:opacity-90 disabled:opacity-60 transition-all"
+                    >
+                      {aiPopulating ? (
+                        <><span className="w-3 h-3 border-[1.5px] border-white/30 border-t-white rounded-full animate-spin" />Filling…</>
+                      ) : (
+                        <><span>✦</span>Fill with AI</>
+                      )}
+                    </button>
+                  )}
+                </div>
                 <p className="text-sm text-[var(--hm-text-secondary)] mb-8 leading-relaxed">
                   This information helps HiveMind build a deep understanding of your business.
                 </p>
+
+                {aiPopulateError && (
+                  <div className="mb-5 p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-600">{aiPopulateError}</div>
+                )}
 
                 {orgInfo.website && (
                   <div className="flex items-start gap-2.5 p-3 bg-blue-50 rounded-lg mb-7">
@@ -1462,7 +1503,7 @@ export default function SetupWizardPage() {
               </button>
             )}
             <button
-              onClick={async () => { const r = await saveData(); if (r.ok) router.push("/dashboard"); }}
+              onClick={async () => { const r = await saveData(); if (r.ok) router.push("/dashboard"); else { setStepErrors([r.error || "Failed to save. Please try again."]); window.scrollTo(0, 0); } }}
               disabled={saving}
               className="h-[38px] px-5 border border-[var(--hm-border)] rounded-lg text-[13px] text-[var(--hm-text-secondary)] hover:bg-[var(--hm-bg-secondary)] transition-all flex items-center gap-1.5 disabled:opacity-50"
             >

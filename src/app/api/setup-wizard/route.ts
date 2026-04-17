@@ -17,15 +17,17 @@ export async function POST(req: NextRequest) {
     const { company, markets, marketNotes, products, personas, competitors, competitiveMoat, brand, isComplete } =
       await req.json();
 
-    // Validate required fields before touching the DB
-    if (!company?.description?.trim()) {
-      return NextResponse.json({ error: "Company description is required." }, { status: 400 });
-    }
-    if (!company?.industry?.trim()) {
-      return NextResponse.json({ error: "Industry is required." }, { status: 400 });
-    }
-    if (!company?.size?.trim()) {
-      return NextResponse.json({ error: "Company size is required." }, { status: 400 });
+    // Only enforce required fields when completing the wizard
+    if (isComplete) {
+      if (!company?.description?.trim()) {
+        return NextResponse.json({ error: "Company description is required." }, { status: 400 });
+      }
+      if (!company?.industry?.trim()) {
+        return NextResponse.json({ error: "Industry is required." }, { status: 400 });
+      }
+      if (!company?.size?.trim()) {
+        return NextResponse.json({ error: "Company size is required." }, { status: 400 });
+      }
     }
 
     const org = await db.organization.findUnique({ where: { id: decoded.orgId } });

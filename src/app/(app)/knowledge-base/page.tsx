@@ -157,7 +157,7 @@ export default function KnowledgeBasePage() {
             <button key={t.id} onClick={() => setTab(t.id)} className={"px-4 py-2.5 text-[12px] border-b-2 flex items-center gap-1.5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#4361ee] " + (tab === t.id ? "font-medium text-[#4361ee] border-[#4361ee]" : "text-[var(--hm-text-tertiary)] border-transparent hover:text-[var(--hm-text)] hover:bg-[var(--hm-bg-secondary)]")}>{t.l}{t.b && <span className="text-[9px] px-1.5 py-0.5 bg-[#4361ee] text-white rounded-md">{t.b}</span>}</button>
           ))}
         </div>
-        <div className="flex-1 overflow-y-auto p-7">
+        <div className={tab === "skills" ? "flex-1 overflow-hidden flex flex-col" : "flex-1 overflow-y-auto p-7"}>
 
           {tab === "overview" && (
             <div className="animate-fade-in max-w-[720px]">
@@ -619,7 +619,7 @@ export default function KnowledgeBasePage() {
             };
 
             return (
-              <div className="animate-fade-in w-full">
+              <div className="animate-fade-in flex-1 flex flex-col overflow-hidden p-7">
                 {/* Header */}
                 <div className="flex items-center justify-between mb-4">
                   <div>
@@ -643,7 +643,7 @@ export default function KnowledgeBasePage() {
                 )}
 
                 {/* 3-column body */}
-                <div className="flex gap-0 border border-[var(--hm-border)] rounded-xl overflow-hidden bg-white" style={{ minHeight: 520 }}>
+                <div className="flex-1 flex gap-0 border border-[var(--hm-border)] rounded-xl overflow-hidden bg-white min-h-0">
 
                   {/* Col 1 — Category nav */}
                   <div className="w-[190px] flex-shrink-0 border-r border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] flex flex-col">

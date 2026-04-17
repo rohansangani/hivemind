@@ -585,7 +585,7 @@ export default function ContentGeneratorPage() {
       </div>
 
       {/* ── Main area ── */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
 
         {/* Header */}
         <div className="px-4 md:px-7 py-4 bg-white border-b border-[var(--hm-border)] flex items-center justify-between flex-shrink-0" style={{ boxShadow: "var(--hm-shadow-xs)" }}>
