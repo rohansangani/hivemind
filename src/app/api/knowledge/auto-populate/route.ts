@@ -117,7 +117,7 @@ Provide 3-5 products, 3-5 markets, 2-4 personas, 3-5 competitors, and complete b
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
       body: JSON.stringify({
-        model: "claude-opus-4-5",
+        model: "claude-opus-4-6",
         max_tokens: 4096,
         messages: [{ role: "user", content: prompt }],
       }),
