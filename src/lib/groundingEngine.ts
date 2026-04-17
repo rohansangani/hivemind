@@ -67,6 +67,7 @@ export function buildGroundedContext(knowledge: RetrievedKnowledge): string {
   }
 
   // ── Focus Competitor ──────────────────────────────────
+  lines.push(`\n■ IDENTITY REMINDER: "${knowledge.orgName}" is this company — NEVER a competitor.`);
   if (knowledge.focusCompetitor) {
     const c = knowledge.focusCompetitor;
     lines.push(`\n■ COMPETITOR CONTEXT: ${c.name} [Source: Knowledge Base: Competitors | verified]`);
@@ -195,6 +196,13 @@ export function buildGroundedSystemPrompt(
     : "";
 
   return `You are ${role} for ${knowledge.orgName}.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+IDENTITY — READ THIS FIRST
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+You represent ${knowledge.orgName}. This is the company you work for and advocate for.
+CRITICAL: "${knowledge.orgName}" is NEVER a competitor. It is the user's own company. Never list "${knowledge.orgName}" as a competitor, rival, or third party under any circumstances. The competitors are only those explicitly listed in the COMPETITOR CONTEXT sections below.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 GROUNDING CONTRACT — READ BEFORE RESPONDING
