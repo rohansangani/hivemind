@@ -52,6 +52,7 @@ export default function ContentLibraryPage() {
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState<{ total: number; totalPages: number; limit: number } | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [uploadError, setUploadError] = useState("");
 
   // Panel state (replaces inline edit panel)
   const [panelAsset, setPanelAsset] = useState<Asset | null>(null);
@@ -109,19 +110,30 @@ export default function ContentLibraryPage() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const handleFileSelect = (file: File) => { fileRef.current = file; setUploadName(file.name.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ")); setUploadType(file.name.split(".").pop()?.toLowerCase() || "pdf"); };
-  const resetUpload = () => { setShowUpload(false); setUploadName(""); setUploadProgress(""); fileRef.current = null; };
+  const resetUpload = () => { setShowUpload(false); setUploadName(""); setUploadProgress(""); setUploadError(""); fileRef.current = null; };
 
   const handleUpload = async () => {
     if (!uploadName.trim()) return;
     setUploading(true);
+    setUploadError("");
     let fileUrl: string | null = null; let fileSize: number | null = null; let actualFileName: string | null = null;
     if (fileRef.current) {
       setUploadProgress("Uploading file...");
       const formData = new FormData(); formData.append("file", fileRef.current);
-      try { const res = await fetch("/api/upload", { method: "POST", body: formData }); const data = await res.json(); if (data.success) { fileUrl = data.fileUrl; fileSize = data.fileSize; actualFileName = data.fileName; } } catch (e) { console.error(e); }
+      try {
+        const res = await fetch("/api/upload", { method: "POST", body: formData });
+        const data = await res.json();
+        if (data.success) { fileUrl = data.fileUrl; fileSize = data.fileSize; actualFileName = data.fileName; }
+        else { setUploadError(data.error || "File upload failed."); setUploading(false); setUploadProgress(""); return; }
+      } catch (e) { console.error(e); setUploadError("File upload failed. Please try again."); setUploading(false); setUploadProgress(""); return; }
     }
     setUploadProgress("Saving...");
-    try { await fetch("/api/content-library", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ files: [{ name: uploadName, fileName: actualFileName || uploadName.toLowerCase().replace(/\s+/g, "-") + "." + uploadType, fileUrl, fileSize, fileType: uploadType, contentType: uploadContentType, productTags: uploadProduct ? [uploadProduct] : [], marketTags: uploadMarket ? [uploadMarket] : [] }] }) }); resetUpload(); fetchData(); } catch (e) { console.error(e); }
+    try {
+      const res = await fetch("/api/content-library", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ files: [{ name: uploadName, fileName: actualFileName || uploadName.toLowerCase().replace(/\s+/g, "-") + "." + uploadType, fileUrl, fileSize, fileType: uploadType, contentType: uploadContentType, productTags: uploadProduct ? [uploadProduct] : [], marketTags: uploadMarket ? [uploadMarket] : [] }] }) });
+      const data = await res.json();
+      if (!res.ok) { setUploadError(data.error || "Failed to save asset."); }
+      else { resetUpload(); fetchData(); }
+    } catch (e) { console.error(e); setUploadError("Failed to save asset. Please try again."); }
     finally { setUploading(false); setUploadProgress(""); }
   };
 
@@ -282,6 +294,7 @@ export default function ContentLibraryPage() {
                       <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1 font-medium">Product</label><select value={uploadProduct} onChange={(e) => setUploadProduct(e.target.value)} style={{ fontSize: "12px" }}><option value="">All</option>{products.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}</select></div>
                       <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1 font-medium">Market</label><select value={uploadMarket} onChange={(e) => setUploadMarket(e.target.value)} style={{ fontSize: "12px" }}><option value="">Global</option>{markets.map((m) => <option key={m.name} value={m.name}>{m.name}</option>)}</select></div>
                     </div>
+                    {uploadError && <p className="text-[12px] text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{uploadError}</p>}
                     <div className="flex justify-between items-center pt-2">
                       {uploadProgress && <p className="text-[11px] text-[#4361ee] flex items-center gap-1.5"><span className="w-3 h-3 border-2 border-[#4361ee]/30 border-t-[#4361ee] rounded-full animate-spin inline-block" />{uploadProgress}</p>}
                       <div className="flex gap-2 ml-auto"><button onClick={resetUpload} className="h-[34px] px-4 border border-[var(--hm-border)] rounded-lg text-[12px] hover:bg-[var(--hm-bg-secondary)] hover:border-[#4361ee]/40 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-1">Cancel</button><button onClick={handleUpload} disabled={uploading || !uploadName.trim()} className="h-[34px] px-5 bg-[#4361ee] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-2">{uploading ? "Uploading..." : "Upload"}</button></div>
