@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { upload } from "@vercel/blob/client";
 import { useUser } from "@/lib/UserContext";
 
 interface Asset {
@@ -122,30 +121,14 @@ export default function ContentLibraryPage() {
       setUploadProgress("Uploading file...");
       const file = fileRef.current;
       try {
-        let uploaded = false;
-        try {
-          const blob = await upload(file.name, file, { access: "public", handleUploadUrl: "/api/upload" });
-          fileUrl = blob.url; fileSize = file.size; actualFileName = file.name;
-          uploaded = true;
-        } catch (blobErr) {
-          const msg = (blobErr as Error)?.message || "";
-          // In production, always surface the error — filesystem fallback won't work
-          if (process.env.NODE_ENV === "production") {
-            setUploadError(msg || "Upload failed. Please try again.");
-            setUploading(false); setUploadProgress(""); return;
-          }
-          // Local dev: fall back to FormData → filesystem
-          console.log("Blob not configured, using local fallback:", msg);
-        }
-        if (!uploaded) {
-          const formData = new FormData(); formData.append("file", file);
-          const res = await fetch("/api/upload", { method: "POST", body: formData });
-          const text = await res.text();
-          let data: Record<string, unknown> = {};
-          try { data = JSON.parse(text); } catch { setUploadError(`Upload failed (HTTP ${res.status})`); setUploading(false); setUploadProgress(""); return; }
-          if (data.success) { fileUrl = data.fileUrl as string; fileSize = data.fileSize as number; actualFileName = data.fileName as string; }
-          else { setUploadError((data.error as string) || "File upload failed."); setUploading(false); setUploadProgress(""); return; }
-        }
+        const res = await fetch(
+          `/api/upload?filename=${encodeURIComponent(file.name)}`,
+          { method: "PUT", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file }
+        );
+        let data: Record<string, unknown> = {};
+        try { data = await res.json(); } catch { /* empty body */ }
+        if (!res.ok) { setUploadError((data.error as string) || `Upload failed (${res.status})`); setUploading(false); setUploadProgress(""); return; }
+        fileUrl = data.fileUrl as string; fileSize = file.size; actualFileName = file.name;
       } catch (e) { console.error(e); setUploadError("Upload failed. Please try again."); setUploading(false); setUploadProgress(""); return; }
     }
     setUploadProgress("Saving...");

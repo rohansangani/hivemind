@@ -1,33 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { randomUUID } from "crypto";
 import jwt from "jsonwebtoken";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 
-// ---------------------------------------------------------------------------
-// Allowed file types: extension -> accepted MIME types
-// ---------------------------------------------------------------------------
-const ALLOWED_TYPES: Record<string, string[]> = {
-  pdf:  ["application/pdf"],
-  docx: ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
-  pptx: ["application/vnd.openxmlformats-officedocument.presentationml.presentation"],
-  xlsx: ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
-  txt:  ["text/plain"],
-  md:   ["text/plain", "text/markdown"],
-  csv:  ["text/csv", "text/plain"],
-  html: ["text/html"],
-  htm:  ["text/html"],
-  jpg:  ["image/jpeg"],
-  jpeg: ["image/jpeg"],
-  png:  ["image/png"],
-  gif:  ["image/gif"],
-  webp: ["image/webp"],
-  svg:  ["image/svg+xml", "text/plain"],
-  mp4:  ["video/mp4"],
-};
+// Increase serverless function timeout to handle large file uploads
+export const maxDuration = 60;
 
-const ALL_ALLOWED_MIMES = [...new Set(Object.values(ALLOWED_TYPES).flat())];
+// ---------------------------------------------------------------------------
+// Allowed file extensions
+// ---------------------------------------------------------------------------
+const ALLOWED_EXTENSIONS = new Set([
+  "pdf", "docx", "pptx", "xlsx", "txt", "md", "csv", "html", "htm",
+  "jpg", "jpeg", "png", "gif", "webp", "svg", "mp4",
+]);
 
 function verifyToken(req: NextRequest): { userId: string; orgId: string } | null {
   const token = req.cookies.get("hm-token")?.value;
@@ -40,68 +26,61 @@ function verifyToken(req: NextRequest): { userId: string; orgId: string } | null
 }
 
 // ---------------------------------------------------------------------------
-// POST — two modes:
-//   1. JSON body  → client-side Blob upload token request (production)
-//   2. FormData   → direct server upload (local dev fallback)
+// PUT — streaming upload (no client-side blob library, no CORS issues)
+//
+// Browser  →  this function  →  Vercel Blob (if BLOB_READ_WRITE_TOKEN set)
+//                           →  local filesystem (dev fallback)
+//
+// Query params: ?filename=<original-filename>
+// Body: raw file bytes (Content-Type should be set to the file's MIME type)
 // ---------------------------------------------------------------------------
-export async function POST(req: NextRequest) {
-  const contentType = req.headers.get("content-type") || "";
-
-  // ── Mode 1: Client-side upload token request + completion callback ────────
-  // The completion callback is a server-to-server POST from Vercel's CDN with
-  // no browser cookie — auth is enforced inside onBeforeGenerateToken instead.
-  if (contentType.includes("application/json")) {
-    if (!process.env.BLOB_READ_WRITE_TOKEN) {
-      return NextResponse.json({ error: "Blob storage not configured" }, { status: 500 });
-    }
-    try {
-      const body = (await req.json()) as HandleUploadBody;
-      const jsonResponse = await handleUpload({
-        body,
-        request: req,
-        onBeforeGenerateToken: async () => {
-          // Auth check: only the token-generation step has a browser cookie
-          const decoded = verifyToken(req);
-          if (!decoded) throw new Error("Not authenticated");
-          return {
-            allowedContentTypes: ALL_ALLOWED_MIMES,
-            tokenPayload: JSON.stringify({ userId: decoded.userId, orgId: decoded.orgId }),
-          };
-        },
-        // No onUploadCompleted — omitting it keeps the client in direct-response
-        // mode so upload() resolves immediately with blob metadata instead of
-        // waiting for a server-to-server callback that hangs the client forever.
-      });
-      return NextResponse.json(jsonResponse);
-    } catch (err) {
-      const msg = (err as Error).message;
-      console.error("handleUpload error:", msg);
-      return NextResponse.json({ error: msg }, { status: msg === "Not authenticated" ? 401 : 400 });
-    }
-  }
-
-  // ── Mode 2: FormData upload (local dev — no BLOB_READ_WRITE_TOKEN) ────────
+export async function PUT(req: NextRequest) {
   const decoded = verifyToken(req);
   if (!decoded) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
-  if (!contentType.includes("multipart/form-data")) {
-    return NextResponse.json({ error: "Unsupported content type" }, { status: 400 });
+  const { searchParams } = new URL(req.url);
+  const filename = searchParams.get("filename");
+  if (!filename) return NextResponse.json({ error: "filename required" }, { status: 400 });
+
+  const ext = (filename.split(".").pop() || "").toLowerCase();
+  if (!ALLOWED_EXTENSIONS.has(ext)) {
+    return NextResponse.json({ error: "File type not allowed" }, { status: 400 });
   }
 
+  if (!req.body) {
+    return NextResponse.json({ error: "No file body provided" }, { status: 400 });
+  }
+
+  // ── Production: stream directly to Vercel Blob ───────────────────────────
+  if (process.env.BLOB_READ_WRITE_TOKEN) {
+    try {
+      const { put } = await import("@vercel/blob");
+      const contentType = req.headers.get("content-type") || "application/octet-stream";
+      const blob = await put(filename, req.body, {
+        access: "public",
+        contentType,
+        addRandomSuffix: true,
+      });
+      return NextResponse.json({
+        success: true,
+        fileName: filename,
+        fileUrl: blob.url,
+      });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error("Blob upload error:", msg);
+      return NextResponse.json({ error: "Upload failed: " + msg }, { status: 500 });
+    }
+  }
+
+  // ── Local dev fallback: buffer and save to public/uploads/ ───────────────
   try {
-    const formData = await req.formData();
-    const file = formData.get("file") as File | null;
-    if (!file) return NextResponse.json({ error: "No file provided" }, { status: 400 });
-
-    const ext = (file.name.split(".").pop() || "").toLowerCase();
-    if (!ALLOWED_TYPES[ext]) return NextResponse.json({ error: "File type not allowed." }, { status: 400 });
-
-    const bytes = await file.arrayBuffer();
+    const bytes = await req.arrayBuffer();
     const buffer = Buffer.from(bytes);
 
     const timestamp = Date.now();
     const uuid = randomUUID();
-    const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
+    const safeName = filename.replace(/[^a-zA-Z0-9.-]/g, "_");
     const fileName = `${timestamp}-${uuid}-${safeName}`;
 
     const uploadDir = path.join(process.cwd(), "public", "uploads");
@@ -110,10 +89,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      fileName: file.name,
+      fileName: filename,
       fileUrl: `/uploads/${fileName}`,
-      fileSize: file.size,
-      fileType: ext,
+      fileSize: buffer.length,
     });
   } catch (error) {
     console.error("Local upload error:", error);
