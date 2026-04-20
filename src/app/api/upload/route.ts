@@ -28,7 +28,6 @@ const ALLOWED_TYPES: Record<string, string[]> = {
 };
 
 const ALL_ALLOWED_MIMES = [...new Set(Object.values(ALLOWED_TYPES).flat())];
-const MAX_SIZE = 50 * 1024 * 1024; // 50 MB (enforced by Blob token, not body)
 
 function verifyToken(req: NextRequest): { userId: string; orgId: string } | null {
   const token = req.cookies.get("hm-token")?.value;
@@ -63,7 +62,6 @@ export async function POST(req: NextRequest) {
         request: req,
         onBeforeGenerateToken: async () => ({
           allowedContentTypes: ALL_ALLOWED_MIMES,
-          maximumSizeInBytes: MAX_SIZE,
           tokenPayload: JSON.stringify({ userId: decoded.userId, orgId: decoded.orgId }),
         }),
         onUploadCompleted: async ({ blob }) => {

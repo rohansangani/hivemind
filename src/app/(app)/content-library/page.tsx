@@ -289,7 +289,7 @@ export default function ContentLibraryPage() {
                         <svg width="36" height="36" viewBox="0 0 24 24" fill="none" className="mx-auto mb-3 opacity-30"><path d="M12 5v14M5 12l7-7 7 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
                         <p className="text-[14px] font-medium mb-1">Drag & drop files here</p>
                         <p className="text-[12px] text-[var(--hm-text-tertiary)]">or click to browse</p>
-                        <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-2 leading-relaxed">PDF, PPTX, DOCX, XLSX, MP4, images &mdash; max 50 MB</p>
+                        <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-2 leading-relaxed">PDF, PPTX, DOCX, XLSX, MP4, images</p>
                       </div>
                       <input type="file" className="hidden" accept=".pdf,.docx,.pptx,.xlsx,.mp4,.jpg,.jpeg,.png,.svg,.gif,.webp" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFileSelect(f); }} />
                     </label>
