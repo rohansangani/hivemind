@@ -25,26 +25,42 @@ function serverError(e: unknown) {
 
 type Learning = { title: string; summary: string; takeaway: string; tags: string[]; kbCategory: string };
 
-const ANALYSIS_PROMPT = (orgName: string, orgIndustry: string, fileName: string) => `You are extracting structured marketing intelligence from a document uploaded by the ${orgName} team (${orgIndustry} industry).
+const ANALYSIS_PROMPT = (orgName: string, orgIndustry: string, fileName: string) => `You are a deep marketing intelligence analyst extracting EVERYTHING of value from a document uploaded by the ${orgName} team (${orgIndustry} industry).
 
 Document: "${fileName}"
 
-Extract 4–8 SPECIFIC, CONCRETE learnings from this document. Each learning must be grounded in something explicitly stated in the document — direct facts, rules, data points, named products, exact phrases, or specific guidelines. Do NOT generate generic marketing advice.
+Your job is to extract ALL meaningful knowledge from this document — not just highlights. Be thorough. A rich document should yield 15–25+ learnings. Cover every dimension below that is present in the document.
 
-Good examples of specific learnings:
-- "Tagline is 'Move faster, ship smarter'" → title: "Core tagline", summary: "The document states the official tagline is 'Move faster, ship smarter'..."
-- "NPS score of 72 across enterprise accounts" → title: "Enterprise NPS benchmark"...
-- "Never use the word 'cheap'; use 'cost-efficient' instead" → title: "Preferred pricing language"...
+EXTRACTION CATEGORIES (cover all that apply):
+1. PRODUCT KNOWLEDGE — features, capabilities, use cases, technical specs, integrations, limitations, roadmap items
+2. POSITIONING & MESSAGING — value propositions, taglines, key messages, differentiators, how the product is framed
+3. CUSTOMER INTELLIGENCE — customer segments, buyer personas, pain points, jobs-to-be-done, decision criteria, objections
+4. PROOF POINTS & METRICS — statistics, benchmarks, ROI claims, customer results, NPS scores, adoption numbers, awards
+5. CUSTOMER STORIES — named customers, case studies, testimonials, quotes (exact where possible)
+6. COMPETITIVE INTELLIGENCE — competitor names, how they are positioned against, differentiators, win/loss patterns
+7. BRAND & VOICE — tone guidelines, words to use/avoid, brand personality, writing rules, visual/style guidelines
+8. PRICING & PACKAGING — pricing tiers, packaging names, what's included, how value is communicated
+9. CONTENT PATTERNS — headline formulas, CTA patterns, narrative frameworks, structural approaches used in the doc
+10. MARKET & INDUSTRY — target markets, verticals, geographic focus, industry trends referenced, market size claims
+11. PROCESS & METHODOLOGY — frameworks, how-to steps, recommended approaches, implementation patterns
+12. INTERNAL KNOWLEDGE — go-to-market motion, sales process details, partner/channel info, team structure
 
-Return ONLY valid JSON (no markdown):
+Rules:
+- Every learning MUST be grounded in something explicitly stated in the document. Quote or closely paraphrase.
+- Do NOT generate generic marketing advice or invent information not present.
+- Titles must be specific and scannable (e.g. "Enterprise NPS: 72" not "Customer satisfaction").
+- The takeaway must be actionable for AI generating future content from this brand.
+- If the same fact appears multiple times, capture it once with the best version.
+
+Return ONLY valid JSON (no markdown, no backticks):
 {
-  "documentType": "brand_guidelines|product_spec|case_study|competitive_analysis|sales_deck|research_report|general",
+  "documentType": "brand_guidelines|product_spec|case_study|competitive_analysis|sales_deck|research_report|pricing|persona_profile|general",
   "learnings": [
     {
-      "title": "Specific, fact-based title (not generic)",
-      "summary": "What the document actually says — quote or closely paraphrase the specific content",
-      "takeaway": "Concrete implication for AI-generated marketing content",
-      "tags": ["specific-tag1", "specific-tag2"],
+      "title": "Specific, scannable title — include key number or term if relevant",
+      "summary": "What the document explicitly states — quote exact phrases where possible",
+      "takeaway": "How this should influence AI-generated content from this brand",
+      "tags": ["tag1", "tag2"],
       "kbCategory": "brand|product|market|persona|competitor|messaging|proof_point|general"
     }
   ]
@@ -57,7 +73,7 @@ async function callClaude(
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
-    body: JSON.stringify({ model: "claude-opus-4-6", max_tokens: 3000, messages }),
+    body: JSON.stringify({ model: "claude-opus-4-6", max_tokens: 6000, messages }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error?.message || "Claude API error");

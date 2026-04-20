@@ -31,8 +31,7 @@ export async function GET(req: NextRequest) {
          FROM "LearningLog" ll
          LEFT JOIN "KnowledgeDocument" kd ON ll."sourceDocumentId" = kd.id
          WHERE ll."organizationId" = $1
-         ORDER BY ll."createdAt" DESC
-         LIMIT 50`,
+         ORDER BY ll."createdAt" DESC`,
         [decoded.orgId]
       ),
       // Fetch all categories so intelligenceStats is accurate across the full knowledge base

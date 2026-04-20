@@ -132,16 +132,26 @@ Return ONLY valid JSON (no markdown, no backticks):
   },
   "learnings": [
     {
-      "title": "Specific, fact-based title",
-      "summary": "What the content actually contains — quote or closely paraphrase specific material",
-      "takeaway": "Concrete implication for future AI-generated content from this brand",
+      "title": "Specific, scannable title — include key number or term if relevant",
+      "summary": "What the content explicitly states — quote exact phrases where possible",
+      "takeaway": "How this should influence future AI-generated content from this brand",
       "tags": ["tag1", "tag2"],
       "kbCategory": "brand|product|market|persona|competitor|messaging|proof_point|general"
     }
   ]
 }
 
-For learnings: extract 3–6 SPECIFIC, CONCRETE items grounded in something explicitly present in the content — direct facts, claims, proof points, exact phrases, or messaging frameworks. Do NOT generate generic marketing advice.`;
+For learnings: extract 10–20 comprehensive, SPECIFIC items covering ALL dimensions present in the content:
+- Product knowledge (features, capabilities, use cases, technical specs)
+- Positioning & messaging (value props, taglines, key messages, differentiators)
+- Customer intelligence (segments, pain points, jobs-to-be-done, decision criteria)
+- Proof points & metrics (stats, benchmarks, ROI claims, customer results)
+- Customer stories (named customers, testimonials, exact quotes)
+- Competitive intelligence (competitor mentions, win/loss patterns, differentiation)
+- Brand & voice (tone rules, vocabulary, writing patterns, personality cues)
+- Content patterns (headline formulas, CTA approaches, narrative structures)
+- Market & industry (verticals, trends referenced, market claims)
+Every learning MUST be grounded in something explicitly present — quote or closely paraphrase. Do NOT generate generic advice.`;
 
     // Build a single Claude message (PDF sent once)
     let combinedMessages: Array<{ role: string; content: unknown }>;
@@ -183,7 +193,7 @@ For learnings: extract 3–6 SPECIFIC, CONCRETE items grounded in something expl
     // Single Claude call for both analysis + learnings
     let combinedRaw: string;
     try {
-      combinedRaw = await callClaude(apiKey, combinedMessages, 4000);
+      combinedRaw = await callClaude(apiKey, combinedMessages, 6000);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error("Claude API call failed:", msg);
