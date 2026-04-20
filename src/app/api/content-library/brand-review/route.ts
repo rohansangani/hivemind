@@ -4,6 +4,8 @@ import jwt from "jsonwebtoken";
 import { readFile } from "fs/promises";
 import path from "path";
 
+export const maxDuration = 60;
+
 function cuid() {
   return crypto.randomUUID().replace(/-/g, "");
 }
@@ -322,12 +324,59 @@ Rules:
       },
     });
 
-    // Fire-and-forget: extract learnings from this asset and push to learning logs
-    fetch(new URL("/api/content-library/analyze", req.url).toString(), {
-      method: "POST",
-      headers: { "Content-Type": "application/json", cookie: req.headers.get("cookie") || "" },
-      body: JSON.stringify({ assetId }),
-    }).catch(() => {});
+    // Save brand review insights directly to LearningLog (synchronous — Vercel kills
+    // fire-and-forget fetches the moment a response is sent, so we write before returning).
+    try {
+      // Remove stale entries for this asset first
+      await db.learningLog.deleteMany({
+        where: { organizationId: decoded.orgId, sourceType: "brand_review",
+          title: { contains: asset.name.slice(0, 50) } },
+      });
+
+      const dimensionKbMap: Record<string, string> = {
+        voice: "messaging", terminology: "brand",
+        messaging: "messaging", personality: "brand", completeness: "general",
+      };
+
+      // One entry summarising the overall review
+      await db.learningLog.create({
+        data: {
+          sourceType: "brand_review",
+          title: `Brand alignment: "${asset.name}" (score ${review.overallScore}/100)`,
+          summary: review.summary,
+          takeaway: (review.priorityFixes || []).slice(0, 3).join(" | "),
+          tags: ["brand_review", asset.contentType || "content"].filter(Boolean),
+          kbCategories: ["messaging"],
+          organizationId: decoded.orgId,
+        },
+      });
+
+      // One entry per dimension so each insight is individually discoverable
+      for (const [dim, data] of Object.entries(review.dimensions) as [string, { score: number; label: string; assessment: string }][]) {
+        if (!data?.assessment) continue;
+        await db.learningLog.create({
+          data: {
+            sourceType: "brand_review",
+            title: `${data.label} in "${asset.name}" — ${data.score}/100`,
+            summary: data.assessment,
+            takeaway: data.score < 70
+              ? `Weak ${data.label.toLowerCase()} (${data.score}/100) — prioritise this in future content`
+              : `Strong ${data.label.toLowerCase()} (${data.score}/100) — maintain this approach`,
+            tags: ["brand_review", dim],
+            kbCategories: [dimensionKbMap[dim] || "messaging"],
+            organizationId: decoded.orgId,
+          },
+        });
+      }
+
+      // Re-synthesise skills with the new learnings (best-effort — not critical path)
+      fetch(new URL("/api/knowledge/synthesize-skills", req.url).toString(), {
+        method: "POST",
+        headers: { cookie: req.headers.get("cookie") || "" },
+      }).catch(() => {});
+    } catch (e) {
+      console.error("Failed to save brand review learnings:", e);
+    }
 
     return NextResponse.json({ review });
   } catch (error) {
