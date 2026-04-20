@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { upload } from "@vercel/blob/client";
 import { useUser } from "@/lib/UserContext";
 
 interface Asset {
@@ -119,15 +120,28 @@ export default function ContentLibraryPage() {
     let fileUrl: string | null = null; let fileSize: number | null = null; let actualFileName: string | null = null;
     if (fileRef.current) {
       setUploadProgress("Uploading file...");
-      const formData = new FormData(); formData.append("file", fileRef.current);
+      const file = fileRef.current;
       try {
-        const res = await fetch("/api/upload", { method: "POST", body: formData });
-        let data: Record<string, unknown> = {};
-        const text = await res.text();
-        try { data = JSON.parse(text); } catch { console.error("Non-JSON upload response:", res.status, text.slice(0, 300)); setUploadError(`Upload failed (HTTP ${res.status}). ${res.status === 413 ? "File is too large — try a file under 4 MB." : "Check Vercel function logs for details."}`); setUploading(false); setUploadProgress(""); return; }
-        if (data.success) { fileUrl = data.fileUrl as string; fileSize = data.fileSize as number; actualFileName = data.fileName as string; }
-        else { setUploadError((data.error as string) || "File upload failed."); setUploading(false); setUploadProgress(""); return; }
-      } catch (e) { console.error(e); setUploadError("Network error during upload. Please try again."); setUploading(false); setUploadProgress(""); return; }
+        // Try client-side direct upload to Vercel Blob (bypasses 4.5 MB function limit)
+        let uploaded = false;
+        try {
+          const blob = await upload(file.name, file, { access: "public", handleUploadUrl: "/api/upload" });
+          fileUrl = blob.url; fileSize = file.size; actualFileName = file.name;
+          uploaded = true;
+        } catch (blobErr) {
+          // Blob not configured (local dev) — fall back to FormData
+          console.log("Blob upload unavailable, using FormData fallback:", blobErr);
+        }
+        if (!uploaded) {
+          const formData = new FormData(); formData.append("file", file);
+          const res = await fetch("/api/upload", { method: "POST", body: formData });
+          const text = await res.text();
+          let data: Record<string, unknown> = {};
+          try { data = JSON.parse(text); } catch { setUploadError(`Upload failed (HTTP ${res.status})`); setUploading(false); setUploadProgress(""); return; }
+          if (data.success) { fileUrl = data.fileUrl as string; fileSize = data.fileSize as number; actualFileName = data.fileName as string; }
+          else { setUploadError((data.error as string) || "File upload failed."); setUploading(false); setUploadProgress(""); return; }
+        }
+      } catch (e) { console.error(e); setUploadError("Upload failed. Please try again."); setUploading(false); setUploadProgress(""); return; }
     }
     setUploadProgress("Saving...");
     try {
