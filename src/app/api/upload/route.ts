@@ -45,12 +45,11 @@ function verifyToken(req: NextRequest): { userId: string; orgId: string } | null
 //   2. FormData   → direct server upload (local dev fallback)
 // ---------------------------------------------------------------------------
 export async function POST(req: NextRequest) {
-  const decoded = verifyToken(req);
-  if (!decoded) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-
   const contentType = req.headers.get("content-type") || "";
 
-  // ── Mode 1: Client-side upload token request ──────────────────────────────
+  // ── Mode 1: Client-side upload token request + completion callback ────────
+  // The completion callback is a server-to-server POST from Vercel's CDN with
+  // no browser cookie — auth is enforced inside onBeforeGenerateToken instead.
   if (contentType.includes("application/json")) {
     if (!process.env.BLOB_READ_WRITE_TOKEN) {
       return NextResponse.json({ error: "Blob storage not configured" }, { status: 500 });
@@ -60,22 +59,31 @@ export async function POST(req: NextRequest) {
       const jsonResponse = await handleUpload({
         body,
         request: req,
-        onBeforeGenerateToken: async () => ({
-          allowedContentTypes: ALL_ALLOWED_MIMES,
-          tokenPayload: JSON.stringify({ userId: decoded.userId, orgId: decoded.orgId }),
-        }),
+        onBeforeGenerateToken: async () => {
+          // Auth check: only the token-generation step has a browser cookie
+          const decoded = verifyToken(req);
+          if (!decoded) throw new Error("Not authenticated");
+          return {
+            allowedContentTypes: ALL_ALLOWED_MIMES,
+            tokenPayload: JSON.stringify({ userId: decoded.userId, orgId: decoded.orgId }),
+          };
+        },
         onUploadCompleted: async ({ blob }) => {
           console.log("Client upload completed:", blob.url);
         },
       });
       return NextResponse.json(jsonResponse);
     } catch (err) {
-      console.error("handleUpload error:", err);
-      return NextResponse.json({ error: (err as Error).message }, { status: 400 });
+      const msg = (err as Error).message;
+      console.error("handleUpload error:", msg);
+      return NextResponse.json({ error: msg }, { status: msg === "Not authenticated" ? 401 : 400 });
     }
   }
 
   // ── Mode 2: FormData upload (local dev — no BLOB_READ_WRITE_TOKEN) ────────
+  const decoded = verifyToken(req);
+  if (!decoded) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+
   if (!contentType.includes("multipart/form-data")) {
     return NextResponse.json({ error: "Unsupported content type" }, { status: 400 });
   }

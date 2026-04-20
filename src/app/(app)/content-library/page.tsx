@@ -122,15 +122,20 @@ export default function ContentLibraryPage() {
       setUploadProgress("Uploading file...");
       const file = fileRef.current;
       try {
-        // Try client-side direct upload to Vercel Blob (bypasses 4.5 MB function limit)
         let uploaded = false;
         try {
           const blob = await upload(file.name, file, { access: "public", handleUploadUrl: "/api/upload" });
           fileUrl = blob.url; fileSize = file.size; actualFileName = file.name;
           uploaded = true;
         } catch (blobErr) {
-          // Blob not configured (local dev) — fall back to FormData
-          console.log("Blob upload unavailable, using FormData fallback:", blobErr);
+          const msg = (blobErr as Error)?.message || "";
+          // In production, always surface the error — filesystem fallback won't work
+          if (process.env.NODE_ENV === "production") {
+            setUploadError(msg || "Upload failed. Please try again.");
+            setUploading(false); setUploadProgress(""); return;
+          }
+          // Local dev: fall back to FormData → filesystem
+          console.log("Blob not configured, using local fallback:", msg);
         }
         if (!uploaded) {
           const formData = new FormData(); formData.append("file", file);
