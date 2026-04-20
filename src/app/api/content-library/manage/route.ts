@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import jwt from "jsonwebtoken";
 import { del } from "@vercel/blob";
+import { unlink } from "fs/promises";
+import path from "path";
 
 export async function PUT(req: NextRequest) {
   try {
@@ -41,11 +43,9 @@ export async function DELETE(req: NextRequest) {
     if (!asset || asset.organizationId !== decoded.orgId) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     if (asset.fileUrl?.startsWith("https://")) {
-      try {
-        await del(asset.fileUrl);
-      } catch (err) {
-        console.error("Blob delete error for asset", id, err);
-      }
+      try { await del(asset.fileUrl); } catch (err) { console.error("Blob delete error for asset", id, err); }
+    } else if (asset.fileUrl?.startsWith("/uploads/")) {
+      try { await unlink(path.join(process.cwd(), "public", asset.fileUrl)); } catch { /* ignore */ }
     }
 
     // Clean up knowledge entries created from this asset's analysis (matched by asset name in title)

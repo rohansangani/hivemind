@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { put } from "@vercel/blob";
 import { randomUUID } from "crypto";
 import jwt from "jsonwebtoken";
+import { writeFile, mkdir } from "fs/promises";
+import path from "path";
 
 // ---------------------------------------------------------------------------
 // Allowed file types: extension -> accepted MIME types
@@ -126,21 +128,38 @@ export async function POST(req: NextRequest) {
 
     // -----------------------------------------------------------------------
     // 7. Generate a collision-safe filename and upload to Vercel Blob
+    //    (falls back to local filesystem in development when token is absent)
     // -----------------------------------------------------------------------
     const timestamp = Date.now();
     const uuid = randomUUID();
     const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
     const fileName = `${timestamp}-${uuid}-${safeName}`;
-    const pathname = `uploads/${decoded.orgId}/${fileName}`;
+
+    const hasBlob = !!process.env.BLOB_READ_WRITE_TOKEN;
 
     let fileUrl: string;
-    try {
-      const blob = await put(pathname, buffer, { access: "public" });
-      fileUrl = blob.url;
-    } catch (uploadError) {
-      console.error("Blob upload error:", uploadError);
+    if (hasBlob) {
+      const pathname = `uploads/${decoded.orgId}/${fileName}`;
+      try {
+        const blob = await put(pathname, buffer, { access: "public" });
+        fileUrl = blob.url;
+      } catch (uploadError) {
+        console.error("Blob upload error:", uploadError);
+        return NextResponse.json(
+          { error: "File storage failed. Check BLOB_READ_WRITE_TOKEN in Vercel environment variables." },
+          { status: 500 }
+        );
+      }
+    } else if (process.env.NODE_ENV !== "production") {
+      // Local dev fallback: write to public/uploads/
+      const uploadDir = path.join(process.cwd(), "public", "uploads");
+      await mkdir(uploadDir, { recursive: true });
+      await writeFile(path.join(uploadDir, fileName), buffer);
+      fileUrl = `/uploads/${fileName}`;
+    } else {
+      // Production without blob token — fail clearly
       return NextResponse.json(
-        { error: "Failed to save file. Please try again." },
+        { error: "File storage is not configured. Add BLOB_READ_WRITE_TOKEN to your Vercel environment variables, then redeploy." },
         { status: 500 }
       );
     }

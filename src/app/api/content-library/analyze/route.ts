@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import jwt from "jsonwebtoken";
 import pg from "pg";
+import { readFile } from "fs/promises";
+import path from "path";
 
 function cuid() {
   return crypto.randomUUID().replace(/-/g, "");
@@ -23,6 +25,9 @@ async function callClaude(
 }
 
 async function fetchBuf(url: string): Promise<Buffer> {
+  if (url.startsWith("/")) {
+    return readFile(path.join(process.cwd(), "public", url));
+  }
   const r = await fetch(url, { signal: AbortSignal.timeout(15000) });
   if (!r.ok) throw new Error(`Fetch failed: ${r.status}`);
   return Buffer.from(await r.arrayBuffer());
@@ -30,13 +35,13 @@ async function fetchBuf(url: string): Promise<Buffer> {
 
 async function extractTextFromUrl(url: string, ext: string): Promise<string> {
   if (["txt", "md", "csv"].includes(ext)) {
-    const r = await fetch(url, { signal: AbortSignal.timeout(15000) });
-    return (await r.text()).slice(0, 12000);
+    const buf = await fetchBuf(url);
+    return buf.toString("utf-8").slice(0, 12000);
   }
   if (["html", "htm"].includes(ext)) {
     const cheerio = await import("cheerio");
-    const r = await fetch(url, { signal: AbortSignal.timeout(15000) });
-    const $ = cheerio.load(await r.text());
+    const buf = await fetchBuf(url);
+    const $ = cheerio.load(buf.toString("utf-8"));
     $("script, style").remove();
     return $.text().replace(/\s+/g, " ").trim().slice(0, 12000);
   }
