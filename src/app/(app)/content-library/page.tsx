@@ -208,12 +208,6 @@ export default function ContentLibraryPage() {
           scoreSuggestions: data.review.priorityFixes || [],
           scoreStatus: "analyzed",
         } : null);
-        // Fire-and-forget: extract learnings from this asset and push to learning logs
-        fetch("/api/content-library/analyze", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ assetId: panelAsset.id }),
-        }).catch(() => {});
       } else {
         alert(data.error || "Review failed");
       }

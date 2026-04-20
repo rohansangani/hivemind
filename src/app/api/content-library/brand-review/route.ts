@@ -322,6 +322,13 @@ Rules:
       },
     });
 
+    // Fire-and-forget: extract learnings from this asset and push to learning logs
+    fetch(new URL("/api/content-library/analyze", req.url).toString(), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", cookie: req.headers.get("cookie") || "" },
+      body: JSON.stringify({ assetId }),
+    }).catch(() => {});
+
     return NextResponse.json({ review });
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);

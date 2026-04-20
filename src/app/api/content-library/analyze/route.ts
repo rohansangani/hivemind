@@ -5,6 +5,8 @@ import pg from "pg";
 import { readFile } from "fs/promises";
 import path from "path";
 
+export const maxDuration = 60;
+
 function cuid() {
   return crypto.randomUUID().replace(/-/g, "");
 }
