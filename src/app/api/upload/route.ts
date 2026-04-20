@@ -68,9 +68,9 @@ export async function POST(req: NextRequest) {
             tokenPayload: JSON.stringify({ userId: decoded.userId, orgId: decoded.orgId }),
           };
         },
-        onUploadCompleted: async ({ blob }) => {
-          console.log("Client upload completed:", blob.url);
-        },
+        // No onUploadCompleted — omitting it keeps the client in direct-response
+        // mode so upload() resolves immediately with blob metadata instead of
+        // waiting for a server-to-server callback that hangs the client forever.
       });
       return NextResponse.json(jsonResponse);
     } catch (err) {
