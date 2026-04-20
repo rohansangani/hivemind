@@ -286,7 +286,12 @@ For learnings: extract 3–6 SPECIFIC, CONCRETE items grounded in something expl
       }
     }
 
-    // Persist score fields and mark asset as analyzed
+    // Persist score fields — but don't overwrite brand review scores if they already exist.
+    // Brand review scores are comprehensive (0-100 per dimension); tone scores here are
+    // a rough proxy and should not overwrite a proper brand review.
+    const freshAsset = await db.contentAsset.findUnique({ where: { id: assetId }, select: { brandScore: true } });
+    const hasBrandReview = freshAsset?.brandScore != null;
+
     const analysisResult = analysis as {
       toneAnalysis?: { formalityLevel?: number; technicalLevel?: number; persuasivenessLevel?: number; description?: string };
       summary?: string;
@@ -301,10 +306,13 @@ For learnings: extract 3–6 SPECIFIC, CONCRETE items grounded in something expl
       where: { id: assetId },
       data: {
         scoreStatus: "analyzed",
-        brandScore: brandScore,
-        scoreVoice: tone.formalityLevel != null ? tone.formalityLevel * 10 : null,
-        scoreTerminology: tone.technicalLevel != null ? tone.technicalLevel * 10 : null,
-        scoreMessaging: tone.persuasivenessLevel != null ? tone.persuasivenessLevel * 10 : null,
+        // Only write tone-based scores when no brand review scores exist yet
+        ...(hasBrandReview ? {} : {
+          brandScore,
+          scoreVoice: tone.formalityLevel != null ? tone.formalityLevel * 10 : null,
+          scoreTerminology: tone.technicalLevel != null ? tone.technicalLevel * 10 : null,
+          scoreMessaging: tone.persuasivenessLevel != null ? tone.persuasivenessLevel * 10 : null,
+        }),
         aiSummary: (analysis as { summary?: string }).summary || null,
         scoreSuggestions: (analysis as { recommendations?: string[] }).recommendations || [],
       },
