@@ -54,6 +54,9 @@ function checkMagicBytes(ext: string, buf: Buffer): boolean {
   );
 }
 
+// Increase Next.js body size limit for this route (default is 1MB in some configs)
+export const config = { api: { bodyParser: { sizeLimit: "15mb" } } };
+
 export async function POST(req: NextRequest) {
   // -------------------------------------------------------------------------
   // 1. JWT authentication — return 401 for any token problem, not 500

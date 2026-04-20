@@ -122,10 +122,12 @@ export default function ContentLibraryPage() {
       const formData = new FormData(); formData.append("file", fileRef.current);
       try {
         const res = await fetch("/api/upload", { method: "POST", body: formData });
-        const data = await res.json();
-        if (data.success) { fileUrl = data.fileUrl; fileSize = data.fileSize; actualFileName = data.fileName; }
-        else { setUploadError(data.error || "File upload failed."); setUploading(false); setUploadProgress(""); return; }
-      } catch (e) { console.error(e); setUploadError("File upload failed. Please try again."); setUploading(false); setUploadProgress(""); return; }
+        let data: Record<string, unknown> = {};
+        const text = await res.text();
+        try { data = JSON.parse(text); } catch { console.error("Non-JSON upload response:", res.status, text.slice(0, 300)); setUploadError(`Upload failed (HTTP ${res.status}). ${res.status === 413 ? "File is too large — try a file under 4 MB." : "Check Vercel function logs for details."}`); setUploading(false); setUploadProgress(""); return; }
+        if (data.success) { fileUrl = data.fileUrl as string; fileSize = data.fileSize as number; actualFileName = data.fileName as string; }
+        else { setUploadError((data.error as string) || "File upload failed."); setUploading(false); setUploadProgress(""); return; }
+      } catch (e) { console.error(e); setUploadError("Network error during upload. Please try again."); setUploading(false); setUploadProgress(""); return; }
     }
     setUploadProgress("Saving...");
     try {
