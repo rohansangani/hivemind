@@ -1,3 +1,5 @@
+export const maxDuration = 60;
+
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { retrieveRelevantKnowledge } from "@/lib/knowledgeRetrieval";
