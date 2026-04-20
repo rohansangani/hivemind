@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { upload } from "@vercel/blob/client";
 import { useUser } from "@/lib/UserContext";
 
 interface Asset {
@@ -120,16 +121,31 @@ export default function ContentLibraryPage() {
     if (fileRef.current) {
       setUploadProgress("Uploading file...");
       const file = fileRef.current;
+      const SMALL_FILE_LIMIT = 4 * 1024 * 1024; // 4 MB — use server-side PUT below this
       try {
-        const res = await fetch(
-          `/api/upload?filename=${encodeURIComponent(file.name)}`,
-          { method: "PUT", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file }
-        );
-        let data: Record<string, unknown> = {};
-        try { data = await res.json(); } catch { /* empty body */ }
-        if (!res.ok) { setUploadError((data.error as string) || `Upload failed (${res.status})`); setUploading(false); setUploadProgress(""); return; }
-        fileUrl = data.fileUrl as string; fileSize = file.size; actualFileName = file.name;
-      } catch (e) { console.error(e); setUploadError("Upload failed. Please try again."); setUploading(false); setUploadProgress(""); return; }
+        if (file.size <= SMALL_FILE_LIMIT) {
+          // ── Small file: stream through our API route ──────────────────────
+          const res = await fetch(
+            `/api/upload?filename=${encodeURIComponent(file.name)}`,
+            { method: "PUT", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file }
+          );
+          let data: Record<string, unknown> = {};
+          try { data = await res.json(); } catch { /* empty body */ }
+          if (!res.ok) { setUploadError((data.error as string) || `Upload failed (${res.status})`); setUploading(false); setUploadProgress(""); return; }
+          fileUrl = data.fileUrl as string; fileSize = file.size; actualFileName = file.name;
+        } else {
+          // ── Large file: browser uploads directly to Vercel Blob CDN ──────
+          // Bypasses the 4.5 MB serverless body limit entirely.
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 120000); // 2-min safety timeout
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const blob = await upload(file.name, file, { access: "public", handleUploadUrl: "/api/upload", ...(({ abortSignal: controller.signal }) as any) });
+            clearTimeout(timeout);
+            fileUrl = blob.url; fileSize = file.size; actualFileName = file.name;
+          } catch (e) { clearTimeout(timeout); throw e; }
+        }
+      } catch (e) { console.error(e); setUploadError((e as Error)?.message || "Upload failed. Please try again."); setUploading(false); setUploadProgress(""); return; }
     }
     setUploadProgress("Saving...");
     try {
