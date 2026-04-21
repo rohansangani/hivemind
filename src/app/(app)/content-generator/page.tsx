@@ -250,10 +250,15 @@ export default function ContentGeneratorPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, outputs, focusKeyword, secondaryKeywords, metaTitle, metaDescription]);
 
-  // Auto-populate focus keyword from topic
+  // Auto-populate focus keyword from topic — strip instruction prefixes first
   useEffect(() => {
     if (outputs && topic.trim() && !focusKeyword) {
-      setFocusKeyword(topic.trim().split(/\s+/).slice(0, 4).join(" "));
+      const stripped = topic.trim()
+        // Remove leading instruction verbs + optional format noun + optional preposition
+        .replace(/^(write|create|generate|draft|make|produce|build)\s+(a|an|the)?\s*(blog\s*post|blog|linkedin\s*post|tweet|twitter\s*post|article|post|email|content|copy|piece|summary|outline|script|press\s*release|one[-\s]pager|landing\s*page|ad\s*copy)?\s*(about|for|on|regarding|covering|titled|called)?\s*/i, "")
+        .trim();
+      const words = (stripped || topic.trim()).split(/\s+/).slice(0, 5).join(" ");
+      setFocusKeyword(words);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [outputs]);
