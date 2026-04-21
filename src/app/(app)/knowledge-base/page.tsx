@@ -676,7 +676,7 @@ export default function KnowledgeBasePage() {
                       <button onClick={synthesizeSkills} disabled={synthesizing} className="w-full h-8 bg-gradient-to-r from-violet-500 to-indigo-600 text-white rounded-lg text-[11px] font-medium flex items-center justify-center gap-1.5 hover:opacity-90 disabled:opacity-60">
                         {synthesizing
                           ? <><span className="w-3 h-3 border-[1.5px] border-white/30 border-t-white rounded-full animate-spin" />Synthesizing...</>
-                          : <><svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="M13.5 8A5.5 5.5 0 112.5 8" stroke="white" strokeWidth="1.4" strokeLinecap="round"/><path d="M13.5 4v4h-4" stroke="white" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>Refresh learned</>
+                          : <><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M13.5 8A5.5 5.5 0 1 1 2.5 8" stroke="white" strokeWidth="1.4" strokeLinecap="round"/><path d="M13.5 4v4h-4" stroke="white" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>Refresh learned</>
                         }
                       </button>
                     </div>

@@ -83,17 +83,17 @@ function NavIcon({ icon, active }: { icon: string; active: boolean }) {
 
 function SunIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <circle cx="8" cy="8" r="3" stroke="currentColor" strokeWidth="1.3" />
-      <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M12.95 3.05l-1.41 1.41M4.46 11.54l-1.41 1.41" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M17.66 6.34l-1.41 1.41M4.93 19.07l1.41-1.41" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   );
 }
 
 function MoonIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <path d="M13.5 10A6 6 0 016 2.5a6 6 0 100 11 6 6 0 007.5-3.5z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -119,15 +119,11 @@ export default function Sidebar({ userName, userRole, onClose }: SidebarProps) {
 
   function toggleTheme() {
     const html = document.documentElement;
-    if (isDark) {
-      html.classList.remove("dark");
-      html.classList.add("light");
-      setIsDark(false);
-    } else {
-      html.classList.remove("light");
-      html.classList.add("dark");
-      setIsDark(true);
-    }
+    const newIsDark = !isDark;
+    html.classList.remove("dark", "light");
+    html.classList.add(newIsDark ? "dark" : "light");
+    setIsDark(newIsDark);
+    try { localStorage.setItem("hm-theme", newIsDark ? "dark" : "light"); } catch {}
   }
 
   const getInitials = (name: string) =>

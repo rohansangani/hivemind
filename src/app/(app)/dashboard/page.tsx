@@ -211,10 +211,9 @@ export default function DashboardPage() {
             title="Refresh dashboard"
             className="w-[34px] h-[34px] rounded-lg border border-[var(--hm-border)] flex items-center justify-center hover:bg-[var(--hm-bg-secondary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex-shrink-0"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className={refreshing ? "animate-spin" : ""} stroke="var(--hm-text-secondary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="23 4 23 10 17 10" />
-              <polyline points="1 20 1 14 7 14" />
-              <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className={refreshing ? "animate-spin" : ""} style={{ color: "var(--hm-text-secondary)" }}>
+              <path d="M13.5 8A5.5 5.5 0 1 1 2.5 8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+              <path d="M13.5 3.5v4h-4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
 
