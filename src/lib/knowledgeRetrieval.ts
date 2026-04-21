@@ -237,7 +237,7 @@ export async function retrieveRelevantKnowledge(
     searchDocuments?: boolean;
   }
 ): Promise<RetrievedKnowledge> {
-  const maxItems = options?.maxItems ?? 35;
+  const maxItems = options?.maxItems ?? 12;
   const queryTokens = tokenize(query);
 
   // ── Fetch all raw data in parallel ─────────────────────

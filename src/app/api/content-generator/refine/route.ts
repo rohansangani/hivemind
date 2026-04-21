@@ -69,8 +69,8 @@ Return ONLY the refined content — no explanations, no preamble, no meta-commen
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
       body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: 4096,
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 3000,
         system: systemPrompt,
         messages: [{ role: "user", content: `Original content:\n${content}\n\nInstruction to apply: ${instruction}` }],
       }),
