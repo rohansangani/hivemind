@@ -238,7 +238,8 @@ export async function POST(req: NextRequest) {
   try {
     const token = req.cookies.get("hm-token")?.value;
     if (!token) return authError();
-    const decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as { orgId: string };
+    const decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as { orgId: string; role?: string };
+    if (decoded.role === "viewer") return NextResponse.json({ error: "Read-only access" }, { status: 403 });
 
     const formData = await req.formData();
     const files = formData.getAll("file") as File[];
@@ -284,7 +285,8 @@ export async function DELETE(req: NextRequest) {
   try {
     const token = req.cookies.get("hm-token")?.value;
     if (!token) return authError();
-    const decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as { orgId: string };
+    const decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as { orgId: string; role?: string };
+    if (decoded.role === "viewer") return NextResponse.json({ error: "Read-only access" }, { status: 403 });
 
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");

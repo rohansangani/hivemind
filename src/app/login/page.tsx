@@ -10,6 +10,7 @@ export default function LoginPage() {
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [emailError, setEmailError] = useState("");
   const [passwordError, setPasswordError] = useState("");
@@ -98,7 +99,11 @@ export default function LoginPage() {
         return;
       }
 
-      if (data.user.onboarded) {
+      if (data.joinedOrg) {
+        // Joined an existing workspace as viewer — show brief message then redirect
+        setSuccessMessage(`You've joined ${data.orgName} as a viewer.`);
+        setTimeout(() => router.push("/dashboard"), 1800);
+      } else if (data.user.onboarded) {
         router.push("/dashboard");
       } else {
         router.push("/welcome");
@@ -249,6 +254,13 @@ export default function LoginPage() {
             <span className="text-xs text-[var(--hm-text-tertiary)]">or</span>
             <div className="flex-1 h-px bg-[var(--hm-border)]" />
           </div>
+
+          {/* Success message (e.g. joined existing workspace) */}
+          {successMessage && (
+            <div role="status" className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700 animate-fade-in-fast">
+              {successMessage} Redirecting…
+            </div>
+          )}
 
           {/* Error message */}
           {error && (

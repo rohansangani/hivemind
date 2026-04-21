@@ -115,6 +115,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <span className="text-[15px] font-semibold text-[var(--hm-text)] tracking-wide">HiveMind</span>
           </div>
 
+          {/* Viewer read-only notice */}
+          {user.role === "viewer" && (
+            <div className="flex-shrink-0 flex items-center gap-2 px-4 py-2 bg-amber-50 border-b border-amber-200 text-[12px] text-amber-700 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-400">
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.3" />
+                <path d="M8 5v3.5M8 10.5v.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+              </svg>
+              You have <strong className="font-semibold">viewer access</strong> — you can browse content but cannot make changes.
+            </div>
+          )}
+
           {/* Desktop breadcrumb header */}
           <Breadcrumb />
 

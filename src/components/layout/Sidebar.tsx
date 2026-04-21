@@ -298,7 +298,13 @@ export default function Sidebar({ userName, userRole, onClose }: SidebarProps) {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-[12px] font-medium text-[var(--hm-text)] truncate">{userName}</p>
-              <p className="text-[10px] text-[var(--hm-text-tertiary)] capitalize">{userRole}</p>
+              {userRole === "viewer" ? (
+                <span className="inline-block text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400">
+                  Viewer
+                </span>
+              ) : (
+                <p className="text-[10px] text-[var(--hm-text-tertiary)] capitalize">{userRole}</p>
+              )}
             </div>
             <button
               onClick={toggleTheme}

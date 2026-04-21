@@ -25,11 +25,11 @@ const ALL_ALLOWED_MIMES = [
   "video/mp4", "application/octet-stream",
 ];
 
-function verifyToken(req: NextRequest): { userId: string; orgId: string } | null {
+function verifyToken(req: NextRequest): { userId: string; orgId: string; role?: string } | null {
   const token = req.cookies.get("hm-token")?.value;
   if (!token) return null;
   try {
-    return jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as { userId: string; orgId: string };
+    return jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as { userId: string; orgId: string; role?: string };
   } catch {
     return null;
   }
@@ -52,6 +52,7 @@ export async function POST(req: NextRequest) {
       onBeforeGenerateToken: async () => {
         const decoded = verifyToken(req);
         if (!decoded) throw new Error("Not authenticated");
+        if (decoded.role === "viewer") throw new Error("Read-only access");
         return {
           allowedContentTypes: ALL_ALLOWED_MIMES,
           tokenPayload: JSON.stringify({ userId: decoded.userId, orgId: decoded.orgId }),
@@ -61,7 +62,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(jsonResponse);
   } catch (err) {
     const msg = (err as Error).message;
-    return NextResponse.json({ error: msg }, { status: msg === "Not authenticated" ? 401 : 400 });
+    return NextResponse.json({ error: msg }, { status: msg === "Not authenticated" ? 401 : msg === "Read-only access" ? 403 : 400 });
   }
 }
 
@@ -72,6 +73,7 @@ export async function POST(req: NextRequest) {
 export async function PUT(req: NextRequest) {
   const decoded = verifyToken(req);
   if (!decoded) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  if (decoded.role === "viewer") return NextResponse.json({ error: "Read-only access" }, { status: 403 });
 
   const { searchParams } = new URL(req.url);
   const filename = searchParams.get("filename");

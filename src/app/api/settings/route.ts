@@ -56,6 +56,8 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
     }
 
+    if (decoded.role === "viewer") return NextResponse.json({ error: "Read-only access" }, { status: 403 });
+
     const body = await req.json();
     const { action } = body;
 

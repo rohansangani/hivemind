@@ -50,14 +50,15 @@ export async function POST(req: NextRequest) {
 
     const { org, user } = await db.$transaction(async (tx) => {
       if (matchingOrg) {
-        // Auto-join the existing org as a member
+        // Auto-join the existing org as a viewer (read-only)
         const user = await tx.user.create({
           data: {
             email,
             name,
             password: hashedPassword,
-            role: "member",
+            role: "viewer",
             organizationId: matchingOrg.id,
+            onboarded: true, // skip setup wizard — joining an existing org
           },
         });
         return { org: matchingOrg, user };
@@ -96,6 +97,7 @@ export async function POST(req: NextRequest) {
         onboarded: user.onboarded,
         organizationId: org.id,
       },
+      ...(matchingOrg ? { joinedOrg: true, orgName: org.name } : {}),
     });
 
     response.cookies.set("hm-token", token, {

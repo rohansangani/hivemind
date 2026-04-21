@@ -9,7 +9,8 @@ export async function PUT(req: NextRequest) {
   try {
     const token = req.cookies.get("hm-token")?.value;
     if (!token) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-    const decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as { orgId: string };
+    const decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as { orgId: string; role?: string };
+    if (decoded.role === "viewer") return NextResponse.json({ error: "Read-only access" }, { status: 403 });
 
     const { id, name, contentType, productTags, marketTags } = await req.json();
     if (!id) return NextResponse.json({ error: "Asset ID required" }, { status: 400 });
@@ -33,7 +34,8 @@ export async function DELETE(req: NextRequest) {
   try {
     const token = req.cookies.get("hm-token")?.value;
     if (!token) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-    const decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as { orgId: string };
+    const decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as { orgId: string; role?: string };
+    if (decoded.role === "viewer") return NextResponse.json({ error: "Read-only access" }, { status: 403 });
 
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");

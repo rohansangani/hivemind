@@ -90,7 +90,8 @@ export async function POST(req: NextRequest) {
   try {
     const token = req.cookies.get("hm-token")?.value;
     if (!token) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-    const decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as { userId: string; orgId: string };
+    const decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as { userId: string; orgId: string; role?: string };
+    if (decoded.role === "viewer") return NextResponse.json({ error: "Read-only access" }, { status: 403 });
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) return NextResponse.json({ error: "Anthropic API key required" }, { status: 400 });
