@@ -189,6 +189,9 @@ export default function ContentGeneratorPage() {
   const [incorporatingIdx, setIncorporatingIdx] = useState<number | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
+  // Web search toggle
+  const [webSearch, setWebSearch] = useState(false);
+
   // Improve bar
   const [improveInput, setImproveInput] = useState("");
   const [improving, setImproving] = useState(false);
@@ -377,7 +380,7 @@ export default function ContentGeneratorPage() {
       const res = await fetch("/api/content-generator", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic, formats: selectedFormats, targetProduct, targetMarket, targetPersona, positionAgainst, toneOverride, keyPoints, focusKeyword: focusKeyword || null, secondaryKeywords: secondaryKeywords || [] }),
+        body: JSON.stringify({ topic, formats: selectedFormats, targetProduct, targetMarket, targetPersona, positionAgainst, toneOverride, keyPoints, focusKeyword: focusKeyword || null, secondaryKeywords: secondaryKeywords || [], webSearch }),
       });
       const text = await res.text();
       let data: Record<string, unknown>;
@@ -807,6 +810,23 @@ export default function ContentGeneratorPage() {
                   </div>
                 )}
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setWebSearch(v => !v)}
+                    title={webSearch ? "Web search on — real-time context will be included" : "Enable web search for real-time context"}
+                    className={"h-[46px] px-4 rounded-lg border text-[12px] font-medium flex items-center gap-2 transition-all flex-shrink-0 " +
+                      (webSearch
+                        ? "border-[#4361ee] bg-[var(--hm-accent-light)] text-[#4361ee]"
+                        : "border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[#4361ee]/50 hover:text-[#4361ee]"
+                      )}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                      <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.3" />
+                      <ellipse cx="8" cy="8" rx="2.5" ry="6" stroke="currentColor" strokeWidth="1.1" />
+                      <path d="M2 8h12" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+                    </svg>
+                    {webSearch ? "Web on" : "Web search"}
+                  </button>
                   <button onClick={handleGenerate} disabled={generating || !topic.trim() || selectedFormats.length === 0}
                     aria-label="Generate content"
                     className="h-[46px] w-full sm:w-auto px-8 bg-[#4361ee] text-white rounded-lg text-[14px] font-medium hover:opacity-90 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">

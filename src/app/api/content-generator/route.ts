@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { retrieveRelevantKnowledge } from "@/lib/knowledgeRetrieval";
 import { buildGroundedSystemPrompt, buildGroundedContext } from "@/lib/groundingEngine";
 import { resolveEntities } from "@/lib/intentEngine";
+import { searchWeb, buildWebSearchContext } from "@/lib/webSearch";
 import jwt from "jsonwebtoken";
 
 export async function POST(req: NextRequest) {
@@ -20,7 +21,7 @@ export async function POST(req: NextRequest) {
     ) as { userId: string; orgId: string };
 
     const body = await req.json();
-    const { topic, formats, targetProduct, targetMarket, targetPersona, positionAgainst, toneOverride, keyPoints, focusKeyword, secondaryKeywords, length } = body;
+    const { topic, formats, targetProduct, targetMarket, targetPersona, positionAgainst, toneOverride, keyPoints, focusKeyword, secondaryKeywords, length, webSearch } = body;
 
     if (!topic || typeof topic !== "string" || !topic.trim()) {
       return NextResponse.json({ error: "topic is required" }, { status: 400 });
@@ -66,12 +67,23 @@ export async function POST(req: NextRequest) {
       searchDocuments: true,
     });
 
+    // Optional: fetch real-time web search context
+    let webSearchContext = "";
+    if (webSearch) {
+      try {
+        const webResults = await searchWeb(topic, 5);
+        webSearchContext = buildWebSearchContext(webResults);
+      } catch (e) {
+        console.warn("Web search failed (non-fatal):", e instanceof Error ? e.message : e);
+      }
+    }
+
     // Generate content for all formats in parallel (was sequential — 3 formats × 40s = 120s → 504)
     const outputs: Record<string, { content: string; wordCount: number; score: number; scoreBreakdown: Record<string, number> }> = {};
 
     const formatResults = await Promise.all(
       formats.map(format =>
-        generateForFormat(format, topic, knowledge, toneOverride, keyPoints, brandProfile, effectiveProduct, focusKeyword, secondaryKeywords, length)
+        generateForFormat(format, topic, knowledge, toneOverride, keyPoints, brandProfile, effectiveProduct, focusKeyword, secondaryKeywords, length, webSearchContext)
       )
     );
 
@@ -157,7 +169,8 @@ async function generateForFormat(
   effectiveProduct: string | null,
   focusKeyword?: string | null,
   secondaryKeywords?: string[],
-  length?: string | null
+  length?: string | null,
+  webSearchContext?: string
 ): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
 
@@ -173,6 +186,10 @@ KEYWORD TARGETING:
 
       const lengthInstruction = length && length !== "default" ? `Content length preference: ${length}.` : "";
 
+      const webSearchSection = webSearchContext
+        ? `${webSearchContext}\n\nWhen referencing web sources, cite them as [Web N] inline.`
+        : "";
+
       const systemPrompt = buildGroundedSystemPrompt(
         "a world-class content marketing writer",
         knowledge,
@@ -183,12 +200,14 @@ ${keywordInstructions}
 ${toneOverride && toneOverride !== "default" ? "Tone adjustment: " + toneOverride + "." : ""}
 ${lengthInstruction}
 ${keyPoints ? "Key points to include: " + keyPoints + "." : ""}
+${webSearchSection}
 
 CONTENT GENERATION RULES:
-- Use ONLY proof points, statistics, features, and messaging patterns from the VERIFIED KNOWLEDGE BASE above
-- Every factual claim must come from the knowledge base — flag anything without a source with ⚠
+- Prioritise verified brand proof points from the KNOWLEDGE BASE for company-specific claims
+- You may weave in real-world context, industry trends, and statistics from the WEB SEARCH RESULTS (if present)
+- Cite web sources inline as [Web N] when you use them
+- Flag any claim you cannot source from either the knowledge base or web results with ⚠
 - Mirror the brand voice and preferred language exactly as specified
-- DO NOT invent capabilities, metrics, or customer outcomes not present in the knowledge base
 - Return ONLY the finished content — no meta-commentary, no preamble`
       );
 
