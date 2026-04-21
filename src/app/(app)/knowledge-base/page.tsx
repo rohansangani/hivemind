@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useUser } from "@/lib/UserContext";
 
 interface Skill { id: string; name: string; category: string; linkedFeature: string; description: string; instructions: string; isActive: boolean; }
@@ -71,6 +71,10 @@ export default function KnowledgeBasePage() {
   const [showAddSkill, setShowAddSkill] = useState(false);
   const [newSkill, setNewSkill] = useState({ name: "", category: "writing", linkedFeature: "content_generator", description: "", instructions: "" });
   const [seeded, setSeeded] = useState(false);
+  const [importingSkills, setImportingSkills] = useState(false);
+  const [importResult, setImportResult] = useState<{ imported: number; skipped: number } | null>(null);
+  const [importError, setImportError] = useState("");
+  const skillImportRef = useRef<HTMLInputElement>(null);
   const [aiLoading, setAiLoading] = useState<string | null>(null);
   const [aiError, setAiError] = useState("");
   // Full auto-populate
@@ -124,6 +128,85 @@ export default function KnowledgeBasePage() {
   };
 
   const seedDefaults = async () => { setSeeded(true); for (const s of DEFAULTS) { await fetch("/api/skills", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: s.name, category: s.category, linkedFeature: s.feature, description: s.desc, instructions: s.instructions }) }); } fetchAll(); };
+
+  const parseSkillsMd = (text: string): Array<{ name: string; category: string; linkedFeature: string; description: string; instructions: string }> => {
+    const catMap: Record<string, string> = { "writing": "writing", "brand": "brand_design", "brand & design": "brand_design", "ai behavior": "ai_behavior", "seo": "seo" };
+    const featureMap: Record<string, string> = { "content generator": "content_generator", "brand scoring": "brand_scoring", "ai assistant": "ai_assistant", "all features": "all", "all": "all" };
+    const parsed: Array<{ name: string; category: string; linkedFeature: string; description: string; instructions: string }> = [];
+    const lines = text.split("\n");
+    let currentCategory = "writing";
+    let currentFeature = "content_generator";
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i].trim();
+      // ## section headers set category context
+      if (line.startsWith("## ")) {
+        const h = line.slice(3).toLowerCase();
+        if (h.includes("learned") || h.includes("synthesized")) { currentCategory = "__skip__"; i++; continue; }
+        for (const [k, v] of Object.entries(catMap)) { if (h.includes(k)) { currentCategory = v; break; } }
+        i++; continue;
+      }
+      // # top-level heading — single-skill format: treat as skill name
+      if (line.startsWith("# ") && !line.includes("—") && !line.includes("Skills")) {
+        const name = line.slice(2).trim();
+        let description = ""; let feature = currentFeature; const instrLines: string[] = []; i++;
+        while (i < lines.length && lines[i].trim() === "") i++;
+        if (i < lines.length && lines[i].trim().startsWith("> ")) { description = lines[i].trim().slice(2).trim(); i++; }
+        while (i < lines.length && lines[i].trim() === "") i++;
+        while (i < lines.length) {
+          const l = lines[i].trim();
+          if (l.startsWith("**Category:**")) { const v = l.slice("**Category:**".length).trim().toLowerCase(); for (const [k, cv] of Object.entries(catMap)) { if (v.includes(k)) { currentCategory = cv; break; } } i++; continue; }
+          if (l.startsWith("**Feature:**")) { const v = l.slice("**Feature:**".length).trim().toLowerCase(); for (const [k, fv] of Object.entries(featureMap)) { if (v.includes(k)) { feature = fv; break; } } i++; continue; }
+          if (l === "---" || l.startsWith("# ") || l.startsWith("## ") || l.startsWith("### ")) break;
+          instrLines.push(lines[i]); i++;
+        }
+        const instructions = instrLines.join("\n").trim();
+        if (name && instructions && currentCategory !== "__skip__") parsed.push({ name, category: currentCategory, linkedFeature: feature, description, instructions });
+        continue;
+      }
+      // ### skill headings
+      if (line.startsWith("### ")) {
+        const name = line.slice(4).trim();
+        if (!name || currentCategory === "__skip__") { i++; continue; }
+        let description = ""; let feature = currentFeature; const instrLines: string[] = []; i++;
+        while (i < lines.length && lines[i].trim() === "") i++;
+        if (i < lines.length && lines[i].trim().startsWith("> ")) { description = lines[i].trim().slice(2).trim(); i++; }
+        while (i < lines.length && lines[i].trim() === "") i++;
+        if (i < lines.length && lines[i].trim().startsWith("**Feature:**")) { const v = lines[i].trim().slice("**Feature:**".length).trim().toLowerCase(); for (const [k, fv] of Object.entries(featureMap)) { if (v.includes(k)) { feature = fv; break; } } i++; }
+        while (i < lines.length && lines[i].trim() === "") i++;
+        while (i < lines.length) {
+          const l = lines[i].trim();
+          if (l === "---" || l.startsWith("## ") || l.startsWith("### ")) break;
+          instrLines.push(lines[i]); i++;
+        }
+        const instructions = instrLines.join("\n").trim();
+        if (name && instructions) parsed.push({ name, category: currentCategory, linkedFeature: feature, description, instructions });
+        continue;
+      }
+      i++;
+    }
+    return parsed;
+  };
+
+  const importSkillsMd = async (file: File) => {
+    setImportingSkills(true); setImportError(""); setImportResult(null);
+    try {
+      const text = await file.text();
+      const parsed = parseSkillsMd(text);
+      if (!parsed.length) { setImportError("No skills found in file. Make sure it follows the HiveMind skill format."); return; }
+      const existingNames = new Set(skills.map(s => s.name.toLowerCase()));
+      let imported = 0; let skipped = 0;
+      for (const s of parsed) {
+        if (existingNames.has(s.name.toLowerCase())) { skipped++; continue; }
+        const res = await fetch("/api/skills", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(s) });
+        if (res.ok) { imported++; existingNames.add(s.name.toLowerCase()); } else skipped++;
+      }
+      setImportResult({ imported, skipped });
+      fetchAll();
+      setTimeout(() => setImportResult(null), 4000);
+    } catch (e) { setImportError(e instanceof Error ? e.message : "Import failed"); }
+    finally { setImportingSkills(false); if (skillImportRef.current) skillImportRef.current.value = ""; }
+  };
   const addSkill = async () => { if (!newSkill.name || !newSkill.instructions) return; setSaving(true); await fetch("/api/skills", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(newSkill) }); setShowAddSkill(false); setNewSkill({ name: "", category: "writing", linkedFeature: "content_generator", description: "", instructions: "" }); fetchAll(); setSaving(false); setSaved("Skill added!"); setTimeout(() => setSaved(""), 2000); };
   const updateSkill = async () => { if (!editingSkill) return; setSaving(true); await fetch("/api/skills", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: editingSkill.id, name: editingSkill.name, description: editingSkill.description, instructions: editingSkill.instructions, isActive: editingSkill.isActive }) }); setEditingSkill(null); fetchAll(); setSaving(false); setSaved("Skill updated!"); setTimeout(() => setSaved(""), 2000); };
   const delSkill = async (id: string) => { await fetch("/api/skills?id=" + id, { method: "DELETE" }); fetchAll(); if (editingSkill?.id === id) setEditingSkill(null); };
@@ -629,14 +712,34 @@ export default function KnowledgeBasePage() {
                     <p className="text-[12px] text-[var(--hm-text-tertiary)] mt-0.5">Instructions HiveMind follows across all features</p>
                   </div>
                   <div className="flex items-center gap-2">
+                    {/* Hidden file input for .md import */}
+                    <input ref={skillImportRef} type="file" accept=".md,text/markdown" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) importSkillsMd(f); }} />
                     <button onClick={downloadAllMd} className="h-8 px-3 border border-[var(--hm-border)] rounded-lg text-[12px] flex items-center gap-1.5 hover:border-[#4361ee] hover:text-[#4361ee] transition-all">
                       <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M8 2v8M5 7l3 3 3-3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/><path d="M2 13h12" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>
-                      Export all .md
+                      Export .md
+                    </button>
+                    <button onClick={() => skillImportRef.current?.click()} disabled={importingSkills} className="h-8 px-3 border border-[var(--hm-border)] rounded-lg text-[12px] flex items-center gap-1.5 hover:border-[#4361ee] hover:text-[#4361ee] transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                      {importingSkills
+                        ? <><span className="w-3 h-3 border-[1.5px] border-current/30 border-t-current rounded-full animate-spin" />Importing…</>
+                        : <><svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M8 14V6M5 9l3-3 3 3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/><path d="M2 13h12" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>Import .md</>
+                      }
                     </button>
                     <button onClick={() => { setShowAddSkill(true); setEditingSkill(null); }} className="h-8 px-3.5 bg-[#4361ee] text-white rounded-lg text-[12px] font-medium flex items-center gap-1.5 hover:opacity-90 active:scale-95 transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-2">+ Add skill</button>
                   </div>
                 </div>
 
+                {importResult && (
+                  <div className="mb-3 p-3 bg-emerald-50 border border-emerald-100 rounded-lg flex items-center gap-2">
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="#10b981" strokeWidth="1.2"/><path d="M5 8l2 2 4-4" stroke="#10b981" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                    <p className="text-[11px] text-emerald-700">{importResult.imported} skill{importResult.imported !== 1 ? "s" : ""} imported{importResult.skipped > 0 ? ` · ${importResult.skipped} skipped (already exist)` : ""}.</p>
+                  </div>
+                )}
+                {importError && (
+                  <div className="mb-3 p-3 bg-red-50 border border-red-100 rounded-lg flex items-center justify-between gap-2">
+                    <p className="text-[11px] text-red-600">{importError}</p>
+                    <button onClick={() => setImportError("")} className="text-red-400 hover:text-red-600 text-[12px]">✕</button>
+                  </div>
+                )}
                 {synthResult && (
                   <div className="mb-3 p-3 bg-emerald-50 border border-emerald-100 rounded-lg flex items-center gap-2">
                     <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="#10b981" strokeWidth="1.2"/><path d="M5 8l2 2 4-4" stroke="#10b981" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
