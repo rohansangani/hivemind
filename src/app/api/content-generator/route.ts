@@ -66,19 +66,20 @@ export async function POST(req: NextRequest) {
       searchDocuments: true,
     });
 
-    // Generate content for each format
+    // Generate content for all formats in parallel (was sequential — 3 formats × 40s = 120s → 504)
     const outputs: Record<string, { content: string; wordCount: number; score: number; scoreBreakdown: Record<string, number> }> = {};
 
-    for (const format of formats) {
-      const content = await generateForFormat(format, topic, knowledge, toneOverride, keyPoints, brandProfile, effectiveProduct, focusKeyword, secondaryKeywords, length);
+    const formatResults = await Promise.all(
+      formats.map(format =>
+        generateForFormat(format, topic, knowledge, toneOverride, keyPoints, brandProfile, effectiveProduct, focusKeyword, secondaryKeywords, length)
+      )
+    );
+
+    for (let i = 0; i < formats.length; i++) {
+      const content = formatResults[i];
       const wordCount = content.split(/\s+/).length;
       const score = generateScore();
-      outputs[format] = {
-        content,
-        wordCount,
-        score: score.overall,
-        scoreBreakdown: score.breakdown,
-      };
+      outputs[formats[i]] = { content, wordCount, score: score.overall, scoreBreakdown: score.breakdown };
     }
 
     // Save to database
@@ -191,6 +192,15 @@ CONTENT GENERATION RULES:
 - Return ONLY the finished content — no meta-commentary, no preamble`
       );
 
+      // Use format-appropriate token budget — short formats don't need 4096 tokens
+      const maxTokensForFormat: Record<string, number> = {
+        twitter: 200, ad_copy: 400, email_outreach: 500,
+        linkedin: 700, ceo_linkedin: 700, one_pager: 800,
+        email_marketing: 900, press_release: 1200, landing_page: 1500,
+        blog: 3000, thought_leadership: 4000,
+      };
+      const maxTokens = maxTokensForFormat[format] ?? 1500;
+
       const response = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
@@ -200,7 +210,7 @@ CONTENT GENERATION RULES:
         },
         body: JSON.stringify({
           model: "claude-sonnet-4-6",
-          max_tokens: 4096,
+          max_tokens: maxTokens,
           system: systemPrompt,
           messages: [{ role: "user", content: `Write a ${format.replace(/_/g, " ")} about: ${topic}` }],
         }),
