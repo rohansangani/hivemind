@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { retrieveRelevantKnowledge } from "@/lib/knowledgeRetrieval";
 import { buildGroundedSystemPrompt, buildGroundedContext } from "@/lib/groundingEngine";
 import { resolveEntities } from "@/lib/intentEngine";
-import { searchWeb, buildWebSearchContext } from "@/lib/webSearch";
+import { ANTHROPIC_WEB_SEARCH_TOOL, ANTHROPIC_WEB_SEARCH_BETA } from "@/lib/webSearch";
 import jwt from "jsonwebtoken";
 
 export async function POST(req: NextRequest) {
@@ -67,23 +67,12 @@ export async function POST(req: NextRequest) {
       searchDocuments: true,
     });
 
-    // Optional: fetch real-time web search context
-    let webSearchContext = "";
-    if (webSearch) {
-      try {
-        const webResults = await searchWeb(topic, 5);
-        webSearchContext = buildWebSearchContext(webResults);
-      } catch (e) {
-        console.warn("Web search failed (non-fatal):", e instanceof Error ? e.message : e);
-      }
-    }
-
     // Generate content for all formats in parallel (was sequential — 3 formats × 40s = 120s → 504)
     const outputs: Record<string, { content: string; wordCount: number; score: number; scoreBreakdown: Record<string, number> }> = {};
 
     const formatResults = await Promise.all(
       formats.map(format =>
-        generateForFormat(format, topic, knowledge, toneOverride, keyPoints, brandProfile, effectiveProduct, focusKeyword, secondaryKeywords, length, webSearchContext)
+        generateForFormat(format, topic, knowledge, toneOverride, keyPoints, brandProfile, effectiveProduct, focusKeyword, secondaryKeywords, length, !!webSearch)
       )
     );
 
@@ -170,7 +159,7 @@ async function generateForFormat(
   focusKeyword?: string | null,
   secondaryKeywords?: string[],
   length?: string | null,
-  webSearchContext?: string
+  useWebSearch?: boolean
 ): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
 
@@ -186,10 +175,6 @@ KEYWORD TARGETING:
 
       const lengthInstruction = length && length !== "default" ? `Content length preference: ${length}.` : "";
 
-      const webSearchSection = webSearchContext
-        ? `${webSearchContext}\n\nWhen referencing web sources, cite them as [Web N] inline.`
-        : "";
-
       const systemPrompt = buildGroundedSystemPrompt(
         "a world-class content marketing writer",
         knowledge,
@@ -200,13 +185,11 @@ ${keywordInstructions}
 ${toneOverride && toneOverride !== "default" ? "Tone adjustment: " + toneOverride + "." : ""}
 ${lengthInstruction}
 ${keyPoints ? "Key points to include: " + keyPoints + "." : ""}
-${webSearchSection}
+${useWebSearch ? "You have access to a web search tool — use it to find current industry statistics, news, and trends relevant to the topic. Cite web sources inline." : ""}
 
 CONTENT GENERATION RULES:
-- Prioritise verified brand proof points from the KNOWLEDGE BASE for company-specific claims
-- You may weave in real-world context, industry trends, and statistics from the WEB SEARCH RESULTS (if present)
-- Cite web sources inline as [Web N] when you use them
-- Flag any claim you cannot source from either the knowledge base or web results with ⚠
+- Use brand proof points, features, and messaging from the VERIFIED KNOWLEDGE BASE for company-specific claims
+- Flag any company-specific claim you cannot source from the knowledge base with ⚠
 - Mirror the brand voice and preferred language exactly as specified
 - Return ONLY the finished content — no meta-commentary, no preamble`
       );
@@ -226,12 +209,15 @@ CONTENT GENERATION RULES:
           "Content-Type": "application/json",
           "x-api-key": apiKey,
           "anthropic-version": "2023-06-01",
+          ...(useWebSearch ? { "anthropic-beta": ANTHROPIC_WEB_SEARCH_BETA } : {}),
         },
         body: JSON.stringify({
-          model: "claude-haiku-4-5-20251001",
+          // Web search requires Sonnet or above; use Sonnet when enabled
+          model: useWebSearch ? "claude-sonnet-4-6" : "claude-haiku-4-5-20251001",
           max_tokens: maxTokens,
           system: systemPrompt,
           messages: [{ role: "user", content: `Write a ${format.replace(/_/g, " ")} about: ${topic}` }],
+          ...(useWebSearch ? { tools: [ANTHROPIC_WEB_SEARCH_TOOL] } : {}),
         }),
       });
 
@@ -239,8 +225,13 @@ CONTENT GENERATION RULES:
       if (!response.ok) {
         throw new Error(data.error?.message || `Claude API error ${response.status}`);
       }
-      if (data.content?.[0]?.text) {
-        return data.content[0].text;
+      // Response may contain multiple content blocks (web_search_tool_use, web_search_tool_result, text)
+      // Extract the final text block
+      const textBlock = Array.isArray(data.content)
+        ? data.content.find((b: { type: string }) => b.type === "text")
+        : null;
+      if (textBlock?.text) {
+        return textBlock.text;
       }
     } catch (e) {
       console.error("Anthropic API error:", e);
