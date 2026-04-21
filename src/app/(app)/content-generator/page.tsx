@@ -69,7 +69,12 @@ async function callRefine(payload: object): Promise<{ content: string; wordCount
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  return res.json();
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { error: res.ok ? "Unexpected response from server" : `Server error (${res.status}) — please try again` };
+  }
 }
 
 function timeAgo(date: string) {
@@ -374,17 +379,19 @@ export default function ContentGeneratorPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ topic, formats: selectedFormats, targetProduct, targetMarket, targetPersona, positionAgainst, toneOverride, keyPoints, focusKeyword: focusKeyword || null, secondaryKeywords: secondaryKeywords || [] }),
       });
-      const data = await res.json();
+      const text = await res.text();
+      let data: Record<string, unknown>;
+      try { data = JSON.parse(text); } catch { setGenerateError(`Server error (${res.status}) — please try again`); return; }
       if (data.outputs) {
-        setOutputs(data.outputs);
-        setGeneratedId(data.id || null);
+        setOutputs(data.outputs as Record<string, OutputData>);
+        setGeneratedId((data.id as string) || null);
         const first = selectedFormats[0];
         setActiveTab(first);
         setRightTab("suggestions");
-        loadSuggestions(first, data.outputs[first]?.content || "", data.id);
+        loadSuggestions(first, (data.outputs as Record<string, OutputData>)[first]?.content || "", data.id as string);
         fetchHistory();
       } else {
-        setGenerateError(data.error || "Generation failed. Please try again.");
+        setGenerateError((data.error as string) || "Generation failed. Please try again.");
       }
     } catch (e) {
       setGenerateError(e instanceof Error ? e.message : "Network error. Check your connection and try again.");
@@ -470,9 +477,11 @@ export default function ContentGeneratorPage() {
           history: chatMessages.map(m => ({ role: m.role, content: m.content })),
         }),
       });
-      const data = await res.json();
-      if (data.error) setChatError(data.error);
-      else if (data.reply) setChatMessages([...withUser, { role: "assistant", content: data.reply }]);
+      const text = await res.text();
+      let data: Record<string, unknown>;
+      try { data = JSON.parse(text); } catch { setChatError(`Server error (${res.status}) — please try again`); return; }
+      if (data.error) setChatError(data.error as string);
+      else if (data.reply) setChatMessages([...withUser, { role: "assistant", content: data.reply as string }]);
       else setChatError("No response received");
     } catch (e) {
       setChatError(e instanceof Error ? e.message : "Network error");
