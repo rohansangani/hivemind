@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
       targetProduct: targetProduct || entities.products[0] || undefined,
       targetPersona: targetPersona || entities.personas[0] || undefined,
       targetCompetitor: positionAgainst || entities.competitors[0] || undefined,
-      searchDocuments: true,
+      searchDocuments: false, // refine works on existing content — skip slow file fetches
     });
 
     const systemPrompt = buildGroundedSystemPrompt(

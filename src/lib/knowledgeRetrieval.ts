@@ -163,62 +163,62 @@ async function searchDocumentFiles(
   entities: QueryEntities,
   maxExcerpts = 6
 ): Promise<KnowledgeItem[]> {
-  const items: KnowledgeItem[] = [];
-
   try {
     const docs = await db.knowledgeDocument.findMany({
       where: { organizationId: orgId, status: "analyzed" },
-      take: 20,
+      take: 10, // reduced from 20 — only most recent docs
     });
 
-    for (const doc of docs) {
+    const textDocs = docs.filter(d => ["txt", "md", "csv"].includes(d.fileType.toLowerCase()));
+    if (!textDocs.length) return [];
+
+    // Fetch all documents in parallel (was sequential — up to 200s for 20 docs)
+    const results = await Promise.allSettled(
+      textDocs.map(async (doc) => {
+        const r = await fetch(doc.fileUrl, { signal: AbortSignal.timeout(4000) }); // 4s per file
+        if (!r.ok) return null;
+        const text = (await r.text()).slice(0, 15000);
+        return { doc, text };
+      })
+    );
+
+    const items: KnowledgeItem[] = [];
+    for (const result of results) {
+      if (result.status !== "fulfilled" || !result.value) continue;
+      const { doc, text } = result.value;
       const ext = doc.fileType.toLowerCase();
-      if (!["txt", "md", "csv"].includes(ext)) continue; // Only plain-text searchable
 
-      try {
-        const r = await fetch(doc.fileUrl, { signal: AbortSignal.timeout(10000) });
-        if (!r.ok) continue;
-        const text = (await r.text()).slice(0, 20000); // Cap at 20k chars
+      const chunks = text
+        .split(/\n{2,}/)
+        .map(c => c.replace(/\s+/g, " ").trim())
+        .filter(c => c.length > 60);
 
-        // Split into paragraphs (~300 char chunks)
-        const chunks = text
-          .split(/\n{2,}/)
-          .map(c => c.replace(/\s+/g, " ").trim())
-          .filter(c => c.length > 60);
+      const scored = chunks
+        .map(chunk => ({ chunk, score: scoreItem(chunk, queryTokens, entities) }))
+        .filter(x => x.score > 0.05)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 2);
 
-        // Score each chunk
-        const scored = chunks
-          .map(chunk => ({
-            chunk,
-            score: scoreItem(chunk, queryTokens, entities),
-          }))
-          .filter(x => x.score > 0.05)
-          .sort((a, b) => b.score - a.score)
-          .slice(0, 2); // Max 2 excerpts per document
-
-        for (const { chunk, score } of scored) {
-          items.push({
-            id: `doc-${doc.id}-${items.length}`,
-            title: `Excerpt from "${doc.name}"`,
-            content: chunk.length > 500 ? chunk.slice(0, 500) + "…" : chunk,
-            source: `Document: ${doc.name} (.${ext})`,
-            sourceType: "document_excerpt",
-            relevanceScore: score,
-            confidence: "extracted",
-            date: new Date(doc.createdAt).toISOString().split("T")[0],
-          });
-        }
-      } catch {
-        // File not readable — skip
+      for (const { chunk, score } of scored) {
+        items.push({
+          id: `doc-${doc.id}-${items.length}`,
+          title: `Excerpt from "${doc.name}"`,
+          content: chunk.length > 500 ? chunk.slice(0, 500) + "…" : chunk,
+          source: `Document: ${doc.name} (.${ext})`,
+          sourceType: "document_excerpt",
+          relevanceScore: score,
+          confidence: "extracted",
+          date: new Date(doc.createdAt).toISOString().split("T")[0],
+        });
       }
     }
-  } catch {
-    // Non-critical — never break main flow
-  }
 
-  return items
-    .sort((a, b) => b.relevanceScore - a.relevanceScore)
-    .slice(0, maxExcerpts);
+    return items
+      .sort((a, b) => b.relevanceScore - a.relevanceScore)
+      .slice(0, maxExcerpts);
+  } catch {
+    return [];
+  }
 }
 
 // ─────────────────────────────────────────────────────────
@@ -253,7 +253,7 @@ export async function retrieveRelevantKnowledge(
     db.skill.findMany({ where: { organizationId: orgId, isActive: true } }),
     db.knowledgeEntry.findMany({ where: { organizationId: orgId, category: "proof_points" }, take: 60 }),
     db.knowledgeEntry.findMany({ where: { organizationId: orgId, category: "messaging_patterns" }, take: 30 }),
-    db.learningLog.findMany({ where: { organizationId: orgId }, orderBy: { createdAt: "desc" }, take: 150 }),
+    db.learningLog.findMany({ where: { organizationId: orgId }, orderBy: { createdAt: "desc" }, take: 80 }),
     db.industryInsight.findMany({ where: { organizationId: orgId }, orderBy: { createdAt: "desc" }, take: 20 }),
   ]);
 
