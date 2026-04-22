@@ -96,8 +96,14 @@ export default function KnowledgeBasePage() {
     fileArr.forEach(f => formData.append("file", f));
     try {
       const res = await fetch("/api/knowledge/documents", { method: "POST", body: formData });
-      const data = await res.json();
-      if (data.error) { setDocError(data.error); }
+      const text = await res.text();
+      let data: Record<string, unknown>;
+      try { data = JSON.parse(text); }
+      catch {
+        setDocError(res.status === 413 ? "File too large — maximum 20 MB per file." : `Upload failed (${res.status}) — please try again.`);
+        return;
+      }
+      if (data.error) { setDocError(data.error as string); }
       else { setDocProgress({ done: fileArr.length, total: fileArr.length }); fetchAll(); setTab("documents"); }
     } catch (e) { setDocError(e instanceof Error ? e.message : "Upload failed. Please try again."); }
     finally { setDocUploading(false); setDocProgress(null); }
