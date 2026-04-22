@@ -102,33 +102,54 @@ async function analyzeDocument(
   const prompt = ANALYSIS_PROMPT(orgName, orgIndustry, fileName);
 
   if (ext === "pdf") {
-    // Primary: extract text with pdf-parse and send as text (reliable for all text-based PDFs)
+    // Try 1: pdf-parse text extraction — most reliable for text-based PDFs
     try {
       const { PDFParse } = await import("pdf-parse");
       const parser = new PDFParse({ data: buffer });
-      const result = await parser.getText() as { text: string };
-      const text = result.text?.trim() || "";
-      if (text.length > 100) {
+      const result = await parser.getText() as unknown as Record<string, unknown>;
+
+      // pdf-parse v2 result shape varies — handle all cases defensively
+      let pdfText = "";
+      if (typeof result.text === "string") {
+        pdfText = result.text.trim();
+      } else if (Array.isArray(result.pages)) {
+        pdfText = (result.pages as Array<{ text?: string }>)
+          .map(p => (typeof p.text === "string" ? p.text : ""))
+          .join("\n")
+          .trim();
+      }
+      console.log(`[documents] pdf-parse extracted ${pdfText.length} chars`);
+
+      if (pdfText.length > 50) {
         const raw = await callClaude(apiKey, [{
           role: "user",
-          content: `${prompt}\n\nDocument content:\n${text.slice(0, 18000)}`,
+          content: `${prompt}\n\nDocument content:\n${pdfText.slice(0, 18000)}`,
         }]);
-        return parseLearnings(raw);
+        const learnings = parseLearnings(raw);
+        if (learnings.length > 0) return learnings;
+        // pdf-parse extracted text but Claude returned nothing — fall through to native API
+        console.warn("[documents] pdf-parse text yielded 0 learnings, trying native PDF API");
       }
     } catch (e) {
-      console.warn("[documents] pdf-parse failed, falling back to native API:", e instanceof Error ? e.message : e);
+      console.warn("[documents] pdf-parse error:", e instanceof Error ? e.message : e);
     }
 
-    // Fallback: send PDF natively to Claude (handles scanned/image-heavy PDFs)
-    const b64 = buffer.toString("base64");
-    const raw = await callClaude(apiKey, [{
-      role: "user",
-      content: [
-        { type: "document", source: { type: "base64", media_type: "application/pdf", data: b64 } },
-        { type: "text", text: prompt },
-      ],
-    }]);
-    return parseLearnings(raw);
+    // Try 2: Claude's native PDF document API (handles scanned/complex PDFs)
+    try {
+      const b64 = buffer.toString("base64");
+      const raw = await callClaude(apiKey, [{
+        role: "user",
+        content: [
+          { type: "document", source: { type: "base64", media_type: "application/pdf", data: b64 } },
+          { type: "text", text: prompt },
+        ],
+      }]);
+      return parseLearnings(raw);
+    } catch (e) {
+      console.warn("[documents] Claude native PDF API error:", e instanceof Error ? e.message : e);
+    }
+
+    return [];
   }
 
   // Text-based formats
