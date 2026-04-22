@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { upload } from "@vercel/blob/client";
 import { useUser } from "@/lib/UserContext";
 
 interface Skill { id: string; name: string; category: string; linkedFeature: string; description: string; instructions: string; isActive: boolean; }
@@ -92,15 +93,28 @@ export default function KnowledgeBasePage() {
     const fileArr = Array.from(files);
     if (!fileArr.length) return;
     setDocUploading(true); setDocError(""); setDocProgress({ done: 0, total: fileArr.length });
-    const formData = new FormData();
-    fileArr.forEach(f => formData.append("file", f));
     try {
-      const res = await fetch("/api/knowledge/documents", { method: "POST", body: formData });
+      // Upload directly from the browser to Vercel Blob — bypasses the 4.5 MB serverless body limit
+      const blobFiles = await Promise.all(
+        fileArr.map(file =>
+          upload(file.name, file, {
+            access: "public",
+            handleUploadUrl: "/api/knowledge/documents/upload-url",
+          }).then(blob => ({ url: blob.url, name: file.name, size: file.size }))
+        )
+      );
+
+      // Send blob URLs to the server for analysis + DB storage
+      const res = await fetch("/api/knowledge/documents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ files: blobFiles }),
+      });
       const text = await res.text();
       let data: Record<string, unknown>;
       try { data = JSON.parse(text); }
       catch {
-        setDocError(res.status === 413 ? "File too large — maximum 25 MB per file." : `Upload failed (${res.status}) — please try again.`);
+        setDocError(`Upload failed (${res.status}) — please try again.`);
         return;
       }
       if (data.error) { setDocError(data.error as string); }

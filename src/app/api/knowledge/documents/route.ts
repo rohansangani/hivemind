@@ -3,7 +3,6 @@ export const maxDuration = 60;
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import jwt from "jsonwebtoken";
-import { put } from "@vercel/blob";
 import pg from "pg";
 
 function getRawPool() {
@@ -145,30 +144,29 @@ function cuid() {
 }
 
 async function processFile(
-  file: File,
+  fileUrl: string,
+  fileName: string,
+  fileSize: number,
   orgId: string,
   orgName: string,
   orgIndustry: string,
   apiKey: string | undefined,
   pool: pg.Pool
 ) {
-  const timestamp = Date.now();
-  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-  const fileName = `${timestamp}-${safeName}`;
-  const bytes = await file.arrayBuffer();
-  const buffer = Buffer.from(bytes);
+  // Fetch the file from Vercel Blob (already uploaded by the client)
+  const fetchRes = await fetch(fileUrl);
+  if (!fetchRes.ok) throw new Error(`Failed to fetch uploaded file: ${fetchRes.status}`);
+  const buffer = Buffer.from(await fetchRes.arrayBuffer());
 
-  const blob = await put(`uploads/${orgId}/kb-docs/${fileName}`, buffer, { access: "public" });
-  const fileUrl = blob.url;
-  const ext = file.name.split(".").pop()?.toLowerCase() || "bin";
-  const docName = file.name.replace(/\.[^.]+$/, "");
+  const ext = fileName.split(".").pop()?.toLowerCase() || "bin";
+  const docName = fileName.replace(/\.[^.]+$/, "");
   const docId = cuid();
   const now = new Date();
 
   await pool.query(
     `INSERT INTO "KnowledgeDocument" (id, name, "fileName", "fileUrl", "fileType", "fileSize", status, "learningsCount", "organizationId", "createdAt")
      VALUES ($1,$2,$3,$4,$5,$6,'processing',0,$7,$8)`,
-    [docId, docName, file.name, fileUrl, ext, file.size, orgId, now]
+    [docId, docName, fileName, fileUrl, ext, fileSize, orgId, now]
   );
 
   let learnings: Learning[] = [];
@@ -176,7 +174,7 @@ async function processFile(
 
   try {
     if (apiKey) {
-      learnings = await analyzeDocument(buffer, ext, file.name, orgName, orgIndustry, apiKey);
+      learnings = await analyzeDocument(buffer, ext, fileName, orgName, orgIndustry, apiKey);
     }
   } catch (e) {
     console.error("[knowledge/documents] analysis error:", e);
@@ -185,7 +183,7 @@ async function processFile(
 
   if (learnings.length === 0) {
     learnings = [{
-      title: `Document uploaded: ${file.name}`,
+      title: `Document uploaded: ${fileName}`,
       summary: `A ${ext.toUpperCase()} document was added to the knowledge base. ${!apiKey ? "Add an Anthropic API key to enable AI extraction." : "Text extraction returned no content — the document may be image-based or password-protected."}`,
       takeaway: "Review this document manually to identify key insights to add to the knowledge base.",
       tags: [ext.toUpperCase(), "Document Upload"],
@@ -194,7 +192,6 @@ async function processFile(
     if (!apiKey) status = "no_api_key";
   }
 
-  // Save each learning as its own learning log entry with document name in title
   for (const l of learnings) {
     const logId = cuid();
     await pool.query(
@@ -209,7 +206,7 @@ async function processFile(
     [status, learnings.length, docId]
   );
 
-  return { id: docId, name: docName, fileName: file.name, fileUrl, fileType: ext, fileSize: file.size, status, learningsCount: learnings.length, createdAt: now, organizationId: orgId };
+  return { id: docId, name: docName, fileName, fileUrl, fileType: ext, fileSize, status, learningsCount: learnings.length, createdAt: now, organizationId: orgId };
 }
 
 export async function GET(req: NextRequest) {
@@ -241,15 +238,17 @@ export async function POST(req: NextRequest) {
     const decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as { orgId: string; role?: string };
     if (decoded.role === "viewer") return NextResponse.json({ error: "Read-only access" }, { status: 403 });
 
-    const formData = await req.formData();
-    const files = formData.getAll("file") as File[];
-    if (!files.length) return NextResponse.json({ error: "No files provided" }, { status: 400 });
+    // Files are uploaded directly to Vercel Blob by the client — we receive blob URLs
+    const body = await req.json() as { files: Array<{ url: string; name: string; size: number }> };
+    if (!Array.isArray(body.files) || !body.files.length) {
+      return NextResponse.json({ error: "No files provided" }, { status: 400 });
+    }
 
     const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25 MB per file
-    for (const file of files) {
-      if (file.size > MAX_FILE_SIZE) {
+    for (const f of body.files) {
+      if (f.size > MAX_FILE_SIZE) {
         return NextResponse.json(
-          { error: `File "${file.name}" exceeds the 25 MB size limit` },
+          { error: `File "${f.name}" exceeds the 25 MB size limit` },
           { status: 413 }
         );
       }
@@ -261,8 +260,8 @@ export async function POST(req: NextRequest) {
     const apiKey = process.env.ANTHROPIC_API_KEY;
 
     const results = [];
-    for (const file of files) {
-      const doc = await processFile(file, decoded.orgId, orgName, orgIndustry, apiKey, pool);
+    for (const f of body.files) {
+      const doc = await processFile(f.url, f.name, f.size, decoded.orgId, orgName, orgIndustry, apiKey, pool);
       results.push(doc);
     }
 
