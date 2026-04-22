@@ -102,8 +102,38 @@ async function analyzeDocument(
   const prompt = ANALYSIS_PROMPT(orgName, orgIndustry, fileName);
 
   if (ext === "pdf") {
-    // Try 1: pass the public Vercel Blob URL directly — Anthropic fetches the PDF on their end.
-    // No local download, no base64 encoding, no large payload. Fastest and most reliable.
+    // Download the PDF from Vercel Blob (server-to-server, no client body limit concern)
+    let pdfBuffer: Buffer | null = null;
+    try {
+      const fetchRes = await fetch(fileUrl);
+      if (fetchRes.ok) {
+        pdfBuffer = Buffer.from(await fetchRes.arrayBuffer());
+        console.log(`[documents] Downloaded PDF: ${pdfBuffer.length} bytes`);
+      }
+    } catch (e) {
+      console.warn("[documents] PDF download error:", e instanceof Error ? e.message : e);
+    }
+
+    // Try 1: send as base64 via Claude document API (most reliable for PDFs)
+    if (pdfBuffer) {
+      try {
+        const base64 = pdfBuffer.toString("base64");
+        const raw = await callClaude(apiKey, [{
+          role: "user",
+          content: [
+            { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 } },
+            { type: "text", text: prompt },
+          ],
+        }]);
+        const learnings = parseLearnings(raw);
+        if (learnings.length > 0) return learnings;
+        console.warn("[documents] Base64 PDF returned 0 learnings");
+      } catch (e) {
+        console.warn("[documents] Base64 PDF error:", e instanceof Error ? e.message : e);
+      }
+    }
+
+    // Try 2: pass the public Vercel Blob URL directly — Anthropic fetches the PDF on their end
     try {
       const raw = await callClaude(apiKey, [{
         role: "user",
@@ -114,41 +144,9 @@ async function analyzeDocument(
       }]);
       const learnings = parseLearnings(raw);
       if (learnings.length > 0) return learnings;
-      console.warn("[documents] URL-based PDF returned 0 learnings, trying pdf-parse");
+      console.warn("[documents] URL-based PDF returned 0 learnings");
     } catch (e) {
       console.warn("[documents] URL-based PDF error:", e instanceof Error ? e.message : e);
-    }
-
-    // Try 2: download and extract text with pdf-parse, send as plain text
-    try {
-      const fetchRes = await fetch(fileUrl);
-      const buffer = Buffer.from(await fetchRes.arrayBuffer());
-
-      const { PDFParse } = await import("pdf-parse");
-      const parser = new PDFParse({ data: buffer });
-      const result = await parser.getText() as unknown as Record<string, unknown>;
-
-      let pdfText = "";
-      if (typeof result.text === "string") {
-        pdfText = result.text.trim();
-      } else if (Array.isArray(result.pages)) {
-        pdfText = (result.pages as Array<{ text?: string }>)
-          .map(p => (typeof p.text === "string" ? p.text : ""))
-          .join("\n")
-          .trim();
-      }
-      console.log(`[documents] pdf-parse extracted ${pdfText.length} chars`);
-
-      if (pdfText.length > 50) {
-        const raw = await callClaude(apiKey, [{
-          role: "user",
-          content: `${prompt}\n\nDocument content:\n${pdfText.slice(0, 18000)}`,
-        }]);
-        const learnings = parseLearnings(raw);
-        if (learnings.length > 0) return learnings;
-      }
-    } catch (e) {
-      console.warn("[documents] pdf-parse fallback error:", e instanceof Error ? e.message : e);
     }
 
     return [];
