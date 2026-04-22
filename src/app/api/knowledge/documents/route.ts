@@ -72,7 +72,7 @@ async function callClaude(
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
-    body: JSON.stringify({ model: "claude-opus-4-6", max_tokens: 6000, messages }),
+    body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 4000, messages }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error?.message || "Claude API error");
@@ -80,11 +80,15 @@ async function callClaude(
 }
 
 function parseLearnings(raw: string): Learning[] {
-  const clean = raw.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
-  const match = clean.match(/\{[\s\S]*\}/);
-  if (!match) return [];
-  const parsed = JSON.parse(match[0]);
-  return parsed.learnings || [];
+  try {
+    const clean = raw.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+    const match = clean.match(/\{[\s\S]*\}/);
+    if (!match) return [];
+    const parsed = JSON.parse(match[0]);
+    return Array.isArray(parsed.learnings) ? parsed.learnings : [];
+  } catch {
+    return [];
+  }
 }
 
 async function analyzeDocument(
@@ -97,8 +101,25 @@ async function analyzeDocument(
 ): Promise<Learning[]> {
   const prompt = ANALYSIS_PROMPT(orgName, orgIndustry, fileName);
 
-  // PDFs: send natively to Claude (no text extraction needed — Claude reads the PDF directly)
   if (ext === "pdf") {
+    // Primary: extract text with pdf-parse and send as text (reliable for all text-based PDFs)
+    try {
+      const { PDFParse } = await import("pdf-parse");
+      const parser = new PDFParse({ data: buffer });
+      const result = await parser.getText() as { text: string };
+      const text = result.text?.trim() || "";
+      if (text.length > 100) {
+        const raw = await callClaude(apiKey, [{
+          role: "user",
+          content: `${prompt}\n\nDocument content:\n${text.slice(0, 18000)}`,
+        }]);
+        return parseLearnings(raw);
+      }
+    } catch (e) {
+      console.warn("[documents] pdf-parse failed, falling back to native API:", e instanceof Error ? e.message : e);
+    }
+
+    // Fallback: send PDF natively to Claude (handles scanned/image-heavy PDFs)
     const b64 = buffer.toString("base64");
     const raw = await callClaude(apiKey, [{
       role: "user",
@@ -110,7 +131,7 @@ async function analyzeDocument(
     return parseLearnings(raw);
   }
 
-  // Text-based formats: extract and send as text
+  // Text-based formats
   let text = "";
   if (["txt", "md", "csv", "json"].includes(ext)) {
     text = buffer.toString("utf-8").slice(0, 15000);
