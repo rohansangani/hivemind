@@ -92,7 +92,7 @@ function parseLearnings(raw: string): Learning[] {
 }
 
 async function analyzeDocument(
-  buffer: Buffer,
+  fileUrl: string,
   ext: string,
   fileName: string,
   orgName: string,
@@ -102,13 +102,32 @@ async function analyzeDocument(
   const prompt = ANALYSIS_PROMPT(orgName, orgIndustry, fileName);
 
   if (ext === "pdf") {
-    // Try 1: pdf-parse text extraction — most reliable for text-based PDFs
+    // Try 1: pass the public Vercel Blob URL directly — Anthropic fetches the PDF on their end.
+    // No local download, no base64 encoding, no large payload. Fastest and most reliable.
     try {
+      const raw = await callClaude(apiKey, [{
+        role: "user",
+        content: [
+          { type: "document", source: { type: "url", url: fileUrl } },
+          { type: "text", text: prompt },
+        ],
+      }]);
+      const learnings = parseLearnings(raw);
+      if (learnings.length > 0) return learnings;
+      console.warn("[documents] URL-based PDF returned 0 learnings, trying pdf-parse");
+    } catch (e) {
+      console.warn("[documents] URL-based PDF error:", e instanceof Error ? e.message : e);
+    }
+
+    // Try 2: download and extract text with pdf-parse, send as plain text
+    try {
+      const fetchRes = await fetch(fileUrl);
+      const buffer = Buffer.from(await fetchRes.arrayBuffer());
+
       const { PDFParse } = await import("pdf-parse");
       const parser = new PDFParse({ data: buffer });
       const result = await parser.getText() as unknown as Record<string, unknown>;
 
-      // pdf-parse v2 result shape varies — handle all cases defensively
       let pdfText = "";
       if (typeof result.text === "string") {
         pdfText = result.text.trim();
@@ -127,32 +146,19 @@ async function analyzeDocument(
         }]);
         const learnings = parseLearnings(raw);
         if (learnings.length > 0) return learnings;
-        // pdf-parse extracted text but Claude returned nothing — fall through to native API
-        console.warn("[documents] pdf-parse text yielded 0 learnings, trying native PDF API");
       }
     } catch (e) {
-      console.warn("[documents] pdf-parse error:", e instanceof Error ? e.message : e);
-    }
-
-    // Try 2: Claude's native PDF document API (handles scanned/complex PDFs)
-    try {
-      const b64 = buffer.toString("base64");
-      const raw = await callClaude(apiKey, [{
-        role: "user",
-        content: [
-          { type: "document", source: { type: "base64", media_type: "application/pdf", data: b64 } },
-          { type: "text", text: prompt },
-        ],
-      }]);
-      return parseLearnings(raw);
-    } catch (e) {
-      console.warn("[documents] Claude native PDF API error:", e instanceof Error ? e.message : e);
+      console.warn("[documents] pdf-parse fallback error:", e instanceof Error ? e.message : e);
     }
 
     return [];
   }
 
-  // Text-based formats
+  // Non-PDF formats: download buffer and extract as text
+  const fetchRes = await fetch(fileUrl);
+  if (!fetchRes.ok) throw new Error(`Failed to fetch file: ${fetchRes.status}`);
+  const buffer = Buffer.from(await fetchRes.arrayBuffer());
+
   let text = "";
   if (["txt", "md", "csv", "json"].includes(ext)) {
     text = buffer.toString("utf-8").slice(0, 15000);
@@ -195,11 +201,6 @@ async function processFile(
   apiKey: string | undefined,
   pool: pg.Pool
 ) {
-  // Fetch the file from Vercel Blob (already uploaded by the client)
-  const fetchRes = await fetch(fileUrl);
-  if (!fetchRes.ok) throw new Error(`Failed to fetch uploaded file: ${fetchRes.status}`);
-  const buffer = Buffer.from(await fetchRes.arrayBuffer());
-
   const ext = fileName.split(".").pop()?.toLowerCase() || "bin";
   const docName = fileName.replace(/\.[^.]+$/, "");
   const docId = cuid();
@@ -216,7 +217,7 @@ async function processFile(
 
   try {
     if (apiKey) {
-      learnings = await analyzeDocument(buffer, ext, fileName, orgName, orgIndustry, apiKey);
+      learnings = await analyzeDocument(fileUrl, ext, fileName, orgName, orgIndustry, apiKey);
     }
   } catch (e) {
     console.error("[knowledge/documents] analysis error:", e);
