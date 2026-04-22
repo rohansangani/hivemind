@@ -100,7 +100,7 @@ export default function KnowledgeBasePage() {
       let data: Record<string, unknown>;
       try { data = JSON.parse(text); }
       catch {
-        setDocError(res.status === 413 ? "File too large — maximum 20 MB per file." : `Upload failed (${res.status}) — please try again.`);
+        setDocError(res.status === 413 ? "File too large — maximum 25 MB per file." : `Upload failed (${res.status}) — please try again.`);
         return;
       }
       if (data.error) { setDocError(data.error as string); }

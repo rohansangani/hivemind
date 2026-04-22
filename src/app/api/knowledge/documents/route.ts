@@ -245,11 +245,11 @@ export async function POST(req: NextRequest) {
     const files = formData.getAll("file") as File[];
     if (!files.length) return NextResponse.json({ error: "No files provided" }, { status: 400 });
 
-    const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20 MB per file
+    const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25 MB per file
     for (const file of files) {
       if (file.size > MAX_FILE_SIZE) {
         return NextResponse.json(
-          { error: `File "${file.name}" exceeds the 20 MB size limit` },
+          { error: `File "${file.name}" exceeds the 25 MB size limit` },
           { status: 413 }
         );
       }
