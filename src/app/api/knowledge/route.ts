@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
       db.brandProfile.findFirst({ where: { organizationId: decoded.orgId } }),
       db.skill.findMany({ where: { organizationId: decoded.orgId } }),
       pool.query(
-        `SELECT ll.id, ll."sourceType", ll.title, ll.summary, ll.takeaway, ll.tags, ll."createdAt",
+        `SELECT ll.id, ll."sourceType", ll.title, ll.summary, ll.takeaway, ll.tags, ll."kbCategories", ll."createdAt",
                 kd.name AS "sourceDocumentName", kd."fileName" AS "sourceDocumentFile"
          FROM "LearningLog" ll
          LEFT JOIN "KnowledgeDocument" kd ON ll."sourceDocumentId" = kd.id
@@ -47,16 +47,17 @@ export async function GET(req: NextRequest) {
     // Build enriched learning log from both LearningLog table AND KnowledgeEntry intelligence
     const enrichedLogs: Array<{
       id: string; sourceType: string; title: string; summary: string; takeaway: string;
-      tags: string[]; createdAt: string; sourceDocumentName?: string | null;
+      tags: string[]; kbCategories?: string[]; createdAt: string; sourceDocumentName?: string | null;
       sourceDocumentFile?: string | null; entryType: "learning" | "intelligence";
     }> = [
-      ...learningLogs.map((l: { id: string; sourceType: string; title: string; summary: string; takeaway: string; tags: string[]; createdAt: string; sourceDocumentName?: string; sourceDocumentFile?: string }) => ({
+      ...learningLogs.map((l: { id: string; sourceType: string; title: string; summary: string; takeaway: string; tags: string[]; kbCategories?: string[]; createdAt: string; sourceDocumentName?: string; sourceDocumentFile?: string }) => ({
         id: l.id,
         sourceType: l.sourceType,
         title: l.title,
         summary: l.summary,
         takeaway: l.takeaway || "",
         tags: l.tags || [],
+        kbCategories: l.kbCategories || [],
         createdAt: new Date(l.createdAt).toISOString(),
         sourceDocumentName: l.sourceDocumentName || null,
         sourceDocumentFile: l.sourceDocumentFile || null,

@@ -140,7 +140,7 @@ export default function ContentLibraryPage() {
           const timeout = setTimeout(() => controller.abort(), 120000); // 2-min safety timeout
           try {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const blob = await upload(file.name, file, { access: "public", handleUploadUrl: "/api/upload", ...(({ abortSignal: controller.signal }) as any) });
+            const blob = await upload(`assets/${Date.now()}-${file.name}`, file, { access: "public", handleUploadUrl: "/api/upload", ...(({ abortSignal: controller.signal }) as any) });
             clearTimeout(timeout);
             fileUrl = blob.url; fileSize = file.size; actualFileName = file.name;
           } catch (e) { clearTimeout(timeout); throw e; }

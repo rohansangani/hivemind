@@ -44,7 +44,7 @@ export default function KnowledgeBasePage() {
   const [skills, setSkills] = useState<Skill[]>([]);
   const [synthesizing, setSynthesizing] = useState(false);
   const [synthResult, setSynthResult] = useState<{ synthesized: number; categories: { name: string; count: number }[] } | null>(null);
-  const [logs, setLogs] = useState<Array<{ id: string; sourceType: string; title: string; summary: string; takeaway: string; tags: string[]; createdAt: string; sourceDocumentName?: string | null; sourceDocumentFile?: string | null }>>([]);
+  const [logs, setLogs] = useState<Array<{ id: string; sourceType: string; title: string; summary: string; takeaway: string; tags: string[]; kbCategories?: string[]; createdAt: string; sourceDocumentName?: string | null; sourceDocumentFile?: string | null }>>([]);
   const [docs, setDocs] = useState<Array<{ id: string; name: string; fileName: string; fileType: string; fileSize: number | null; status: string; learningsCount: number; createdAt: string }>>([]);
   const [docUploading, setDocUploading] = useState(false);
   const [docError, setDocError] = useState("");
@@ -97,7 +97,7 @@ export default function KnowledgeBasePage() {
       // Upload directly from the browser to Vercel Blob — bypasses the 4.5 MB serverless body limit
       const blobFiles = await Promise.all(
         fileArr.map(file =>
-          upload(file.name, file, {
+          upload(`kb-docs/${Date.now()}-${file.name}`, file, {
             access: "public",
             handleUploadUrl: "/api/knowledge/documents/upload-url",
           }).then(blob => ({ url: blob.url, name: file.name, size: file.size }))
@@ -1001,14 +1001,18 @@ export default function KnowledgeBasePage() {
               {logs.length === 0 ? (
                 <div className="bg-white border border-[var(--hm-border)] rounded-xl p-10 text-center"><p className="text-[14px] font-medium mb-1">No learnings yet</p><p className="text-[12px] text-[var(--hm-text-tertiary)]">Upload documents or refresh industry insights to populate the learning log</p></div>
               ) : logs.map((log, i) => {
-                const colors: Record<string, string> = { website_update: "bg-blue-50 text-blue-600", competitor_update: "bg-red-50 text-red-600", industry_report: "bg-amber-50 text-amber-600", regulatory: "bg-emerald-50 text-emerald-600", document_upload: "bg-violet-50 text-violet-600", industry_insight: "bg-teal-50 text-teal-600", content_analysis: "bg-sky-50 text-sky-600", proof_point: "bg-lime-50 text-lime-600", messaging_pattern: "bg-pink-50 text-pink-600" };
-                const c = colors[log.sourceType] || "bg-gray-50 text-gray-600";
+                const sourceColors: Record<string, string> = { website_update: "bg-blue-50 text-blue-600", competitor_update: "bg-red-50 text-red-600", industry_report: "bg-amber-50 text-amber-600", regulatory: "bg-emerald-50 text-emerald-600", document_upload: "bg-violet-50 text-violet-600", industry_insight: "bg-teal-50 text-teal-600", content_analysis: "bg-sky-50 text-sky-600", proof_point: "bg-lime-50 text-lime-600", messaging_pattern: "bg-pink-50 text-pink-600" };
+                const kbColors: Record<string, string> = { brand: "bg-pink-50 text-pink-600", product: "bg-blue-50 text-blue-600", market: "bg-teal-50 text-teal-600", persona: "bg-orange-50 text-orange-600", competitor: "bg-red-50 text-red-600", messaging: "bg-purple-50 text-purple-600", proof_point: "bg-lime-50 text-lime-600", general: "bg-gray-50 text-gray-600" };
+                const kbLabels: Record<string, string> = { brand: "Brand voice", product: "Product knowledge", market: "Market signal", persona: "Persona insight", competitor: "Competitive intel", messaging: "Messaging pattern", proof_point: "Proof point", general: "General" };
                 const isDocUpload = log.sourceType === "document_upload";
                 const isInsight = log.sourceType === "industry_insight";
+                const kbCat = isDocUpload ? (log.kbCategories?.[0] || "general") : null;
+                const badgeColor = kbCat ? (kbColors[kbCat] || "bg-gray-50 text-gray-600") : (sourceColors[log.sourceType] || "bg-gray-50 text-gray-600");
+                const c = sourceColors[log.sourceType] || "bg-gray-50 text-gray-600";
                 return (
                   <div key={i} className="flex gap-3 mb-3">
                     <div className="flex flex-col items-center">
-                      <div className={"w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 " + c.split(" ")[0]}>
+                      <div className={"w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 " + badgeColor.split(" ")[0]}>
                         {isDocUpload ? (
                           <svg width="10" height="10" viewBox="0 0 16 16" fill="none"><path d="M3 2h7l3 3v9H3V2z" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/><path d="M10 2v4h4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
                         ) : isInsight ? (
@@ -1022,8 +1026,8 @@ export default function KnowledgeBasePage() {
                     <div className={"flex-1 bg-white border rounded-xl p-4 mb-1 " + (isDocUpload ? "border-violet-100" : "border-[var(--hm-border)]")}>
                       <div className="flex items-start justify-between gap-2 mb-2">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className={"text-[10px] px-2 py-0.5 rounded-md font-medium " + c}>
-                            {isDocUpload ? "Document learning" : isInsight ? "Market signal" : log.sourceType.replace(/_/g, " ")}
+                          <span className={"text-[10px] px-2 py-0.5 rounded-md font-medium " + badgeColor}>
+                            {kbCat ? (kbLabels[kbCat] || kbCat.replace(/_/g, " ")) : isInsight ? "Market signal" : log.sourceType.replace(/_/g, " ")}
                           </span>
                           {isDocUpload && log.sourceDocumentName && (
                             <span className="text-[10px] px-2 py-0.5 rounded-md bg-violet-50 text-violet-500 border border-violet-100 flex items-center gap-1">
