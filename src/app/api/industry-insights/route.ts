@@ -193,7 +193,7 @@ Prioritisation guidance (apply across the full set):
         const messages: AnthropicMessage[] = [{ role: "user", content: prompt }];
         let finalText = "";
         let iterations = 0;
-        const MAX_ITERATIONS = 8;
+        const MAX_ITERATIONS = 5;
 
         while (iterations < MAX_ITERATIONS) {
           iterations++;
@@ -207,8 +207,8 @@ Prioritisation guidance (apply across the full set):
             },
             body: JSON.stringify({
               model: "claude-sonnet-4-6",
-              max_tokens: 16000,
-              tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 20 }],
+              max_tokens: 8000,
+              tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 8 }],
               messages,
             }),
           });
