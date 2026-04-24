@@ -186,66 +186,34 @@ Prioritisation guidance (apply across the full set):
 - Include at least one regulatory/compliance signal per market where applicable
 - markets array must only use names from: ${marketsStr}${excludeBlock}`;
 
-        // Use web_search built-in tool so Claude can search the web in real time
+        // web_search_20250305 is a server-side tool — Anthropic executes searches internally.
+        // A single API call is all that's needed; no multi-turn loop required.
         type ContentBlock = { type: string; text?: string };
-        type AnthropicMessage = { role: string; content: ContentBlock[] | string };
 
-        const messages: AnthropicMessage[] = [{ role: "user", content: prompt }];
+        const resp = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+            "anthropic-beta": "web-search-2025-03-05",
+          },
+          body: JSON.stringify({
+            model: "claude-sonnet-4-6",
+            max_tokens: 8000,
+            tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 8 }],
+            messages: [{ role: "user", content: prompt }],
+          }),
+        });
+
+        const data = await resp.json();
         let finalText = "";
-        let iterations = 0;
-        const MAX_ITERATIONS = 5;
 
-        while (iterations < MAX_ITERATIONS) {
-          iterations++;
-          const resp = await fetch("https://api.anthropic.com/v1/messages", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "x-api-key": apiKey,
-              "anthropic-version": "2023-06-01",
-              "anthropic-beta": "web-search-2025-03-05",
-            },
-            body: JSON.stringify({
-              model: "claude-sonnet-4-6",
-              max_tokens: 8000,
-              tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 8 }],
-              messages,
-            }),
-          });
-
-          const data = await resp.json();
-
-          if (!data.content || data.error) {
-            console.error("Anthropic API error:", JSON.stringify(data).slice(0, 400));
-            break;
-          }
-
-          // Collect all text blocks from this turn
-          const textBlocks = (data.content as ContentBlock[]).filter(b => b.type === "text");
-          if (textBlocks.length > 0) {
-            finalText = textBlocks.map(b => b.text || "").join("\n");
-          }
-
-          if (data.stop_reason === "end_turn") break;
-
-          if (data.stop_reason === "tool_use") {
-            // Push assistant turn and provide tool results to continue
-            messages.push({ role: "assistant", content: data.content });
-            const toolResults = (data.content as ContentBlock[])
-              .filter((b: ContentBlock) => b.type === "tool_use")
-              .map((b: ContentBlock & { id?: string }) => ({
-                type: "tool_result",
-                tool_use_id: b.id,
-                content: "Search executed.",
-              }));
-            if (toolResults.length > 0) {
-              messages.push({ role: "user", content: toolResults as unknown as ContentBlock[] });
-            } else {
-              break;
-            }
-          } else {
-            break;
-          }
+        if (data.content && !data.error) {
+          const textBlock = (data.content as ContentBlock[]).find(b => b.type === "text");
+          finalText = textBlock?.text || "";
+        } else {
+          console.error("Anthropic API error:", JSON.stringify(data).slice(0, 400));
         }
 
         try {
