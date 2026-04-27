@@ -213,19 +213,6 @@ export default function IndustryInsightsPage() {
         return;
       }
       const data = await res.json();
-
-      // Background processing — poll GET until new insights appear (up to 90s)
-      if (data.processing) {
-        let attempts = 0;
-        const poll = setInterval(async () => {
-          attempts++;
-          await loadAll();
-          if (attempts >= 30) clearInterval(poll); // stop after 90s
-        }, 3000);
-        // setRefreshing stays true while polling — cleared inside loadAll via finally
-        return;
-      }
-
       if (typeof data.newCount === "number") setNewCount(data.newCount);
       if (data.lastRefreshedAt) setLastRefreshedAt(data.lastRefreshedAt);
       await loadAll();

@@ -1,6 +1,6 @@
-export const maxDuration = 300;
+export const maxDuration = 60;
 
-import { NextRequest, NextResponse, after } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import jwt from "jsonwebtoken";
 
@@ -48,212 +48,6 @@ export async function GET(req: NextRequest) {
   }
 }
 
-async function generateInsights(
-  orgId: string,
-  apiKey: string | undefined,
-  intelligenceConfig: { syncFreq?: string; competitorMonitor?: boolean; industryNews?: boolean }
-) {
-  const [org, competitors, products, markets] = await Promise.all([
-    db.organization.findUnique({ where: { id: orgId } }),
-    db.competitor.findMany({ where: { organizationId: orgId } }),
-    db.product.findMany({ where: { organizationId: orgId } }),
-    db.market.findMany({ where: { organizationId: orgId } }),
-  ]);
-
-  const orgName = org?.name || "the company";
-  const industry = org?.industry || "technology";
-  const compNames = competitors.map(c => c.name).join(", ") || "competitors";
-  const prodNames = products.map(p => p.name).join(", ") || "products";
-  const marketNames = markets.map(m => m.name);
-  const marketsStr = marketNames.join(", ") || "global markets";
-
-  // Purge insights older than 90 days
-  const cutoff = new Date(Date.now() - NINETY_DAYS_MS);
-  await db.industryInsight.deleteMany({ where: { organizationId: orgId, createdAt: { lt: cutoff } } });
-
-  const existing = await db.industryInsight.findMany({
-    where: { organizationId: orgId },
-    select: { title: true },
-    orderBy: { createdAt: "desc" },
-    take: 200,
-  });
-  const existingTitles = existing.map(e => e.title);
-
-  type RawInsight = {
-    signalType: string; priority: string; relevanceScore: number; title: string;
-    summary: string; takeaway: string; sourceUrl: string; sourceName: string;
-    tags: string[]; markets: string[];
-  };
-
-  let newInsights: RawInsight[] = [];
-
-  if (apiKey) {
-    try {
-      const today = new Date().toISOString().split("T")[0];
-      const avoidList = existingTitles.length > 0
-        ? `\n\nIMPORTANT — do NOT repeat or closely paraphrase any of these already-seen topics:\n${existingTitles.map((t, i) => `${i + 1}. ${t}`).join("\n")}`
-        : "";
-      const excludedSignals: string[] = [];
-      if (intelligenceConfig.competitorMonitor === false) excludedSignals.push("competitor");
-      if (intelligenceConfig.industryNews === false) excludedSignals.push("news_pr");
-      const excludeBlock = excludedSignals.length > 0
-        ? `\n\nDo NOT include any insights with signalType: ${excludedSignals.join(" or ")}. Those categories are disabled.`
-        : "";
-
-      const prompt = `You are a senior competitive intelligence analyst for ${orgName}, a company in the ${industry} industry.
-Today's date: ${today}
-
-Company context:
-- Products: ${prodNames}
-- Target markets / geographies: ${marketsStr}
-- Key competitors: ${compNames}
-
-Your task: conduct extensive real-time web research across news, analyst reports, regulatory filings, press releases, earnings calls, and social signals to find every relevant, fresh intelligence item for these markets and competitors. Search broadly — cover each market, each competitor, and the wider ${industry} industry landscape.
-
-Gather as many genuinely new, non-stale signals as you can find (aim for 15–20+). Each insight must be:
-- Based on a real, verifiable source you found via web search
-- Published or updated within the last 30 days where possible (flag if older but still highly relevant)
-- Specific — include real company names, data points, percentages, or quotes
-- Distinct from every already-seen topic listed below${avoidList}
-
-Distribute insights across ALL listed markets: ${marketsStr}. Do not cluster around one geography.
-
-Return ONLY a valid JSON array (no markdown fences, no commentary before or after):
-[
-  {
-    "signalType": "competitor|industry_report|product_launch|regulatory|news_pr|market_trend",
-    "priority": "high|medium|low",
-    "relevanceScore": <integer 1-100 representing how directly actionable and relevant this insight is for ${orgName}; high priority signals score 70-100, medium 40-69, low 1-39>,
-    "title": "Specific, factual headline referencing real entities",
-    "summary": "3-4 sentences with specific details, data points, company names, and why it matters for ${orgName}.",
-    "takeaway": "1-2 sentence concrete action for ${orgName}'s marketing or strategy team.",
-    "sourceUrl": "The real, exact URL you found via web search — only include if you are 100% certain this URL exists and is live. Leave as empty string \"\" if uncertain.",
-    "sourceName": "Exact publication or source name (e.g. Reuters, TechCrunch, Gartner, Bloomberg)",
-    "tags": ["relevant", "tags", "including", "market", "name"],
-    "markets": ["market name(s) from: ${marketsStr}"]
-  }
-]
-
-Prioritisation guidance (apply across the full set):
-- Mark as high: direct competitor moves, major regulatory changes, market-shifting events
-- Mark as medium: analyst reports, product launches, significant market trends
-- Mark as low: general news, softer signals, background context
-- Include competitor signals for each of: ${compNames}
-- Include at least one regulatory/compliance signal per market where applicable
-- markets array must only use names from: ${marketsStr}${excludeBlock}`;
-
-      type ContentBlock = { type: string; text?: string };
-      const resp = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-          "anthropic-beta": "web-search-2025-03-05",
-        },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-6",
-          max_tokens: 8000,
-          tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 8 }],
-          messages: [{ role: "user", content: prompt }],
-        }),
-      });
-
-      const data = await resp.json();
-      let finalText = "";
-      if (data.content && !data.error) {
-        const textBlock = (data.content as ContentBlock[]).find(b => b.type === "text");
-        finalText = textBlock?.text || "";
-      } else {
-        console.error("Anthropic API error:", JSON.stringify(data).slice(0, 400));
-      }
-
-      try {
-        let jsonStr = finalText.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
-        const match = jsonStr.match(/\[[\s\S]*\]/);
-        if (match) jsonStr = match[0];
-        newInsights = JSON.parse(jsonStr);
-        if (!Array.isArray(newInsights)) newInsights = [];
-      } catch {
-        console.error("Failed to parse AI insights:", finalText.slice(0, 500));
-      }
-    } catch (e) {
-      console.error("Anthropic error:", e);
-    }
-  }
-
-  // Fallback — only if AI returned nothing at all
-  if (newInsights.length === 0) {
-    const compName = competitors[0]?.name || "a major competitor";
-    const mkt = marketNames[0] || "Global";
-    newInsights = [
-      { signalType: "competitor", priority: "high", relevanceScore: 85, title: `${compName} launches aggressive ${mkt} pricing campaign`, summary: `${compName} has announced a new tiered pricing model targeting mid-market accounts in ${mkt}, offering up to 30% discounts for annual commitments. Early signals indicate strong uptake among SMBs.`, takeaway: `Prepare competitive battle cards and consider a value-based counter-messaging campaign in ${mkt} focused on total cost of ownership.`, sourceUrl: "", sourceName: "TechCrunch", tags: [compName, mkt, "Pricing"], markets: [mkt] },
-      { signalType: "industry_report", priority: "medium", relevanceScore: 65, title: `Gartner: ${industry} AI adoption accelerates across ${mkt}`, summary: `Gartner's latest report shows 68% of enterprises in ${mkt} plan to increase AI investment in ${industry} by 40%+ over the next 12 months, driven by efficiency mandates.`, takeaway: `Use this data in upcoming content and sales collateral. Position ${orgName} as the AI-native choice for ${mkt} enterprises.`, sourceUrl: "", sourceName: "Gartner", tags: ["Gartner", mkt, "AI", "Analyst Report"], markets: [mkt] },
-      { signalType: "market_trend", priority: "medium", relevanceScore: 60, title: `${mkt} market sees surge in ${industry} platform consolidation`, summary: `Enterprises in ${mkt} are reducing their vendor count by 35% on average, consolidating onto 2-3 core platforms. This is creating significant churn risk for point solutions.`, takeaway: `Emphasise platform breadth and integration depth in ${mkt} campaigns. Lead with consolidation narrative in outbound.`, sourceUrl: "", sourceName: "Bloomberg", tags: [mkt, "Consolidation", "Platform"], markets: [mkt] },
-      { signalType: "regulatory", priority: "medium", relevanceScore: 62, title: `New data localisation rules take effect in ${mkt}`, summary: `Regulators in ${mkt} have finalised data residency requirements for ${industry} platforms, mandating local storage for sensitive data by Q3. Non-compliance penalties are substantial.`, takeaway: `Create a compliance readiness guide for ${mkt} customers. Position ${orgName} as a compliant partner with local infrastructure.`, sourceUrl: "", sourceName: "Reuters", tags: [mkt, "Regulatory", "Compliance", "Data"], markets: [mkt] },
-      { signalType: "product_launch", priority: "low", relevanceScore: 30, title: `${compName} unveils AI-powered ${industry} feature set`, summary: `${compName} announced a new suite of AI features targeting enterprise ${industry} workflows, with general availability in 60 days. Early beta feedback highlights strong NLP capabilities.`, takeaway: `Accelerate your own AI messaging and ensure sales teams have up-to-date competitive differentiation materials.`, sourceUrl: "", sourceName: "VentureBeat", tags: [compName, "AI", "Product Launch"], markets: marketNames },
-      { signalType: "news_pr", priority: "low", relevanceScore: 25, title: `Forbes names ${industry} as top sector for 2025 enterprise investment`, summary: `Forbes has published its annual enterprise technology outlook, ranking ${industry} as the #2 sector for planned investment, citing ROI clarity and reduced implementation timelines.`, takeaway: `Share this coverage across social channels. Use as third-party validation in enterprise sales conversations.`, sourceUrl: "", sourceName: "Forbes", tags: ["Forbes", "Enterprise", "Investment", "Validation"], markets: marketNames },
-    ];
-  }
-
-  const existingNorm = existingTitles.map(t => t.toLowerCase().replace(/[^a-z0-9]/g, ""));
-  const toCreate = newInsights.filter(ni => {
-    const norm = ni.title.toLowerCase().replace(/[^a-z0-9]/g, "");
-    return !existingNorm.some(e => e.length > 10 && (e.includes(norm.slice(0, 20)) || norm.includes(e.slice(0, 20))));
-  });
-
-  for (const insight of toCreate) {
-    const tags = [...new Set([...(insight.tags || []), ...(insight.markets || [])])];
-    const kbCat = insight.signalType === "competitor" ? "competitor" : "industry";
-    const rawScore = typeof insight.relevanceScore === "number" ? insight.relevanceScore : 50;
-    const relevanceScore = Math.max(1, Math.min(100, Math.round(rawScore)));
-    await db.industryInsight.create({
-      data: {
-        signalType: insight.signalType,
-        priority: insight.priority,
-        relevanceScore,
-        title: insight.title,
-        summary: insight.summary,
-        takeaway: insight.takeaway,
-        sourceUrl: insight.sourceUrl || null,
-        sourceName: insight.sourceName || null,
-        tags,
-        addedToKB: insight.priority !== "low",
-        kbCategories: [kbCat],
-        organizationId: orgId,
-      },
-    });
-    if (insight.priority !== "low") {
-      await db.learningLog.create({
-        data: {
-          sourceType: "industry_insight",
-          title: insight.title,
-          summary: insight.summary,
-          takeaway: insight.takeaway,
-          tags: [...tags, insight.signalType],
-          kbCategories: [kbCat],
-          organizationId: orgId,
-        },
-      });
-    }
-  }
-
-  const MAX_INSIGHTS = 50;
-  const allStored = await db.industryInsight.findMany({
-    where: { organizationId: orgId },
-    select: { id: true },
-    orderBy: [{ relevanceScore: "desc" }, { createdAt: "desc" }],
-  });
-  if (allStored.length > MAX_INSIGHTS) {
-    const idsToDelete = allStored.slice(MAX_INSIGHTS).map(r => r.id);
-    await db.industryInsight.deleteMany({ where: { id: { in: idsToDelete } } });
-  }
-
-  await db.$executeRaw`
-    UPDATE "Organization" SET "insightLastRefreshedAt" = ${new Date()} WHERE id = ${orgId}
-  `;
-}
-
 export async function POST(req: NextRequest) {
   try {
     const token = req.cookies.get("hm-token")?.value;
@@ -289,24 +83,201 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Pre-stamp timestamp to block concurrent refresh attempts
-    await db.$executeRaw`
-      UPDATE "Organization" SET "insightLastRefreshedAt" = ${new Date()} WHERE id = ${decoded.orgId}
-    `;
-
     const apiKey = process.env.ANTHROPIC_API_KEY;
-    const orgId = decoded.orgId;
 
-    // Run AI generation after the response is sent — avoids gateway timeout entirely
-    after(async () => {
-      try {
-        await generateInsights(orgId, apiKey, intelligenceConfig);
-      } catch (e) {
-        console.error("Background insights generation failed:", e);
-      }
+    const [org, competitors, products, markets] = await Promise.all([
+      db.organization.findUnique({ where: { id: decoded.orgId } }),
+      db.competitor.findMany({ where: { organizationId: decoded.orgId } }),
+      db.product.findMany({ where: { organizationId: decoded.orgId } }),
+      db.market.findMany({ where: { organizationId: decoded.orgId } }),
+    ]);
+
+    const orgName = org?.name || "the company";
+    const industry = org?.industry || "technology";
+    const compNames = competitors.map(c => c.name).join(", ") || "competitors";
+    const prodNames = products.map(p => p.name).join(", ") || "products";
+    const marketNames = markets.map(m => m.name);
+    const marketsStr = marketNames.join(", ") || "global markets";
+
+    // Purge insights older than 90 days
+    const cutoff = new Date(Date.now() - NINETY_DAYS_MS);
+    await db.industryInsight.deleteMany({
+      where: { organizationId: decoded.orgId, createdAt: { lt: cutoff } },
     });
 
-    return NextResponse.json({ processing: true });
+    const existing = await db.industryInsight.findMany({
+      where: { organizationId: decoded.orgId },
+      select: { title: true },
+      orderBy: { createdAt: "desc" },
+      take: 200,
+    });
+    const existingTitles = existing.map(e => e.title);
+
+    type RawInsight = {
+      signalType: string; priority: string; relevanceScore: number; title: string;
+      summary: string; takeaway: string; sourceUrl: string; sourceName: string;
+      tags: string[]; markets: string[];
+    };
+
+    let newInsights: RawInsight[] = [];
+
+    if (apiKey) {
+      try {
+        const today = new Date().toISOString().split("T")[0];
+        const avoidList = existingTitles.length > 0
+          ? `\n\nDo NOT repeat any of these already-seen topics:\n${existingTitles.map((t, i) => `${i + 1}. ${t}`).join("\n")}`
+          : "";
+
+        const excludedSignals: string[] = [];
+        if (intelligenceConfig.competitorMonitor === false) excludedSignals.push("competitor");
+        if (intelligenceConfig.industryNews === false) excludedSignals.push("news_pr");
+        const excludeBlock = excludedSignals.length > 0
+          ? `\n\nDo NOT include insights with signalType: ${excludedSignals.join(" or ")}.`
+          : "";
+
+        const prompt = `You are a senior competitive intelligence analyst for ${orgName}, a ${industry} company.
+Today: ${today}
+
+Context:
+- Products: ${prodNames}
+- Markets: ${marketsStr}
+- Competitors: ${compNames}
+
+Generate 15-20 specific, actionable intelligence insights covering competitor moves, market trends, regulatory changes, product launches, and industry reports relevant to this company and its markets.
+
+Each insight must:
+- Reference real companies, products, or events by name
+- Be specific with data points, percentages, or concrete details where possible
+- Be directly relevant to ${orgName}'s business
+- Cover all listed markets: ${marketsStr}${avoidList}${excludeBlock}
+
+Return ONLY a valid JSON array:
+[
+  {
+    "signalType": "competitor|industry_report|product_launch|regulatory|news_pr|market_trend",
+    "priority": "high|medium|low",
+    "relevanceScore": <1-100>,
+    "title": "Specific headline with real entity names",
+    "summary": "3-4 sentences with specific details and why it matters for ${orgName}.",
+    "takeaway": "1-2 sentence action for ${orgName}'s marketing or strategy team.",
+    "sourceUrl": "",
+    "sourceName": "Publication or source name",
+    "tags": ["tag1", "tag2"],
+    "markets": ["market name from: ${marketsStr}"]
+  }
+]`;
+
+        const resp = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: "claude-sonnet-4-6",
+            max_tokens: 6000,
+            messages: [{ role: "user", content: prompt }],
+          }),
+        });
+
+        const data = await resp.json();
+        if (data.content && !data.error) {
+          const text = data.content.find((b: { type: string }) => b.type === "text")?.text || "";
+          try {
+            const clean = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+            const match = clean.match(/\[[\s\S]*\]/);
+            if (match) {
+              newInsights = JSON.parse(match[0]);
+              if (!Array.isArray(newInsights)) newInsights = [];
+            }
+          } catch {
+            console.error("Failed to parse AI insights:", text.slice(0, 300));
+          }
+        } else {
+          console.error("Anthropic error:", JSON.stringify(data).slice(0, 300));
+        }
+      } catch (e) {
+        console.error("Anthropic call failed:", e);
+      }
+    }
+
+    // Fallback — only if AI returned nothing
+    if (newInsights.length === 0) {
+      const compName = competitors[0]?.name || "a major competitor";
+      const mkt = marketNames[0] || "Global";
+      newInsights = [
+        { signalType: "competitor", priority: "high", relevanceScore: 85, title: `${compName} launches aggressive ${mkt} pricing campaign`, summary: `${compName} has announced a new tiered pricing model targeting mid-market accounts in ${mkt}, offering up to 30% discounts for annual commitments.`, takeaway: `Prepare competitive battle cards and consider a value-based counter-messaging campaign focused on total cost of ownership.`, sourceUrl: "", sourceName: "TechCrunch", tags: [compName, mkt, "Pricing"], markets: [mkt] },
+        { signalType: "industry_report", priority: "medium", relevanceScore: 65, title: `Gartner: ${industry} AI adoption accelerates across ${mkt}`, summary: `Gartner's latest report shows 68% of enterprises in ${mkt} plan to increase AI investment in ${industry} by 40%+ over the next 12 months.`, takeaway: `Use this data in content and sales collateral. Position ${orgName} as the AI-native choice for ${mkt} enterprises.`, sourceUrl: "", sourceName: "Gartner", tags: ["Gartner", mkt, "AI"], markets: [mkt] },
+        { signalType: "market_trend", priority: "medium", relevanceScore: 60, title: `${mkt} market sees surge in ${industry} platform consolidation`, summary: `Enterprises in ${mkt} are reducing their vendor count by 35% on average, consolidating onto 2-3 core platforms.`, takeaway: `Emphasise platform breadth and integration depth in ${mkt} campaigns.`, sourceUrl: "", sourceName: "Bloomberg", tags: [mkt, "Consolidation"], markets: [mkt] },
+        { signalType: "regulatory", priority: "medium", relevanceScore: 62, title: `New data localisation rules take effect in ${mkt}`, summary: `Regulators in ${mkt} have finalised data residency requirements for ${industry} platforms, mandating local storage for sensitive data by Q3.`, takeaway: `Create a compliance readiness guide for ${mkt} customers.`, sourceUrl: "", sourceName: "Reuters", tags: [mkt, "Regulatory", "Compliance"], markets: [mkt] },
+        { signalType: "product_launch", priority: "low", relevanceScore: 30, title: `${compName} unveils AI-powered ${industry} feature set`, summary: `${compName} announced a new suite of AI features targeting enterprise ${industry} workflows, with general availability in 60 days.`, takeaway: `Ensure sales teams have up-to-date competitive differentiation materials.`, sourceUrl: "", sourceName: "VentureBeat", tags: [compName, "AI", "Product Launch"], markets: marketNames },
+        { signalType: "news_pr", priority: "low", relevanceScore: 25, title: `Forbes names ${industry} as top sector for 2025 enterprise investment`, summary: `Forbes ranks ${industry} as the #2 sector for planned enterprise investment, citing ROI clarity and reduced implementation timelines.`, takeaway: `Share this coverage across social channels as third-party validation.`, sourceUrl: "", sourceName: "Forbes", tags: ["Forbes", "Enterprise", "Investment"], markets: marketNames },
+      ];
+    }
+
+    const existingNorm = existingTitles.map(t => t.toLowerCase().replace(/[^a-z0-9]/g, ""));
+    const toCreate = newInsights.filter(ni => {
+      const norm = ni.title.toLowerCase().replace(/[^a-z0-9]/g, "");
+      return !existingNorm.some(e => e.length > 10 && (e.includes(norm.slice(0, 20)) || norm.includes(e.slice(0, 20))));
+    });
+
+    for (const insight of toCreate) {
+      const tags = [...new Set([...(insight.tags || []), ...(insight.markets || [])])];
+      const kbCat = insight.signalType === "competitor" ? "competitor" : "industry";
+      const relevanceScore = Math.max(1, Math.min(100, Math.round(typeof insight.relevanceScore === "number" ? insight.relevanceScore : 50)));
+      await db.industryInsight.create({
+        data: {
+          signalType: insight.signalType,
+          priority: insight.priority,
+          relevanceScore,
+          title: insight.title,
+          summary: insight.summary,
+          takeaway: insight.takeaway,
+          sourceUrl: insight.sourceUrl || null,
+          sourceName: insight.sourceName || null,
+          tags,
+          addedToKB: insight.priority !== "low",
+          kbCategories: [kbCat],
+          organizationId: decoded.orgId,
+        },
+      });
+      if (insight.priority !== "low") {
+        await db.learningLog.create({
+          data: {
+            sourceType: "industry_insight",
+            title: insight.title,
+            summary: insight.summary,
+            takeaway: insight.takeaway,
+            tags: [...tags, insight.signalType],
+            kbCategories: [kbCat],
+            organizationId: decoded.orgId,
+          },
+        });
+      }
+    }
+
+    // Cap to 50 most relevant
+    const allStored = await db.industryInsight.findMany({
+      where: { organizationId: decoded.orgId },
+      select: { id: true },
+      orderBy: [{ relevanceScore: "desc" }, { createdAt: "desc" }],
+    });
+    if (allStored.length > 50) {
+      await db.industryInsight.deleteMany({ where: { id: { in: allStored.slice(50).map(r => r.id) } } });
+    }
+
+    const refreshedAt = new Date();
+    await db.$executeRaw`
+      UPDATE "Organization" SET "insightLastRefreshedAt" = ${refreshedAt} WHERE id = ${decoded.orgId}
+    `;
+
+    const insights = await db.industryInsight.findMany({
+      where: { organizationId: decoded.orgId },
+      orderBy: [{ relevanceScore: "desc" }, { createdAt: "desc" }],
+    });
+
+    return NextResponse.json({ insights, refreshed: true, newCount: toCreate.length, lastRefreshedAt: refreshedAt });
   } catch (error) {
     console.error("Industry insights refresh error:", error);
     return NextResponse.json({ error: "Something went wrong" }, { status: 500 });
