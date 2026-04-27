@@ -194,7 +194,6 @@ export default function IndustryInsightsPage() {
         if (data.nextRefreshMs) {
           const estimatedLastRefresh = new Date(Date.now() - (COOLDOWN_MS - data.nextRefreshMs));
           setLastRefreshedAt(estimatedLastRefresh.toISOString());
-          // FIX #2 — show human-readable "next available at" time in a toast
           const availableAt = new Date(Date.now() + data.nextRefreshMs);
           const timeStr = availableAt.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
           const dateStr = availableAt.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
@@ -208,13 +207,25 @@ export default function IndustryInsightsPage() {
         setRefreshing(false);
         return;
       }
-      // FIX #8 — surface unexpected errors from the POST
       if (!res.ok) {
         setFetchError(`Refresh failed (${res.status}). Please try again.`);
         setRefreshing(false);
         return;
       }
       const data = await res.json();
+
+      // Background processing — poll GET until new insights appear (up to 90s)
+      if (data.processing) {
+        let attempts = 0;
+        const poll = setInterval(async () => {
+          attempts++;
+          await loadAll();
+          if (attempts >= 30) clearInterval(poll); // stop after 90s
+        }, 3000);
+        // setRefreshing stays true while polling — cleared inside loadAll via finally
+        return;
+      }
+
       if (typeof data.newCount === "number") setNewCount(data.newCount);
       if (data.lastRefreshedAt) setLastRefreshedAt(data.lastRefreshedAt);
       await loadAll();
