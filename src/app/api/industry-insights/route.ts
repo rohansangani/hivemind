@@ -72,10 +72,14 @@ export async function POST(req: NextRequest) {
       syncFreq === "manual"  ? 60 * 60 * 1000 :
       20 * 60 * 60 * 1000;
 
-    const orgCheck = await db.$queryRaw<{ insightLastRefreshedAt: Date | null }[]>`
-      SELECT "insightLastRefreshedAt" FROM "Organization" WHERE id = ${decoded.orgId} LIMIT 1
-    `;
-    if (orgCheck[0]?.insightLastRefreshedAt) {
+    const [orgCheck, insightCount] = await Promise.all([
+      db.$queryRaw<{ insightLastRefreshedAt: Date | null }[]>`
+        SELECT "insightLastRefreshedAt" FROM "Organization" WHERE id = ${decoded.orgId} LIMIT 1
+      `,
+      db.industryInsight.count({ where: { organizationId: decoded.orgId } }),
+    ]);
+    // Only enforce cooldown if there are already insights — a zero-insight state means a previous run failed
+    if (orgCheck[0]?.insightLastRefreshedAt && insightCount > 0) {
       const elapsed = Date.now() - new Date(orgCheck[0].insightLastRefreshedAt).getTime();
       if (elapsed < COOLDOWN_MS) {
         const nextRefreshMs = COOLDOWN_MS - elapsed;
