@@ -145,11 +145,14 @@ export default function IndustryInsightsPage() {
         return;
       }
       const data = await insightsRes.json();
-      const configData = await configRes.json();
       setAllInsights(data.insights || []);
       if (data.markets?.length) setMarkets(data.markets);
       if (data.lastRefreshedAt) setLastRefreshedAt(data.lastRefreshedAt);
-      const freq = configData.intelligenceConfig?.syncFreq || "daily";
+      let freq = "daily";
+      try {
+        const configData = await configRes.json();
+        freq = configData.intelligenceConfig?.syncFreq || "daily";
+      } catch { /* settings parse failure shouldn't break insights display */ }
       setSyncFreq(freq);
 
       const lastRefreshed = data.lastRefreshedAt ? new Date(data.lastRefreshedAt).getTime() : 0;
@@ -221,9 +224,9 @@ export default function IndustryInsightsPage() {
         setRefreshing(false);
         return;
       }
+      if (Array.isArray(data.insights)) setAllInsights(data.insights);
       if (typeof data.newCount === "number") setNewCount(data.newCount);
       if (data.lastRefreshedAt) setLastRefreshedAt(data.lastRefreshedAt);
-      await loadAll();
     } catch {
       setFetchError("Network error — refresh could not complete. Check your connection.");
     } finally {

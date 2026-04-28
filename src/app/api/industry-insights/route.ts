@@ -115,19 +115,8 @@ export async function POST(req: NextRequest) {
     const marketNames = markets.map(m => m.name);
     const marketsStr = marketNames.join(", ") || "global markets";
 
-    // Purge insights older than 90 days
-    const cutoff = new Date(Date.now() - NINETY_DAYS_MS);
-    await db.industryInsight.deleteMany({
-      where: { organizationId: decoded.orgId, createdAt: { lt: cutoff } },
-    });
-
-    const existing = await db.industryInsight.findMany({
-      where: { organizationId: decoded.orgId },
-      select: { title: true },
-      orderBy: { createdAt: "desc" },
-      take: 200,
-    });
-    const existingTitles = existing.map(e => e.title);
+    // Clear all existing insights for this org — ensures a fresh set every refresh
+    await db.industryInsight.deleteMany({ where: { organizationId: decoded.orgId } });
 
     type RawInsight = {
       signalType: string; priority: string; relevanceScore: number; title: string;
@@ -140,9 +129,7 @@ export async function POST(req: NextRequest) {
     if (apiKey) {
       try {
         const today = new Date().toISOString().split("T")[0];
-        const avoidList = existingTitles.length > 0
-          ? `\n\nDo NOT repeat any of these already-seen topics:\n${existingTitles.map((t, i) => `${i + 1}. ${t}`).join("\n")}`
-          : "";
+        const avoidList = "";
 
         const excludedSignals: string[] = [];
         if (intelligenceConfig.competitorMonitor === false) excludedSignals.push("competitor");
@@ -232,13 +219,7 @@ Return ONLY a valid JSON array:
       ];
     }
 
-    const existingNorm = existingTitles.map(t => t.toLowerCase().replace(/[^a-z0-9]/g, ""));
-    const toCreate = newInsights.filter(ni => {
-      const norm = ni.title.toLowerCase().replace(/[^a-z0-9]/g, "");
-      return !existingNorm.some(e => e.length > 10 && (e.includes(norm.slice(0, 20)) || norm.includes(e.slice(0, 20))));
-    });
-
-    for (const insight of toCreate) {
+    for (const insight of newInsights) {
       const tags = [...new Set([...(insight.tags || []), ...(insight.markets || [])])];
       const kbCat = insight.signalType === "competitor" ? "competitor" : "industry";
       const relevanceScore = Math.max(1, Math.min(100, Math.round(typeof insight.relevanceScore === "number" ? insight.relevanceScore : 50)));
@@ -264,7 +245,7 @@ Return ONLY a valid JSON array:
             sourceType: "industry_insight",
             title: insight.title,
             summary: insight.summary,
-            takeaway: insight.takeaway,
+            takeaway: insight.takeaway || "",
             tags: [...tags, insight.signalType],
             kbCategories: [kbCat],
             organizationId: decoded.orgId,
@@ -295,7 +276,7 @@ Return ONLY a valid JSON array:
 
         clearInterval(keepalive);
         controller.enqueue(encoder.encode(
-          "\n" + JSON.stringify({ insights, refreshed: true, newCount: toCreate.length, lastRefreshedAt: refreshedAt })
+          "\n" + JSON.stringify({ insights, refreshed: true, newCount: newInsights.length, lastRefreshedAt: refreshedAt })
         ));
       } catch (error) {
         clearInterval(keepalive);
