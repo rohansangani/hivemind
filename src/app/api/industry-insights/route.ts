@@ -78,14 +78,14 @@ export async function POST(req: NextRequest) {
     `,
     db.industryInsight.count({ where: { organizationId: decoded.orgId } }),
   ]);
-  const force = new URL(req.url).searchParams.get("force") === "true";
-  if (!force && orgCheck[0]?.insightLastRefreshedAt && insightCount > 0) {
-    const elapsed = Date.now() - new Date(orgCheck[0].insightLastRefreshedAt).getTime();
-    if (elapsed < COOLDOWN_MS) {
-      const nextRefreshMs = COOLDOWN_MS - elapsed;
-      return NextResponse.json({ error: "cooldown", nextRefreshMs, cooldownMs: COOLDOWN_MS }, { status: 429 });
-    }
-  }
+  // Cooldown disabled for testing — re-enable once insights generation is verified
+  // if (orgCheck[0]?.insightLastRefreshedAt && insightCount > 0) {
+  //   const elapsed = Date.now() - new Date(orgCheck[0].insightLastRefreshedAt).getTime();
+  //   if (elapsed < COOLDOWN_MS) {
+  //     const nextRefreshMs = COOLDOWN_MS - elapsed;
+  //     return NextResponse.json({ error: "cooldown", nextRefreshMs, cooldownMs: COOLDOWN_MS }, { status: 429 });
+  //   }
+  // }
 
   const orgId = decoded.orgId;
   const encoder = new TextEncoder();
