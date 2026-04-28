@@ -164,8 +164,8 @@ Return ONLY a valid JSON array:
     "title": "Specific headline with real entity names",
     "summary": "3-4 sentences with specific details and why it matters for ${orgName}.",
     "takeaway": "1-2 sentence action for ${orgName}'s marketing or strategy team.",
-    "sourceUrl": "",
-    "sourceName": "Publication or source name",
+    "sourceUrl": "Real URL if you know it exists (e.g. a well-known publication's article). Leave as empty string if uncertain.",
+    "sourceName": "Publication or source name (e.g. Reuters, TechCrunch, Gartner, Bloomberg)",
     "tags": ["tag1", "tag2"],
     "markets": ["market name from: ${marketsStr}"]
   }
