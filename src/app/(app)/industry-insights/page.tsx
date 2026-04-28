@@ -105,9 +105,8 @@ export default function IndustryInsightsPage() {
     syncFreq === "manual"  ? 60 * 60 * 1000 :
     20 * 60 * 60 * 1000;
 
-  const isCoolingDown = lastRefreshedAt
-    ? Date.now() - new Date(lastRefreshedAt).getTime() < COOLDOWN_MS
-    : false;
+  // Cooldown disabled for testing — set back to true expression when re-enabling
+  const isCoolingDown = false;
 
   const nextRefreshLabel = (() => {
     if (!lastRefreshedAt || !isCoolingDown) return null;

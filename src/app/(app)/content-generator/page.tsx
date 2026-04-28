@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useUser } from "@/lib/UserContext";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
 import { analyzeSeo, type SeoAnalysis } from "@/lib/seoAnalyzer";
@@ -121,15 +122,21 @@ export default function ContentGeneratorPage() {
   const [keyPoints, setKeyPoints] = useState("");
   const [showParams, setShowParams] = useState(false);
 
-  // Design brief — keyed by generatedId:format, persisted in sessionStorage
-  const [designBriefs, setDesignBriefs] = useState<Record<string, string>>(() => {
-    try { return JSON.parse(sessionStorage.getItem("hm-cg-briefs") ?? "{}"); } catch { return {}; }
-  });
+  // Design brief — keyed by generatedId:format, persisted in localStorage per user
+  const briefStorageKey = `hm-cg-briefs-${user?.id ?? "anon"}`;
+  const [designBriefs, setDesignBriefs] = useState<Record<string, string>>({});
   const [designBriefLoading, setDesignBriefLoading] = useState(false);
   const [showDesignBrief, setShowDesignBrief] = useState(false);
+  // Load from localStorage once user is available
   useEffect(() => {
-    try { sessionStorage.setItem("hm-cg-briefs", JSON.stringify(designBriefs)); } catch {}
-  }, [designBriefs]);
+    if (!user?.id) return;
+    try { setDesignBriefs(JSON.parse(localStorage.getItem(briefStorageKey) ?? "{}")); } catch {}
+  }, [user?.id, briefStorageKey]);
+  // Persist to localStorage on change
+  useEffect(() => {
+    if (!user?.id) return;
+    try { localStorage.setItem(briefStorageKey, JSON.stringify(designBriefs)); } catch {}
+  }, [designBriefs, briefStorageKey, user?.id]);
 
   // Copy feedback
   const [copied, setCopied] = useState(false);
@@ -1395,10 +1402,10 @@ export default function ContentGeneratorPage() {
         </div>
       </div>
 
-      {/* ── Design brief modal ── */}
-      {showDesignBrief && designBriefs[`${generatedId}:${activeTab}`] && (
+      {/* ── Design brief modal — rendered via portal to escape overflow/stacking contexts ── */}
+      {showDesignBrief && designBriefs[`${generatedId}:${activeTab}`] && createPortal(
         <div
-          className="fixed inset-0 z-50 flex items-center justify-end"
+          className="fixed inset-0 z-[9999] flex items-center justify-end"
           onClick={() => setShowDesignBrief(false)}
           onKeyDown={(e) => { if (e.key === "Escape") setShowDesignBrief(false); }}
         >
@@ -1475,7 +1482,7 @@ export default function ContentGeneratorPage() {
             </div>
           </div>
         </div>
-      )}
+      , document.body)}
     </div>
   );
 }
