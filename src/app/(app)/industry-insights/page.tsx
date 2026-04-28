@@ -212,7 +212,15 @@ export default function IndustryInsightsPage() {
         setRefreshing(false);
         return;
       }
-      const data = await res.json();
+      // Response is a stream with keepalive spaces; last line is the JSON result
+      const text = await res.text();
+      const lastLine = text.trim().split("\n").filter(l => l.trim()).pop() || "{}";
+      const data = JSON.parse(lastLine);
+      if (data.error) {
+        setFetchError(`Refresh failed: ${data.error}`);
+        setRefreshing(false);
+        return;
+      }
       if (typeof data.newCount === "number") setNewCount(data.newCount);
       if (data.lastRefreshedAt) setLastRefreshedAt(data.lastRefreshedAt);
       await loadAll();

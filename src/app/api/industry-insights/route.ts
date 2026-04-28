@@ -49,43 +49,55 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  // Auth and cooldown check synchronously before starting the stream
+  const token = req.cookies.get("hm-token")?.value;
+  if (!token) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  let decoded: { orgId: string };
   try {
-    const token = req.cookies.get("hm-token")?.value;
-    if (!token) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-    let decoded: { orgId: string };
-    try {
-      decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as { orgId: string };
-    } catch {
-      return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
+    decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as { orgId: string };
+  } catch {
+    return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
+  }
+
+  const intelligenceEntry = await db.knowledgeEntry.findFirst({
+    where: { organizationId: decoded.orgId, category: "settings", title: "intelligence_config" },
+  });
+  let intelligenceConfig: { syncFreq?: string; competitorMonitor?: boolean; industryNews?: boolean } = {};
+  try { if (intelligenceEntry) intelligenceConfig = JSON.parse(intelligenceEntry.content); } catch {}
+
+  const syncFreq = intelligenceConfig.syncFreq || "daily";
+  const COOLDOWN_MS =
+    syncFreq === "weekly"  ? 6 * 24 * 60 * 60 * 1000 :
+    syncFreq === "monthly" ? 28 * 24 * 60 * 60 * 1000 :
+    syncFreq === "manual"  ? 60 * 60 * 1000 :
+    20 * 60 * 60 * 1000;
+
+  const [orgCheck, insightCount] = await Promise.all([
+    db.$queryRaw<{ insightLastRefreshedAt: Date | null }[]>`
+      SELECT "insightLastRefreshedAt" FROM "Organization" WHERE id = ${decoded.orgId} LIMIT 1
+    `,
+    db.industryInsight.count({ where: { organizationId: decoded.orgId } }),
+  ]);
+  if (orgCheck[0]?.insightLastRefreshedAt && insightCount > 0) {
+    const elapsed = Date.now() - new Date(orgCheck[0].insightLastRefreshedAt).getTime();
+    if (elapsed < COOLDOWN_MS) {
+      const nextRefreshMs = COOLDOWN_MS - elapsed;
+      return NextResponse.json({ error: "cooldown", nextRefreshMs, cooldownMs: COOLDOWN_MS }, { status: 429 });
     }
+  }
 
-    const intelligenceEntry = await db.knowledgeEntry.findFirst({
-      where: { organizationId: decoded.orgId, category: "settings", title: "intelligence_config" },
-    });
-    let intelligenceConfig: { syncFreq?: string; competitorMonitor?: boolean; industryNews?: boolean } = {};
-    try { if (intelligenceEntry) intelligenceConfig = JSON.parse(intelligenceEntry.content); } catch {}
+  const orgId = decoded.orgId;
+  const encoder = new TextEncoder();
 
-    const syncFreq = intelligenceConfig.syncFreq || "daily";
-    const COOLDOWN_MS =
-      syncFreq === "weekly"  ? 6 * 24 * 60 * 60 * 1000 :
-      syncFreq === "monthly" ? 28 * 24 * 60 * 60 * 1000 :
-      syncFreq === "manual"  ? 60 * 60 * 1000 :
-      20 * 60 * 60 * 1000;
+  // Use a streaming response — keepalive chunks prevent Vercel gateway from timing out
+  // regardless of how long the Claude call takes. The last line is the actual JSON result.
+  const stream = new ReadableStream({
+    async start(controller) {
+      const keepalive = setInterval(() => {
+        try { controller.enqueue(encoder.encode(" ")); } catch { /* stream closed */ }
+      }, 5000);
 
-    const [orgCheck, insightCount] = await Promise.all([
-      db.$queryRaw<{ insightLastRefreshedAt: Date | null }[]>`
-        SELECT "insightLastRefreshedAt" FROM "Organization" WHERE id = ${decoded.orgId} LIMIT 1
-      `,
-      db.industryInsight.count({ where: { organizationId: decoded.orgId } }),
-    ]);
-    // Only enforce cooldown if there are already insights — a zero-insight state means a previous run failed
-    if (orgCheck[0]?.insightLastRefreshedAt && insightCount > 0) {
-      const elapsed = Date.now() - new Date(orgCheck[0].insightLastRefreshedAt).getTime();
-      if (elapsed < COOLDOWN_MS) {
-        const nextRefreshMs = COOLDOWN_MS - elapsed;
-        return NextResponse.json({ error: "cooldown", nextRefreshMs, cooldownMs: COOLDOWN_MS }, { status: 429 });
-      }
-    }
+      try {
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
 
@@ -281,9 +293,20 @@ Return ONLY a valid JSON array:
       orderBy: [{ relevanceScore: "desc" }, { createdAt: "desc" }],
     });
 
-    return NextResponse.json({ insights, refreshed: true, newCount: toCreate.length, lastRefreshedAt: refreshedAt });
-  } catch (error) {
-    console.error("Industry insights refresh error:", error);
-    return NextResponse.json({ error: "Something went wrong" }, { status: 500 });
-  }
+        clearInterval(keepalive);
+        controller.enqueue(encoder.encode(
+          "\n" + JSON.stringify({ insights, refreshed: true, newCount: toCreate.length, lastRefreshedAt: refreshedAt })
+        ));
+      } catch (error) {
+        clearInterval(keepalive);
+        console.error("Industry insights refresh error:", error);
+        controller.enqueue(encoder.encode(
+          "\n" + JSON.stringify({ error: "Something went wrong" })
+        ));
+      }
+      controller.close();
+    },
+  });
+
+  return new Response(stream, { headers: { "Content-Type": "text/plain; charset=utf-8" } });
 }
