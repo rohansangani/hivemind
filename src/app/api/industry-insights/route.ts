@@ -116,8 +116,16 @@ export async function POST(req: NextRequest) {
     const marketNames = markets.map(m => m.name);
     const marketsStr = marketNames.join(", ") || "global markets";
 
-    // Clear all existing insights for this org — ensures a fresh set every refresh
-    await db.industryInsight.deleteMany({ where: { organizationId: decoded.orgId } });
+    // Purge insights older than 90 days only — keep recent ones
+    const cutoff = new Date(Date.now() - NINETY_DAYS_MS);
+    await db.industryInsight.deleteMany({ where: { organizationId: decoded.orgId, createdAt: { lt: cutoff } } });
+
+    // Fetch existing titles to deduplicate new ones (exact match)
+    const existing = await db.industryInsight.findMany({
+      where: { organizationId: decoded.orgId },
+      select: { title: true },
+    });
+    const existingTitles = new Set(existing.map(e => e.title.toLowerCase().trim()));
 
     type RawInsight = {
       signalType: string; priority: string; relevanceScore: number; title: string;
@@ -220,10 +228,16 @@ Return ONLY a valid JSON array:
       ];
     }
 
-    for (const insight of newInsights) {
+    // Only create insights with titles not already in DB
+    const toCreate = newInsights.filter(ni => !existingTitles.has(ni.title.toLowerCase().trim()));
+
+    for (const insight of toCreate) {
       const tags = [...new Set([...(insight.tags || []), ...(insight.markets || [])])];
       const kbCat = insight.signalType === "competitor" ? "competitor" : "industry";
       const relevanceScore = Math.max(1, Math.min(100, Math.round(typeof insight.relevanceScore === "number" ? insight.relevanceScore : 50)));
+      // Normalize URL — add https:// if missing protocol
+      let sourceUrl = insight.sourceUrl || "";
+      if (sourceUrl && !sourceUrl.startsWith("http")) sourceUrl = "https://" + sourceUrl;
       await db.industryInsight.create({
         data: {
           signalType: insight.signalType,
@@ -232,7 +246,7 @@ Return ONLY a valid JSON array:
           title: insight.title,
           summary: insight.summary,
           takeaway: insight.takeaway,
-          sourceUrl: insight.sourceUrl || null,
+          sourceUrl: sourceUrl || null,
           sourceName: insight.sourceName || null,
           tags,
           addedToKB: insight.priority !== "low",
@@ -277,7 +291,7 @@ Return ONLY a valid JSON array:
 
         clearInterval(keepalive);
         controller.enqueue(encoder.encode(
-          "\n" + JSON.stringify({ insights, refreshed: true, newCount: newInsights.length, lastRefreshedAt: refreshedAt })
+          "\n" + JSON.stringify({ insights, refreshed: true, newCount: toCreate.length, lastRefreshedAt: refreshedAt })
         ));
       } catch (error) {
         clearInterval(keepalive);
