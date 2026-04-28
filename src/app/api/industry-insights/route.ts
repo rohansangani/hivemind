@@ -78,7 +78,8 @@ export async function POST(req: NextRequest) {
     `,
     db.industryInsight.count({ where: { organizationId: decoded.orgId } }),
   ]);
-  if (orgCheck[0]?.insightLastRefreshedAt && insightCount > 0) {
+  const force = new URL(req.url).searchParams.get("force") === "true";
+  if (!force && orgCheck[0]?.insightLastRefreshedAt && insightCount > 0) {
     const elapsed = Date.now() - new Date(orgCheck[0].insightLastRefreshedAt).getTime();
     if (elapsed < COOLDOWN_MS) {
       const nextRefreshMs = COOLDOWN_MS - elapsed;

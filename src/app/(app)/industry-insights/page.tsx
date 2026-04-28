@@ -191,7 +191,7 @@ export default function IndustryInsightsPage() {
     setCooldownToast(null);
     setAutoRefreshBanner(false);
     try {
-      const res = await fetch("/api/industry-insights", { method: "POST" });
+      const res = await fetch("/api/industry-insights?force=true", { method: "POST" });
       if (res.status === 429) {
         const data = await res.json();
         if (data.nextRefreshMs) {
