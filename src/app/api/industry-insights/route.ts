@@ -101,6 +101,14 @@ export async function POST(req: NextRequest) {
       try {
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      clearInterval(keepalive);
+      controller.enqueue(encoder.encode(
+        "\n" + JSON.stringify({ error: "Anthropic API key is not configured. Add ANTHROPIC_API_KEY to your environment variables." })
+      ));
+      controller.close();
+      return;
+    }
 
     const [org, competitors, products, markets] = await Promise.all([
       db.organization.findUnique({ where: { id: decoded.orgId } }),
@@ -111,8 +119,8 @@ export async function POST(req: NextRequest) {
 
     const orgName = org?.name || "the company";
     const industry = org?.industry || "technology";
-    const compNames = competitors.map(c => c.name).join(", ") || "competitors";
-    const prodNames = products.map(p => p.name).join(", ") || "products";
+    const compNames = competitors.map(c => c.name).join(", ") || "none listed";
+    const prodNames = products.map(p => p.name).join(", ") || "none listed";
     const marketNames = markets.map(m => m.name);
     const marketsStr = marketNames.join(", ") || "global markets";
 
@@ -133,21 +141,15 @@ export async function POST(req: NextRequest) {
       tags: string[]; markets: string[];
     };
 
-    let newInsights: RawInsight[] = [];
+    const today = new Date().toISOString().split("T")[0];
+    const excludedSignals: string[] = [];
+    if (intelligenceConfig.competitorMonitor === false) excludedSignals.push("competitor");
+    if (intelligenceConfig.industryNews === false) excludedSignals.push("news_pr");
+    const excludeBlock = excludedSignals.length > 0
+      ? `\n\nDo NOT include insights with signalType: ${excludedSignals.join(" or ")}.`
+      : "";
 
-    if (apiKey) {
-      try {
-        const today = new Date().toISOString().split("T")[0];
-        const avoidList = "";
-
-        const excludedSignals: string[] = [];
-        if (intelligenceConfig.competitorMonitor === false) excludedSignals.push("competitor");
-        if (intelligenceConfig.industryNews === false) excludedSignals.push("news_pr");
-        const excludeBlock = excludedSignals.length > 0
-          ? `\n\nDo NOT include insights with signalType: ${excludedSignals.join(" or ")}.`
-          : "";
-
-        const prompt = `You are a senior competitive intelligence analyst for ${orgName}, a ${industry} company.
+    const prompt = `You are a senior competitive intelligence analyst for ${orgName}, a ${industry} company.
 Today: ${today}
 
 Context:
@@ -161,7 +163,7 @@ Each insight must:
 - Reference real companies, products, or events by name
 - Be specific with data points, percentages, or concrete details where possible
 - Be directly relevant to ${orgName}'s business
-- Cover all listed markets: ${marketsStr}${avoidList}${excludeBlock}
+- Cover all listed markets: ${marketsStr}${excludeBlock}
 
 Return ONLY a valid JSON array:
 [
@@ -179,58 +181,60 @@ Return ONLY a valid JSON array:
   }
 ]`;
 
-        const resp = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": apiKey,
-            "anthropic-version": "2023-06-01",
-          },
-          body: JSON.stringify({
-            model: "claude-sonnet-4-6",
-            max_tokens: 6000,
-            messages: [{ role: "user", content: prompt }],
-          }),
-        });
+    let newInsights: RawInsight[] = [];
+    let claudeError = "";
 
-        const data = await resp.json();
-        if (data.content && !data.error) {
-          const text = data.content.find((b: { type: string }) => b.type === "text")?.text || "";
-          try {
-            const clean = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
-            const match = clean.match(/\[[\s\S]*\]/);
-            if (match) {
-              newInsights = JSON.parse(match[0]);
-              if (!Array.isArray(newInsights)) newInsights = [];
-            }
-          } catch {
-            console.error("Failed to parse AI insights:", text.slice(0, 300));
+    try {
+      const resp = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-6",
+          max_tokens: 6000,
+          messages: [{ role: "user", content: prompt }],
+        }),
+      });
+
+      const data = await resp.json();
+      if (data.content && !data.error) {
+        const text = data.content.find((b: { type: string }) => b.type === "text")?.text || "";
+        try {
+          const clean = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+          const match = clean.match(/\[[\s\S]*\]/);
+          if (match) {
+            const parsed = JSON.parse(match[0]);
+            if (Array.isArray(parsed)) newInsights = parsed;
           }
-        } else {
-          console.error("Anthropic error:", JSON.stringify(data).slice(0, 300));
+          if (newInsights.length === 0) claudeError = "AI returned an empty insights list.";
+        } catch {
+          claudeError = "Failed to parse AI response.";
+          console.error("Failed to parse AI insights:", text.slice(0, 300));
         }
-      } catch (e) {
-        console.error("Anthropic call failed:", e);
+      } else {
+        claudeError = data.error?.message || `Anthropic API error (${resp.status})`;
+        console.error("Anthropic error:", JSON.stringify(data).slice(0, 300));
       }
+    } catch (e) {
+      claudeError = e instanceof Error ? e.message : "Network error calling Anthropic API";
+      console.error("Anthropic call failed:", e);
     }
 
-    // Fallback — only if AI returned nothing
     if (newInsights.length === 0) {
-      const compName = competitors[0]?.name || "a major competitor";
-      const mkt = marketNames[0] || "Global";
-      newInsights = [
-        { signalType: "competitor", priority: "high", relevanceScore: 85, title: `${compName} launches aggressive ${mkt} pricing campaign`, summary: `${compName} has announced a new tiered pricing model targeting mid-market accounts in ${mkt}, offering up to 30% discounts for annual commitments.`, takeaway: `Prepare competitive battle cards and consider a value-based counter-messaging campaign focused on total cost of ownership.`, sourceUrl: "", sourceName: "TechCrunch", tags: [compName, mkt, "Pricing"], markets: [mkt] },
-        { signalType: "industry_report", priority: "medium", relevanceScore: 65, title: `Gartner: ${industry} AI adoption accelerates across ${mkt}`, summary: `Gartner's latest report shows 68% of enterprises in ${mkt} plan to increase AI investment in ${industry} by 40%+ over the next 12 months.`, takeaway: `Use this data in content and sales collateral. Position ${orgName} as the AI-native choice for ${mkt} enterprises.`, sourceUrl: "", sourceName: "Gartner", tags: ["Gartner", mkt, "AI"], markets: [mkt] },
-        { signalType: "market_trend", priority: "medium", relevanceScore: 60, title: `${mkt} market sees surge in ${industry} platform consolidation`, summary: `Enterprises in ${mkt} are reducing their vendor count by 35% on average, consolidating onto 2-3 core platforms.`, takeaway: `Emphasise platform breadth and integration depth in ${mkt} campaigns.`, sourceUrl: "", sourceName: "Bloomberg", tags: [mkt, "Consolidation"], markets: [mkt] },
-        { signalType: "regulatory", priority: "medium", relevanceScore: 62, title: `New data localisation rules take effect in ${mkt}`, summary: `Regulators in ${mkt} have finalised data residency requirements for ${industry} platforms, mandating local storage for sensitive data by Q3.`, takeaway: `Create a compliance readiness guide for ${mkt} customers.`, sourceUrl: "", sourceName: "Reuters", tags: [mkt, "Regulatory", "Compliance"], markets: [mkt] },
-        { signalType: "product_launch", priority: "low", relevanceScore: 30, title: `${compName} unveils AI-powered ${industry} feature set`, summary: `${compName} announced a new suite of AI features targeting enterprise ${industry} workflows, with general availability in 60 days.`, takeaway: `Ensure sales teams have up-to-date competitive differentiation materials.`, sourceUrl: "", sourceName: "VentureBeat", tags: [compName, "AI", "Product Launch"], markets: marketNames },
-        { signalType: "news_pr", priority: "low", relevanceScore: 25, title: `Forbes names ${industry} as top sector for 2025 enterprise investment`, summary: `Forbes ranks ${industry} as the #2 sector for planned enterprise investment, citing ROI clarity and reduced implementation timelines.`, takeaway: `Share this coverage across social channels as third-party validation.`, sourceUrl: "", sourceName: "Forbes", tags: ["Forbes", "Enterprise", "Investment"], markets: marketNames },
-      ];
+      clearInterval(keepalive);
+      controller.enqueue(encoder.encode(
+        "\n" + JSON.stringify({ error: claudeError || "AI returned no insights." })
+      ));
+      controller.close();
+      return;
     }
 
-    // Always insert all new AI insights — no title dedup on IndustryInsight.
+    // Insert all AI insights — no title dedup on IndustryInsight.
     // The 50-cap below manages volume by keeping the highest-relevance items.
-    // LearningLog entries are deduped separately so the KB stays clean across refreshes.
+    // LearningLog entries are deduped by title so the KB stays clean across refreshes.
     for (const insight of newInsights) {
       const tags = [...new Set([...(insight.tags || []), ...(insight.markets || [])])];
       const kbCat = insight.signalType === "competitor" ? "competitor" : "industry";
