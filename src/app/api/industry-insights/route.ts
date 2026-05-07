@@ -120,12 +120,12 @@ export async function POST(req: NextRequest) {
     const cutoff = new Date(Date.now() - NINETY_DAYS_MS);
     await db.industryInsight.deleteMany({ where: { organizationId: decoded.orgId, createdAt: { lt: cutoff } } });
 
-    // Fetch existing titles to deduplicate new ones (exact match)
-    const existing = await db.industryInsight.findMany({
-      where: { organizationId: decoded.orgId },
+    // Fetch existing LearningLog titles to avoid duplicate KB entries across refreshes
+    const existingLearnings = await db.learningLog.findMany({
+      where: { organizationId: decoded.orgId, sourceType: "industry_insight" },
       select: { title: true },
     });
-    const existingTitles = new Set(existing.map(e => e.title.toLowerCase().trim()));
+    const existingLearningTitles = new Set(existingLearnings.map(l => l.title.toLowerCase().trim()));
 
     type RawInsight = {
       signalType: string; priority: string; relevanceScore: number; title: string;
@@ -172,7 +172,7 @@ Return ONLY a valid JSON array:
     "title": "Specific headline with real entity names",
     "summary": "3-4 sentences with specific details and why it matters for ${orgName}.",
     "takeaway": "1-2 sentence action for ${orgName}'s marketing or strategy team.",
-    "sourceUrl": "Real URL if you know it exists (e.g. a well-known publication's article). Leave as empty string if uncertain.",
+    "sourceUrl": "A URL for this story — use the specific article URL if known, otherwise the publication homepage (e.g. https://reuters.com, https://techcrunch.com, https://gartner.com). NEVER leave empty.",
     "sourceName": "Publication or source name (e.g. Reuters, TechCrunch, Gartner, Bloomberg)",
     "tags": ["tag1", "tag2"],
     "markets": ["market name from: ${marketsStr}"]
@@ -228,10 +228,10 @@ Return ONLY a valid JSON array:
       ];
     }
 
-    // Only create insights with titles not already in DB
-    const toCreate = newInsights.filter(ni => !existingTitles.has(ni.title.toLowerCase().trim()));
-
-    for (const insight of toCreate) {
+    // Always insert all new AI insights — no title dedup on IndustryInsight.
+    // The 50-cap below manages volume by keeping the highest-relevance items.
+    // LearningLog entries are deduped separately so the KB stays clean across refreshes.
+    for (const insight of newInsights) {
       const tags = [...new Set([...(insight.tags || []), ...(insight.markets || [])])];
       const kbCat = insight.signalType === "competitor" ? "competitor" : "industry";
       const relevanceScore = Math.max(1, Math.min(100, Math.round(typeof insight.relevanceScore === "number" ? insight.relevanceScore : 50)));
@@ -254,7 +254,9 @@ Return ONLY a valid JSON array:
           organizationId: decoded.orgId,
         },
       });
-      if (insight.priority !== "low") {
+      // Only add to KB if this title isn't already in the learning log
+      if (insight.priority !== "low" && !existingLearningTitles.has(insight.title.toLowerCase().trim())) {
+        existingLearningTitles.add(insight.title.toLowerCase().trim()); // prevent within-batch dupes
         await db.learningLog.create({
           data: {
             sourceType: "industry_insight",
@@ -268,6 +270,7 @@ Return ONLY a valid JSON array:
         });
       }
     }
+    const toCreate = newInsights; // for count reporting
 
     // Cap to 50 most relevant
     const allStored = await db.industryInsight.findMany({

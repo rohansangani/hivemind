@@ -369,9 +369,63 @@ export default function SetupWizardPage() {
       const json = await res.json();
       if (!res.ok) { setAiPopulateError(json.error || "AI fill failed"); return; }
       const d = json.data;
+
+      // Compute updated values before setting state (for auto-complete check)
+      const updatedCompany = d.description ? {
+        ...company,
+        description: d.description || company.description,
+        industry: d.industry || company.industry,
+        subIndustry: d.subIndustry || company.subIndustry,
+        size: d.size || company.size,
+        hqCity: d.hqCity || company.hqCity,
+        hqCountry: d.hqCountry || company.hqCountry,
+        mission: d.mission || company.mission,
+      } : company;
+      const updatedBrand = (d.brandTraits?.length || d.voiceDescription) ? {
+        ...brand,
+        traits: d.brandTraits?.length ? d.brandTraits.slice(0, 5) : brand.traits,
+        voiceDescription: d.voiceDescription || brand.voiceDescription,
+      } : brand;
+      const updatedProducts = d.products?.length
+        ? d.products.map((p: { name: string; description: string; category: string; classification: string; scope: string; features: string[]; useCases: string }) => ({ name: p.name || "", description: p.description || "", category: p.category || "core", classification: p.classification || "", scope: p.scope || "global", features: p.features || [], useCases: p.useCases || "", markets: [] }))
+        : products;
+
       if (d.description) setCompany(prev => ({ ...prev, description: d.description || prev.description, industry: d.industry || prev.industry, subIndustry: d.subIndustry || prev.subIndustry, size: d.size || prev.size, hqCity: d.hqCity || prev.hqCity, hqCountry: d.hqCountry || prev.hqCountry, mission: d.mission || prev.mission }));
-      if (d.products?.length) setProducts(d.products.map((p: { name: string; description: string; category: string; classification: string; scope: string; features: string[]; useCases: string }) => ({ name: p.name || "", description: p.description || "", category: p.category || "core", classification: p.classification || "", scope: p.scope || "global", features: p.features || [], useCases: p.useCases || "", markets: [] })));
+      if (d.products?.length) setProducts(updatedProducts);
       if (d.brandTraits?.length || d.voiceDescription) setBrand(prev => ({ ...prev, traits: d.brandTraits?.length ? d.brandTraits.slice(0, 5) : prev.traits, voiceDescription: d.voiceDescription || prev.voiceDescription }));
+
+      // Auto-mark setup as complete if all required fields are now present
+      const primaryMarkets = markets.filter(m => m.type === "primary");
+      const canAutoComplete =
+        updatedCompany.description.trim() &&
+        updatedCompany.industry &&
+        updatedCompany.size &&
+        primaryMarkets.length > 0 &&
+        icpDescription.trim() &&
+        updatedBrand.traits.length > 0 &&
+        updatedBrand.archetype;
+
+      if (canAutoComplete) {
+        try {
+          await fetch("/api/setup-wizard", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              company: updatedCompany,
+              markets,
+              marketNotes,
+              products: updatedProducts,
+              personas,
+              competitors,
+              competitiveMoat,
+              icpDescription,
+              brand: { ...updatedBrand, competitiveMoat },
+              isComplete: true,
+            }),
+          });
+          setWizardComplete(true);
+        } catch {}
+      }
     } catch { setAiPopulateError("Something went wrong"); }
     finally { setAiPopulating(false); }
   };

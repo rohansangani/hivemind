@@ -97,13 +97,6 @@ export default function DashboardPage() {
   const scoreBg = (s: number) => s >= 75 ? "bg-emerald-500" : s >= 50 ? "bg-amber-500" : "bg-red-500";
   const scoreText = (s: number) => s >= 75 ? "text-emerald-500" : s >= 50 ? "text-amber-500" : "text-red-500";
 
-  const activityDotColor = (type: string) => {
-    if (type === "upload") return "#4361ee";
-    if (type === "generate") return "#F59E0B";
-    return "#10B981";
-  };
-
-
   const quickActions = [
     { label: "Upload content", desc: "Add assets to your library", href: "/content-library", iconPath: <path d="M12 5v9H4V2h5l3 3z" stroke="#4361ee" strokeWidth="1.1" />, iconBg: "bg-blue-50", accentColor: "#4361ee" },
     { label: "Generate content", desc: "Create blogs, posts & more", href: "/content-generator", iconPath: <path d="M4 12l1.5-4L12 2l2 2-6.5 6.5L4 12z" stroke="#F59E0B" strokeWidth="1.1" />, iconBg: "bg-amber-50", accentColor: "#F59E0B" },
@@ -211,10 +204,14 @@ export default function DashboardPage() {
             title="Refresh dashboard"
             className="w-[34px] h-[34px] rounded-lg border border-[var(--hm-border)] flex items-center justify-center hover:bg-[var(--hm-bg-secondary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex-shrink-0"
           >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className={refreshing ? "animate-spin" : ""} style={{ color: "var(--hm-text-secondary)" }}>
-              <path d="M13.5 8A5.5 5.5 0 1 1 2.5 8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-              <path d="M13.5 3.5v4h-4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
+            {refreshing ? (
+              <div className="w-3.5 h-3.5 border-[1.5px] border-[var(--hm-border)] border-t-[var(--hm-text-secondary)] rounded-full animate-spin" />
+            ) : (
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ color: "var(--hm-text-secondary)" }}>
+                <path d="M13.5 8A5.5 5.5 0 1 1 2.5 8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                <path d="M13.5 3.5v4h-4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            )}
           </button>
 
           <button
@@ -330,8 +327,7 @@ export default function DashboardPage() {
           }
         </div>
 
-        {/* Middle two-column section */}
-        {data && <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+        {data && <div className="grid grid-cols-1 gap-4 mb-6">
           {/* Recently Generated */}
           <div className="bg-white border border-[var(--hm-border)] rounded-xl p-5" style={{ boxShadow: "var(--hm-shadow-card)" }}>
             <div className="flex items-center justify-between mb-4">
@@ -397,50 +393,10 @@ export default function DashboardPage() {
             )}
           </div>
 
-          {/* Activity Feed */}
-          <div className="bg-white border border-[var(--hm-border)] rounded-xl p-5" style={{ boxShadow: "var(--hm-shadow-card)" }}>
-            <h2 className="text-[14px] font-semibold mb-4">Recent activity</h2>
-            {data.activity.length === 0 ? (
-              <div className="py-8 flex flex-col items-center text-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-[var(--hm-bg-secondary)] flex items-center justify-center">
-                  <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="6" stroke="#bbb" strokeWidth="1.2" /><path d="M8 5v3.5l2 1" stroke="#bbb" strokeWidth="1.2" strokeLinecap="round" /></svg>
-                </div>
-                <div>
-                  <p className="text-[13px] font-medium text-[var(--hm-text-secondary)]">No activity yet</p>
-                  <p className="text-[12px] text-[var(--hm-text-tertiary)] mt-0.5">Actions by you and your team will appear here.</p>
-                </div>
-                <button
-                  onClick={() => router.push("/content-library")}
-                  className="h-[32px] px-4 bg-[#4361ee] text-white text-[12px] font-semibold rounded-lg hover:bg-[#3451d4] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] transition-colors"
-                >
-                  Upload your first asset
-                </button>
-              </div>
-            ) : (
-              <div className="relative">
-                <div className="absolute left-[11px] top-2 bottom-2 w-[2px]" style={{ background: "var(--hm-border)" }} aria-hidden="true" />
-                <div className="space-y-0">
-                  {data.activity.slice(0, 5).map((e, i) => (
-                    <div key={i} className="flex items-start gap-3 py-2.5 relative">
-                      <div
-                        className="w-[10px] h-[10px] rounded-full flex-shrink-0 mt-1.5 z-10 ring-2 ring-white"
-                        style={{ background: activityDotColor(e.type) }}
-                        aria-hidden="true"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[13px]"><span className="font-medium">{e.text}</span></p>
-                        <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-0.5">{e.detail} &middot; {timeAgo(e.time)}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
         </div>}
 
-        {/* Assets section — always show both panels */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+        {/* Assets section */}
+        <div className="grid grid-cols-1 gap-4 mb-6">
           {/* Low score alerts */}
           <div className="bg-white border border-[var(--hm-border)] rounded-xl p-5 relative overflow-hidden" style={{ boxShadow: "var(--hm-shadow-card)" }}>
             <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl bg-red-400" aria-hidden="true" />
@@ -478,94 +434,8 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Top score assets */}
-          <div className="bg-white border border-[var(--hm-border)] rounded-xl p-5 relative overflow-hidden" style={{ boxShadow: "var(--hm-shadow-card)" }}>
-            <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl bg-emerald-400" aria-hidden="true" />
-            <div className="pl-1">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-[14px] font-semibold">Top brand-scoring assets</h2>
-                <button
-                  onClick={() => router.push("/content-library")}
-                  className="text-[11px] text-[#4361ee] hover:underline font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] rounded"
-                >
-                  View library
-                </button>
-              </div>
-              {data.topScoreAssets.length === 0 ? (
-                <div className="py-6 flex flex-col items-center text-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-emerald-50 flex items-center justify-center">
-                    <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 2l1.5 4h4l-3 2.5 1 4L8 10l-3.5 2.5 1-4L2 6h4z" stroke="#10B981" strokeWidth="1.1" /></svg>
-                  </div>
-                  <div>
-                    <p className="text-[13px] font-medium text-[var(--hm-text-secondary)]">No scored assets yet</p>
-                    <p className="text-[12px] text-[var(--hm-text-tertiary)] mt-0.5">Upload content and it will be scored automatically.</p>
-                  </div>
-                  <button
-                    onClick={() => router.push("/content-library")}
-                    className="h-[32px] px-4 bg-[#4361ee] text-white text-[12px] font-semibold rounded-lg hover:bg-[#3451d4] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] transition-colors"
-                  >
-                    Go to library
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {data.topScoreAssets.map((a) => (
-                    <button
-                      key={a.id}
-                      onClick={() => router.push("/content-library")}
-                      className="w-full flex items-center gap-2.5 p-2.5 bg-[var(--hm-bg-secondary)] rounded-lg text-left hover:bg-[var(--hm-bg-tertiary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] transition-colors"
-                    >
-                      <span className={"text-[10px] px-2 py-0.5 text-white rounded-md font-medium flex-shrink-0 " + scoreBg(a.brandScore)} title={`Brand score: ${Math.round(a.brandScore)}%`}>
-                        {Math.round(a.brandScore)}%
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[13px] font-medium truncate">{a.name}</p>
-                        <p className="text-[10px] text-[var(--hm-text-tertiary)] mt-0.5">{(a.fileType || "").toUpperCase()} &middot; {a.productTags[0] || "All"} &middot; {a.marketTags[0] || "Global"}</p>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
         </div>
 
-        {/* Getting started checklist */}
-        <div className="bg-white border border-[var(--hm-border)] rounded-xl p-5" style={{ boxShadow: "var(--hm-shadow-card)" }}>
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-[14px] font-semibold">Getting started</h3>
-            <span className="text-[11px] text-[var(--hm-text-tertiary)]">
-              {data.checklist.filter((t) => t.done).length} / {data.checklist.length} complete
-            </span>
-          </div>
-          <div className="space-y-1.5">
-            {data.checklist.map((task, i) => (
-              <div
-                key={i}
-                role={!task.done && task.href ? "button" : undefined}
-                tabIndex={!task.done && task.href ? 0 : undefined}
-                aria-label={task.done ? `${task.label} — completed` : task.label}
-                onClick={() => !task.done && task.href && router.push(task.href)}
-                onKeyDown={(e) => !task.done && task.href && e.key === "Enter" && router.push(task.href!)}
-                className={"flex items-center gap-3 px-3.5 py-2.5 rounded-lg transition-all " + (task.done ? "bg-emerald-50" : task.href ? "hover:bg-[var(--hm-bg-secondary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] cursor-pointer" : "")}
-              >
-                <div className={"w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 " + (task.done ? "bg-emerald-500" : "border-[1.5px] border-[var(--hm-border)]")}>
-                  {task.done && (
-                    <svg width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                      <path d="M3.5 8.5l3 3 6-6" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  )}
-                </div>
-                <span className={"text-[13px] flex-1 " + (task.done ? "text-emerald-600 line-through" : "")}>{task.label}</span>
-                {!task.done && task.href && (
-                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className="ml-auto opacity-30 flex-shrink-0" aria-hidden="true">
-                    <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
       </div>
     </div>
   );
