@@ -157,13 +157,13 @@ Context:
 - Markets: ${marketsStr}
 - Competitors: ${compNames}
 
-Generate 15-20 specific, actionable intelligence insights covering competitor moves, market trends, regulatory changes, product launches, and industry reports relevant to this company and its markets.
+Generate exactly 10 specific, actionable intelligence insights covering competitor moves, market trends, regulatory changes, product launches, and industry reports relevant to this company and its markets.
 
 Each insight must:
 - Reference real companies, products, or events by name
 - Be specific with data points, percentages, or concrete details where possible
 - Be directly relevant to ${orgName}'s business
-- Cover all listed markets: ${marketsStr}${excludeBlock}
+- Cover the listed markets: ${marketsStr}${excludeBlock}
 
 Return ONLY a valid JSON array:
 [
@@ -194,7 +194,7 @@ Return ONLY a valid JSON array:
         },
         body: JSON.stringify({
           model: "claude-sonnet-4-6",
-          max_tokens: 6000,
+          max_tokens: 8000,
           messages: [{ role: "user", content: prompt }],
         }),
       });
@@ -204,15 +204,43 @@ Return ONLY a valid JSON array:
         const text = data.content.find((b: { type: string }) => b.type === "text")?.text || "";
         try {
           const clean = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
-          const match = clean.match(/\[[\s\S]*\]/);
-          if (match) {
-            const parsed = JSON.parse(match[0]);
-            if (Array.isArray(parsed)) newInsights = parsed;
+
+          // 1. Try parsing the whole response directly
+          try {
+            const direct = JSON.parse(clean);
+            if (Array.isArray(direct) && direct.length > 0) newInsights = direct;
+          } catch { /* fall through */ }
+
+          // 2. Extract the JSON array via regex
+          if (newInsights.length === 0) {
+            const match = clean.match(/\[[\s\S]*\]/);
+            if (match) {
+              try {
+                const parsed = JSON.parse(match[0]);
+                if (Array.isArray(parsed) && parsed.length > 0) newInsights = parsed;
+              } catch { /* fall through to salvage */ }
+            }
           }
-          if (newInsights.length === 0) claudeError = "AI returned an empty insights list.";
-        } catch {
+
+          // 3. Salvage complete objects from a truncated response
+          if (newInsights.length === 0) {
+            const salvaged: RawInsight[] = [];
+            // Match each top-level JSON object individually
+            const objRegex = /\{(?:[^{}]|\{[^{}]*\})*\}/g;
+            let m: RegExpExecArray | null;
+            while ((m = objRegex.exec(clean)) !== null) {
+              try {
+                const obj = JSON.parse(m[0]) as RawInsight;
+                if (obj.title && obj.summary && obj.signalType) salvaged.push(obj);
+              } catch { /* skip malformed object */ }
+            }
+            if (salvaged.length > 0) newInsights = salvaged;
+          }
+
+          if (newInsights.length === 0) claudeError = "AI returned an empty or unparseable response.";
+        } catch (parseErr) {
           claudeError = "Failed to parse AI response.";
-          console.error("Failed to parse AI insights:", text.slice(0, 300));
+          console.error("Failed to parse AI insights:", parseErr, text.slice(0, 500));
         }
       } else {
         claudeError = data.error?.message || `Anthropic API error (${resp.status})`;
