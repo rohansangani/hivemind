@@ -124,12 +124,18 @@ export async function POST(req: NextRequest) {
     const marketNames = markets.map(m => m.name);
     const marketsStr = marketNames.join(", ") || "global markets";
 
-    // Purge ALL existing insights before generating fresh ones.
-    // This ensures stale AI-generated content (which references old training-data events)
-    // never persists alongside new insights. The 90-day purge on GET handles edge cases.
-    await db.industryInsight.deleteMany({ where: { organizationId: decoded.orgId } });
+    // Do NOT purge insights — accumulate across refreshes, keeping a 90-day rolling window.
+    // The 90-day purge on GET handles expiry. Dedup by title prevents duplicates.
 
-    // Fetch LearningLog titles to avoid duplicate KB entries across refreshes
+    // Fetch existing insight titles (last 90 days) to skip re-adding the same ones
+    const existingInsights = await db.industryInsight.findMany({
+      where: { organizationId: decoded.orgId },
+      select: { title: true },
+    });
+    const existingInsightTitles = new Set(existingInsights.map(i => i.title.toLowerCase().trim()));
+
+    // Fetch LearningLog titles to avoid duplicate KB entries across refreshes.
+    // LearningLog entries are NEVER deleted — they persist even when insights are purged.
     const existingLearnings = await db.learningLog.findMany({
       where: { organizationId: decoded.orgId, sourceType: "industry_insight" },
       select: { title: true },
@@ -278,7 +284,7 @@ Company context:
 - Competitors: ${compNames}
 ${articleBlock}
 
-Using ONLY the articles above as your source material, extract 15-20 specific, actionable intelligence insights. Every insight MUST be grounded in one or more of the articles above — do not use your training data.
+Using ONLY the articles above as your source material, extract as many specific, actionable intelligence insights as possible — aim for up to 50. Every insight MUST be grounded in one or more of the articles above — do not use your training data.
 
 For each insight:
 - Reference the article by number in the sourceUrl field as "#N" (e.g. "#3") so we can map back to the real URL
@@ -311,7 +317,7 @@ Company context:
 - Markets: ${marketsStr}
 - Competitors: ${compNames}
 
-Generate 15-20 strategic insights covering competitor positioning, market dynamics, regulatory environment, and technology trends. Focus on structural intelligence — things that are ongoing and don't expire — NOT specific dated events or press releases from training data.${excludeBlock}
+Generate as many strategic insights as possible (up to 50) covering competitor positioning, market dynamics, regulatory environment, and technology trends. Focus on structural intelligence — things that are ongoing and don't expire — NOT specific dated events or press releases from training data.${excludeBlock}
 
 Return ONLY a valid JSON array:
 [
@@ -408,12 +414,14 @@ Return ONLY a valid JSON array:
       return;
     }
 
-    // All insights are fresh (full purge happened above)
-    const toCreate = newInsights;
+    // Skip insights whose titles already exist in the DB (dedup across refreshes)
+    const toCreate = newInsights.filter(
+      i => !existingInsightTitles.has(i.title.toLowerCase().trim())
+    );
 
-    // Insert insights.
-    // The 50-cap below manages volume by keeping the highest-relevance items.
-    // LearningLog entries are deduped by title so the KB stays clean across refreshes.
+    // Insert new insights.
+    // LearningLog entries are deduped by title and NEVER deleted — they persist
+    // even if insights are later purged by the 90-day rolling window.
     for (const insight of toCreate) {
       const tags = [...new Set([...(insight.tags || []), ...(insight.markets || [])])];
       const kbCat = insight.signalType === "competitor" ? "competitor" : "industry";
@@ -467,18 +475,6 @@ Return ONLY a valid JSON array:
         });
       }
     }
-    // toCreate already defined above (filtered by recentTitlesSet)
-
-    // Cap to 50 most relevant
-    const allStored = await db.industryInsight.findMany({
-      where: { organizationId: decoded.orgId },
-      select: { id: true },
-      orderBy: [{ relevanceScore: "desc" }, { createdAt: "desc" }],
-    });
-    if (allStored.length > 50) {
-      await db.industryInsight.deleteMany({ where: { id: { in: allStored.slice(50).map(r => r.id) } } });
-    }
-
     const refreshedAt = new Date();
     await db.$executeRaw`
       UPDATE "Organization" SET "insightLastRefreshedAt" = ${refreshedAt} WHERE id = ${decoded.orgId}
