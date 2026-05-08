@@ -21,22 +21,26 @@ interface Insight {
 }
 
 const SIGNAL_COLORS: Record<string, { border: string; bg: string; text: string; label: string }> = {
-  competitor:       { border: "border-l-red-500",     bg: "bg-red-50",    text: "text-red-600",    label: "Competitor" },
-  industry_report:  { border: "border-l-amber-500",   bg: "bg-amber-50",  text: "text-amber-600",  label: "Industry report" },
-  product_launch:   { border: "border-l-[#4361ee]",   bg: "bg-blue-50",   text: "text-[#4361ee]",  label: "Product launch" },
-  regulatory:       { border: "border-l-emerald-500", bg: "bg-emerald-50",text: "text-emerald-600", label: "Regulatory" },
-  news_pr:          { border: "border-l-purple-500",  bg: "bg-purple-50", text: "text-purple-600",  label: "News & PR" },
-  market_trend:     { border: "border-l-teal-500",    bg: "bg-teal-50",   text: "text-teal-600",   label: "Market trend" },
+  competitor:           { border: "border-l-red-500",     bg: "bg-red-50",     text: "text-red-600",     label: "Competitor" },
+  industry_report:      { border: "border-l-amber-500",   bg: "bg-amber-50",   text: "text-amber-600",   label: "Industry report" },
+  product_launch:       { border: "border-l-[#4361ee]",   bg: "bg-blue-50",    text: "text-[#4361ee]",   label: "Product launch" },
+  regulatory:           { border: "border-l-emerald-500", bg: "bg-emerald-50", text: "text-emerald-600",  label: "Regulatory" },
+  news_pr:              { border: "border-l-purple-500",  bg: "bg-purple-50",  text: "text-purple-600",  label: "News & PR" },
+  market_trend:         { border: "border-l-teal-500",    bg: "bg-teal-50",    text: "text-teal-600",    label: "Market trend" },
+  technology:           { border: "border-l-sky-500",     bg: "bg-sky-50",     text: "text-sky-600",     label: "Technology" },
+  strategic_opportunity:{ border: "border-l-violet-500",  bg: "bg-violet-50",  text: "text-violet-600",  label: "Strategic opp." },
 };
 
 const SIGNAL_FILTERS = [
-  { id: "all",             label: "All insights" },
-  { id: "competitor",      label: "Competitor" },
-  { id: "industry_report", label: "Industry reports" },
-  { id: "news_pr",         label: "News & PRs" },
-  { id: "regulatory",      label: "Regulatory" },
-  { id: "product_launch",  label: "Product launches" },
-  { id: "market_trend",    label: "Market trends" },
+  { id: "all",                  label: "All insights" },
+  { id: "competitor",           label: "Competitor" },
+  { id: "industry_report",      label: "Industry reports" },
+  { id: "news_pr",              label: "News & PRs" },
+  { id: "regulatory",           label: "Regulatory" },
+  { id: "product_launch",       label: "Product launches" },
+  { id: "market_trend",         label: "Market trends" },
+  { id: "technology",           label: "Technology" },
+  { id: "strategic_opportunity",label: "Strategic opps." },
 ];
 
 // Priority badge config — all three tiers are labelled

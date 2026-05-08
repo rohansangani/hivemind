@@ -60,12 +60,14 @@ function fmtFull(d: Date) {
 // ─── signal config ────────────────────────────────────────────────────────────
 
 const SIGNAL_META: Record<string, { label: string; color: string; bg: string }> = {
-  competitor:      { label: "COMPETITOR INTELLIGENCE", color: "#DC2626", bg: "#FEF2F2" },
-  market_trend:    { label: "MARKET TRENDS",           color: "#0D9488", bg: "#F0FDFA" },
-  industry_report: { label: "INDUSTRY REPORTS",        color: "#D97706", bg: "#FFFBEB" },
-  product_launch:  { label: "PRODUCT LAUNCHES",        color: "#4361EE", bg: "#EEF2FF" },
-  regulatory:      { label: "REGULATORY",              color: "#059669", bg: "#ECFDF5" },
-  news_pr:         { label: "NEWS & PR",               color: "#7C3AED", bg: "#F5F3FF" },
+  competitor:           { label: "COMPETITOR INTELLIGENCE", color: "#DC2626", bg: "#FEF2F2" },
+  market_trend:         { label: "MARKET TRENDS",           color: "#0D9488", bg: "#F0FDFA" },
+  industry_report:      { label: "INDUSTRY REPORTS",        color: "#D97706", bg: "#FFFBEB" },
+  product_launch:       { label: "PRODUCT LAUNCHES",        color: "#4361EE", bg: "#EEF2FF" },
+  regulatory:           { label: "REGULATORY",              color: "#059669", bg: "#ECFDF5" },
+  news_pr:              { label: "NEWS & PR",               color: "#7C3AED", bg: "#F5F3FF" },
+  technology:           { label: "TECHNOLOGY",              color: "#0284C7", bg: "#F0F9FF" },
+  strategic_opportunity:{ label: "STRATEGIC OPPORTUNITIES", color: "#7C3AED", bg: "#F5F3FF" },
 };
 
 const PRIORITY_COLOR: Record<string, string> = {

@@ -136,17 +136,15 @@ export async function POST(req: NextRequest) {
     });
     const existingLearningTitles = new Set(existingLearnings.map(l => l.title.toLowerCase().trim()));
 
-    // No existing insights to dedup against — all were purged above.
-    const recentTitles: string[] = [];
-    const recentTitlesSet = new Set<string>();
-
     type RawInsight = {
       signalType: string; priority: string; relevanceScore: number; title: string;
-      summary: string; takeaway: string; sourceName: string;
+      summary: string; takeaway: string; sourceName: string; sourceUrl?: string;
       tags: string[]; markets: string[];
     };
 
     const today = new Date().toISOString().split("T")[0];
+    const threeMonthsAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+
     const excludedSignals: string[] = [];
     if (intelligenceConfig.competitorMonitor === false) excludedSignals.push("competitor");
     if (intelligenceConfig.industryNews === false) excludedSignals.push("news_pr");
@@ -154,27 +152,166 @@ export async function POST(req: NextRequest) {
       ? `\n\nDo NOT include insights with signalType: ${excludedSignals.join(" or ")}.`
       : "";
 
-    // Tell Claude what's already been shown so it generates genuinely new topics
-    const avoidBlock = recentTitles.length > 0
-      ? `\n\nThe following insights were already shown recently — do NOT repeat or closely paraphrase them, generate entirely different topics and angles:\n${recentTitles.slice(0, 50).map(t => `- ${t}`).join("\n")}`
+    // ── Real-time web search ──────────────────────────────────────────────────
+    // Build targeted queries from org context
+    const compList = competitors.map(c => c.name).filter(Boolean);
+    const searchQueries: string[] = [];
+
+    // Competitor queries (up to 3)
+    for (const comp of compList.slice(0, 3)) {
+      searchQueries.push(`${comp} news strategy ${industry}`);
+    }
+    // Industry + market queries
+    searchQueries.push(`${industry} market trends news`);
+    if (marketNames.length > 0) searchQueries.push(`${marketNames[0]} ${industry} industry news`);
+    // Cap at 5 queries total
+    const queries = searchQueries.slice(0, 5);
+
+    interface ArticleResult {
+      title: string;
+      url: string;
+      snippet: string;
+      source: string;
+      publishedDate?: string;
+    }
+
+    // Tavily search — best for AI-focused research, supports days param
+    async function searchTavily(query: string): Promise<ArticleResult[]> {
+      const key = process.env.TAVILY_API_KEY;
+      if (!key) return [];
+      try {
+        const res = await fetch("https://api.tavily.com/search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            api_key: key,
+            query,
+            search_depth: "basic",
+            max_results: 5,
+            days: 90,               // 3 months back
+            include_answer: false,
+          }),
+        });
+        if (!res.ok) return [];
+        const data = await res.json();
+        return (data.results || []).map((r: { title: string; url: string; content?: string; snippet?: string; published_date?: string }) => ({
+          title: r.title || "",
+          url: r.url || "",
+          snippet: (r.content || r.snippet || "").slice(0, 400),
+          source: new URL(r.url || "https://unknown.com").hostname.replace("www.", ""),
+          publishedDate: r.published_date,
+        }));
+      } catch { return []; }
+    }
+
+    // Brave News search — broad news coverage
+    async function searchBrave(query: string): Promise<ArticleResult[]> {
+      const key = process.env.BRAVE_API_KEY;
+      if (!key) return [];
+      try {
+        const params = new URLSearchParams({ q: query, count: "5", freshness: "pm" }); // pm = past 3 months
+        const res = await fetch(`https://api.search.brave.com/res/v1/news/search?${params}`, {
+          headers: {
+            "Accept": "application/json",
+            "Accept-Encoding": "gzip",
+            "X-Subscription-Token": key,
+          },
+        });
+        if (!res.ok) return [];
+        const data = await res.json();
+        return (data.results || []).map((r: { title: string; url: string; description?: string; meta_url?: { hostname?: string }; age?: string }) => ({
+          title: r.title || "",
+          url: r.url || "",
+          snippet: (r.description || "").slice(0, 400),
+          source: r.meta_url?.hostname?.replace("www.", "") || new URL(r.url || "https://unknown.com").hostname.replace("www.", ""),
+          publishedDate: r.age,
+        }));
+      } catch { return []; }
+    }
+
+    // Run all queries across both search engines in parallel
+    const hasTavily = !!process.env.TAVILY_API_KEY;
+    const hasBrave = !!process.env.BRAVE_API_KEY;
+
+    let articles: ArticleResult[] = [];
+    if (hasTavily || hasBrave) {
+      const allResults = await Promise.all(
+        queries.flatMap(q => [
+          hasTavily ? searchTavily(q) : Promise.resolve([]),
+          hasBrave  ? searchBrave(q)  : Promise.resolve([]),
+        ])
+      );
+      // Flatten, dedupe by URL, cap at 40 articles
+      const seen = new Set<string>();
+      for (const batch of allResults) {
+        for (const art of batch) {
+          if (art.url && !seen.has(art.url) && art.title && art.snippet) {
+            seen.add(art.url);
+            articles.push(art);
+          }
+        }
+      }
+      articles = articles.slice(0, 40);
+      console.log(`[insights] fetched ${articles.length} articles (Tavily:${hasTavily} Brave:${hasBrave})`);
+    }
+
+    const hasLiveArticles = articles.length > 0;
+
+    // Format articles as a briefing block for Claude
+    const articleBlock = hasLiveArticles
+      ? `\n\nREAL-TIME NEWS BRIEFING (fetched now — articles from last 3 months, cutoff ${threeMonthsAgo} to ${today}):\n` +
+        articles.map((a, idx) =>
+          `[${idx + 1}] "${a.title}" — ${a.source}${a.publishedDate ? ` (${a.publishedDate})` : ""}\n${a.snippet}\nURL: ${a.url}`
+        ).join("\n\n")
       : "";
 
-    const prompt = `You are a senior competitive intelligence analyst for ${orgName}, a ${industry} company.
+    // Build source URL map for inserting real links into insights
+    const articleUrlMap = new Map(articles.map((a, idx) => [idx + 1, { url: a.url, source: a.source }]));
+
+    const prompt = hasLiveArticles
+      ? `You are a senior competitive intelligence analyst for ${orgName}, a ${industry} company.
 Today: ${today}
 
-Context:
+Company context:
+- Products: ${prodNames}
+- Markets: ${marketsStr}
+- Competitors: ${compNames}
+${articleBlock}
+
+Using ONLY the articles above as your source material, extract 15-20 specific, actionable intelligence insights. Every insight MUST be grounded in one or more of the articles above — do not use your training data.
+
+For each insight:
+- Reference the article by number in the sourceUrl field as "#N" (e.g. "#3") so we can map back to the real URL
+- Be specific about companies, numbers, and events mentioned in the articles
+- Explain why it matters for ${orgName}${excludeBlock}
+
+Return ONLY a valid JSON array:
+[
+  {
+    "signalType": "competitor|industry_report|regulatory|market_trend|technology|news_pr|product_launch",
+    "priority": "high|medium|low",
+    "relevanceScore": <1-100>,
+    "title": "Specific headline from the article — name the company or event",
+    "summary": "3-4 sentences grounded in the article content. Why this matters for ${orgName}.",
+    "takeaway": "1-2 sentence action for ${orgName}'s marketing or strategy team.",
+    "sourceName": "Publication name from the article",
+    "sourceUrl": "#N",
+    "tags": ["tag1", "tag2"],
+    "markets": ["market name from: ${marketsStr}"]
+  }
+]`
+      : `You are a senior competitive intelligence analyst for ${orgName}, a ${industry} company.
+Today: ${today}
+
+NOTE: No live news API is configured. Generating structural intelligence from known market dynamics.
+Cutoff: only include intelligence that was valid as of ${threeMonthsAgo} or later and is still relevant.
+
+Company context:
 - Products: ${prodNames}
 - Markets: ${marketsStr}
 - Competitors: ${compNames}
 
-CRITICAL RULES — read carefully before generating:
-1. Your training data has a cutoff of mid-2025. Do NOT reference specific news events, funding rounds, product launches, or press releases from your training data — these are stale and mislead the team.
-2. Do NOT generate insights about a specific dated event (e.g. "Company X raised $Y in Month YEAR" or "Company X launched Product Y in YEAR") unless you are certain it is structural, ongoing, and still relevant today.
-3. Focus ONLY on intelligence that is structurally true right now: market positioning, competitive dynamics, strategic trends, regulatory frameworks, technology shifts, and market opportunities — things that don't expire.
-4. If you are tempted to cite a specific press release or funding announcement, instead describe the strategic implication of that company's direction — which doesn't go stale.
-5. Be specific about companies and markets by name, but ground details in structural knowledge (product capabilities, known positioning, market share dynamics, regulatory environments) rather than specific past events.
-
-Generate 15-20 insights covering competitor positioning, market dynamics, regulatory environment, technology trends, and strategic opportunities relevant to ${orgName}'s business and markets.${excludeBlock}${avoidBlock}
+Generate 15-20 strategic insights covering competitor positioning, market dynamics, regulatory environment, and technology trends. Focus on structural intelligence — things that are ongoing and don't expire — NOT specific dated events or press releases from training data.${excludeBlock}
 
 Return ONLY a valid JSON array:
 [
@@ -183,9 +320,10 @@ Return ONLY a valid JSON array:
     "priority": "high|medium|low",
     "relevanceScore": <1-100>,
     "title": "Specific, strategic headline — name the company or market dynamic",
-    "summary": "3-4 sentences of structural intelligence grounded in known market reality. Why this matters for ${orgName} right now.",
+    "summary": "3-4 sentences of structural intelligence. Why this matters for ${orgName}.",
     "takeaway": "1-2 sentence action for ${orgName}'s marketing or strategy team.",
-    "sourceName": "Type of source where this analysis would be found (e.g. Gartner, McKinsey, Forrester, NASSCOM, BCG, Bain)",
+    "sourceName": "Type of source (e.g. Gartner, McKinsey, Forrester, NASSCOM)",
+    "sourceUrl": "",
     "tags": ["tag1", "tag2"],
     "markets": ["market name from: ${marketsStr}"]
   }
@@ -270,19 +408,33 @@ Return ONLY a valid JSON array:
       return;
     }
 
-    // Filter out insights with titles already shown in the last 7 days (server-side safety net)
-    const toCreate = newInsights.filter(ni => !recentTitlesSet.has(ni.title.toLowerCase().trim()));
+    // All insights are fresh (full purge happened above)
+    const toCreate = newInsights;
 
-    // Insert only fresh insights.
+    // Insert insights.
     // The 50-cap below manages volume by keeping the highest-relevance items.
     // LearningLog entries are deduped by title so the KB stays clean across refreshes.
     for (const insight of toCreate) {
       const tags = [...new Set([...(insight.tags || []), ...(insight.markets || [])])];
       const kbCat = insight.signalType === "competitor" ? "competitor" : "industry";
       const relevanceScore = Math.max(1, Math.min(100, Math.round(typeof insight.relevanceScore === "number" ? insight.relevanceScore : 50)));
-      // Build a Google search URL so users can find the actual article
-      const searchQuery = encodeURIComponent(`${insight.title} ${insight.sourceName || ""}`.trim());
-      const sourceUrl = `https://www.google.com/search?q=${searchQuery}`;
+
+      // Resolve source URL:
+      // If Claude cited a real article ref (#N), use the real URL.
+      // Otherwise build a Google search URL as fallback.
+      let sourceUrl: string;
+      const refMatch = (insight.sourceUrl || "").match(/^#(\d+)$/);
+      if (refMatch) {
+        const artIdx = parseInt(refMatch[1]);
+        const art = articleUrlMap.get(artIdx);
+        sourceUrl = art?.url || `https://www.google.com/search?q=${encodeURIComponent(insight.title)}`;
+        if (art?.source && !insight.sourceName) (insight as RawInsight).sourceName = art.source;
+      } else if (insight.sourceUrl?.startsWith("http")) {
+        sourceUrl = insight.sourceUrl;
+      } else {
+        const searchQuery = encodeURIComponent(`${insight.title} ${insight.sourceName || ""}`.trim());
+        sourceUrl = `https://www.google.com/search?q=${searchQuery}`;
+      }
       await db.industryInsight.create({
         data: {
           signalType: insight.signalType,
