@@ -98,6 +98,10 @@ export default function IndustryInsightsPage() {
   const [autoRefreshBanner, setAutoRefreshBanner] = useState(false);
   // FIX #11 — expanded insight IDs
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  // Bulletin download
+  const [showBulletinModal, setShowBulletinModal] = useState(false);
+  const [bulletinRange, setBulletinRange] = useState("today");
+  const [downloading, setDownloading] = useState(false);
 
   const COOLDOWN_MS =
     syncFreq === "weekly"  ? 6 * 24 * 60 * 60 * 1000 :
@@ -241,6 +245,30 @@ export default function IndustryInsightsPage() {
     setDateRange("");
   };
 
+  const handleDownloadBulletin = async () => {
+    setDownloading(true);
+    try {
+      const res = await fetch(`/api/industry-insights/bulletin?timeRange=${bulletinRange}`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error || "Failed to generate bulletin. Please try again.");
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const disposition = res.headers.get("Content-Disposition") || "";
+      const match = disposition.match(/filename="([^"]+)"/);
+      a.download = match ? match[1] : `intelligence-bulletin-${bulletinRange}.pdf`;
+      a.href = url;
+      a.click();
+      URL.revokeObjectURL(url);
+      setShowBulletinModal(false);
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   // FIX #11 — toggle expand for an insight
   const toggleExpand = (id: string) => {
     setExpandedIds(prev => {
@@ -344,6 +372,20 @@ export default function IndustryInsightsPage() {
             <span className="text-[11px] px-2.5 py-1 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-lg font-medium">
               +{newCount} new insight{newCount !== 1 ? "s" : ""} added
             </span>
+          )}
+          {/* Download bulletin button */}
+          {allInsights.length > 0 && (
+            <button
+              onClick={() => setShowBulletinModal(true)}
+              title="Download as branded PDF bulletin"
+              className="h-8 px-3.5 border border-[var(--hm-border)] text-[var(--hm-text-secondary)] rounded-lg text-[11px] font-medium hover:border-[#4361ee]/60 hover:text-[#4361ee] flex items-center gap-1.5 transition-colors bg-white"
+            >
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                <path d="M8 2v8M5 7l3 3 3-3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M3 12h10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+              </svg>
+              Download bulletin
+            </button>
           )}
           <div className="flex flex-col items-end gap-1">
             {/* FIX #1 — refresh button with clear label, recognisable circular-arrow icon, and spinner during load */}
@@ -479,6 +521,92 @@ export default function IndustryInsightsPage() {
           </button>
         )}
       </div>
+
+      {/* ── Bulletin download modal ── */}
+      {showBulletinModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          {/* Backdrop */}
+          <div className="absolute inset-0 bg-black/30 backdrop-blur-[2px]" onClick={() => setShowBulletinModal(false)} />
+          {/* Modal */}
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden" style={{ boxShadow: "0 20px 60px rgba(0,0,0,0.18)" }}>
+            {/* Header */}
+            <div className="px-6 pt-6 pb-4 border-b border-[var(--hm-border)]">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="w-7 h-7 rounded-lg bg-[#4361ee]/10 flex items-center justify-center flex-shrink-0">
+                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                        <path d="M3 2h10a1 1 0 011 1v10a1 1 0 01-1 1H3a1 1 0 01-1-1V3a1 1 0 011-1z" stroke="#4361ee" strokeWidth="1.2"/>
+                        <path d="M5 6h6M5 9h4" stroke="#4361ee" strokeWidth="1.2" strokeLinecap="round"/>
+                      </svg>
+                    </div>
+                    <p className="text-[15px] font-semibold">Download Intelligence Bulletin</p>
+                  </div>
+                  <p className="text-[11px] text-[var(--hm-text-tertiary)] leading-relaxed">
+                    Export a branded, newspaper-style PDF with your insights — ready for internal sharing.
+                  </p>
+                </div>
+                <button onClick={() => setShowBulletinModal(false)} className="text-[var(--hm-text-tertiary)] hover:text-[var(--hm-text-primary)] mt-0.5 flex-shrink-0 text-[18px] leading-none">×</button>
+              </div>
+            </div>
+            {/* Time range picker */}
+            <div className="px-6 py-5">
+              <p className="text-[11px] font-medium text-[var(--hm-text-secondary)] uppercase tracking-wide mb-3">Select time period</p>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { id: "today",      label: "Today",      desc: "This day's insights" },
+                  { id: "yesterday",  label: "Yesterday",  desc: "Previous day's insights" },
+                  { id: "this_week",  label: "This week",  desc: "Mon to today" },
+                  { id: "last_week",  label: "Last week",  desc: "Full previous week" },
+                  { id: "this_month", label: "This month", desc: "1st to today" },
+                  { id: "last_month", label: "Last month", desc: "Full previous month" },
+                ].map(opt => (
+                  <button
+                    key={opt.id}
+                    onClick={() => setBulletinRange(opt.id)}
+                    className={"p-3 rounded-xl border text-left transition-all " +
+                      (bulletinRange === opt.id
+                        ? "border-[#4361ee] bg-[#4361ee]/5"
+                        : "border-[var(--hm-border)] hover:border-[#4361ee]/40 bg-[var(--hm-bg-secondary)]")}
+                  >
+                    <p className={"text-[12px] font-medium " + (bulletinRange === opt.id ? "text-[#4361ee]" : "text-[var(--hm-text-primary)]")}>{opt.label}</p>
+                    <p className="text-[10px] text-[var(--hm-text-tertiary)] mt-0.5">{opt.desc}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+            {/* Footer */}
+            <div className="px-6 pb-6 flex gap-2">
+              <button
+                onClick={() => setShowBulletinModal(false)}
+                className="flex-1 h-9 border border-[var(--hm-border)] rounded-lg text-[12px] text-[var(--hm-text-secondary)] hover:border-[#4361ee]/40 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDownloadBulletin}
+                disabled={downloading}
+                className="flex-[2] h-9 bg-[#4361ee] text-white rounded-lg text-[12px] font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-opacity"
+              >
+                {downloading ? (
+                  <>
+                    <span className="w-3 h-3 border-[1.5px] border-white/30 border-t-white rounded-full animate-spin" />
+                    Generating PDF…
+                  </>
+                ) : (
+                  <>
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                      <path d="M8 2v8M5 7l3 3 3-3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+                      <path d="M3 12h10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+                    </svg>
+                    Download PDF
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Body */}
       <div className="flex-1 overflow-y-auto p-7">
