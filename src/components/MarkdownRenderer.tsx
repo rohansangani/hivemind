@@ -2,33 +2,69 @@
 
 export default function MarkdownRenderer({ content }: { content: string }) {
   const lines = content.split("\n");
-  
+
   return (
-    <div className="space-y-2">
+    <div className="space-y-1.5">
       {lines.map((line, i) => {
         const trimmed = line.trim();
+
+        // Blank line — section spacer
         if (!trimmed) return <div key={i} className="h-2" />;
-        
+
         // Headers
-        if (trimmed.startsWith("### ")) return <h3 key={i} className="text-[14px] font-semibold mt-3 mb-1">{parseBold(trimmed.slice(4))}</h3>;
-        if (trimmed.startsWith("## ")) return <h2 key={i} className="text-[15px] font-semibold mt-4 mb-1.5">{parseBold(trimmed.slice(3))}</h2>;
-        if (trimmed.startsWith("# ")) return <h1 key={i} className="text-[17px] font-semibold mt-4 mb-2">{parseBold(trimmed.slice(2))}</h1>;
-        
+        if (trimmed.startsWith("#### ")) return <h4 key={i} className="text-[13px] font-semibold mt-3 mb-0.5 text-[var(--hm-text)]">{parseBold(trimmed.slice(5))}</h4>;
+        if (trimmed.startsWith("### "))  return <h3 key={i} className="text-[14px] font-semibold mt-4 mb-1 text-[var(--hm-text)]">{parseBold(trimmed.slice(4))}</h3>;
+        if (trimmed.startsWith("## "))   return <h2 key={i} className="text-[15px] font-bold mt-5 mb-1.5 text-[var(--hm-text)] border-b border-[var(--hm-border)] pb-1.5">{parseBold(trimmed.slice(3))}</h2>;
+        if (trimmed.startsWith("# "))    return <h1 key={i} className="text-[17px] font-bold mt-5 mb-2 text-[var(--hm-text)]">{parseBold(trimmed.slice(2))}</h1>;
+
         // Horizontal rule
-        if (trimmed === "---" || trimmed === "***") return <hr key={i} className="border-[var(--hm-border)] my-3" />;
-        
+        if (trimmed === "---" || trimmed === "***" || trimmed === "___") return <hr key={i} className="border-[var(--hm-border)] my-4" />;
+
+        // Blockquote
+        if (trimmed.startsWith("> ")) return (
+          <div key={i} className="border-l-[3px] border-[#7c3aed]/40 pl-3 py-0.5 bg-[#7c3aed]/[0.04] rounded-r-md">
+            <p className="text-[var(--hm-text-secondary)] italic leading-relaxed">{parseBold(trimmed.slice(2))}</p>
+          </div>
+        );
+
+        // Indented bullet (2+ spaces or tab before -)
+        const indentedBullet = line.match(/^(\s{2,}|\t)[*\-]\s(.+)/);
+        if (indentedBullet) return (
+          <div key={i} className="flex gap-2 ml-6">
+            <span className="text-[var(--hm-text-tertiary)] mt-0.5 flex-shrink-0">◦</span>
+            <span className="leading-relaxed">{parseBold(indentedBullet[2])}</span>
+          </div>
+        );
+
         // Bullet lists
-        if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) return <div key={i} className="flex gap-2 ml-1"><span className="text-[var(--hm-text-tertiary)] mt-0.5">&bull;</span><span>{parseBold(trimmed.slice(2))}</span></div>;
-        
+        if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) return (
+          <div key={i} className="flex gap-2.5 ml-1">
+            <span className="text-[var(--hm-text-tertiary)] mt-[3px] flex-shrink-0 text-[10px]">●</span>
+            <span className="leading-relaxed">{parseBold(trimmed.slice(2))}</span>
+          </div>
+        );
+
         // Numbered lists
-        const numMatch = trimmed.match(/^(\d+)\.\s(.+)/);
-        if (numMatch) return <div key={i} className="flex gap-2 ml-1"><span className="text-[var(--hm-text-tertiary)] min-w-[16px]">{numMatch[1]}.</span><span>{parseBold(numMatch[2])}</span></div>;
-        
+        const numMatch = trimmed.match(/^(\d+)[.)]\s(.+)/);
+        if (numMatch) return (
+          <div key={i} className="flex gap-2.5 ml-1">
+            <span className="text-[var(--hm-text-tertiary)] min-w-[20px] flex-shrink-0 font-medium">{numMatch[1]}.</span>
+            <span className="leading-relaxed">{parseBold(numMatch[2])}</span>
+          </div>
+        );
+
         // Source/citation lines
-        if (trimmed.startsWith("Source:") || trimmed.startsWith("*Source")) return <p key={i} className="text-[11px] text-[var(--hm-text-tertiary)] mt-3 italic">{parseBold(trimmed)}</p>;
-        
+        if (trimmed.startsWith("Source:") || trimmed.startsWith("*Source")) return (
+          <p key={i} className="text-[11px] text-[var(--hm-text-tertiary)] mt-3 italic">{parseBold(trimmed)}</p>
+        );
+
+        // Bold-only line (likely a label/sub-heading)
+        if (trimmed.startsWith("**") && trimmed.endsWith("**") && trimmed.length > 4) return (
+          <p key={i} className="font-semibold leading-relaxed mt-2">{parseBold(trimmed)}</p>
+        );
+
         // Regular paragraph
-        return <p key={i} className="leading-relaxed">{parseBold(trimmed)}</p>;
+        return <p key={i} className="leading-relaxed text-[var(--hm-text)]">{parseBold(trimmed)}</p>;
       })}
     </div>
   );

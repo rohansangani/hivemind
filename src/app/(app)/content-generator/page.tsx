@@ -1402,33 +1402,37 @@ export default function ContentGeneratorPage() {
         </div>
       </div>
 
-      {/* ── Design brief modal — rendered via portal to escape overflow/stacking contexts ── */}
+      {/* ── Design brief modal — centered scrollable popup ── */}
       {showDesignBrief && designBriefs[`${generatedId}:${activeTab}`] && createPortal(
         <div
-          className="fixed inset-0 z-[9999] flex items-center justify-end"
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
           onClick={() => setShowDesignBrief(false)}
           onKeyDown={(e) => { if (e.key === "Escape") setShowDesignBrief(false); }}
         >
-          <div aria-hidden="true" className="absolute inset-0 bg-black/30 backdrop-blur-[2px]" />
+          {/* Backdrop */}
+          <div aria-hidden="true" className="absolute inset-0 bg-black/40 backdrop-blur-[3px]" />
+
+          {/* Modal panel */}
           <div
             role="dialog"
             aria-modal="true"
             aria-labelledby="design-brief-title"
-            className="relative w-[520px] h-full bg-white flex flex-col shadow-2xl overflow-hidden"
+            className="relative w-full max-w-2xl max-h-[88vh] bg-white rounded-2xl flex flex-col shadow-2xl overflow-hidden"
+            style={{ boxShadow: "0 24px 80px rgba(0,0,0,0.22)" }}
             onClick={e => e.stopPropagation()}
           >
             {/* Header */}
             <div className="px-6 py-4 border-b border-[var(--hm-border)] flex items-center justify-between flex-shrink-0">
-              <div>
+              <div className="min-w-0 pr-4">
                 <div className="flex items-center gap-2 mb-0.5">
-                  <div className="w-5 h-5 rounded-md bg-gradient-to-br from-[#7c3aed] to-[#4361ee] flex items-center justify-center">
+                  <div className="w-5 h-5 rounded-md bg-gradient-to-br from-[#7c3aed] to-[#4361ee] flex items-center justify-center flex-shrink-0">
                     <svg aria-hidden="true" width="10" height="10" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="14" height="10" rx="1.5" stroke="white" strokeWidth="1.2"/><path d="M4 5h8M4 8h5" stroke="white" strokeWidth="1.1" strokeLinecap="round"/></svg>
                   </div>
                   <p id="design-brief-title" className="text-[14px] font-semibold">Design brief</p>
                 </div>
-                <p className="text-[11px] text-[var(--hm-text-tertiary)]">{FORMATS.find(x => x.id === activeTab)?.label} · {topic}</p>
+                <p className="text-[11px] text-[var(--hm-text-tertiary)] truncate">{FORMATS.find(x => x.id === activeTab)?.label} · {topic}</p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-shrink-0">
                 <button
                   onClick={() => navigator.clipboard.writeText(designBriefs[`${generatedId}:${activeTab}`] ?? "")}
                   className="h-[30px] px-3 border border-[var(--hm-border)] rounded-lg text-[11px] text-[var(--hm-text-secondary)] hover:border-[#7c3aed] hover:text-[#7c3aed] transition-colors flex items-center gap-1.5"
@@ -1458,27 +1462,28 @@ export default function ContentGeneratorPage() {
                   <svg width="10" height="10" viewBox="0 0 16 16" fill="none"><path d="M2 10v4h4M14 6V2h-4M2 2l5 5M14 14l-5-5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /></svg>
                   Regenerate
                 </button>
-                <button onClick={() => setShowDesignBrief(false)} aria-label="Close design brief" className="text-[var(--hm-text-tertiary)] hover:text-[var(--hm-text)] text-lg leading-none ml-1">&times;</button>
+                <button onClick={() => setShowDesignBrief(false)} aria-label="Close design brief" className="w-7 h-7 flex items-center justify-center rounded-lg text-[var(--hm-text-tertiary)] hover:text-[var(--hm-text)] hover:bg-[var(--hm-bg-secondary)] transition-colors text-lg leading-none ml-1">&times;</button>
               </div>
             </div>
 
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto p-6">
+            {/* Scrollable content */}
+            <div className="flex-1 overflow-y-auto px-7 py-6 min-h-0">
               {designBriefLoading ? (
                 <div role="status" aria-label="Generating design brief" className="flex flex-col items-center gap-3 py-20">
                   <div aria-hidden="true" className="w-6 h-6 border-2 border-[#7c3aed]/30 border-t-[#7c3aed] rounded-full animate-spin" />
                   <p className="text-[12px] text-[var(--hm-text-tertiary)]">Generating design brief…</p>
                 </div>
               ) : (
-                <div className="text-[13px] leading-relaxed">
+                <div className="text-[13.5px] leading-relaxed">
                   <MarkdownRenderer content={designBriefs[`${generatedId}:${activeTab}`] ?? ""} />
                 </div>
               )}
             </div>
 
             {/* Footer */}
-            <div className="px-6 py-3.5 border-t border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] flex-shrink-0">
+            <div className="px-6 py-3.5 border-t border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] flex-shrink-0 flex items-center justify-between">
               <p className="text-[10px] text-[var(--hm-text-tertiary)]">Share this brief with your design team to ensure visual consistency with the content above.</p>
+              <button onClick={() => setShowDesignBrief(false)} className="text-[11px] text-[var(--hm-text-secondary)] hover:text-[var(--hm-text)] px-3 h-7 border border-[var(--hm-border)] rounded-lg hover:border-[#7c3aed]/40 transition-colors flex-shrink-0 ml-4">Close</button>
             </div>
           </div>
         </div>
