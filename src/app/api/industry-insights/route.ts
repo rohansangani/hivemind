@@ -125,14 +125,21 @@ export async function POST(req: NextRequest) {
     const marketsStr = marketNames.join(", ") || "global markets";
 
     // Do NOT purge insights — accumulate across refreshes, keeping a 90-day rolling window.
-    // The 90-day purge on GET handles expiry. Dedup by title prevents duplicates.
+    // The 90-day purge on GET handles expiry. Dedup by title + sourceUrl prevents duplicates.
 
-    // Fetch existing insight titles (last 90 days) to skip re-adding the same ones
+    // Fetch existing insight titles and sourceUrls to skip re-adding the same ones.
+    // Title dedup catches exact matches; sourceUrl dedup catches same article re-worded by Claude.
     const existingInsights = await db.industryInsight.findMany({
       where: { organizationId: decoded.orgId },
-      select: { title: true },
+      select: { title: true, sourceUrl: true },
     });
     const existingInsightTitles = new Set(existingInsights.map(i => i.title.toLowerCase().trim()));
+    // Only track real article URLs (not Google search fallback URLs) for URL-based dedup
+    const existingInsightUrls = new Set(
+      existingInsights
+        .map(i => i.sourceUrl)
+        .filter((u): u is string => !!u && !u.startsWith("https://www.google.com/search"))
+    );
 
     // Fetch LearningLog titles to avoid duplicate KB entries across refreshes.
     // LearningLog entries are NEVER deleted — they persist even when insights are purged.
@@ -414,35 +421,47 @@ Return ONLY a valid JSON array:
       return;
     }
 
-    // Skip insights whose titles already exist in the DB (dedup across refreshes)
-    const toCreate = newInsights.filter(
-      i => !existingInsightTitles.has(i.title.toLowerCase().trim())
-    );
-
-    // Insert new insights.
-    // LearningLog entries are deduped by title and NEVER deleted — they persist
-    // even if insights are later purged by the 90-day rolling window.
-    for (const insight of toCreate) {
-      const tags = [...new Set([...(insight.tags || []), ...(insight.markets || [])])];
-      const kbCat = insight.signalType === "competitor" ? "competitor" : "industry";
-      const relevanceScore = Math.max(1, Math.min(100, Math.round(typeof insight.relevanceScore === "number" ? insight.relevanceScore : 50)));
-
-      // Resolve source URL:
-      // If Claude cited a real article ref (#N), use the real URL.
-      // Otherwise build a Google search URL as fallback.
+    // Resolve all source URLs first (so we can URL-dedup before inserting)
+    const resolved = newInsights.map(insight => {
       let sourceUrl: string;
       const refMatch = (insight.sourceUrl || "").match(/^#(\d+)$/);
       if (refMatch) {
         const artIdx = parseInt(refMatch[1]);
         const art = articleUrlMap.get(artIdx);
         sourceUrl = art?.url || `https://www.google.com/search?q=${encodeURIComponent(insight.title)}`;
-        if (art?.source && !insight.sourceName) (insight as RawInsight).sourceName = art.source;
+        if (art?.source && !insight.sourceName) insight.sourceName = art.source;
       } else if (insight.sourceUrl?.startsWith("http")) {
         sourceUrl = insight.sourceUrl;
       } else {
-        const searchQuery = encodeURIComponent(`${insight.title} ${insight.sourceName || ""}`.trim());
-        sourceUrl = `https://www.google.com/search?q=${searchQuery}`;
+        sourceUrl = `https://www.google.com/search?q=${encodeURIComponent(`${insight.title} ${insight.sourceName || ""}`.trim())}`;
       }
+      return { insight, sourceUrl };
+    });
+
+    // Dedup against existing DB entries:
+    // - title match (exact, case-insensitive) — catches same insight re-fetched
+    // - sourceUrl match (real URLs only) — catches same article re-worded by Claude
+    const seenTitles = new Set(existingInsightTitles);
+    const seenUrls = new Set(existingInsightUrls);
+    const toCreate = resolved.filter(({ insight, sourceUrl }) => {
+      const titleKey = insight.title.toLowerCase().trim();
+      const isRealUrl = sourceUrl && !sourceUrl.startsWith("https://www.google.com/search");
+      if (seenTitles.has(titleKey)) return false;
+      if (isRealUrl && seenUrls.has(sourceUrl)) return false;
+      // Track within-batch to prevent duplicates in the same Claude response
+      seenTitles.add(titleKey);
+      if (isRealUrl) seenUrls.add(sourceUrl);
+      return true;
+    });
+
+    // Insert new insights.
+    // LearningLog entries are deduped by title and NEVER deleted — they persist
+    // even if insights are later purged by the 90-day rolling window.
+    for (const { insight, sourceUrl } of toCreate) {
+      const tags = [...new Set([...(insight.tags || []), ...(insight.markets || [])])];
+      const kbCat = insight.signalType === "competitor" ? "competitor" : "industry";
+      const relevanceScore = Math.max(1, Math.min(100, Math.round(typeof insight.relevanceScore === "number" ? insight.relevanceScore : 50)));
+
       await db.industryInsight.create({
         data: {
           signalType: insight.signalType,
@@ -459,9 +478,10 @@ Return ONLY a valid JSON array:
           organizationId: decoded.orgId,
         },
       });
-      // Only add to KB if this title isn't already in the learning log
-      if (insight.priority !== "low" && !existingLearningTitles.has(insight.title.toLowerCase().trim())) {
-        existingLearningTitles.add(insight.title.toLowerCase().trim()); // prevent within-batch dupes
+      // Add to KB only if title not already in LearningLog (KB entries are permanent)
+      const titleKey = insight.title.toLowerCase().trim();
+      if (insight.priority !== "low" && !existingLearningTitles.has(titleKey)) {
+        existingLearningTitles.add(titleKey); // prevent within-batch KB dupes
         await db.learningLog.create({
           data: {
             sourceType: "industry_insight",
