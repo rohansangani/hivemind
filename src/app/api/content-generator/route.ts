@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
     ) as { userId: string; orgId: string };
 
     const body = await req.json();
-    const { topic, formats, targetProduct, targetMarket, targetPersona, positionAgainst, toneOverride, keyPoints, focusKeyword, secondaryKeywords, length, webSearch } = body;
+    const { topic, formats, customFormatLabel, targetProduct, targetMarket, targetPersona, positionAgainst, toneOverride, keyPoints, focusKeyword, secondaryKeywords, length, webSearch } = body;
 
     if (!topic || typeof topic !== "string" || !topic.trim()) {
       return NextResponse.json({ error: "topic is required" }, { status: 400 });
@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
 
     const formatResults = await Promise.all(
       formats.map(format =>
-        generateForFormat(format, topic, knowledge, toneOverride, keyPoints, brandProfile, effectiveProduct, focusKeyword, secondaryKeywords, length, !!webSearch)
+        generateForFormat(format, topic, knowledge, toneOverride, keyPoints, brandProfile, effectiveProduct, focusKeyword, secondaryKeywords, length, !!webSearch, customFormatLabel)
       )
     );
 
@@ -159,13 +159,14 @@ async function generateForFormat(
   focusKeyword?: string | null,
   secondaryKeywords?: string[],
   length?: string | null,
-  useWebSearch?: boolean
+  useWebSearch?: boolean,
+  customFormatLabel?: string | null
 ): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
 
   if (apiKey) {
     try {
-      const formatInstructions = getFormatInstructions(format);
+      const formatInstructions = getFormatInstructions(format, customFormatLabel);
 
       const keywordInstructions = focusKeyword && SEO_FORMATS.has(format) ? `
 KEYWORD TARGETING:
@@ -197,9 +198,9 @@ CONTENT GENERATION RULES:
       // Use format-appropriate token budget — short formats don't need 4096 tokens
       const maxTokensForFormat: Record<string, number> = {
         twitter: 200, ad_copy: 400, email_outreach: 500,
-        linkedin: 700, ceo_linkedin: 700, one_pager: 800,
+        linkedin: 700, ceo_linkedin: 700, meta_post: 700, one_pager: 800,
         email_marketing: 900, press_release: 1200, landing_page: 1500,
-        blog: 3000, thought_leadership: 4000,
+        blog: 3000, thought_leadership: 4000, custom: 2000,
       };
       const maxTokens = maxTokensForFormat[format] ?? 1500;
 
@@ -244,11 +245,12 @@ CONTENT GENERATION RULES:
   return generatePlaceholderContent(format, topic, contextStr, brandProfile);
 }
 
-function getFormatInstructions(format: string): string {
+function getFormatInstructions(format: string, customFormatLabel?: string | null): string {
   const instructions: Record<string, string> = {
     blog: "Write a blog post (800-1500 words). Use H2 and H3 subheadings. Include an engaging introduction, 3-4 main sections, and a strong conclusion with CTA. SEO-optimized.",
     linkedin: "Write a LinkedIn post (150-250 words). Start with a strong hook line. Use short paragraphs. Include numbered insights. End with a thought-provoking question or CTA. Add 3-5 relevant hashtags.",
     twitter: "Write a Twitter/X post (under 280 characters). Punchy, memorable, shareable. Include relevant hashtag.",
+    meta_post: "Write an Instagram/Facebook post (100-200 words). Hook in the first line. Conversational and visual — describe or allude to the accompanying image/video. Use line breaks for readability. 5-10 relevant hashtags at the end. Include a soft CTA (e.g. link in bio, comment below, tag a friend).",
     thought_leadership: "Write a thought leadership article (1500-2500 words). First-person perspective. Narrative-driven with data points. Include a byline. Position the author as an industry expert.",
     ceo_linkedin: "Write a personal LinkedIn thought leadership post (200-350 words) from the perspective of a CEO or CTO. First-person, conversational, and authentic — not corporate. Share a specific insight, challenge, or prediction. Lead with a personal anecdote or provocative statement. No marketing fluff. Add 3-5 relevant hashtags.",
     press_release: "Write a press release (400-600 words). Standard format: city/date dateline, strong headline, subheadline, lead paragraph (who/what/when/where/why), 2-3 body paragraphs with quotes from leadership, boilerplate about the company, media contact. Professional and newsworthy tone.",
@@ -258,6 +260,9 @@ function getFormatInstructions(format: string): string {
     ad_copy: "Write ad copy. Headline (max 30 chars) + Description (max 90 chars). Create 3 variants for A/B testing.",
     one_pager: "Write a one-pager (200-350 words). Product/service overview. Key benefits. Differentiators. CTA.",
   };
+  if (format === "custom" && customFormatLabel?.trim()) {
+    return `Write the following type of content: ${customFormatLabel.trim()}. Use an appropriate structure, tone, and length for this format. Ground the content in the context and brand knowledge provided.`;
+  }
   return instructions[format] || "Write professional marketing content.";
 }
 

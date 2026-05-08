@@ -40,6 +40,7 @@ const FORMATS = [
   { id: "linkedin", label: "LinkedIn post", desc: "150–250 words" },
   { id: "ceo_linkedin", label: "CEO/CTO LinkedIn", desc: "Personal thought leadership" },
   { id: "twitter", label: "Twitter / X", desc: "Up to 280 chars" },
+  { id: "meta_post", label: "Meta post", desc: "Instagram / Facebook" },
   { id: "thought_leadership", label: "Thought leadership", desc: "1,500–2,500 words" },
   { id: "press_release", label: "Press release", desc: "Official announcement" },
   { id: "email_marketing", label: "Email (marketing)", desc: "200–400 words" },
@@ -47,12 +48,14 @@ const FORMATS = [
   { id: "landing_page", label: "Landing page", desc: "400–800 words" },
   { id: "ad_copy", label: "Ad copy", desc: "50–180 chars" },
   { id: "one_pager", label: "One-pager", desc: "200–350 words" },
+  { id: "custom", label: "Custom", desc: "Define your own format" },
 ];
 
 const FORMAT_SHORT: Record<string, string> = {
   blog: "Blog", linkedin: "LinkedIn", ceo_linkedin: "CEO LI", twitter: "X",
-  thought_leadership: "TL", press_release: "PR", email_marketing: "Email M", email_outreach: "Email O",
-  landing_page: "Landing", ad_copy: "Ad", one_pager: "1-pager",
+  meta_post: "Meta", thought_leadership: "TL", press_release: "PR",
+  email_marketing: "Email M", email_outreach: "Email O",
+  landing_page: "Landing", ad_copy: "Ad", one_pager: "1-pager", custom: "Custom",
 };
 
 const QUICK_ACTIONS = [
@@ -76,6 +79,71 @@ async function callRefine(payload: object): Promise<{ content: string; wordCount
   } catch {
     return { error: res.ok ? "Unexpected response from server" : `Server error (${res.status}) — please try again` };
   }
+}
+
+const STOP_WORDS = new Set([
+  "a","an","the","and","or","but","in","on","at","to","for","of","with","by","from","is","are","was","were","be","been","being",
+  "have","has","had","do","does","did","will","would","could","should","may","might","shall","can","need","dare","ought","used",
+  "this","that","these","those","i","you","he","she","it","we","they","me","him","her","us","them","my","your","his","its","our","their",
+  "what","which","who","when","where","why","how","all","each","every","both","few","more","most","other","some","such","than","then",
+  "as","into","through","about","after","before","between","not","no","nor","so","yet","both","either","neither",
+  "s","t","re","ve","d","ll","m",
+]);
+
+/**
+ * Extract the most relevant focus keyword phrase from content + topic.
+ * Scores 1-grams and 2-grams by frequency, title/heading presence, and topic relevance.
+ */
+function extractFocusKeyword(content: string, topic: string): string {
+  const plain = content
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/#{1,6}\s+/g, " ")
+    .replace(/\*\*|__|\*|_/g, "")
+    .replace(/[^a-zA-Z0-9\s'-]/g, " ")
+    .toLowerCase();
+
+  const topicWords = new Set(
+    topic.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(w => w.length > 2 && !STOP_WORDS.has(w))
+  );
+
+  // Extract headings for bonus weight
+  const headingText = (content.match(/^#{1,3}\s+.+$/gm) || []).join(" ").toLowerCase();
+
+  const tokens = plain.split(/\s+/).filter(w => w.length > 2 && !STOP_WORDS.has(w));
+  const freq: Record<string, number> = {};
+  for (const t of tokens) freq[t] = (freq[t] || 0) + 1;
+
+  // Score unigrams
+  const candidates: { phrase: string; score: number }[] = [];
+  for (const [w, cnt] of Object.entries(freq)) {
+    if (cnt < 2) continue;
+    let score = cnt;
+    if (topicWords.has(w)) score *= 3;
+    if (headingText.includes(w)) score *= 2;
+    candidates.push({ phrase: w, score });
+  }
+
+  // Score bigrams — prefer multi-word phrases
+  for (let i = 0; i < tokens.length - 1; i++) {
+    const bigram = `${tokens[i]} ${tokens[i + 1]}`;
+    if (STOP_WORDS.has(tokens[i]) || STOP_WORDS.has(tokens[i + 1])) continue;
+    const bgFreq = (plain.match(new RegExp(bigram.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g")) || []).length;
+    if (bgFreq < 2) continue;
+    let score = bgFreq * 1.8; // bigrams score higher per occurrence
+    if ([...topicWords].some(tw => bigram.includes(tw))) score *= 3;
+    if (headingText.includes(bigram)) score *= 2;
+    candidates.push({ phrase: bigram, score });
+  }
+
+  candidates.sort((a, b) => b.score - a.score);
+
+  // Prefer bigrams over unigrams if their score is competitive
+  const top = candidates[0];
+  if (!top) {
+    // Fallback: clean topic itself
+    return topic.replace(/^(write|create|generate|draft|make)\s+(a|an|the)?\s*\S+\s*(about|for|on)?\s*/i, "").trim().split(/\s+/).slice(0, 4).join(" ");
+  }
+  return top.phrase;
 }
 
 function timeAgo(date: string) {
@@ -114,6 +182,7 @@ export default function ContentGeneratorPage() {
   // Form state
   const [topic, setTopic] = useState("");
   const [selectedFormats, setSelectedFormats] = useState<string[]>(["blog"]);
+  const [customFormatLabel, setCustomFormatLabel] = useState("");
   const [targetProduct, setTargetProduct] = useState("");
   const [targetMarket, setTargetMarket] = useState("");
   const [targetPersona, setTargetPersona] = useState("");
@@ -157,7 +226,7 @@ export default function ContentGeneratorPage() {
   const [historyLoading, setHistoryLoading] = useState(false);
 
   // SEO
-  const SEO_FORMATS = ["blog", "thought_leadership"];
+  const SEO_FORMATS = ["blog", "thought_leadership", "landing_page"];
   const [focusKeyword, setFocusKeyword] = useState("");
   const [secondaryKeywords, setSecondaryKeywords] = useState<string[]>([]);
   const [kwInput, setKwInput] = useState("");
@@ -257,16 +326,13 @@ export default function ContentGeneratorPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, outputs, focusKeyword, secondaryKeywords, metaTitle, metaDescription]);
 
-  // Auto-populate focus keyword from topic — strip instruction prefixes first
+  // Auto-suggest focus keyword when content is generated — extract most significant phrase from content
   useEffect(() => {
-    if (outputs && topic.trim() && !focusKeyword) {
-      const stripped = topic.trim()
-        // Remove leading instruction verbs + optional format noun + optional preposition
-        .replace(/^(write|create|generate|draft|make|produce|build)\s+(a|an|the)?\s*(blog\s*post|blog|linkedin\s*post|tweet|twitter\s*post|article|post|email|content|copy|piece|summary|outline|script|press\s*release|one[-\s]pager|landing\s*page|ad\s*copy)?\s*(about|for|on|regarding|covering|titled|called)?\s*/i, "")
-        .trim();
-      const words = (stripped || topic.trim()).split(/\s+/).slice(0, 5).join(" ");
-      setFocusKeyword(words);
-    }
+    if (!outputs || !topic.trim() || focusKeyword) return;
+    const activeContent = outputs[activeTab || selectedFormats[0]]?.content || "";
+    if (!activeContent) return;
+    const suggested = extractFocusKeyword(activeContent, topic);
+    setFocusKeyword(suggested);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [outputs]);
 
@@ -392,7 +458,7 @@ export default function ContentGeneratorPage() {
       const res = await fetch("/api/content-generator", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic, formats: selectedFormats, targetProduct, targetMarket, targetPersona, positionAgainst, toneOverride, keyPoints, focusKeyword: focusKeyword || null, secondaryKeywords: secondaryKeywords || [], webSearch }),
+        body: JSON.stringify({ topic, formats: selectedFormats, customFormatLabel: customFormatLabel || null, targetProduct, targetMarket, targetPersona, positionAgainst, toneOverride, keyPoints, focusKeyword: focusKeyword || null, secondaryKeywords: secondaryKeywords || [], webSearch }),
       });
       const text = await res.text();
       let data: Record<string, unknown>;
@@ -715,6 +781,20 @@ export default function ContentGeneratorPage() {
                     ? <p className="text-[11px] text-red-500 mt-2 font-medium">Select at least one format to continue.</p>
                     : <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-2">{selectedFormats.length} format{selectedFormats.length !== 1 ? "s" : ""} selected</p>
                   }
+                  {selectedFormats.includes("custom") && (
+                    <div className="mt-3">
+                      <label className="block text-[11px] font-medium text-[var(--hm-text-secondary)] mb-1">
+                        Describe your custom format <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={customFormatLabel}
+                        onChange={e => setCustomFormatLabel(e.target.value)}
+                        placeholder="e.g. YouTube video script, Product FAQ page, Sales deck slide copy…"
+                        className="w-full h-9 px-3 text-[12px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[#4361ee] bg-white"
+                      />
+                    </div>
+                  )}
                 </div>
 
                 {/* Parameters */}
@@ -839,7 +919,7 @@ export default function ContentGeneratorPage() {
                     </svg>
                     {webSearch ? "Web on" : "Web search"}
                   </button>
-                  <button onClick={handleGenerate} disabled={generating || !topic.trim() || selectedFormats.length === 0}
+                  <button onClick={handleGenerate} disabled={generating || !topic.trim() || selectedFormats.length === 0 || (selectedFormats.includes("custom") && !customFormatLabel.trim())}
                     aria-label="Generate content"
                     className="h-[46px] w-full sm:w-auto px-8 bg-[#4361ee] text-white rounded-lg text-[14px] font-medium hover:opacity-90 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
                     {generating

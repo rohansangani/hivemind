@@ -24,6 +24,7 @@ const FORMAT_NAMES: Record<string, string> = {
   linkedin: "LinkedIn post",
   ceo_linkedin: "CEO/CTO LinkedIn thought leadership post",
   twitter: "Twitter/X post",
+  meta_post: "Instagram/Facebook post",
   thought_leadership: "Thought leadership article",
   press_release: "Press release",
   email_marketing: "Marketing email",
