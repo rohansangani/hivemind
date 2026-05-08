@@ -124,9 +124,10 @@ export async function POST(req: NextRequest) {
     const marketNames = markets.map(m => m.name);
     const marketsStr = marketNames.join(", ") || "global markets";
 
-    // Purge insights older than 90 days only — keep recent ones
-    const cutoff = new Date(Date.now() - NINETY_DAYS_MS);
-    await db.industryInsight.deleteMany({ where: { organizationId: decoded.orgId, createdAt: { lt: cutoff } } });
+    // Purge ALL existing insights before generating fresh ones.
+    // This ensures stale AI-generated content (which references old training-data events)
+    // never persists alongside new insights. The 90-day purge on GET handles edge cases.
+    await db.industryInsight.deleteMany({ where: { organizationId: decoded.orgId } });
 
     // Fetch LearningLog titles to avoid duplicate KB entries across refreshes
     const existingLearnings = await db.learningLog.findMany({
@@ -135,17 +136,9 @@ export async function POST(req: NextRequest) {
     });
     const existingLearningTitles = new Set(existingLearnings.map(l => l.title.toLowerCase().trim()));
 
-    // Fetch insight titles from last 7 days — passed to Claude so it generates
-    // fresh topics, and used server-side as an exact-match dedup safety net.
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    const recentInsights = await db.industryInsight.findMany({
-      where: { organizationId: decoded.orgId, createdAt: { gte: sevenDaysAgo } },
-      select: { title: true },
-      orderBy: { createdAt: "desc" },
-      take: 100,
-    });
-    const recentTitles = recentInsights.map(i => i.title);
-    const recentTitlesSet = new Set(recentTitles.map(t => t.toLowerCase().trim()));
+    // No existing insights to dedup against — all were purged above.
+    const recentTitles: string[] = [];
+    const recentTitlesSet = new Set<string>();
 
     type RawInsight = {
       signalType: string; priority: string; relevanceScore: number; title: string;
@@ -174,24 +167,25 @@ Context:
 - Markets: ${marketsStr}
 - Competitors: ${compNames}
 
-Generate as many specific, actionable intelligence insights as you have strong signal for (aim for 15-20), covering competitor moves, market trends, regulatory changes, product launches, and industry reports relevant to this company and its markets.
+CRITICAL RULES — read carefully before generating:
+1. Your training data has a cutoff of mid-2025. Do NOT reference specific news events, funding rounds, product launches, or press releases from your training data — these are stale and mislead the team.
+2. Do NOT generate insights about a specific dated event (e.g. "Company X raised $Y in Month YEAR" or "Company X launched Product Y in YEAR") unless you are certain it is structural, ongoing, and still relevant today.
+3. Focus ONLY on intelligence that is structurally true right now: market positioning, competitive dynamics, strategic trends, regulatory frameworks, technology shifts, and market opportunities — things that don't expire.
+4. If you are tempted to cite a specific press release or funding announcement, instead describe the strategic implication of that company's direction — which doesn't go stale.
+5. Be specific about companies and markets by name, but ground details in structural knowledge (product capabilities, known positioning, market share dynamics, regulatory environments) rather than specific past events.
 
-Each insight must:
-- Reference real companies, products, or events by name
-- Be specific with data points, percentages, or concrete details where possible
-- Be directly relevant to ${orgName}'s business
-- Cover the listed markets: ${marketsStr}${excludeBlock}${avoidBlock}
+Generate 15-20 insights covering competitor positioning, market dynamics, regulatory environment, technology trends, and strategic opportunities relevant to ${orgName}'s business and markets.${excludeBlock}${avoidBlock}
 
 Return ONLY a valid JSON array:
 [
   {
-    "signalType": "competitor|industry_report|product_launch|regulatory|news_pr|market_trend",
+    "signalType": "competitor|industry_report|regulatory|market_trend|technology|strategic_opportunity",
     "priority": "high|medium|low",
     "relevanceScore": <1-100>,
-    "title": "Specific headline with real entity names",
-    "summary": "3-4 sentences with specific details and why it matters for ${orgName}.",
+    "title": "Specific, strategic headline — name the company or market dynamic",
+    "summary": "3-4 sentences of structural intelligence grounded in known market reality. Why this matters for ${orgName} right now.",
     "takeaway": "1-2 sentence action for ${orgName}'s marketing or strategy team.",
-    "sourceName": "Publication or source name where this would most likely be reported (e.g. Reuters, TechCrunch, Gartner, Bloomberg, Forbes, WSJ, Wired)",
+    "sourceName": "Type of source where this analysis would be found (e.g. Gartner, McKinsey, Forrester, NASSCOM, BCG, Bain)",
     "tags": ["tag1", "tag2"],
     "markets": ["market name from: ${marketsStr}"]
   }
