@@ -149,7 +149,7 @@ export async function POST(req: NextRequest) {
 
     type RawInsight = {
       signalType: string; priority: string; relevanceScore: number; title: string;
-      summary: string; takeaway: string; sourceUrl: string; sourceName: string;
+      summary: string; takeaway: string; sourceName: string;
       tags: string[]; markets: string[];
     };
 
@@ -191,8 +191,7 @@ Return ONLY a valid JSON array:
     "title": "Specific headline with real entity names",
     "summary": "3-4 sentences with specific details and why it matters for ${orgName}.",
     "takeaway": "1-2 sentence action for ${orgName}'s marketing or strategy team.",
-    "sourceUrl": "A URL for this story — use the specific article URL if known, otherwise the publication homepage (e.g. https://reuters.com, https://techcrunch.com, https://gartner.com). NEVER leave empty.",
-    "sourceName": "Publication or source name (e.g. Reuters, TechCrunch, Gartner, Bloomberg)",
+    "sourceName": "Publication or source name where this would most likely be reported (e.g. Reuters, TechCrunch, Gartner, Bloomberg, Forbes, WSJ, Wired)",
     "tags": ["tag1", "tag2"],
     "markets": ["market name from: ${marketsStr}"]
   }
@@ -287,9 +286,9 @@ Return ONLY a valid JSON array:
       const tags = [...new Set([...(insight.tags || []), ...(insight.markets || [])])];
       const kbCat = insight.signalType === "competitor" ? "competitor" : "industry";
       const relevanceScore = Math.max(1, Math.min(100, Math.round(typeof insight.relevanceScore === "number" ? insight.relevanceScore : 50)));
-      // Normalize URL — add https:// if missing protocol
-      let sourceUrl = insight.sourceUrl || "";
-      if (sourceUrl && !sourceUrl.startsWith("http")) sourceUrl = "https://" + sourceUrl;
+      // Build a Google search URL so users can find the actual article
+      const searchQuery = encodeURIComponent(`${insight.title} ${insight.sourceName || ""}`.trim());
+      const sourceUrl = `https://www.google.com/search?q=${searchQuery}`;
       await db.industryInsight.create({
         data: {
           signalType: insight.signalType,
@@ -298,7 +297,7 @@ Return ONLY a valid JSON array:
           title: insight.title,
           summary: insight.summary,
           takeaway: insight.takeaway,
-          sourceUrl: sourceUrl || null,
+          sourceUrl,
           sourceName: insight.sourceName || null,
           tags,
           addedToKB: insight.priority !== "low",
