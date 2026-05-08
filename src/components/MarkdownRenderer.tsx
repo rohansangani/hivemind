@@ -1,11 +1,56 @@
 "use client";
 
+type Block =
+  | { type: "line"; text: string }
+  | { type: "fence"; lines: string[] };
+
+function parseBlocks(content: string): Block[] {
+  const raw = content.split("\n");
+  const blocks: Block[] = [];
+  let inFence = false;
+  let fenceLines: string[] = [];
+
+  for (const line of raw) {
+    if (line.trim().startsWith("```")) {
+      if (inFence) {
+        // Close fence — emit as a block
+        blocks.push({ type: "fence", lines: fenceLines });
+        fenceLines = [];
+        inFence = false;
+      } else {
+        inFence = true;
+        fenceLines = [];
+      }
+    } else if (inFence) {
+      fenceLines.push(line);
+    } else {
+      blocks.push({ type: "line", text: line });
+    }
+  }
+  // Unclosed fence — still emit it
+  if (inFence && fenceLines.length > 0) {
+    blocks.push({ type: "fence", lines: fenceLines });
+  }
+  return blocks;
+}
+
 export default function MarkdownRenderer({ content }: { content: string }) {
-  const lines = content.split("\n");
+  const blocks = parseBlocks(content);
 
   return (
     <div className="space-y-1.5">
-      {lines.map((line, i) => {
+      {blocks.map((block, i) => {
+        if (block.type === "fence") {
+          const text = block.lines.join("\n").trim();
+          if (!text) return null;
+          return (
+            <div key={i} className="my-2 px-4 py-3 bg-[#f0f4ff] border border-[#c7d2fe] rounded-xl">
+              <p className="text-[13px] font-medium text-[#1e3a8a] leading-relaxed whitespace-pre-wrap">{text}</p>
+            </div>
+          );
+        }
+
+        const line = block.text;
         const trimmed = line.trim();
 
         // Blank line — section spacer
