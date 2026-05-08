@@ -128,12 +128,24 @@ export async function POST(req: NextRequest) {
     const cutoff = new Date(Date.now() - NINETY_DAYS_MS);
     await db.industryInsight.deleteMany({ where: { organizationId: decoded.orgId, createdAt: { lt: cutoff } } });
 
-    // Fetch existing LearningLog titles to avoid duplicate KB entries across refreshes
+    // Fetch LearningLog titles to avoid duplicate KB entries across refreshes
     const existingLearnings = await db.learningLog.findMany({
       where: { organizationId: decoded.orgId, sourceType: "industry_insight" },
       select: { title: true },
     });
     const existingLearningTitles = new Set(existingLearnings.map(l => l.title.toLowerCase().trim()));
+
+    // Fetch insight titles from last 7 days — passed to Claude so it generates
+    // fresh topics, and used server-side as an exact-match dedup safety net.
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const recentInsights = await db.industryInsight.findMany({
+      where: { organizationId: decoded.orgId, createdAt: { gte: sevenDaysAgo } },
+      select: { title: true },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    });
+    const recentTitles = recentInsights.map(i => i.title);
+    const recentTitlesSet = new Set(recentTitles.map(t => t.toLowerCase().trim()));
 
     type RawInsight = {
       signalType: string; priority: string; relevanceScore: number; title: string;
@@ -149,6 +161,11 @@ export async function POST(req: NextRequest) {
       ? `\n\nDo NOT include insights with signalType: ${excludedSignals.join(" or ")}.`
       : "";
 
+    // Tell Claude what's already been shown so it generates genuinely new topics
+    const avoidBlock = recentTitles.length > 0
+      ? `\n\nThe following insights were already shown recently — do NOT repeat or closely paraphrase them, generate entirely different topics and angles:\n${recentTitles.slice(0, 50).map(t => `- ${t}`).join("\n")}`
+      : "";
+
     const prompt = `You are a senior competitive intelligence analyst for ${orgName}, a ${industry} company.
 Today: ${today}
 
@@ -157,13 +174,13 @@ Context:
 - Markets: ${marketsStr}
 - Competitors: ${compNames}
 
-Generate exactly 10 specific, actionable intelligence insights covering competitor moves, market trends, regulatory changes, product launches, and industry reports relevant to this company and its markets.
+Generate as many specific, actionable intelligence insights as you have strong signal for (aim for 15-20), covering competitor moves, market trends, regulatory changes, product launches, and industry reports relevant to this company and its markets.
 
 Each insight must:
 - Reference real companies, products, or events by name
 - Be specific with data points, percentages, or concrete details where possible
 - Be directly relevant to ${orgName}'s business
-- Cover the listed markets: ${marketsStr}${excludeBlock}
+- Cover the listed markets: ${marketsStr}${excludeBlock}${avoidBlock}
 
 Return ONLY a valid JSON array:
 [
@@ -260,10 +277,13 @@ Return ONLY a valid JSON array:
       return;
     }
 
-    // Insert all AI insights — no title dedup on IndustryInsight.
+    // Filter out insights with titles already shown in the last 7 days (server-side safety net)
+    const toCreate = newInsights.filter(ni => !recentTitlesSet.has(ni.title.toLowerCase().trim()));
+
+    // Insert only fresh insights.
     // The 50-cap below manages volume by keeping the highest-relevance items.
     // LearningLog entries are deduped by title so the KB stays clean across refreshes.
-    for (const insight of newInsights) {
+    for (const insight of toCreate) {
       const tags = [...new Set([...(insight.tags || []), ...(insight.markets || [])])];
       const kbCat = insight.signalType === "competitor" ? "competitor" : "industry";
       const relevanceScore = Math.max(1, Math.min(100, Math.round(typeof insight.relevanceScore === "number" ? insight.relevanceScore : 50)));
@@ -302,7 +322,7 @@ Return ONLY a valid JSON array:
         });
       }
     }
-    const toCreate = newInsights; // for count reporting
+    // toCreate already defined above (filtered by recentTitlesSet)
 
     // Cap to 50 most relevant
     const allStored = await db.industryInsight.findMany({
