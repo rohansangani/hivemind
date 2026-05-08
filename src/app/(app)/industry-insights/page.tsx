@@ -373,21 +373,8 @@ export default function IndustryInsightsPage() {
               +{newCount} new insight{newCount !== 1 ? "s" : ""} added
             </span>
           )}
-          {/* Download bulletin button */}
-          {allInsights.length > 0 && (
-            <button
-              onClick={() => setShowBulletinModal(true)}
-              title="Download as branded PDF bulletin"
-              className="h-8 px-3.5 border border-[var(--hm-border)] text-[var(--hm-text-secondary)] rounded-lg text-[11px] font-medium hover:border-[#4361ee]/60 hover:text-[#4361ee] flex items-center gap-1.5 transition-colors bg-white"
-            >
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
-                <path d="M8 2v8M5 7l3 3 3-3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-                <path d="M3 12h10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
-              </svg>
-              Download bulletin
-            </button>
-          )}
           <div className="flex flex-col items-end gap-1">
+            <div className="flex items-center gap-2">
             {/* FIX #1 — refresh button with clear label, recognisable circular-arrow icon, and spinner during load */}
             <button
               onClick={handleRefresh}
@@ -421,6 +408,22 @@ export default function IndustryInsightsPage() {
                 </>
               )}
             </button>
+
+            {/* Download bulletin — same row as refresh, right side */}
+            {allInsights.length > 0 && (
+              <button
+                onClick={() => setShowBulletinModal(true)}
+                title="Download as branded PDF bulletin"
+                className="h-8 px-3.5 border border-[var(--hm-border)] text-[var(--hm-text-secondary)] rounded-lg text-[11px] font-medium hover:border-[#4361ee]/60 hover:text-[#4361ee] flex items-center gap-1.5 transition-colors bg-white"
+              >
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                  <path d="M8 2v8M5 7l3 3 3-3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M3 12h10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+                </svg>
+                Download bulletin
+              </button>
+            )}
+            </div>
 
             {/* FIX #9 — last refreshed timestamp always visible (not just during cooldown) */}
             {lastRefreshedAt && (
