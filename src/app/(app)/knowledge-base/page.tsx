@@ -34,7 +34,7 @@ function AiBtn({ loading, onClick, label }: { loading: boolean; onClick: () => v
 
 export default function KnowledgeBasePage() {
   const user = useUser();
-  const [tab, setTab] = useState<"overview" | "skills" | "learning" | "documents">("overview");
+  const [tab, setTab] = useState<"overview" | "skills" | "learning" | "documents" | "brand_style">("overview");
   const [org, setOrg] = useState<Org | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [markets, setMarkets] = useState<Market[]>([]);
@@ -78,6 +78,30 @@ export default function KnowledgeBasePage() {
   const skillImportRef = useRef<HTMLInputElement>(null);
   const [aiLoading, setAiLoading] = useState<string | null>(null);
   const [aiError, setAiError] = useState("");
+
+  // Brand style guide
+  interface StyleColor { name: string; hex: string; usage: string; }
+  interface StyleFont { family: string; weight: string; notes: string; }
+  interface StyleLogo { name: string; url: string; usage: string; }
+  interface StyleGuide {
+    colors: StyleColor[];
+    typography: { heading: StyleFont; body: StyleFont; accent: StyleFont };
+    logoVariants: StyleLogo[];
+    guidelines: string;
+    doNotUse: string;
+  }
+  const EMPTY_STYLE: StyleGuide = {
+    colors: [],
+    typography: { heading: { family: "", weight: "700", notes: "" }, body: { family: "", weight: "400", notes: "" }, accent: { family: "", weight: "400", notes: "" } },
+    logoVariants: [],
+    guidelines: "",
+    doNotUse: "",
+  };
+  const [styleGuide, setStyleGuide] = useState<StyleGuide>(EMPTY_STYLE);
+  const [styleLoaded, setStyleLoaded] = useState(false);
+  const [styleSaving, setStyleSaving] = useState(false);
+  const [styleSaved, setStyleSaved] = useState(false);
+  const [logoUploading, setLogoUploading] = useState(false);
   // Full auto-populate
   const [showFullAI, setShowFullAI] = useState(false);
   const [fullAiSuggestions, setFullAiSuggestions] = useState<Record<string, unknown> | null>(null);
@@ -87,6 +111,34 @@ export default function KnowledgeBasePage() {
     fetch("/api/knowledge").then(r => r.json()).then(d => { setOrg(d.org); setProducts(d.products || []); setMarkets(d.markets || []); setPersonas(d.personas || []); setCompetitors(d.competitors || []); setBrand(d.brandProfile); setLogs(d.learningLogs || []); });
     fetch("/api/skills").then(r => r.json()).then(d => setSkills(d.skills || []));
     fetch("/api/knowledge/documents").then(r => r.json()).then(d => setDocs(d.documents || []));
+  };
+
+  const fetchStyleGuide = () => {
+    fetch("/api/knowledge/brand-style").then(r => r.json()).then(d => {
+      if (d.styleGuide) {
+        setStyleGuide({ ...EMPTY_STYLE, ...d.styleGuide, typography: { ...EMPTY_STYLE.typography, ...d.styleGuide.typography } });
+      }
+      setStyleLoaded(true);
+    }).catch(() => setStyleLoaded(true));
+  };
+
+  const saveStyleGuide = async (guide: StyleGuide) => {
+    setStyleSaving(true);
+    await fetch("/api/knowledge/brand-style", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(guide) });
+    setStyleSaving(false);
+    setStyleSaved(true);
+    setTimeout(() => setStyleSaved(false), 2000);
+  };
+
+  const uploadLogo = async (file: File): Promise<string | null> => {
+    try {
+      const { upload } = await import("@vercel/blob/client");
+      const blob = await upload(`brand-logos/${Date.now()}-${file.name}`, file, {
+        access: "public",
+        handleUploadUrl: "/api/knowledge/brand-style/logo-upload-url",
+      });
+      return blob.url;
+    } catch { return null; }
   };
 
   const uploadDocuments = async (files: FileList | File[]) => {
@@ -130,7 +182,8 @@ export default function KnowledgeBasePage() {
   useEffect(() => {
     // Run deduplication silently on mount, then fetch fresh data
     fetch("/api/knowledge/deduplicate", { method: "POST" }).finally(() => fetchAll());
-  }, []);
+    fetchStyleGuide();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const saveEdit = async (section: string, data: Record<string, unknown>) => { setSaving(true); await fetch("/api/knowledge/edit", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ section, ...data }) }); setSaving(false); setSaved("Saved!"); fetchAll(); setEditingItemId(null); setEditProd(null); setEditPersona(null); setEditComp(null); setTimeout(() => setSaved(""), 2000); };
   const deleteItem = async (section: string, id: string) => { await fetch("/api/knowledge/edit", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ section, id }) }); fetchAll(); setEditingItemId(null); };
@@ -256,8 +309,14 @@ export default function KnowledgeBasePage() {
           {saved && <div className="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 border border-green-200 text-green-700 rounded-lg text-[12px] font-medium animate-fade-in-fast"><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5l3 3 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>{saved}</div>}
         </div>
         <div className="px-7 bg-white border-b border-[var(--hm-border)] flex gap-0">
-          {([{ id: "overview" as const, l: "Overview" }, { id: "documents" as const, l: "Documents", b: docs.length > 0 ? String(docs.length) : null }, { id: "skills" as const, l: "Skills", b: skills.length > 0 ? String(skills.length) : null }, { id: "learning" as const, l: "Learning log", b: logs.length > 0 ? String(logs.length) : null }]).map(t => (
-            <button key={t.id} onClick={() => setTab(t.id)} className={"px-4 py-2.5 text-[12px] border-b-2 flex items-center gap-1.5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#4361ee] " + (tab === t.id ? "font-medium text-[#4361ee] border-[#4361ee]" : "text-[var(--hm-text-tertiary)] border-transparent hover:text-[var(--hm-text)] hover:bg-[var(--hm-bg-secondary)]")}>{t.l}{t.b && <span className="text-[9px] px-1.5 py-0.5 bg-[#4361ee] text-white rounded-md">{t.b}</span>}</button>
+          {([
+            { id: "overview" as const, l: "Overview" },
+            { id: "brand_style" as const, l: "Brand style", b: (styleGuide.colors.length > 0 || styleGuide.logoVariants.length > 0) ? "✓" : null },
+            { id: "documents" as const, l: "Documents", b: docs.length > 0 ? String(docs.length) : null },
+            { id: "skills" as const, l: "Skills", b: skills.length > 0 ? String(skills.length) : null },
+            { id: "learning" as const, l: "Learning log", b: logs.length > 0 ? String(logs.length) : null },
+          ] as Array<{ id: typeof tab; l: string; b?: string | null }>).map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)} className={"px-4 py-2.5 text-[12px] border-b-2 flex items-center gap-1.5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#4361ee] " + (tab === t.id ? "font-medium text-[#4361ee] border-[#4361ee]" : "text-[var(--hm-text-tertiary)] border-transparent hover:text-[var(--hm-text)] hover:bg-[var(--hm-bg-secondary)]")}>{t.l}{t.b && <span className={"text-[9px] px-1.5 py-0.5 rounded-md " + (t.b === "✓" ? "bg-emerald-500 text-white" : "bg-[#4361ee] text-white")}>{t.b}</span>}</button>
           ))}
         </div>
         <div className={tab === "skills" ? "flex-1 overflow-hidden flex flex-col" : "flex-1 overflow-y-auto p-7"}>
@@ -989,6 +1048,277 @@ export default function KnowledgeBasePage() {
               </div>
             );
           })()}
+
+          {/* ── Brand Style Guide ── */}
+          {tab === "brand_style" && (
+            <div className="animate-fade-in max-w-[760px]">
+              <div className="flex items-start justify-between mb-5">
+                <div>
+                  <h3 className="text-[15px] font-medium">Brand style guide</h3>
+                  <p className="text-[12px] text-[var(--hm-text-tertiary)] mt-0.5">Define colors, typography, and logo variants — used automatically in every design brief</p>
+                </div>
+                <button
+                  onClick={() => saveStyleGuide(styleGuide)}
+                  disabled={styleSaving}
+                  className="h-8 px-4 bg-[#4361ee] text-white rounded-lg text-[12px] font-medium hover:opacity-90 disabled:opacity-50 flex items-center gap-1.5 flex-shrink-0"
+                >
+                  {styleSaving ? <><span className="w-3 h-3 border-[1.5px] border-white/30 border-t-white rounded-full animate-spin" />Saving…</> : styleSaved ? <>✓ Saved</> : <>Save style guide</>}
+                </button>
+              </div>
+
+              {!styleLoaded ? (
+                <div className="flex items-center gap-2 py-12 justify-center text-[12px] text-[var(--hm-text-tertiary)]">
+                  <span className="w-4 h-4 border-2 border-[#4361ee]/30 border-t-[#4361ee] rounded-full animate-spin" />Loading…
+                </div>
+              ) : (
+                <div className="space-y-6">
+
+                  {/* ── Color palette ── */}
+                  <div className="bg-white border border-[var(--hm-border)] rounded-xl p-5" style={{ boxShadow: "var(--hm-shadow-card)" }}>
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <p className="text-[13px] font-medium">Color palette</p>
+                        <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-0.5">Exact hex values will be passed to design briefs</p>
+                      </div>
+                      {styleGuide.colors.length < 10 && (
+                        <button
+                          onClick={() => setStyleGuide(g => ({ ...g, colors: [...g.colors, { name: "New color", hex: "#4361EE", usage: "" }] }))}
+                          className="h-7 px-3 border border-[var(--hm-border)] rounded-lg text-[11px] text-[var(--hm-text-secondary)] hover:border-[#4361ee] hover:text-[#4361ee] transition-colors flex items-center gap-1"
+                        >
+                          <svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="M8 2v12M2 8h12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
+                          Add color
+                        </button>
+                      )}
+                    </div>
+                    {styleGuide.colors.length === 0 ? (
+                      <div className="border-2 border-dashed border-[var(--hm-border)] rounded-lg p-6 text-center">
+                        <p className="text-[12px] text-[var(--hm-text-tertiary)]">No colors defined yet — click "Add color" to start</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {styleGuide.colors.map((color, i) => (
+                          <div key={i} className="flex items-center gap-3 p-2.5 bg-[var(--hm-bg-secondary)] rounded-lg">
+                            {/* Swatch + hex picker */}
+                            <div className="relative flex-shrink-0">
+                              <div className="w-8 h-8 rounded-md border border-[var(--hm-border)] cursor-pointer overflow-hidden" style={{ backgroundColor: color.hex || "#ccc" }}>
+                                <input
+                                  type="color"
+                                  value={color.hex || "#000000"}
+                                  onChange={e => {
+                                    const next = [...styleGuide.colors];
+                                    next[i] = { ...next[i], hex: e.target.value };
+                                    setStyleGuide(g => ({ ...g, colors: next }));
+                                  }}
+                                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                  title="Pick color"
+                                />
+                              </div>
+                            </div>
+                            {/* Hex input */}
+                            <input
+                              type="text"
+                              value={color.hex}
+                              onChange={e => {
+                                const next = [...styleGuide.colors];
+                                next[i] = { ...next[i], hex: e.target.value };
+                                setStyleGuide(g => ({ ...g, colors: next }));
+                              }}
+                              placeholder="#000000"
+                              className="w-[88px] h-7 px-2 text-[11px] font-mono border border-[var(--hm-border)] rounded-md focus:outline-none focus:border-[#4361ee] bg-white flex-shrink-0"
+                            />
+                            {/* Name */}
+                            <input
+                              type="text"
+                              value={color.name}
+                              onChange={e => {
+                                const next = [...styleGuide.colors];
+                                next[i] = { ...next[i], name: e.target.value };
+                                setStyleGuide(g => ({ ...g, colors: next }));
+                              }}
+                              placeholder="e.g. Primary"
+                              className="w-[110px] h-7 px-2 text-[12px] border border-[var(--hm-border)] rounded-md focus:outline-none focus:border-[#4361ee] bg-white flex-shrink-0"
+                            />
+                            {/* Usage */}
+                            <input
+                              type="text"
+                              value={color.usage}
+                              onChange={e => {
+                                const next = [...styleGuide.colors];
+                                next[i] = { ...next[i], usage: e.target.value };
+                                setStyleGuide(g => ({ ...g, colors: next }));
+                              }}
+                              placeholder="e.g. CTAs, headlines, links"
+                              className="flex-1 h-7 px-2 text-[12px] border border-[var(--hm-border)] rounded-md focus:outline-none focus:border-[#4361ee] bg-white min-w-0"
+                            />
+                            <button
+                              onClick={() => setStyleGuide(g => ({ ...g, colors: g.colors.filter((_, j) => j !== i) }))}
+                              className="w-6 h-6 flex items-center justify-center text-[var(--hm-text-tertiary)] hover:text-red-500 transition-colors flex-shrink-0"
+                            >
+                              <svg width="10" height="10" viewBox="0 0 16 16" fill="none"><path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ── Typography ── */}
+                  <div className="bg-white border border-[var(--hm-border)] rounded-xl p-5" style={{ boxShadow: "var(--hm-shadow-card)" }}>
+                    <div className="mb-4">
+                      <p className="text-[13px] font-medium">Typography</p>
+                      <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-0.5">Font families passed as-is to design briefs — use exact names (e.g. "Inter", "Söhne", "GT Walsheim")</p>
+                    </div>
+                    <div className="space-y-3">
+                      {(["heading", "body", "accent"] as const).map(level => (
+                        <div key={level} className="flex items-center gap-3">
+                          <span className="text-[11px] text-[var(--hm-text-tertiary)] capitalize w-16 flex-shrink-0">{level}</span>
+                          <input
+                            type="text"
+                            value={styleGuide.typography[level].family}
+                            onChange={e => setStyleGuide(g => ({ ...g, typography: { ...g.typography, [level]: { ...g.typography[level], family: e.target.value } } }))}
+                            placeholder="Font family (e.g. Inter)"
+                            className="flex-1 h-8 px-3 text-[12px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[#4361ee] bg-[var(--hm-bg-secondary)]"
+                          />
+                          <input
+                            type="text"
+                            value={styleGuide.typography[level].weight}
+                            onChange={e => setStyleGuide(g => ({ ...g, typography: { ...g.typography, [level]: { ...g.typography[level], weight: e.target.value } } }))}
+                            placeholder="Weight"
+                            className="w-20 h-8 px-3 text-[12px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[#4361ee] bg-[var(--hm-bg-secondary)] flex-shrink-0"
+                          />
+                          <input
+                            type="text"
+                            value={styleGuide.typography[level].notes}
+                            onChange={e => setStyleGuide(g => ({ ...g, typography: { ...g.typography, [level]: { ...g.typography[level], notes: e.target.value } } }))}
+                            placeholder="Notes (e.g. size, tracking)"
+                            className="flex-[2] h-8 px-3 text-[12px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[#4361ee] bg-[var(--hm-bg-secondary)]"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* ── Logo variants ── */}
+                  <div className="bg-white border border-[var(--hm-border)] rounded-xl p-5" style={{ boxShadow: "var(--hm-shadow-card)" }}>
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <p className="text-[13px] font-medium">Logo variants</p>
+                        <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-0.5">Upload PNG, SVG, or JPG — URLs are embedded in design briefs for direct use</p>
+                      </div>
+                      <label className={"h-7 px-3 border border-[var(--hm-border)] rounded-lg text-[11px] text-[var(--hm-text-secondary)] hover:border-[#4361ee] hover:text-[#4361ee] transition-colors flex items-center gap-1 cursor-pointer " + (logoUploading ? "opacity-50 pointer-events-none" : "")}>
+                        {logoUploading ? <><span className="w-3 h-3 border-[1.5px] border-[#4361ee]/30 border-t-[#4361ee] rounded-full animate-spin" />Uploading…</> : <><svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="M8 2v8M5 7l3-3 3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><path d="M3 13h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>Upload logo</>}
+                        <input
+                          type="file"
+                          accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
+                          className="hidden"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            setLogoUploading(true);
+                            const url = await uploadLogo(file);
+                            if (url) {
+                              const variantName = file.name.replace(/\.[^.]+$/, "").replace(/[-_]/g, " ");
+                              setStyleGuide(g => ({ ...g, logoVariants: [...g.logoVariants, { name: variantName, url, usage: "" }] }));
+                            }
+                            setLogoUploading(false);
+                            e.target.value = "";
+                          }}
+                        />
+                      </label>
+                    </div>
+                    {styleGuide.logoVariants.length === 0 ? (
+                      <div className="border-2 border-dashed border-[var(--hm-border)] rounded-lg p-6 text-center">
+                        <p className="text-[12px] text-[var(--hm-text-tertiary)]">No logos uploaded — upload light, dark, and icon variants for complete coverage</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {styleGuide.logoVariants.map((logo, i) => (
+                          <div key={i} className="flex items-center gap-3 p-2.5 bg-[var(--hm-bg-secondary)] rounded-lg">
+                            {/* Preview */}
+                            <div className="w-10 h-10 rounded-lg border border-[var(--hm-border)] bg-white flex items-center justify-center flex-shrink-0 overflow-hidden p-1">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={logo.url} alt={logo.name} className="max-w-full max-h-full object-contain" />
+                            </div>
+                            {/* Name */}
+                            <input
+                              type="text"
+                              value={logo.name}
+                              onChange={e => {
+                                const next = [...styleGuide.logoVariants];
+                                next[i] = { ...next[i], name: e.target.value };
+                                setStyleGuide(g => ({ ...g, logoVariants: next }));
+                              }}
+                              placeholder="e.g. Full logo (light)"
+                              className="w-[170px] h-7 px-2 text-[12px] border border-[var(--hm-border)] rounded-md focus:outline-none focus:border-[#4361ee] bg-white flex-shrink-0"
+                            />
+                            {/* Usage */}
+                            <input
+                              type="text"
+                              value={logo.usage}
+                              onChange={e => {
+                                const next = [...styleGuide.logoVariants];
+                                next[i] = { ...next[i], usage: e.target.value };
+                                setStyleGuide(g => ({ ...g, logoVariants: next }));
+                              }}
+                              placeholder="e.g. Use on dark or coloured backgrounds"
+                              className="flex-1 h-7 px-2 text-[12px] border border-[var(--hm-border)] rounded-md focus:outline-none focus:border-[#4361ee] bg-white min-w-0"
+                            />
+                            <a href={logo.url} target="_blank" rel="noopener noreferrer" className="text-[10px] text-[#4361ee] hover:underline flex-shrink-0 whitespace-nowrap">View ↗</a>
+                            <button
+                              onClick={() => setStyleGuide(g => ({ ...g, logoVariants: g.logoVariants.filter((_, j) => j !== i) }))}
+                              className="w-6 h-6 flex items-center justify-center text-[var(--hm-text-tertiary)] hover:text-red-500 transition-colors flex-shrink-0"
+                            >
+                              <svg width="10" height="10" viewBox="0 0 16 16" fill="none"><path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ── Design rules ── */}
+                  <div className="bg-white border border-[var(--hm-border)] rounded-xl p-5" style={{ boxShadow: "var(--hm-shadow-card)" }}>
+                    <p className="text-[13px] font-medium mb-1">Design rules</p>
+                    <p className="text-[11px] text-[var(--hm-text-tertiary)] mb-4">Specific do's and don'ts passed verbatim to every design brief</p>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-[11px] font-medium text-emerald-700 mb-1.5">✓ Always do</label>
+                        <textarea
+                          value={styleGuide.guidelines}
+                          onChange={e => setStyleGuide(g => ({ ...g, guidelines: e.target.value }))}
+                          placeholder={"e.g.\n- Maintain clear space equal to the logo height\n- Use Inter for all digital touchpoints\n- Keep primary blue dominant at 60%"}
+                          rows={5}
+                          className="w-full px-3 py-2.5 text-[12px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[#4361ee] resize-none bg-[var(--hm-bg-secondary)] leading-relaxed"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-medium text-red-600 mb-1.5">✗ Never do</label>
+                        <textarea
+                          value={styleGuide.doNotUse}
+                          onChange={e => setStyleGuide(g => ({ ...g, doNotUse: e.target.value }))}
+                          placeholder={"e.g.\n- Do not stretch or recolour the logo\n- Do not use gradients on text\n- Do not use more than 3 typefaces"}
+                          rows={5}
+                          className="w-full px-3 py-2.5 text-[12px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[#4361ee] resize-none bg-[var(--hm-bg-secondary)] leading-relaxed"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Save button (bottom) */}
+                  <div className="flex justify-end pb-2">
+                    <button
+                      onClick={() => saveStyleGuide(styleGuide)}
+                      disabled={styleSaving}
+                      className="h-9 px-6 bg-[#4361ee] text-white rounded-lg text-[12px] font-medium hover:opacity-90 disabled:opacity-50 flex items-center gap-2"
+                    >
+                      {styleSaving ? <><span className="w-3 h-3 border-[1.5px] border-white/30 border-t-white rounded-full animate-spin" />Saving…</> : styleSaved ? <>✓ Saved</> : <>Save style guide</>}
+                    </button>
+                  </div>
+
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Learning Log */}
           {tab === "learning" && (

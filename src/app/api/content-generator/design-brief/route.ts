@@ -53,13 +53,51 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "topic is required" }, { status: 400 });
     }
 
-    // Fetch org + brand profile context
-    const [org, brandProfile] = await Promise.all([
+    // Fetch org + brand profile + style guide
+    const [org, brandProfile, styleEntry] = await Promise.all([
       db.organization.findUnique({ where: { id: decoded.orgId } }),
       db.brandProfile.findFirst({ where: { organizationId: decoded.orgId } }),
+      db.knowledgeEntry.findFirst({ where: { organizationId: decoded.orgId, category: "brand_style_guide", title: "brand_style_guide" } }),
     ]);
     const orgName = org?.name || "the company";
     const orgIndustry = org?.industry || "";
+
+    // Parse brand style guide if it exists
+    let styleGuide: {
+      colors?: Array<{ name: string; hex: string; usage: string }>;
+      typography?: { heading?: { family: string; weight: string; notes: string }; body?: { family: string; weight: string; notes: string }; accent?: { family: string; weight: string; notes: string } };
+      logoVariants?: Array<{ name: string; url: string; usage: string }>;
+      guidelines?: string;
+      doNotUse?: string;
+    } | null = null;
+    try { if (styleEntry) styleGuide = JSON.parse(styleEntry.content); } catch {}
+
+    // Build brand style block
+    const brandStyleBlock = styleGuide ? (() => {
+      const lines: string[] = ["\nBRAND STYLE GUIDE (apply these exactly — do not invent alternative values):"];
+      if (styleGuide.colors?.length) {
+        lines.push("Colors:");
+        for (const c of styleGuide.colors) {
+          if (c.hex) lines.push(`  - ${c.name || "Color"}: ${c.hex}${c.usage ? ` — ${c.usage}` : ""}`);
+        }
+      }
+      if (styleGuide.typography) {
+        const t = styleGuide.typography;
+        lines.push("Typography:");
+        if (t.heading?.family) lines.push(`  - Heading font: ${t.heading.family}${t.heading.weight ? `, weight ${t.heading.weight}` : ""}${t.heading.notes ? ` — ${t.heading.notes}` : ""}`);
+        if (t.body?.family) lines.push(`  - Body font: ${t.body.family}${t.body.weight ? `, weight ${t.body.weight}` : ""}${t.body.notes ? ` — ${t.body.notes}` : ""}`);
+        if (t.accent?.family) lines.push(`  - Accent font: ${t.accent.family}${t.accent.weight ? `, weight ${t.accent.weight}` : ""}${t.accent.notes ? ` — ${t.accent.notes}` : ""}`);
+      }
+      if (styleGuide.logoVariants?.length) {
+        lines.push("Logo variants:");
+        for (const l of styleGuide.logoVariants) {
+          if (l.url) lines.push(`  - ${l.name || "Logo"}: ${l.url}${l.usage ? ` — ${l.usage}` : ""}`);
+        }
+      }
+      if (styleGuide.guidelines?.trim()) lines.push(`Design rules:\n${styleGuide.guidelines.trim()}`);
+      if (styleGuide.doNotUse?.trim()) lines.push(`Do NOT use:\n${styleGuide.doNotUse.trim()}`);
+      return lines.join("\n");
+    })() : "";
 
     // Build brand voice section from DB profile
     const brandVoiceBlock = brandProfile
@@ -79,6 +117,7 @@ ${brandProfile.competitiveMoat ? `- Competitive moat: ${brandProfile.competitive
     const prompt = `You are a creative director creating a design brief for a design team.
 
 The following content has been written for ${orgName}${orgIndustry ? ` (${orgIndustry})` : ""}:
+${brandStyleBlock}
 ${brandVoiceBlock}
 
 FORMAT: ${formatName}
@@ -104,15 +143,16 @@ Who is reading this and what emotional tone should the visual direction convey.
 3–5 bullet points describing the mood, style, and energy. Be specific — reference visual comparisons designers understand (e.g. "clean like Linear's site", "data-driven but warm", "editorial rather than corporate").
 
 ## Typography
-- Recommended type style (serif/sans, weight, size hierarchy)
-- Any specific emphasis patterns based on the content
+${styleGuide?.typography ? "- Use the exact brand fonts defined above. Specify weight and size for each element in this piece." : "- Recommended type style (serif/sans, weight, size hierarchy)\n- Any specific emphasis patterns based on the content"}
 
 ## Color palette
-- Mood: (2–3 words)
-- Suggested palette direction (e.g. "deep navy + warm white + electric blue accents")
-- What to avoid
+${styleGuide?.colors?.length ? "- Use the exact brand colors defined above. Specify which hex value goes where in this piece." : "- Mood: (2–3 words)\n- Suggested palette direction (e.g. \"deep navy + warm white + electric blue accents\")\n- What to avoid"}
 
-## Imagery & visuals
+${styleGuide?.logoVariants?.length ? `## Logo usage
+- Specify which logo variant to use for this format and why (reference the variants above by name).
+- Note placement, sizing, and clear space requirements.
+
+` : ""}## Imagery & visuals
 - Photo style (e.g. "real people in real work settings", "abstract tech textures", "no stock smile photos")
 - Illustration style if applicable
 - Icons/graphics guidance
