@@ -182,7 +182,10 @@ export default function IndustryInsightsPage() {
   };
 
   useEffect(() => {
-    loadAll().finally(() => setLoading(false));
+    // Silently deduplicate insights on page load, then fetch fresh data
+    fetch("/api/knowledge/deduplicate", { method: "POST" }).finally(() => {
+      loadAll().finally(() => setLoading(false));
+    });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSearch = (val: string) => {

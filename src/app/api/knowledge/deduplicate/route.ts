@@ -92,6 +92,36 @@ export async function POST(req: NextRequest) {
         [decoded.orgId]
       );
       counts.learnings = learningResult.rowCount ?? 0;
+
+      // ── IndustryInsight: dedup by title, then by real sourceUrl ──────────
+      // Step 1: keep newest per (lower(title), orgId)
+      const insightTitleResult = await pool.query(
+        `WITH ranked AS (
+          SELECT id, ROW_NUMBER() OVER (PARTITION BY LOWER(title), "organizationId" ORDER BY "createdAt" DESC) AS rn
+          FROM "IndustryInsight" WHERE "organizationId" = $1
+        )
+        DELETE FROM "IndustryInsight" WHERE id IN (SELECT id FROM ranked WHERE rn > 1) AND "organizationId" = $1`,
+        [decoded.orgId]
+      );
+      counts.insightsByTitle = insightTitleResult.rowCount ?? 0;
+
+      // Step 2: keep highest-relevance per real sourceUrl (excludes Google search fallback URLs)
+      const insightUrlResult = await pool.query(
+        `WITH ranked AS (
+          SELECT id, ROW_NUMBER() OVER (
+            PARTITION BY "sourceUrl", "organizationId"
+            ORDER BY "relevanceScore" DESC, "createdAt" DESC
+          ) AS rn
+          FROM "IndustryInsight"
+          WHERE "organizationId" = $1
+            AND "sourceUrl" IS NOT NULL
+            AND "sourceUrl" NOT LIKE 'https://www.google.com/search%'
+            AND "sourceUrl" != ''
+        )
+        DELETE FROM "IndustryInsight" WHERE id IN (SELECT id FROM ranked WHERE rn > 1) AND "organizationId" = $1`,
+        [decoded.orgId]
+      );
+      counts.insightsByUrl = insightUrlResult.rowCount ?? 0;
     } finally {
       await pool.end();
     }
