@@ -1090,6 +1090,16 @@ export default function KnowledgeBasePage() {
                         </button>
                       )}
                     </div>
+                    {/* Column headers */}
+                    {styleGuide.colors.length > 0 && (
+                      <div className="grid gap-2 mb-1 px-1" style={{ gridTemplateColumns: "32px 90px 140px 1fr 24px" }}>
+                        <span />
+                        <span className="text-[10px] text-[var(--hm-text-tertiary)] uppercase tracking-wide">Hex</span>
+                        <span className="text-[10px] text-[var(--hm-text-tertiary)] uppercase tracking-wide">Name</span>
+                        <span className="text-[10px] text-[var(--hm-text-tertiary)] uppercase tracking-wide">Usage / notes</span>
+                        <span />
+                      </div>
+                    )}
                     {styleGuide.colors.length === 0 ? (
                       <div className="border-2 border-dashed border-[var(--hm-border)] rounded-lg p-6 text-center">
                         <p className="text-[12px] text-[var(--hm-text-tertiary)]">No colors defined yet — click "Add color" to start</p>
@@ -1097,63 +1107,31 @@ export default function KnowledgeBasePage() {
                     ) : (
                       <div className="space-y-2">
                         {styleGuide.colors.map((color, i) => (
-                          <div key={i} className="flex items-center gap-3 p-2.5 bg-[var(--hm-bg-secondary)] rounded-lg">
-                            {/* Swatch + hex picker */}
-                            <div className="relative flex-shrink-0">
-                              <div className="w-8 h-8 rounded-md border border-[var(--hm-border)] cursor-pointer overflow-hidden" style={{ backgroundColor: color.hex || "#ccc" }}>
-                                <input
-                                  type="color"
-                                  value={color.hex || "#000000"}
-                                  onChange={e => {
-                                    const next = [...styleGuide.colors];
-                                    next[i] = { ...next[i], hex: e.target.value };
-                                    setStyleGuide(g => ({ ...g, colors: next }));
-                                  }}
-                                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                                  title="Pick color"
-                                />
-                              </div>
+                          <div key={i} className="grid items-center gap-2 p-2 bg-[var(--hm-bg-secondary)] rounded-lg" style={{ gridTemplateColumns: "32px 90px 140px 1fr 24px" }}>
+                            {/* Swatch + native color picker */}
+                            <div className="relative w-8 h-8 rounded-md border border-[var(--hm-border)] overflow-hidden cursor-pointer flex-shrink-0" style={{ backgroundColor: color.hex || "#ccc" }}>
+                              <input type="color" value={color.hex || "#000000"}
+                                onChange={e => { const next = [...styleGuide.colors]; next[i] = { ...next[i], hex: e.target.value }; setStyleGuide(g => ({ ...g, colors: next })); }}
+                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" title="Pick color" />
                             </div>
-                            {/* Hex input */}
-                            <input
-                              type="text"
-                              value={color.hex}
-                              onChange={e => {
-                                const next = [...styleGuide.colors];
-                                next[i] = { ...next[i], hex: e.target.value };
-                                setStyleGuide(g => ({ ...g, colors: next }));
-                              }}
+                            {/* Hex */}
+                            <input type="text" value={color.hex}
+                              onChange={e => { const next = [...styleGuide.colors]; next[i] = { ...next[i], hex: e.target.value }; setStyleGuide(g => ({ ...g, colors: next })); }}
                               placeholder="#000000"
-                              className="w-[88px] h-7 px-2 text-[11px] font-mono border border-[var(--hm-border)] rounded-md focus:outline-none focus:border-[#4361ee] bg-white flex-shrink-0"
-                            />
+                              className="h-8 px-2.5 text-[11px] font-mono border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[#4361ee] bg-white w-full" />
                             {/* Name */}
-                            <input
-                              type="text"
-                              value={color.name}
-                              onChange={e => {
-                                const next = [...styleGuide.colors];
-                                next[i] = { ...next[i], name: e.target.value };
-                                setStyleGuide(g => ({ ...g, colors: next }));
-                              }}
+                            <input type="text" value={color.name}
+                              onChange={e => { const next = [...styleGuide.colors]; next[i] = { ...next[i], name: e.target.value }; setStyleGuide(g => ({ ...g, colors: next })); }}
                               placeholder="e.g. Primary"
-                              className="w-[110px] h-7 px-2 text-[12px] border border-[var(--hm-border)] rounded-md focus:outline-none focus:border-[#4361ee] bg-white flex-shrink-0"
-                            />
+                              className="h-8 px-2.5 text-[12px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[#4361ee] bg-white w-full" />
                             {/* Usage */}
-                            <input
-                              type="text"
-                              value={color.usage}
-                              onChange={e => {
-                                const next = [...styleGuide.colors];
-                                next[i] = { ...next[i], usage: e.target.value };
-                                setStyleGuide(g => ({ ...g, colors: next }));
-                              }}
+                            <input type="text" value={color.usage}
+                              onChange={e => { const next = [...styleGuide.colors]; next[i] = { ...next[i], usage: e.target.value }; setStyleGuide(g => ({ ...g, colors: next })); }}
                               placeholder="e.g. CTAs, headlines, links"
-                              className="flex-1 h-7 px-2 text-[12px] border border-[var(--hm-border)] rounded-md focus:outline-none focus:border-[#4361ee] bg-white min-w-0"
-                            />
-                            <button
-                              onClick={() => setStyleGuide(g => ({ ...g, colors: g.colors.filter((_, j) => j !== i) }))}
-                              className="w-6 h-6 flex items-center justify-center text-[var(--hm-text-tertiary)] hover:text-red-500 transition-colors flex-shrink-0"
-                            >
+                              className="h-8 px-2.5 text-[12px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[#4361ee] bg-white w-full" />
+                            {/* Delete */}
+                            <button onClick={() => setStyleGuide(g => ({ ...g, colors: g.colors.filter((_, j) => j !== i) }))}
+                              className="w-6 h-6 flex items-center justify-center text-[var(--hm-text-tertiary)] hover:text-red-500 transition-colors mx-auto">
                               <svg width="10" height="10" viewBox="0 0 16 16" fill="none"><path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
                             </button>
                           </div>
@@ -1168,31 +1146,29 @@ export default function KnowledgeBasePage() {
                       <p className="text-[13px] font-medium">Typography</p>
                       <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-0.5">Font families passed as-is to design briefs — use exact names (e.g. "Inter", "Söhne", "GT Walsheim")</p>
                     </div>
-                    <div className="space-y-3">
+                    {/* Column headers */}
+                    <div className="grid gap-2 mb-1 px-1" style={{ gridTemplateColumns: "72px 1fr 100px 1fr" }}>
+                      <span />
+                      <span className="text-[10px] text-[var(--hm-text-tertiary)] uppercase tracking-wide">Font family</span>
+                      <span className="text-[10px] text-[var(--hm-text-tertiary)] uppercase tracking-wide">Weight</span>
+                      <span className="text-[10px] text-[var(--hm-text-tertiary)] uppercase tracking-wide">Notes</span>
+                    </div>
+                    <div className="space-y-2">
                       {(["heading", "body", "accent"] as const).map(level => (
-                        <div key={level} className="flex items-center gap-3">
-                          <span className="text-[11px] text-[var(--hm-text-tertiary)] capitalize w-16 flex-shrink-0">{level}</span>
-                          <input
-                            type="text"
-                            value={styleGuide.typography[level].family}
+                        <div key={level} className="grid items-center gap-2" style={{ gridTemplateColumns: "72px 1fr 100px 1fr" }}>
+                          <span className="text-[12px] text-[var(--hm-text-secondary)] capitalize font-medium">{level}</span>
+                          <input type="text" value={styleGuide.typography[level].family}
                             onChange={e => setStyleGuide(g => ({ ...g, typography: { ...g.typography, [level]: { ...g.typography[level], family: e.target.value } } }))}
-                            placeholder="Font family (e.g. Inter)"
-                            className="flex-1 h-8 px-3 text-[12px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[#4361ee] bg-[var(--hm-bg-secondary)]"
-                          />
-                          <input
-                            type="text"
-                            value={styleGuide.typography[level].weight}
+                            placeholder="e.g. Inter"
+                            className="h-8 px-2.5 text-[12px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[#4361ee] bg-[var(--hm-bg-secondary)] w-full" />
+                          <input type="text" value={styleGuide.typography[level].weight}
                             onChange={e => setStyleGuide(g => ({ ...g, typography: { ...g.typography, [level]: { ...g.typography[level], weight: e.target.value } } }))}
-                            placeholder="Weight"
-                            className="w-20 h-8 px-3 text-[12px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[#4361ee] bg-[var(--hm-bg-secondary)] flex-shrink-0"
-                          />
-                          <input
-                            type="text"
-                            value={styleGuide.typography[level].notes}
+                            placeholder="e.g. 700"
+                            className="h-8 px-2.5 text-[12px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[#4361ee] bg-[var(--hm-bg-secondary)] w-full" />
+                          <input type="text" value={styleGuide.typography[level].notes}
                             onChange={e => setStyleGuide(g => ({ ...g, typography: { ...g.typography, [level]: { ...g.typography[level], notes: e.target.value } } }))}
-                            placeholder="Notes (e.g. size, tracking)"
-                            className="flex-[2] h-8 px-3 text-[12px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[#4361ee] bg-[var(--hm-bg-secondary)]"
-                          />
+                            placeholder="e.g. 16px, tight tracking"
+                            className="h-8 px-2.5 text-[12px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[#4361ee] bg-[var(--hm-bg-secondary)] w-full" />
                         </div>
                       ))}
                     </div>
@@ -1231,48 +1207,47 @@ export default function KnowledgeBasePage() {
                         <p className="text-[12px] text-[var(--hm-text-tertiary)]">No logos uploaded — upload light, dark, and icon variants for complete coverage</p>
                       </div>
                     ) : (
-                      <div className="space-y-2">
-                        {styleGuide.logoVariants.map((logo, i) => (
-                          <div key={i} className="flex items-center gap-3 p-2.5 bg-[var(--hm-bg-secondary)] rounded-lg">
-                            {/* Preview */}
-                            <div className="w-10 h-10 rounded-lg border border-[var(--hm-border)] bg-white flex items-center justify-center flex-shrink-0 overflow-hidden p-1">
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img src={logo.url} alt={logo.name} className="max-w-full max-h-full object-contain" />
+                      <>
+                        {/* Column headers */}
+                        <div className="grid gap-2 mb-1 px-1" style={{ gridTemplateColumns: "40px 180px 1fr 44px 24px" }}>
+                          <span />
+                          <span className="text-[10px] text-[var(--hm-text-tertiary)] uppercase tracking-wide">Variant name</span>
+                          <span className="text-[10px] text-[var(--hm-text-tertiary)] uppercase tracking-wide">When to use</span>
+                          <span />
+                          <span />
+                        </div>
+                        <div className="space-y-2">
+                          {styleGuide.logoVariants.map((logo, i) => (
+                            <div key={i} className="grid items-center gap-2 p-2 bg-[var(--hm-bg-secondary)] rounded-lg" style={{ gridTemplateColumns: "40px 180px 1fr 44px 24px" }}>
+                              {/* Preview */}
+                              <div className="w-10 h-10 rounded-lg border border-[var(--hm-border)] bg-white flex items-center justify-center overflow-hidden p-1">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={logo.url} alt={logo.name} className="max-w-full max-h-full object-contain" />
+                              </div>
+                              {/* Name */}
+                              <input type="text" value={logo.name}
+                                onChange={e => { const next = [...styleGuide.logoVariants]; next[i] = { ...next[i], name: e.target.value }; setStyleGuide(g => ({ ...g, logoVariants: next })); }}
+                                placeholder="e.g. Full logo (light)"
+                                className="h-8 px-2.5 text-[12px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[#4361ee] bg-white w-full" />
+                              {/* Usage */}
+                              <input type="text" value={logo.usage}
+                                onChange={e => { const next = [...styleGuide.logoVariants]; next[i] = { ...next[i], usage: e.target.value }; setStyleGuide(g => ({ ...g, logoVariants: next })); }}
+                                placeholder="e.g. Use on dark or coloured backgrounds"
+                                className="h-8 px-2.5 text-[12px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[#4361ee] bg-white w-full" />
+                              {/* View link */}
+                              <a href={logo.url} target="_blank" rel="noopener noreferrer"
+                                className="h-8 px-2 text-[11px] text-[#4361ee] hover:underline flex items-center justify-center border border-[var(--hm-border)] rounded-lg bg-white hover:border-[#4361ee]/40 transition-colors whitespace-nowrap">
+                                View ↗
+                              </a>
+                              {/* Delete */}
+                              <button onClick={() => setStyleGuide(g => ({ ...g, logoVariants: g.logoVariants.filter((_, j) => j !== i) }))}
+                                className="w-6 h-6 flex items-center justify-center text-[var(--hm-text-tertiary)] hover:text-red-500 transition-colors mx-auto">
+                                <svg width="10" height="10" viewBox="0 0 16 16" fill="none"><path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+                              </button>
                             </div>
-                            {/* Name */}
-                            <input
-                              type="text"
-                              value={logo.name}
-                              onChange={e => {
-                                const next = [...styleGuide.logoVariants];
-                                next[i] = { ...next[i], name: e.target.value };
-                                setStyleGuide(g => ({ ...g, logoVariants: next }));
-                              }}
-                              placeholder="e.g. Full logo (light)"
-                              className="w-[170px] h-7 px-2 text-[12px] border border-[var(--hm-border)] rounded-md focus:outline-none focus:border-[#4361ee] bg-white flex-shrink-0"
-                            />
-                            {/* Usage */}
-                            <input
-                              type="text"
-                              value={logo.usage}
-                              onChange={e => {
-                                const next = [...styleGuide.logoVariants];
-                                next[i] = { ...next[i], usage: e.target.value };
-                                setStyleGuide(g => ({ ...g, logoVariants: next }));
-                              }}
-                              placeholder="e.g. Use on dark or coloured backgrounds"
-                              className="flex-1 h-7 px-2 text-[12px] border border-[var(--hm-border)] rounded-md focus:outline-none focus:border-[#4361ee] bg-white min-w-0"
-                            />
-                            <a href={logo.url} target="_blank" rel="noopener noreferrer" className="text-[10px] text-[#4361ee] hover:underline flex-shrink-0 whitespace-nowrap">View ↗</a>
-                            <button
-                              onClick={() => setStyleGuide(g => ({ ...g, logoVariants: g.logoVariants.filter((_, j) => j !== i) }))}
-                              className="w-6 h-6 flex items-center justify-center text-[var(--hm-text-tertiary)] hover:text-red-500 transition-colors flex-shrink-0"
-                            >
-                              <svg width="10" height="10" viewBox="0 0 16 16" fill="none"><path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
-                            </button>
-                          </div>
-                        ))}
-                      </div>
+                          ))}
+                        </div>
+                      </>
                     )}
                   </div>
 
