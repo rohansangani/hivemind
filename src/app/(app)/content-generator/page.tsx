@@ -191,21 +191,10 @@ export default function ContentGeneratorPage() {
   const [keyPoints, setKeyPoints] = useState("");
   const [showParams, setShowParams] = useState(false);
 
-  // Design brief — keyed by generatedId:format, persisted in localStorage per user
-  const briefStorageKey = `hm-cg-briefs-${user?.id ?? "anon"}`;
+  // Design brief — keyed by format, persisted in DB inside outputs.__designBriefs
   const [designBriefs, setDesignBriefs] = useState<Record<string, string>>({});
   const [designBriefLoading, setDesignBriefLoading] = useState(false);
   const [showDesignBrief, setShowDesignBrief] = useState(false);
-  // Load from localStorage once user is available
-  useEffect(() => {
-    if (!user?.id) return;
-    try { setDesignBriefs(JSON.parse(localStorage.getItem(briefStorageKey) ?? "{}")); } catch {}
-  }, [user?.id, briefStorageKey]);
-  // Persist to localStorage on change
-  useEffect(() => {
-    if (!user?.id) return;
-    try { localStorage.setItem(briefStorageKey, JSON.stringify(designBriefs)); } catch {}
-  }, [designBriefs, briefStorageKey, user?.id]);
 
   // Copy feedback
   const [copied, setCopied] = useState(false);
@@ -365,7 +354,14 @@ export default function ContentGeneratorPage() {
         setPositionAgainst(item.positionAgainst || "");
         setToneOverride(item.toneOverride || "default");
         setKeyPoints(item.keyPoints || "");
-        setOutputs(item.outputs);
+        // Extract persisted design briefs from DB outputs before setting state
+        const rawOutputs = item.outputs as Record<string, unknown>;
+        const storedBriefs = (rawOutputs.__designBriefs ?? {}) as Record<string, string>;
+        setDesignBriefs(storedBriefs);
+        // Strip __designBriefs from outputs before passing to content state
+        const { __designBriefs: _unused, ...contentOutputs } = rawOutputs;
+        void _unused;
+        setOutputs(contentOutputs as Record<string, OutputData>);
         setGeneratedId(id);
         setActiveTab(item.formats[0] || "");
         setRightTab("suggestions");
@@ -1028,8 +1024,7 @@ export default function ContentGeneratorPage() {
                           <button
                             onClick={async () => {
                               if (designBriefLoading) return;
-                              const bk = `${generatedId}:${activeTab}`;
-                              if (designBriefs[bk]) { setShowDesignBrief(true); return; }
+                              if (designBriefs[activeTab]) { setShowDesignBrief(true); return; }
                               setDesignBriefLoading(true);
                               try {
                                 const res = await fetch("/api/content-generator/design-brief", {
@@ -1038,7 +1033,19 @@ export default function ContentGeneratorPage() {
                                   body: JSON.stringify({ content: outputs[activeTab].content, format: activeTab, topic, targetProduct, targetPersona, targetMarket }),
                                 });
                                 const data = await res.json();
-                                if (data.brief) { setDesignBriefs(prev => ({ ...prev, [bk]: data.brief })); setShowDesignBrief(true); }
+                                if (data.brief) {
+                                  const updated = { ...designBriefs, [activeTab]: data.brief };
+                                  setDesignBriefs(updated);
+                                  setShowDesignBrief(true);
+                                  // Persist to DB so it survives page reloads
+                                  if (generatedId) {
+                                    fetch(`/api/generated-content/${generatedId}`, {
+                                      method: "PATCH",
+                                      headers: { "Content-Type": "application/json" },
+                                      body: JSON.stringify({ outputs: { ...outputs, __designBriefs: updated } }),
+                                    }).catch(() => {});
+                                  }
+                                }
                               } catch { /* ignore */ }
                               finally { setDesignBriefLoading(false); }
                             }}
@@ -1047,7 +1054,7 @@ export default function ContentGeneratorPage() {
                           >
                             {designBriefLoading
                               ? <><span className="w-3 h-3 border-2 border-[#7c3aed]/30 border-t-[#7c3aed] rounded-full animate-spin" />Generating brief…</>
-                              : <><svg width="10" height="10" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="14" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.2"/><path d="M4 5h8M4 8h5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round"/><path d="M11 13l2-2-2-2" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round"/><path d="M5 13h8" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round"/></svg>{designBriefs[`${generatedId}:${activeTab}`] ? "View design brief" : "Design brief"}</>
+                              : <><svg width="10" height="10" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="14" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.2"/><path d="M4 5h8M4 8h5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round"/><path d="M11 13l2-2-2-2" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round"/><path d="M5 13h8" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round"/></svg>{designBriefs[activeTab] ? "View design brief" : "Design brief"}</>
                             }
                           </button>
                         </div>
@@ -1483,7 +1490,7 @@ export default function ContentGeneratorPage() {
       </div>
 
       {/* ── Design brief modal — centered scrollable popup ── */}
-      {showDesignBrief && designBriefs[`${generatedId}:${activeTab}`] && createPortal(
+      {showDesignBrief && designBriefs[activeTab] && createPortal(
         <div
           className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
           onClick={() => setShowDesignBrief(false)}
@@ -1514,7 +1521,7 @@ export default function ContentGeneratorPage() {
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
                 <button
-                  onClick={() => navigator.clipboard.writeText(designBriefs[`${generatedId}:${activeTab}`] ?? "")}
+                  onClick={() => navigator.clipboard.writeText(designBriefs[activeTab] ?? "")}
                   className="h-[30px] px-3 border border-[var(--hm-border)] rounded-lg text-[11px] text-[var(--hm-text-secondary)] hover:border-[#7c3aed] hover:text-[#7c3aed] transition-colors flex items-center gap-1.5"
                 >
                   <svg width="10" height="10" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="8" height="10" rx="1" stroke="currentColor" strokeWidth="1.2" /><rect x="6" y="4" width="8" height="10" rx="1" stroke="currentColor" strokeWidth="1.2" /></svg>
@@ -1522,9 +1529,8 @@ export default function ContentGeneratorPage() {
                 </button>
                 <button
                   onClick={async () => {
-                    const bk = `${generatedId}:${activeTab}`;
                     setDesignBriefLoading(true);
-                    setDesignBriefs(prev => { const n = { ...prev }; delete n[bk]; return n; });
+                    setDesignBriefs(prev => { const n = { ...prev }; delete n[activeTab]; return n; });
                     try {
                       const res = await fetch("/api/content-generator/design-brief", {
                         method: "POST",
@@ -1532,7 +1538,17 @@ export default function ContentGeneratorPage() {
                         body: JSON.stringify({ content: outputs![activeTab].content, format: activeTab, topic, targetProduct, targetPersona, targetMarket }),
                       });
                       const data = await res.json();
-                      if (data.brief) setDesignBriefs(prev => ({ ...prev, [bk]: data.brief }));
+                      if (data.brief) {
+                        const updated = { ...designBriefs, [activeTab]: data.brief };
+                        setDesignBriefs(updated);
+                        if (generatedId) {
+                          fetch(`/api/generated-content/${generatedId}`, {
+                            method: "PATCH",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ outputs: { ...outputs, __designBriefs: updated } }),
+                          }).catch(() => {});
+                        }
+                      }
                     } catch { /* ignore */ }
                     finally { setDesignBriefLoading(false); }
                   }}
@@ -1555,7 +1571,7 @@ export default function ContentGeneratorPage() {
                 </div>
               ) : (
                 <div className="text-[13.5px] leading-relaxed">
-                  <MarkdownRenderer content={designBriefs[`${generatedId}:${activeTab}`] ?? ""} />
+                  <MarkdownRenderer content={designBriefs[activeTab] ?? ""} />
                 </div>
               )}
             </div>
