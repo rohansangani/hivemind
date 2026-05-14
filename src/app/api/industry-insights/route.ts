@@ -186,14 +186,14 @@ export async function POST(req: NextRequest) {
     const compList = competitors.map(c => c.name).filter(Boolean);
     const searchQueries: string[] = [];
 
-    // One search query per competitor — no cap, cover all of them
+    // One search query per competitor — all of them, no cap
     for (const comp of compList) {
       searchQueries.push(`${comp} news strategy ${industry}`);
     }
     // Industry-wide trends
     searchQueries.push(`${industry} market trends news`);
-    // One query per market (up to 3 markets to keep total reasonable)
-    for (const market of marketNames.slice(0, 3)) {
+    // One query per market — all of them, no cap
+    for (const market of marketNames) {
       searchQueries.push(`${market} ${industry} industry news`);
     }
     const queries = searchQueries;
