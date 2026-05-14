@@ -233,21 +233,24 @@ export default function IndustryInsightsPage() {
         setRefreshing(false);
         return;
       }
+      // Parse metadata (newCount, error) from stream — but ALWAYS do a GET to display insights
       const lastLine = text.trim().split("\n").filter(l => l.trim()).pop() || "{}";
-      let data: Record<string, unknown> = {};
-      try { data = JSON.parse(lastLine) as Record<string, unknown>; } catch {
-        setFetchError("Refresh failed — unexpected server response. Please try again.");
+      let streamData: Record<string, unknown> = {};
+      try { streamData = JSON.parse(lastLine) as Record<string, unknown>; } catch { /* fall through to GET */ }
+      if (streamData.error) {
+        setFetchError(`Refresh failed: ${streamData.error}`);
         setRefreshing(false);
         return;
       }
-      if (data.error) {
-        setFetchError(`Refresh failed: ${data.error}`);
-        setRefreshing(false);
-        return;
+      if (typeof streamData.newCount === "number") setNewCount(streamData.newCount);
+      if (typeof streamData.lastRefreshedAt === "string") setLastRefreshedAt(streamData.lastRefreshedAt);
+      // Always fetch fresh insights via GET — reliable display regardless of stream parsing
+      const freshRes = await fetch("/api/industry-insights");
+      if (freshRes.ok) {
+        const freshData = await freshRes.json();
+        if (Array.isArray(freshData.insights)) setAllInsights(freshData.insights);
+        if (freshData.lastRefreshedAt && typeof streamData.lastRefreshedAt !== "string") setLastRefreshedAt(freshData.lastRefreshedAt);
       }
-      if (Array.isArray(data.insights)) setAllInsights(data.insights as typeof allInsights);
-      if (typeof data.newCount === "number") setNewCount(data.newCount);
-      if (typeof data.lastRefreshedAt === "string") setLastRefreshedAt(data.lastRefreshedAt);
     } catch {
       setFetchError("Network error — refresh could not complete. Check your connection.");
     } finally {

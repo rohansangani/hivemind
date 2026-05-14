@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
     const [insights, markets, orgRows] = await Promise.all([
       db.industryInsight.findMany({
         where: { organizationId: decoded.orgId },
-        orderBy: [{ relevanceScore: "desc" }, { createdAt: "desc" }],
+        orderBy: [{ createdAt: "desc" }, { relevanceScore: "desc" }],
       }),
       db.market.findMany({
         where: { organizationId: decoded.orgId },
@@ -516,7 +516,7 @@ Return ONLY a valid JSON array:
 
     const insights = await db.industryInsight.findMany({
       where: { organizationId: decoded.orgId },
-      orderBy: [{ relevanceScore: "desc" }, { createdAt: "desc" }],
+      orderBy: [{ createdAt: "desc" }, { relevanceScore: "desc" }],
     });
 
         clearInterval(keepalive);
