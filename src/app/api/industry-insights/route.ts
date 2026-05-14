@@ -186,15 +186,17 @@ export async function POST(req: NextRequest) {
     const compList = competitors.map(c => c.name).filter(Boolean);
     const searchQueries: string[] = [];
 
-    // Competitor queries (up to 3)
-    for (const comp of compList.slice(0, 3)) {
+    // One search query per competitor — no cap, cover all of them
+    for (const comp of compList) {
       searchQueries.push(`${comp} news strategy ${industry}`);
     }
-    // Industry + market queries
+    // Industry-wide trends
     searchQueries.push(`${industry} market trends news`);
-    if (marketNames.length > 0) searchQueries.push(`${marketNames[0]} ${industry} industry news`);
-    // Cap at 5 queries total
-    const queries = searchQueries.slice(0, 5);
+    // One query per market (up to 3 markets to keep total reasonable)
+    for (const market of marketNames.slice(0, 3)) {
+      searchQueries.push(`${market} ${industry} industry news`);
+    }
+    const queries = searchQueries;
 
     interface ArticleResult {
       title: string;
@@ -270,7 +272,7 @@ export async function POST(req: NextRequest) {
           hasBrave  ? searchBrave(q)  : Promise.resolve([]),
         ])
       );
-      // Flatten, dedupe by URL, cap at 40 articles
+      // Flatten, dedupe by URL, cap at 80 articles (more queries = more coverage)
       const seen = new Set<string>();
       for (const batch of allResults) {
         for (const art of batch) {
@@ -280,8 +282,8 @@ export async function POST(req: NextRequest) {
           }
         }
       }
-      articles = articles.slice(0, 40);
-      console.log(`[insights] fetched ${articles.length} articles (Tavily:${hasTavily} Brave:${hasBrave})`);
+      articles = articles.slice(0, 80);
+      console.log(`[insights] fetched ${articles.length} articles from ${queries.length} queries (Tavily:${hasTavily} Brave:${hasBrave})`);
     }
 
     const hasLiveArticles = articles.length > 0;
