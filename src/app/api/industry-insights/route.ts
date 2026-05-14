@@ -260,19 +260,33 @@ export async function POST(req: NextRequest) {
       } catch { return []; }
     }
 
-    // Run all queries across both search engines in parallel
+    // Run queries with a concurrency limit to avoid Tavily rate limits / timeouts.
+    // Fire at most 5 searches at a time; results are merged as each batch completes.
     const hasTavily = !!process.env.TAVILY_API_KEY;
     const hasBrave = !!process.env.BRAVE_API_KEY;
 
+    async function runConcurrent<T>(tasks: (() => Promise<T>)[], limit: number): Promise<T[]> {
+      const results: T[] = [];
+      let idx = 0;
+      async function worker() {
+        while (idx < tasks.length) {
+          const i = idx++;
+          results[i] = await tasks[i]();
+        }
+      }
+      await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, worker));
+      return results;
+    }
+
     let articles: ArticleResult[] = [];
     if (hasTavily || hasBrave) {
-      const allResults = await Promise.all(
-        queries.flatMap(q => [
-          hasTavily ? searchTavily(q) : Promise.resolve([]),
-          hasBrave  ? searchBrave(q)  : Promise.resolve([]),
-        ])
-      );
-      // Flatten, dedupe by URL, cap at 80 articles (more queries = more coverage)
+      const tasks = queries.flatMap(q => [
+        ...(hasTavily ? [() => searchTavily(q)] : []),
+        ...(hasBrave  ? [() => searchBrave(q)]  : []),
+      ]);
+      // Max 5 concurrent requests to respect rate limits
+      const allResults = await runConcurrent(tasks, 5);
+      // Flatten, dedupe by URL
       const seen = new Set<string>();
       for (const batch of allResults) {
         for (const art of batch) {
@@ -282,7 +296,6 @@ export async function POST(req: NextRequest) {
           }
         }
       }
-      articles = articles.slice(0, 80);
       console.log(`[insights] fetched ${articles.length} articles from ${queries.length} queries (Tavily:${hasTavily} Brave:${hasBrave})`);
     }
 

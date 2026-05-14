@@ -227,16 +227,27 @@ export default function IndustryInsightsPage() {
       }
       // Response is a stream with keepalive spaces; last line is the JSON result
       const text = await res.text();
+      // Guard: if the response looks like an HTML error page (e.g. Vercel timeout), surface it clearly
+      if (text.trimStart().startsWith("<")) {
+        setFetchError("Refresh timed out — the server took too long. Please try again.");
+        setRefreshing(false);
+        return;
+      }
       const lastLine = text.trim().split("\n").filter(l => l.trim()).pop() || "{}";
-      const data = JSON.parse(lastLine);
+      let data: Record<string, unknown> = {};
+      try { data = JSON.parse(lastLine) as Record<string, unknown>; } catch {
+        setFetchError("Refresh failed — unexpected server response. Please try again.");
+        setRefreshing(false);
+        return;
+      }
       if (data.error) {
         setFetchError(`Refresh failed: ${data.error}`);
         setRefreshing(false);
         return;
       }
-      if (Array.isArray(data.insights)) setAllInsights(data.insights);
+      if (Array.isArray(data.insights)) setAllInsights(data.insights as typeof allInsights);
       if (typeof data.newCount === "number") setNewCount(data.newCount);
-      if (data.lastRefreshedAt) setLastRefreshedAt(data.lastRefreshedAt);
+      if (typeof data.lastRefreshedAt === "string") setLastRefreshedAt(data.lastRefreshedAt);
     } catch {
       setFetchError("Network error — refresh could not complete. Check your connection.");
     } finally {
