@@ -518,7 +518,7 @@ export async function GET(req: NextRequest) {
           organizationId: decoded.orgId,
           createdAt: { gte: start, lt: end },
         },
-        orderBy: [{ relevanceScore: "desc" }, { createdAt: "desc" }],
+        orderBy: [{ createdAt: "desc" }, { relevanceScore: "desc" }],
       }),
     ]);
 
