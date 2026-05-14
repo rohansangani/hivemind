@@ -23,16 +23,6 @@ export async function GET(req: NextRequest) {
       where: { organizationId: decoded.orgId, createdAt: { lt: cutoff } },
     });
 
-    // Purge insights with Google search fallback URLs — these were generated from
-    // Claude's training data (no live search), so their source articles may be years old.
-    // Real Tavily/Brave-sourced insights always have a proper article URL.
-    await db.industryInsight.deleteMany({
-      where: {
-        organizationId: decoded.orgId,
-        sourceUrl: { startsWith: "https://www.google.com/search" },
-      },
-    });
-
     const [insights, markets, orgRows] = await Promise.all([
       db.industryInsight.findMany({
         where: { organizationId: decoded.orgId },
@@ -135,13 +125,6 @@ export async function POST(req: NextRequest) {
     const marketsStr = marketNames.join(", ") || "global markets";
 
     // Do NOT purge all insights — accumulate across refreshes, keeping a 90-day rolling window.
-    // BUT: always remove stale training-data insights (Google fallback URLs = no real source).
-    await db.industryInsight.deleteMany({
-      where: {
-        organizationId: decoded.orgId,
-        sourceUrl: { startsWith: "https://www.google.com/search" },
-      },
-    });
 
     // Fetch existing insight titles and sourceUrls to skip re-adding the same ones.
     // Title dedup catches exact matches; sourceUrl dedup catches same article re-worded by Claude.
