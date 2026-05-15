@@ -42,6 +42,7 @@ export interface FocusProduct {
   useCases: string | null;
   classification: string | null;
   scope: string;
+  markets: Array<{ name: string; type: string; notes: string | null }>;
 }
 
 export interface FocusPersona {
@@ -96,6 +97,11 @@ export interface RetrievedKnowledge {
 
   /** Active skills for this org */
   skills: Array<{ name: string; category: string; instructions: string }>;
+
+  /** All markets for the org */
+  markets: Array<{ name: string; type: string; notes: string | null }>;
+  /** The target market selected for this generation (if any) */
+  targetMarket: string | null;
 
   totalRetrieved: number;
   queryEntities: QueryEntities;
@@ -234,6 +240,7 @@ export async function retrieveRelevantKnowledge(
     targetProduct?: string;
     targetPersona?: string;
     targetCompetitor?: string;
+    targetMarket?: string;
     searchDocuments?: boolean;
   }
 ): Promise<RetrievedKnowledge> {
@@ -243,10 +250,13 @@ export async function retrieveRelevantKnowledge(
   // ── Fetch all raw data in parallel ─────────────────────
   const [
     org, products, personas, competitors, brandProfile, skills,
-    proofPoints, messagingPatterns, learnings, insights,
+    proofPoints, messagingPatterns, learnings, insights, markets,
   ] = await Promise.all([
     db.organization.findUnique({ where: { id: orgId } }),
-    db.product.findMany({ where: { organizationId: orgId } }),
+    db.product.findMany({
+      where: { organizationId: orgId },
+      include: { markets: { include: { market: true } } },
+    }),
     db.persona.findMany({ where: { organizationId: orgId } }),
     db.competitor.findMany({ where: { organizationId: orgId } }),
     db.brandProfile.findFirst({ where: { organizationId: orgId } }),
@@ -255,6 +265,7 @@ export async function retrieveRelevantKnowledge(
     db.knowledgeEntry.findMany({ where: { organizationId: orgId, category: "messaging_patterns" }, take: 30 }),
     db.learningLog.findMany({ where: { organizationId: orgId }, orderBy: { createdAt: "desc" }, take: 80 }),
     db.industryInsight.findMany({ where: { organizationId: orgId }, orderBy: { createdAt: "desc" }, take: 20 }),
+    db.market.findMany({ where: { organizationId: orgId }, orderBy: { createdAt: "asc" } }),
   ]);
 
   // ── Resolve focus entities ──────────────────────────────
@@ -285,6 +296,7 @@ export async function retrieveRelevantKnowledge(
         useCases: focusProductRec.useCases || null,
         classification: focusProductRec.classification || null,
         scope: focusProductRec.scope,
+        markets: (focusProductRec as typeof focusProductRec & { markets: Array<{ market: { name: string; type: string; notes: string | null } }> }).markets?.map(pm => pm.market) || [],
       }
     : null;
 
@@ -458,6 +470,8 @@ export async function retrieveRelevantKnowledge(
     brand,
     items: rankedItems,
     skills: skills.map(s => ({ name: s.name, category: s.category, instructions: s.instructions })),
+    markets: markets.map(m => ({ name: m.name, type: m.type, notes: m.notes })),
+    targetMarket: options?.targetMarket || null,
     totalRetrieved: allItems.length,
     queryEntities: entities,
   };

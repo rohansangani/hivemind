@@ -36,6 +36,7 @@ export function buildGroundedContext(knowledge: RetrievedKnowledge): string {
     if (p.features.length) lines.push(`Capabilities: ${p.features.join(" · ")}`);
     if (p.useCases) lines.push(`Use cases: ${p.useCases}`);
     if (p.classification) lines.push(`Type: ${p.classification} | Scope: ${p.scope}`);
+    if (p.markets.length) lines.push(`Target markets: ${p.markets.map(m => m.name + (m.notes ? ` (${m.notes})` : "")).join(", ")}`);
     if (knowledge.otherProducts.length) {
       lines.push(`⚠ Other products exist: ${knowledge.otherProducts.join(", ")}`);
       lines.push(`  → Do NOT mix their capabilities into answers about ${p.name}`);
@@ -76,6 +77,19 @@ export function buildGroundedContext(knowledge: RetrievedKnowledge): string {
     if (c.marketOverlap.length) lines.push(`Overlap markets: ${c.marketOverlap.join(", ")}`);
     if (knowledge.otherCompetitors.length) {
       lines.push(`Other tracked competitors: ${knowledge.otherCompetitors.join(", ")}`);
+    }
+  }
+
+  // ── Markets ───────────────────────────────────────────
+  if (knowledge.markets.length) {
+    lines.push("\n■ TARGET MARKETS [Source: Knowledge Base: Markets | verified]");
+    if (knowledge.targetMarket) {
+      const tm = knowledge.markets.find(m => m.name.toLowerCase() === knowledge.targetMarket!.toLowerCase());
+      lines.push(`Primary focus market: ${knowledge.targetMarket}${tm?.notes ? ` — ${tm.notes}` : ""}`);
+      const others = knowledge.markets.filter(m => m.name.toLowerCase() !== knowledge.targetMarket!.toLowerCase());
+      if (others.length) lines.push(`Other markets: ${others.map(m => m.name).join(", ")}`);
+    } else {
+      lines.push(`All markets: ${knowledge.markets.map(m => m.name + (m.notes ? ` (${m.notes})` : "")).join(", ")}`);
     }
   }
 

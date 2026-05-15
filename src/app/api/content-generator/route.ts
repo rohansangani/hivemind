@@ -64,6 +64,7 @@ export async function POST(req: NextRequest) {
       targetProduct: effectiveProduct || entities.products[0] || undefined,
       targetPersona: targetPersona || entities.personas[0] || undefined,
       targetCompetitor: positionAgainst || entities.competitors[0] || undefined,
+      targetMarket: targetMarket || undefined,
       searchDocuments: true,
     });
 

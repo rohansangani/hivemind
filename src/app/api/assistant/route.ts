@@ -322,6 +322,8 @@ export async function POST(req: NextRequest) {
               brand: null,
               items: [],
               skills: [],
+              markets: [],
+              targetMarket: null,
               totalRetrieved: 0,
               queryEntities: entities,
             };
