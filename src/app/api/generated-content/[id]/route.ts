@@ -24,7 +24,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       include: { generatedBy: { select: { name: true } } },
     });
 
-    if (!item || item.organizationId !== orgId) {
+    if (!item || item.organizationId !== orgId || item.generatedById !== decoded.userId) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
@@ -52,8 +52,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     });
     const orgId = actor?.organizationId ?? decoded.orgId;
 
-    const item = await db.generatedContent.findUnique({ where: { id }, select: { organizationId: true } });
-    if (!item || item.organizationId !== orgId) {
+    const item = await db.generatedContent.findUnique({ where: { id }, select: { organizationId: true, generatedById: true } });
+    if (!item || item.organizationId !== orgId || item.generatedById !== decoded.userId) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
@@ -99,8 +99,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     });
     const orgId = actor?.organizationId ?? decoded.orgId;
 
-    const item = await db.generatedContent.findUnique({ where: { id }, select: { organizationId: true } });
-    if (!item || item.organizationId !== orgId) {
+    const item = await db.generatedContent.findUnique({ where: { id }, select: { organizationId: true, generatedById: true } });
+    if (!item || item.organizationId !== orgId || item.generatedById !== decoded.userId) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
@@ -150,8 +150,8 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     });
     const orgId = actor?.organizationId ?? decoded.orgId;
 
-    const item = await db.generatedContent.findUnique({ where: { id }, select: { organizationId: true } });
-    if (!item || item.organizationId !== orgId) {
+    const item = await db.generatedContent.findUnique({ where: { id }, select: { organizationId: true, generatedById: true } });
+    if (!item || item.organizationId !== orgId || item.generatedById !== decoded.userId) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 

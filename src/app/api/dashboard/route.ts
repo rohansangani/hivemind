@@ -44,10 +44,10 @@ export async function GET(req: NextRequest) {
       db.contentAsset.count({ where: { organizationId: decoded.orgId } }),
       db.contentAsset.count({ where: { organizationId: decoded.orgId, createdAt: { gte: weekAgo } } }),
       db.contentAsset.aggregate({ where: { organizationId: decoded.orgId, brandScore: { not: null } }, _avg: { brandScore: true } }),
-      db.generatedContent.count({ where: { organizationId: decoded.orgId } }),
-      db.generatedContent.count({ where: { organizationId: decoded.orgId, createdAt: { gte: weekAgo } } }),
+      db.generatedContent.count({ where: { organizationId: decoded.orgId, generatedById: decoded.userId } }),
+      db.generatedContent.count({ where: { organizationId: decoded.orgId, generatedById: decoded.userId, createdAt: { gte: weekAgo } } }),
       db.generatedContent.findMany({
-        where: { organizationId: decoded.orgId },
+        where: { organizationId: decoded.orgId, generatedById: decoded.userId },
         orderBy: { createdAt: "desc" },
         take: 5,
         select: { id: true, topic: true, formats: true, outputs: true, createdAt: true, generatedBy: { select: { name: true } } },

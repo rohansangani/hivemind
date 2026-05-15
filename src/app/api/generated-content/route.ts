@@ -27,6 +27,7 @@ export async function GET(req: NextRequest) {
     const items = await db.generatedContent.findMany({
       where: {
         organizationId: orgId,
+        generatedById: decoded.userId,
         ...(search ? { topic: { contains: search, mode: "insensitive" } } : {}),
         ...(format ? { formats: { has: format } } : {}),
       },
