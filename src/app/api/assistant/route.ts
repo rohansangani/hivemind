@@ -278,17 +278,19 @@ export async function POST(req: NextRequest) {
     const { intent } = classifyIntent(message);
 
     // Fetch entity names for resolution
-    const [products, personas, competitors, org] = await Promise.all([
+    const [products, personas, competitors, org, markets] = await Promise.all([
       db.product.findMany({ where: { organizationId: decoded.orgId }, select: { name: true } }),
       db.persona.findMany({ where: { organizationId: decoded.orgId }, select: { title: true } }),
       db.competitor.findMany({ where: { organizationId: decoded.orgId }, select: { name: true } }),
       db.organization.findUnique({ where: { id: decoded.orgId }, select: { name: true, description: true, industry: true } }),
+      db.market.findMany({ where: { organizationId: decoded.orgId }, select: { name: true } }),
     ]);
 
     const entities = resolveEntities(message, {
       products: products.map(p => p.name),
       personas: personas.map(p => p.title),
       competitors: competitors.map(c => c.name),
+      markets: markets.map(m => m.name),
     });
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -306,6 +308,7 @@ export async function POST(req: NextRequest) {
                 targetProduct: entities.products[0] || undefined,
                 targetPersona: entities.personas[0] || undefined,
                 targetCompetitor: entities.competitors[0] || undefined,
+                targetMarket: entities.markets[0] || undefined,
                 searchDocuments: true,
               }
             )

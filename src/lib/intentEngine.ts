@@ -17,6 +17,7 @@ export interface QueryEntities {
   products: string[];
   personas: string[];
   competitors: string[];
+  markets: string[];
   topics: string[];
 }
 
@@ -113,19 +114,20 @@ export function classifyIntent(message: string): IntentResult {
   return {
     intent: matchedIntent,
     confidence,
-    entities: { products: [], personas: [], competitors: [], topics: extractTopics(message) },
+    entities: { products: [], personas: [], competitors: [], markets: [], topics: extractTopics(message) },
   };
 }
 
 export function resolveEntities(
   message: string,
-  known: { products: string[]; personas: string[]; competitors: string[] }
+  known: { products: string[]; personas: string[]; competitors: string[]; markets?: string[] }
 ): QueryEntities {
   const msgLower = message.toLowerCase();
   return {
     products: known.products.filter((p) => msgLower.includes(p.toLowerCase())),
     personas: known.personas.filter((p) => msgLower.includes(p.toLowerCase())),
     competitors: known.competitors.filter((c) => msgLower.includes(c.toLowerCase())),
+    markets: (known.markets || []).filter((m) => msgLower.includes(m.toLowerCase())),
     topics: extractTopics(message),
   };
 }
@@ -155,6 +157,9 @@ export function scoreRelevance(text: string, topics: string[], entities: QueryEn
   }
   for (const c of entities.competitors) {
     if (lower.includes(c.toLowerCase())) score += 0.3;
+  }
+  for (const m of (entities.markets || [])) {
+    if (lower.includes(m.toLowerCase())) score += 0.25;
   }
 
   return Math.min(score, 1);

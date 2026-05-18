@@ -32,7 +32,7 @@ export async function buildContextPrompt(orgId: string, options?: ContextOptions
     includeSkills: false,
     maxTokens: 3500,
     queryMessage: "",
-    queryEntities: { products: [], personas: [], competitors: [], topics: [] },
+    queryEntities: { products: [], personas: [], competitors: [], markets: [], topics: [] },
     targetProduct: "",
     targetMarket: "",
     targetPersona: "",

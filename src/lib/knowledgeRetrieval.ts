@@ -272,6 +272,7 @@ export async function retrieveRelevantKnowledge(
   const effectiveProduct = options?.targetProduct || entities.products[0] || null;
   const effectivePersona = options?.targetPersona || entities.personas[0] || null;
   const effectiveCompetitor = options?.targetCompetitor || entities.competitors[0] || null;
+  const effectiveMarket = options?.targetMarket || entities.markets?.[0] || null;
 
   // Deduplicate by name
   const uniqueProducts = [...new Map(products.map(p => [p.name, p])).values()];
@@ -471,7 +472,7 @@ export async function retrieveRelevantKnowledge(
     items: rankedItems,
     skills: skills.map(s => ({ name: s.name, category: s.category, instructions: s.instructions })),
     markets: markets.map(m => ({ name: m.name, type: m.type, notes: m.notes })),
-    targetMarket: options?.targetMarket || null,
+    targetMarket: effectiveMarket,
     totalRetrieved: allItems.length,
     queryEntities: entities,
   };

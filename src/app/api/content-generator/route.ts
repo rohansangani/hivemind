@@ -31,9 +31,10 @@ export async function POST(req: NextRequest) {
     }
 
     // Fetch products for topic inference (need full product objects)
-    const [products, brandProfile] = await Promise.all([
+    const [products, brandProfile, allMarkets] = await Promise.all([
       db.product.findMany({ where: { organizationId: decoded.orgId } }),
       db.brandProfile.findFirst({ where: { organizationId: decoded.orgId } }),
+      db.market.findMany({ where: { organizationId: decoded.orgId }, select: { name: true } }),
     ]);
 
     // Resolve which product to focus on:
@@ -48,6 +49,7 @@ export async function POST(req: NextRequest) {
       products: products.map(p => p.name),
       personas: allPersonas.map(p => p.title),
       competitors: allCompetitors.map(c => c.name),
+      markets: allMarkets.map(m => m.name),
     });
     if (effectiveProduct && !entities.products.includes(effectiveProduct)) {
       entities.products.unshift(effectiveProduct);
