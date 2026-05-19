@@ -124,7 +124,11 @@ export async function POST(req: NextRequest) {
     const marketNames = markets.map(m => m.name);
     const marketsStr = marketNames.join(", ") || "global markets";
 
-    // Do NOT purge all insights — accumulate across refreshes, keeping a 90-day rolling window.
+    // Purge insights older than 90 days on every refresh (keeps the rolling window clean)
+    const cutoffDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+    await db.industryInsight.deleteMany({
+      where: { organizationId: decoded.orgId, createdAt: { lt: cutoffDate } },
+    });
 
     // Fetch existing insight titles and sourceUrls to skip re-adding the same ones.
     // Title dedup catches exact matches; sourceUrl dedup catches same article re-worded by Claude.
@@ -266,6 +270,15 @@ export async function POST(req: NextRequest) {
       return results;
     }
 
+    // Strict recency filter — reject any article with a parseable date older than 90 days
+    const NINETY_DAYS_AGO = Date.now() - 90 * 24 * 60 * 60 * 1000;
+    function isRecent(publishedDate?: string): boolean {
+      if (!publishedDate) return true; // can't determine — let it through
+      const parsed = new Date(publishedDate).getTime();
+      if (isNaN(parsed)) return true; // unparseable format — let it through
+      return parsed >= NINETY_DAYS_AGO;
+    }
+
     let articles: ArticleResult[] = [];
     if (hasTavily || hasBrave) {
       const tasks = queries.flatMap(q => [
@@ -274,11 +287,11 @@ export async function POST(req: NextRequest) {
       ]);
       // Max 5 concurrent requests to respect rate limits
       const allResults = await runConcurrent(tasks, 5);
-      // Flatten, dedupe by URL
+      // Flatten, dedupe by URL, and enforce recency
       const seen = new Set<string>();
       for (const batch of allResults) {
         for (const art of batch) {
-          if (art.url && !seen.has(art.url) && art.title && art.snippet) {
+          if (art.url && !seen.has(art.url) && art.title && art.snippet && isRecent(art.publishedDate)) {
             seen.add(art.url);
             articles.push(art);
           }
