@@ -327,6 +327,8 @@ export async function POST(req: NextRequest) {
               skills: [],
               markets: [],
               targetMarket: null,
+              productsInMarket: [],
+              productMarketMap: [],
               totalRetrieved: 0,
               queryEntities: entities,
             };

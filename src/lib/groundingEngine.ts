@@ -85,11 +85,27 @@ export function buildGroundedContext(knowledge: RetrievedKnowledge): string {
     lines.push("\n■ TARGET MARKETS [Source: Knowledge Base: Markets | verified]");
     if (knowledge.targetMarket) {
       const tm = knowledge.markets.find(m => m.name.toLowerCase() === knowledge.targetMarket!.toLowerCase());
-      lines.push(`Primary focus market: ${knowledge.targetMarket}${tm?.notes ? ` — ${tm.notes}` : ""}`);
+      lines.push(`Focus market: ${knowledge.targetMarket}${tm?.notes ? ` — ${tm.notes}` : ""}`);
+      if (knowledge.productsInMarket.length) {
+        lines.push(`Products available in ${knowledge.targetMarket}:`);
+        for (const p of knowledge.productsInMarket) {
+          lines.push(`  • ${p.name}${p.description ? ` — ${p.description}` : ""}`);
+        }
+      } else {
+        lines.push(`No products are explicitly linked to ${knowledge.targetMarket} in the knowledge base.`);
+      }
       const others = knowledge.markets.filter(m => m.name.toLowerCase() !== knowledge.targetMarket!.toLowerCase());
       if (others.length) lines.push(`Other markets: ${others.map(m => m.name).join(", ")}`);
     } else {
       lines.push(`All markets: ${knowledge.markets.map(m => m.name + (m.notes ? ` (${m.notes})` : "")).join(", ")}`);
+      // Show product-market mapping for all products that have market associations
+      const mapped = knowledge.productMarketMap.filter(p => p.markets.length > 0);
+      if (mapped.length) {
+        lines.push("Product-to-market mapping:");
+        for (const p of mapped) {
+          lines.push(`  • ${p.productName}: ${p.markets.join(", ")}`);
+        }
+      }
     }
   }
 

@@ -102,6 +102,10 @@ export interface RetrievedKnowledge {
   markets: Array<{ name: string; type: string; notes: string | null }>;
   /** The target market selected for this generation (if any) */
   targetMarket: string | null;
+  /** Products explicitly linked to the target market */
+  productsInMarket: Array<{ name: string; description: string }>;
+  /** Per-product market mapping for all products */
+  productMarketMap: Array<{ productName: string; markets: string[] }>;
 
   totalRetrieved: number;
   queryEntities: QueryEntities;
@@ -344,7 +348,10 @@ export async function retrieveRelevantKnowledge(
   // If there's no focus product, add all products as compact items
   if (!focusProductRec && uniqueProducts.length > 0) {
     for (const p of uniqueProducts) {
-      const text = `${p.name}: ${p.description || ""}. Features: ${(p.features as string[]).join(", ")}`;
+      const productWithMarkets = p as typeof p & { markets?: Array<{ market: { name: string } }> };
+      const marketNames = productWithMarkets.markets?.map(pm => pm.market.name) || [];
+      const marketStr = marketNames.length ? `. Available in markets: ${marketNames.join(", ")}` : "";
+      const text = `${p.name}: ${p.description || ""}. Features: ${(p.features as string[]).join(", ")}${marketStr}`;
       allItems.push({
         id: `prod-${p.id}`,
         title: `Product: ${p.name}`,
@@ -473,6 +480,18 @@ export async function retrieveRelevantKnowledge(
     skills: skills.map(s => ({ name: s.name, category: s.category, instructions: s.instructions })),
     markets: markets.map(m => ({ name: m.name, type: m.type, notes: m.notes })),
     targetMarket: effectiveMarket,
+    productsInMarket: effectiveMarket
+      ? uniqueProducts
+          .filter(p => {
+            const pm = p as typeof p & { markets?: Array<{ market: { name: string } }> };
+            return pm.markets?.some(m => m.market.name.toLowerCase() === effectiveMarket.toLowerCase());
+          })
+          .map(p => ({ name: p.name, description: p.description || "" }))
+      : [],
+    productMarketMap: uniqueProducts.map(p => {
+      const pm = p as typeof p & { markets?: Array<{ market: { name: string } }> };
+      return { productName: p.name, markets: pm.markets?.map(m => m.market.name) || [] };
+    }),
     totalRetrieved: allItems.length,
     queryEntities: entities,
   };
