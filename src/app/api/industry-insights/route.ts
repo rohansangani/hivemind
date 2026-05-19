@@ -189,6 +189,11 @@ export async function POST(req: NextRequest) {
       publishedDate?: string;
     }
 
+    // Strip lone Unicode surrogates that cause JSON parse errors in the Anthropic API
+    function sanitizeText(str: string): string {
+      return str.replace(/[\uD800-\uDFFF]/g, "").replace(/\uFFFD/g, "");
+    }
+
     // Tavily search — best for AI-focused research, supports days param
     async function searchTavily(query: string): Promise<ArticleResult[]> {
       const key = process.env.TAVILY_API_KEY;
@@ -209,9 +214,9 @@ export async function POST(req: NextRequest) {
         if (!res.ok) return [];
         const data = await res.json();
         return (data.results || []).map((r: { title: string; url: string; content?: string; snippet?: string; published_date?: string }) => ({
-          title: r.title || "",
+          title: sanitizeText(r.title || ""),
           url: r.url || "",
-          snippet: (r.content || r.snippet || "").slice(0, 400),
+          snippet: sanitizeText((r.content || r.snippet || "").slice(0, 400)),
           source: new URL(r.url || "https://unknown.com").hostname.replace("www.", ""),
           publishedDate: r.published_date,
         }));
@@ -234,9 +239,9 @@ export async function POST(req: NextRequest) {
         if (!res.ok) return [];
         const data = await res.json();
         return (data.results || []).map((r: { title: string; url: string; description?: string; meta_url?: { hostname?: string }; age?: string }) => ({
-          title: r.title || "",
+          title: sanitizeText(r.title || ""),
           url: r.url || "",
-          snippet: (r.description || "").slice(0, 400),
+          snippet: sanitizeText((r.description || "").slice(0, 400)),
           source: r.meta_url?.hostname?.replace("www.", "") || new URL(r.url || "https://unknown.com").hostname.replace("www.", ""),
           publishedDate: r.age,
         }));
