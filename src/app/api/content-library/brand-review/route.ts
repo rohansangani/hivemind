@@ -104,7 +104,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Asset not found" }, { status: 404 });
     }
 
-    const [org, products, personas, brandProfile, knowledgeEntries, scoringEntry] = await Promise.all([
+    const [org, products, personas, brandProfile, knowledgeEntries, scoringEntry, markets] = await Promise.all([
       db.organization.findUnique({ where: { id: decoded.orgId } }),
       db.product.findMany({ where: { organizationId: decoded.orgId }, select: { name: true, description: true } }),
       db.persona.findMany({ where: { organizationId: decoded.orgId }, select: { title: true, painPoints: true } }),
@@ -115,6 +115,7 @@ export async function POST(req: NextRequest) {
         take: 10,
       }),
       db.knowledgeEntry.findFirst({ where: { organizationId: decoded.orgId, category: "settings", title: "brand_scoring_config" } }),
+      db.market.findMany({ where: { organizationId: decoded.orgId }, select: { name: true } }),
     ]);
 
     // Parse scoring weights (fallback to equal weights)
@@ -166,6 +167,7 @@ ${brandContext}
 
 Products: ${products.map(p => p.name + (p.description ? ` — ${p.description.slice(0, 80)}` : "")).join("; ") || "Not specified"}
 Target personas: ${personas.map(p => p.title + (p.painPoints ? ` — ${p.painPoints.slice(0, 60)}` : "")).join("; ") || "Not specified"}
+Target markets: ${markets.map(m => m.name).join(", ") || "Not specified"}
 
 ASSET: "${asset.name}" (type: ${asset.contentType || ext || "document"})
 

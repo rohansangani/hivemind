@@ -78,12 +78,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Asset not found" }, { status: 404 });
     }
 
-    const [org, products, personas, competitors, brandProfile] = await Promise.all([
+    const [org, products, personas, competitors, brandProfile, markets] = await Promise.all([
       db.organization.findUnique({ where: { id: decoded.orgId } }),
       db.product.findMany({ where: { organizationId: decoded.orgId }, select: { name: true } }),
       db.persona.findMany({ where: { organizationId: decoded.orgId }, select: { title: true } }),
       db.competitor.findMany({ where: { organizationId: decoded.orgId }, select: { name: true } }),
       db.brandProfile.findFirst({ where: { organizationId: decoded.orgId } }),
+      db.market.findMany({ where: { organizationId: decoded.orgId }, select: { name: true } }),
     ]);
 
     const orgName = org?.name || "Unknown";
@@ -115,6 +116,7 @@ ${brandBlock}
 Known products: ${products.map(p => p.name).join(", ") || "None"}
 Known personas: ${personas.map(p => p.title).join(", ") || "None"}
 Known competitors: ${competitors.map(c => c.name).join(", ") || "None"}
+Known markets: ${markets.map(m => m.name).join(", ") || "None"}
 
 Return ONLY valid JSON (no markdown, no backticks):
 {

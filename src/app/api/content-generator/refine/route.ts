@@ -31,16 +31,18 @@ export async function POST(req: NextRequest) {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) return NextResponse.json({ error: "Anthropic API key required" }, { status: 400 });
 
-    const [products, personas, competitors] = await Promise.all([
+    const [products, personas, competitors, markets] = await Promise.all([
       db.product.findMany({ where: { organizationId: decoded.orgId }, select: { name: true } }),
       db.persona.findMany({ where: { organizationId: decoded.orgId }, select: { title: true } }),
       db.competitor.findMany({ where: { organizationId: decoded.orgId }, select: { name: true } }),
+      db.market.findMany({ where: { organizationId: decoded.orgId }, select: { name: true } }),
     ]);
 
     const entities = resolveEntities(topic, {
       products: products.map(p => p.name),
       personas: personas.map(p => p.title),
       competitors: competitors.map(c => c.name),
+      markets: markets.map(m => m.name),
     });
     if (targetProduct && !entities.products.includes(targetProduct)) entities.products.unshift(targetProduct);
     if (targetPersona && !entities.personas.includes(targetPersona)) entities.personas.unshift(targetPersona);
