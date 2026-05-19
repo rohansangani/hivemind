@@ -198,6 +198,7 @@ export default function ContentGeneratorPage() {
 
   // Copy feedback
   const [copied, setCopied] = useState(false);
+  const [briefCopied, setBriefCopied] = useState(false);
 
   // Generation error
   const [generateError, setGenerateError] = useState<string | null>(null);
@@ -1521,11 +1522,13 @@ export default function ContentGeneratorPage() {
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
                 <button
-                  onClick={() => navigator.clipboard.writeText(designBriefs[activeTab] ?? "")}
-                  className="h-[30px] px-3 border border-[var(--hm-border)] rounded-lg text-[11px] text-[var(--hm-text-secondary)] hover:border-[#7c3aed] hover:text-[#7c3aed] transition-colors flex items-center gap-1.5"
+                  onClick={() => { navigator.clipboard.writeText(designBriefs[activeTab] ?? ""); setBriefCopied(true); setTimeout(() => setBriefCopied(false), 2000); }}
+                  className={"h-[30px] px-3 border rounded-lg text-[11px] transition-colors flex items-center gap-1.5 " + (briefCopied ? "border-[#7c3aed] text-[#7c3aed] bg-[#7c3aed]/5" : "border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[#7c3aed] hover:text-[#7c3aed]")}
                 >
-                  <svg width="10" height="10" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="8" height="10" rx="1" stroke="currentColor" strokeWidth="1.2" /><rect x="6" y="4" width="8" height="10" rx="1" stroke="currentColor" strokeWidth="1.2" /></svg>
-                  Copy
+                  {briefCopied
+                    ? <><svg width="10" height="10" viewBox="0 0 16 16" fill="none"><path d="M3 8l4 4 6-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>Copied!</>
+                    : <><svg width="10" height="10" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="8" height="10" rx="1" stroke="currentColor" strokeWidth="1.2" /><rect x="6" y="4" width="8" height="10" rx="1" stroke="currentColor" strokeWidth="1.2" /></svg>Copy</>
+                  }
                 </button>
                 <button
                   onClick={async () => {
