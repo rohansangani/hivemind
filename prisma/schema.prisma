@@ -44,6 +44,7 @@ model Organization {
   learningLogs       LearningLog[]
   knowledgeEntries   KnowledgeEntry[]
   knowledgeDocuments KnowledgeDocument[]
+  integrations       Integration[]
 }
 
 model User {
@@ -342,4 +343,27 @@ model KnowledgeDocument {
   organizationId  String
   organization    Organization @relation(fields: [organizationId], references: [id])
   createdAt       DateTime @default(now())
+}
+
+// ═══════════════════════════════════════
+// INTEGRATIONS
+// ═══════════════════════════════════════
+
+model Integration {
+  id            String    @id @default(cuid())
+  type          String    // "hubspot"
+  portalId      String?
+  accessToken   String?
+  refreshToken  String?
+  expiresAt     DateTime?
+  syncStatus    String    @default("idle") // "idle" | "syncing" | "error"
+  lastSyncAt    DateTime?
+  lastSyncError String?
+  metadata      Json      @default("{}")
+  organizationId String
+  organization  Organization @relation(fields: [organizationId], references: [id])
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([organizationId, type])
 }

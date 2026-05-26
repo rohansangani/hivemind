@@ -36,6 +36,21 @@ export default function SettingsPage() {
   const [confirmDelete, setConfirmDelete] = useState("");
   const router = useRouter();
 
+  // Integrations state
+  const [hsConnected, setHsConnected] = useState(false);
+  const [hsIntegration, setHsIntegration] = useState<{
+    portalId?: string;
+    syncStatus: string;
+    lastSyncAt?: string;
+    lastSyncError?: string;
+    metadata?: Record<string, unknown>;
+  } | null>(null);
+  const [hsSyncing, setHsSyncing] = useState(false);
+  const [hsDisconnecting, setHsDisconnecting] = useState(false);
+  const [hsMessage, setHsMessage] = useState("");
+  const [hsToken, setHsToken] = useState("");
+  const [hsSaving, setHsSaving] = useState(false);
+
   useEffect(() => {
     fetch("/api/settings")
       .then((r) => r.json())
@@ -67,7 +82,87 @@ export default function SettingsPage() {
           if (d.kbConfig.autoLearn !== undefined) setAutoLearn(d.kbConfig.autoLearn);
         }
       });
+
+    // Load HubSpot integration status
+    fetch("/api/integrations/hubspot/status")
+      .then((r) => r.json())
+      .then((d) => {
+        setHsConnected(d.connected);
+        setHsIntegration(d.integration);
+      })
+      .catch(() => {});
+
   }, []);
+
+  const hsSave = async () => {
+    if (!hsToken.trim()) return;
+    setHsSaving(true);
+    setHsMessage("");
+    try {
+      const res = await fetch("/api/integrations/hubspot/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accessToken: hsToken }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setHsConnected(true);
+        setHsToken("");
+        setHsMessage(`Connected to HubSpot${data.portalId ? ` (Portal ${data.portalId})` : ""}. Run a sync to import data.`);
+        const statusRes = await fetch("/api/integrations/hubspot/status");
+        const statusData = await statusRes.json();
+        setHsIntegration(statusData.integration);
+      } else {
+        setHsMessage(data.error || "Failed to connect HubSpot.");
+      }
+    } catch {
+      setHsMessage("Network error — please try again.");
+    } finally {
+      setHsSaving(false);
+      setTimeout(() => setHsMessage(""), 8000);
+    }
+  };
+
+  const hsSync = async () => {
+    setHsSyncing(true);
+    setHsMessage("");
+    try {
+      const res = await fetch("/api/integrations/hubspot/sync", { method: "POST" });
+      const data = await res.json();
+      if (data.success) {
+        const s = data.summary;
+        setHsMessage(`Sync complete — ${s.contacts} contacts, ${s.companies} companies, ${s.deals} deals imported.`);
+        setHsConnected(true);
+        // Refresh status
+        const statusRes = await fetch("/api/integrations/hubspot/status");
+        const statusData = await statusRes.json();
+        setHsIntegration(statusData.integration);
+      } else {
+        setHsMessage("Sync failed: " + (data.error || "Unknown error"));
+      }
+    } catch {
+      setHsMessage("Sync failed — network error.");
+    } finally {
+      setHsSyncing(false);
+      setTimeout(() => setHsMessage(""), 8000);
+    }
+  };
+
+  const hsDisconnect = async () => {
+    if (!confirm("Disconnect HubSpot? All CRM data synced to the knowledge base will be removed.")) return;
+    setHsDisconnecting(true);
+    try {
+      await fetch("/api/integrations/hubspot/disconnect", { method: "DELETE" });
+      setHsConnected(false);
+      setHsIntegration(null);
+      setHsMessage("HubSpot disconnected.");
+      setTimeout(() => setHsMessage(""), 4000);
+    } catch {
+      setHsMessage("Disconnect failed — please try again.");
+    } finally {
+      setHsDisconnecting(false);
+    }
+  };
 
   const save = async (action: string, data: Record<string, unknown>) => {
     setSaving(true);
@@ -209,6 +304,7 @@ export default function SettingsPage() {
             { id: "notifications", label: "Notifications" },
             { id: "scoring", label: "Brand scoring" },
             { id: "intelligence", label: "Web intelligence" },
+            { id: "integrations", label: "Integrations" },
           ] as { id: string; label: string }[]
         ).map((t) => (
           <button
@@ -1047,6 +1143,160 @@ export default function SettingsPage() {
 
               </div>
               <FeedbackRow />
+            </>
+          )}
+
+          {tab === "integrations" && (
+            <>
+              <h2 className="mb-1 text-[15px] font-semibold">Integrations</h2>
+              <p className="mb-4 text-[12px] text-[var(--hm-text-tertiary)] leading-relaxed">
+                Connect external tools to pull data into your knowledge base and enrich HiveMind with real CRM intelligence.
+              </p>
+
+              {hsMessage && (
+                <p className={`mb-4 rounded-lg px-4 py-2.5 text-[12px] font-medium ${
+                  hsMessage.includes("failed") || hsMessage.includes("cancelled") || hsMessage.includes("error")
+                    ? "bg-red-50 text-red-600 border border-red-200"
+                    : "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                }`}>
+                  {hsMessage}
+                </p>
+              )}
+
+              {/* HubSpot card */}
+              <div className="rounded-xl border border-[var(--hm-border)] bg-white overflow-hidden">
+                <div className="flex items-center gap-4 px-5 py-4 border-b border-[var(--hm-border)]">
+                  {/* HubSpot logo */}
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#ff7a59] text-white">
+                    <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                      <path d="M10.8 5.4V3.6a1.8 1.8 0 1 0-3.6 0v1.8a3.6 3.6 0 1 0 3.6 0z" fill="white" opacity="0.9"/>
+                      <circle cx="9" cy="9" r="2.7" fill="white"/>
+                    </svg>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[13px] font-semibold">HubSpot CRM</span>
+                      {hsConnected && (
+                        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                          Connected
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-0.5">
+                      Sync contacts, companies, and deals to enrich your knowledge base
+                    </p>
+                  </div>
+                  {hsConnected && (
+                    <div className="flex shrink-0 items-center gap-2">
+                      <button
+                        onClick={hsSync}
+                        disabled={hsSyncing}
+                        className="flex h-[32px] items-center gap-1.5 rounded-lg border border-[var(--hm-border)] px-3 text-[12px] font-medium text-[var(--hm-text)] hover:bg-[var(--hm-bg-secondary)] disabled:opacity-50"
+                      >
+                        {hsSyncing ? (
+                          <>
+                            <svg className="animate-spin" width="10" height="10" viewBox="0 0 24 24" fill="none">
+                              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="32" strokeDashoffset="12" strokeLinecap="round"/>
+                            </svg>
+                            Syncing…
+                          </>
+                        ) : "Sync now"}
+                      </button>
+                      <button
+                        onClick={hsDisconnect}
+                        disabled={hsDisconnecting}
+                        className="flex h-[32px] items-center rounded-lg border border-red-200 px-3 text-[12px] font-medium text-red-500 hover:bg-red-50 disabled:opacity-50"
+                      >
+                        {hsDisconnecting ? "Disconnecting…" : "Disconnect"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {hsConnected && hsIntegration && (
+                  <div className="px-5 py-4 space-y-3">
+                    {hsIntegration.portalId && (
+                      <div className="flex items-center justify-between text-[12px]">
+                        <span className="text-[var(--hm-text-tertiary)]">Portal ID</span>
+                        <span className="font-mono text-[var(--hm-text-secondary)]">{hsIntegration.portalId}</span>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between text-[12px]">
+                      <span className="text-[var(--hm-text-tertiary)]">Last sync</span>
+                      <span className="text-[var(--hm-text-secondary)]">
+                        {hsIntegration.lastSyncAt
+                          ? new Date(hsIntegration.lastSyncAt).toLocaleString()
+                          : "Never synced"}
+                      </span>
+                    </div>
+                    {hsIntegration.syncStatus === "error" && hsIntegration.lastSyncError && (
+                      <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-[11px] text-red-600">
+                        Last sync error: {hsIntegration.lastSyncError}
+                      </div>
+                    )}
+                    {hsIntegration.metadata && Object.keys(hsIntegration.metadata).length > 0 && (
+                      <div className="grid grid-cols-3 gap-3 pt-1">
+                        {[
+                          { label: "Contacts", key: "contacts" },
+                          { label: "Companies", key: "companies" },
+                          { label: "Deals", key: "deals" },
+                        ].map(({ label, key }) => (
+                          <div key={key} className="rounded-lg bg-[var(--hm-bg-secondary)] px-3 py-2 text-center">
+                            <div className="text-[18px] font-bold text-[#4361ee]">
+                              {String(hsIntegration.metadata![key] ?? "—")}
+                            </div>
+                            <div className="text-[10px] text-[var(--hm-text-tertiary)] mt-0.5">{label}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {!hsConnected && (
+                  <div className="px-5 py-4 space-y-3">
+                    <p className="text-[11px] text-[var(--hm-text-tertiary)] leading-relaxed">
+                      Enter your HubSpot private app access token. HiveMind will pull contact job titles, company industries, and deal pipeline data into your knowledge base.
+                    </p>
+                    <div>
+                      <label className="mb-1.5 block text-[12px] font-medium text-[var(--hm-text-secondary)]">
+                        Private app access token
+                      </label>
+                      <div className="flex gap-2">
+                        <input
+                          type="password"
+                          value={hsToken}
+                          onChange={(e) => setHsToken(e.target.value)}
+                          placeholder="pat-na1-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                          className="flex-1 font-mono text-[12px]"
+                          onKeyDown={(e) => { if (e.key === "Enter") hsSave(); }}
+                        />
+                        <button
+                          onClick={hsSave}
+                          disabled={hsSaving || !hsToken.trim()}
+                          className="flex h-[38px] shrink-0 items-center gap-1.5 rounded-lg bg-[#4361ee] px-4 text-[12px] font-medium text-white hover:opacity-90 disabled:opacity-50"
+                        >
+                          {hsSaving ? (
+                            <>
+                              <svg className="animate-spin" width="10" height="10" viewBox="0 0 24 24" fill="none">
+                                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="32" strokeDashoffset="12" strokeLinecap="round"/>
+                              </svg>
+                              Connecting…
+                            </>
+                          ) : "Connect"}
+                        </button>
+                      </div>
+                      <p className="mt-1.5 text-[10px] text-[var(--hm-text-tertiary)]">
+                        Create a private app in HubSpot Settings → Integrations → Private Apps. Required scopes: crm.objects.contacts.read, crm.objects.companies.read, crm.objects.deals.read
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <p className="mt-5 text-[11px] text-[var(--hm-text-tertiary)]">
+                More integrations coming soon — Salesforce, LinkedIn, Google Analytics.
+              </p>
             </>
           )}
 
