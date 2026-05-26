@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import jwt from "jsonwebtoken";
 import { db } from "@/lib/db";
 
-// ─── HubSpot API helper ───────────────────────────────────────
+// ─── HubSpot API helpers ──────────────────────────────────────
 
 async function hsGet(path: string, token: string) {
   const res = await fetch(`https://api.hubapi.com${path}`, {
@@ -11,6 +11,25 @@ async function hsGet(path: string, token: string) {
   });
   if (!res.ok) throw new Error(`HubSpot API error ${res.status}: ${await res.text()}`);
   return res.json();
+}
+
+// Fetches all pages for a CRM object type
+async function hsGetAll(
+  objectType: string,
+  properties: string,
+  token: string
+): Promise<Array<{ properties: Record<string, string> }>> {
+  const results: Array<{ properties: Record<string, string> }> = [];
+  let after: string | undefined;
+
+  do {
+    const url = `/crm/v3/objects/${objectType}?limit=100&properties=${properties}${after ? `&after=${after}` : ""}`;
+    const page = await hsGet(url, token);
+    if (Array.isArray(page.results)) results.push(...page.results);
+    after = page.paging?.next?.after;
+  } while (after);
+
+  return results;
 }
 
 // ─── Sync logic ───────────────────────────────────────────────
@@ -32,11 +51,7 @@ async function syncHubSpotData(orgId: string, token: string): Promise<SyncSummar
 
   // ── 1. Contacts ────────────────────────────────────────────
   try {
-    const contactsData = await hsGet(
-      "/crm/v3/objects/contacts?limit=100&properties=firstname,lastname,jobtitle,company,email,lifecyclestage",
-      token
-    );
-    const contacts: Array<{ properties: Record<string, string> }> = contactsData.results || [];
+    const contacts = await hsGetAll("contacts", "firstname,lastname,jobtitle,company,email,lifecyclestage", token);
     summary.contacts = contacts.length;
 
     if (contacts.length > 0) {
@@ -107,11 +122,7 @@ async function syncHubSpotData(orgId: string, token: string): Promise<SyncSummar
 
   // ── 2. Companies ───────────────────────────────────────────
   try {
-    const companiesData = await hsGet(
-      "/crm/v3/objects/companies?limit=100&properties=name,industry,annualrevenue,numberofemployees,country,city",
-      token
-    );
-    const companies: Array<{ properties: Record<string, string> }> = companiesData.results || [];
+    const companies = await hsGetAll("companies", "name,industry,annualrevenue,numberofemployees,country,city", token);
     summary.companies = companies.length;
 
     if (companies.length > 0) {
@@ -191,11 +202,7 @@ async function syncHubSpotData(orgId: string, token: string): Promise<SyncSummar
 
   // ── 3. Deals ───────────────────────────────────────────────
   try {
-    const dealsData = await hsGet(
-      "/crm/v3/objects/deals?limit=100&properties=dealname,dealstage,amount,pipeline,closedate,hs_deal_stage_probability",
-      token
-    );
-    const deals: Array<{ properties: Record<string, string> }> = dealsData.results || [];
+    const deals = await hsGetAll("deals", "dealname,dealstage,amount,pipeline,closedate,hs_deal_stage_probability", token);
     summary.deals = deals.length;
 
     if (deals.length > 0) {
