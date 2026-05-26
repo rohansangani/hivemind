@@ -18,7 +18,7 @@ export type KnowledgeSourceType =
   | "skill" | "proof_point" | "messaging_pattern"
   | "document_learning" | "content_learning"
   | "conversation_learning" | "document_excerpt"
-  | "industry_signal" | "org";
+  | "industry_signal" | "org" | "crm_data";
 
 export interface KnowledgeItem {
   id: string;
@@ -254,7 +254,7 @@ export async function retrieveRelevantKnowledge(
   // ── Fetch all raw data in parallel ─────────────────────
   const [
     org, products, personas, competitors, brandProfile, skills,
-    proofPoints, messagingPatterns, learnings, insights, markets,
+    proofPoints, messagingPatterns, crmEntries, learnings, insights, markets,
   ] = await Promise.all([
     db.organization.findUnique({ where: { id: orgId } }),
     db.product.findMany({
@@ -267,6 +267,7 @@ export async function retrieveRelevantKnowledge(
     db.skill.findMany({ where: { organizationId: orgId, isActive: true } }),
     db.knowledgeEntry.findMany({ where: { organizationId: orgId, category: "proof_points" }, take: 60 }),
     db.knowledgeEntry.findMany({ where: { organizationId: orgId, category: "messaging_patterns" }, take: 30 }),
+    db.knowledgeEntry.findMany({ where: { organizationId: orgId, source: "hubspot" }, orderBy: { createdAt: "desc" } }),
     db.learningLog.findMany({ where: { organizationId: orgId }, orderBy: { createdAt: "desc" }, take: 80 }),
     db.industryInsight.findMany({ where: { organizationId: orgId }, orderBy: { createdAt: "desc" }, take: 20 }),
     db.market.findMany({ where: { organizationId: orgId }, orderBy: { createdAt: "asc" } }),
@@ -393,6 +394,19 @@ export async function retrieveRelevantKnowledge(
       sourceType: "messaging_pattern",
       relevanceScore: scoreItem(content, queryTokens, entities),
       confidence: "extracted",
+    });
+  }
+
+  // CRM data (HubSpot)
+  for (const entry of crmEntries) {
+    allItems.push({
+      id: `crm-${entry.id}`,
+      title: entry.title,
+      content: entry.content,
+      source: "HubSpot CRM",
+      sourceType: "crm_data",
+      relevanceScore: scoreItem(entry.title + " " + entry.content, queryTokens, entities, { verifiedBoost: 0.15 }),
+      confidence: "verified",
     });
   }
 

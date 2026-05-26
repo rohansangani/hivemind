@@ -177,6 +177,16 @@ export function buildGroundedContext(knowledge: RetrievedKnowledge): string {
     }
   }
 
+  // ── CRM Data (HubSpot) ────────────────────────────────────
+  const crmItems = knowledge.items.filter(i => i.sourceType === "crm_data");
+  if (crmItems.length) {
+    lines.push("\n■ CRM DATA [Source: HubSpot CRM | verified — imported from your connected HubSpot account]");
+    lines.push("This data was synced directly from your HubSpot CRM. You MAY and SHOULD use it to answer questions about contacts, companies, and deals.");
+    for (const item of crmItems) {
+      lines.push(`  • [${item.title}]\n    ${item.content}`);
+    }
+  }
+
   // ── Industry Signals ──────────────────────────────────
   const signals = knowledge.items.filter(i => i.sourceType === "industry_signal");
   if (signals.length) {
