@@ -42,15 +42,18 @@ async function syncHubSpotData(orgId: string, token: string): Promise<SyncSummar
     if (contacts.length > 0) {
       const titleCounts: Record<string, number> = {};
       const lifecycleCounts: Record<string, number> = {};
-      const companiesMentioned = new Set<string>();
 
+      // Build per-contact detail lines
+      const contactLines: string[] = [];
       for (const c of contacts) {
+        const name = [c.properties.firstname, c.properties.lastname].filter(Boolean).join(" ");
         const title = c.properties.jobtitle?.trim();
+        const company = c.properties.company?.trim();
         const stage = c.properties.lifecyclestage?.trim();
-        const co = c.properties.company?.trim();
         if (title) titleCounts[title] = (titleCounts[title] || 0) + 1;
         if (stage) lifecycleCounts[stage] = (lifecycleCounts[stage] || 0) + 1;
-        if (co) companiesMentioned.add(co);
+        const parts = [name, title, company].filter(Boolean).join(" — ");
+        if (parts) contactLines.push(`• ${parts}${stage ? ` [${stage}]` : ""}`);
       }
 
       const topTitles = Object.entries(titleCounts)
@@ -64,29 +67,39 @@ async function syncHubSpotData(orgId: string, token: string): Promise<SyncSummar
         .map(([s, n]) => `${s}: ${n}`)
         .join(", ");
 
-      const content = [
-        `HubSpot CRM has ${contacts.length} contacts.`,
-        topTitles ? `Top job titles: ${topTitles}.` : "",
-        lifecycleSummary ? `Lifecycle stages: ${lifecycleSummary}.` : "",
-        companiesMentioned.size > 0
-          ? `Associated companies (sample): ${[...companiesMentioned].slice(0, 10).join(", ")}.`
-          : "",
-      ]
-        .filter(Boolean)
-        .join(" ");
-
+      // Summary entry — aggregated stats
       await db.knowledgeEntry.create({
         data: {
           organizationId: orgId,
           category: "personas",
-          title: "HubSpot Contact Intelligence",
-          content,
+          title: "HubSpot Contact Summary",
+          content: [
+            `Total contacts in HubSpot CRM: ${contacts.length}.`,
+            topTitles ? `Top job titles: ${topTitles}.` : "",
+            lifecycleSummary ? `Lifecycle stages: ${lifecycleSummary}.` : "",
+          ].filter(Boolean).join(" "),
           source: "hubspot",
           isAIGenerated: false,
           isApproved: true,
         },
       });
       summary.knowledgeEntriesCreated++;
+
+      // Detail entry — individual contacts
+      if (contactLines.length > 0) {
+        await db.knowledgeEntry.create({
+          data: {
+            organizationId: orgId,
+            category: "personas",
+            title: "HubSpot Contact List",
+            content: `HubSpot contacts (${contacts.length} total):\n${contactLines.join("\n")}`,
+            source: "hubspot",
+            isAIGenerated: false,
+            isApproved: true,
+          },
+        });
+        summary.knowledgeEntriesCreated++;
+      }
     }
   } catch (err) {
     console.warn("HubSpot contacts sync skipped:", err);
@@ -105,11 +118,25 @@ async function syncHubSpotData(orgId: string, token: string): Promise<SyncSummar
       const industryCounts: Record<string, number> = {};
       const countryCounts: Record<string, number> = {};
 
+      // Build per-company detail lines
+      const companyLines: string[] = [];
       for (const co of companies) {
-        const ind = co.properties.industry?.trim();
+        const name = co.properties.name?.trim();
+        const industry = co.properties.industry?.trim();
         const country = co.properties.country?.trim();
-        if (ind) industryCounts[ind] = (industryCounts[ind] || 0) + 1;
+        const city = co.properties.city?.trim();
+        const employees = co.properties.numberofemployees?.trim();
+        const revenue = co.properties.annualrevenue?.trim();
+        if (industry) industryCounts[industry] = (industryCounts[industry] || 0) + 1;
         if (country) countryCounts[country] = (countryCounts[country] || 0) + 1;
+        if (name) {
+          const details: string[] = [];
+          if (industry) details.push(industry);
+          if (city || country) details.push([city, country].filter(Boolean).join(", "));
+          if (employees) details.push(`${employees} employees`);
+          if (revenue) details.push(`$${Number(revenue).toLocaleString()} revenue`);
+          companyLines.push(`• ${name}${details.length ? ` — ${details.join(" | ")}` : ""}`);
+        }
       }
 
       const topIndustries = Object.entries(industryCounts)
@@ -124,33 +151,39 @@ async function syncHubSpotData(orgId: string, token: string): Promise<SyncSummar
         .map(([c, n]) => `${c} (${n})`)
         .join(", ");
 
-      const companyNames = companies
-        .slice(0, 15)
-        .map((c) => c.properties.name)
-        .filter(Boolean)
-        .join(", ");
-
-      const content = [
-        `HubSpot CRM has ${companies.length} companies.`,
-        topIndustries ? `Top industries: ${topIndustries}.` : "",
-        topCountries ? `Top countries: ${topCountries}.` : "",
-        companyNames ? `Company names (sample): ${companyNames}.` : "",
-      ]
-        .filter(Boolean)
-        .join(" ");
-
+      // Summary entry
       await db.knowledgeEntry.create({
         data: {
           organizationId: orgId,
           category: "markets",
-          title: "HubSpot Company Intelligence",
-          content,
+          title: "HubSpot Company Summary",
+          content: [
+            `Total companies in HubSpot CRM: ${companies.length}.`,
+            topIndustries ? `Top industries: ${topIndustries}.` : "",
+            topCountries ? `Top countries: ${topCountries}.` : "",
+          ].filter(Boolean).join(" "),
           source: "hubspot",
           isAIGenerated: false,
           isApproved: true,
         },
       });
       summary.knowledgeEntriesCreated++;
+
+      // Detail entry — individual companies
+      if (companyLines.length > 0) {
+        await db.knowledgeEntry.create({
+          data: {
+            organizationId: orgId,
+            category: "markets",
+            title: "HubSpot Company List",
+            content: `HubSpot companies (${companies.length} total):\n${companyLines.join("\n")}`,
+            source: "hubspot",
+            isAIGenerated: false,
+            isApproved: true,
+          },
+        });
+        summary.knowledgeEntriesCreated++;
+      }
     }
   } catch (err) {
     console.warn("HubSpot companies sync skipped:", err);
@@ -170,13 +203,23 @@ async function syncHubSpotData(orgId: string, token: string): Promise<SyncSummar
       let totalValue = 0;
       let valueCount = 0;
 
+      // Build per-deal detail lines
+      const dealLines: string[] = [];
       for (const d of deals) {
+        const name = d.properties.dealname?.trim();
         const stage = d.properties.dealstage?.trim();
         const amount = parseFloat(d.properties.amount || "0");
+        const closeDate = d.properties.closedate?.trim();
+        const probability = d.properties.hs_deal_stage_probability?.trim();
         if (stage) stageCounts[stage] = (stageCounts[stage] || 0) + 1;
-        if (!isNaN(amount) && amount > 0) {
-          totalValue += amount;
-          valueCount++;
+        if (!isNaN(amount) && amount > 0) { totalValue += amount; valueCount++; }
+        if (name) {
+          const details: string[] = [];
+          if (stage) details.push(`stage: ${stage}`);
+          if (!isNaN(amount) && amount > 0) details.push(`$${Math.round(amount).toLocaleString()}`);
+          if (closeDate) details.push(`close: ${closeDate.split("T")[0]}`);
+          if (probability) details.push(`${Math.round(parseFloat(probability) * 100)}% probability`);
+          dealLines.push(`• ${name}${details.length ? ` — ${details.join(" | ")}` : ""}`);
         }
       }
 
@@ -187,27 +230,40 @@ async function syncHubSpotData(orgId: string, token: string): Promise<SyncSummar
 
       const avgValue = valueCount > 0 ? Math.round(totalValue / valueCount) : 0;
 
-      const content = [
-        `HubSpot CRM has ${deals.length} deals in the pipeline.`,
-        topStages ? `Deal stages: ${topStages}.` : "",
-        avgValue > 0 ? `Average deal value: $${avgValue.toLocaleString()}.` : "",
-        totalValue > 0 ? `Total pipeline value: $${Math.round(totalValue).toLocaleString()}.` : "",
-      ]
-        .filter(Boolean)
-        .join(" ");
-
+      // Summary entry
       await db.knowledgeEntry.create({
         data: {
           organizationId: orgId,
           category: "proof_points",
-          title: "HubSpot Pipeline Intelligence",
-          content,
+          title: "HubSpot Pipeline Summary",
+          content: [
+            `Total deals in HubSpot pipeline: ${deals.length}.`,
+            topStages ? `Deal stages: ${topStages}.` : "",
+            avgValue > 0 ? `Average deal value: $${avgValue.toLocaleString()}.` : "",
+            totalValue > 0 ? `Total pipeline value: $${Math.round(totalValue).toLocaleString()}.` : "",
+          ].filter(Boolean).join(" "),
           source: "hubspot",
           isAIGenerated: false,
           isApproved: true,
         },
       });
       summary.knowledgeEntriesCreated++;
+
+      // Detail entry — individual deals
+      if (dealLines.length > 0) {
+        await db.knowledgeEntry.create({
+          data: {
+            organizationId: orgId,
+            category: "proof_points",
+            title: "HubSpot Deal List",
+            content: `HubSpot deals (${deals.length} total):\n${dealLines.join("\n")}`,
+            source: "hubspot",
+            isAIGenerated: false,
+            isApproved: true,
+          },
+        });
+        summary.knowledgeEntriesCreated++;
+      }
     }
   } catch (err) {
     console.warn("HubSpot deals sync skipped:", err);
@@ -258,7 +314,7 @@ export async function POST() {
           sourceType: "integration",
           title: "HubSpot CRM Sync",
           summary: `Synced ${syncSummary.contacts} contacts, ${syncSummary.companies} companies, ${syncSummary.deals} deals from HubSpot. Created ${syncSummary.knowledgeEntriesCreated} knowledge entries.`,
-          takeaway: "CRM intelligence refreshed — personas, markets, and pipeline data updated in knowledge base.",
+          takeaway: "CRM intelligence refreshed — individual contacts, companies, and deals now in knowledge base.",
           kbCategories: ["personas", "markets", "proof_points"],
           tags: ["hubspot", "crm", "sync"],
         },
