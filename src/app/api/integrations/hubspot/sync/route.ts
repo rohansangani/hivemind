@@ -13,18 +13,31 @@ async function hsGet(path: string, token: string) {
   return res.json();
 }
 
-// Fetches all pages for a CRM object type
+// Fetches all pages for a CRM object type created within the last N days
 async function hsGetAll(
   objectType: string,
   properties: string,
-  token: string
+  token: string,
+  sinceMs: number
 ): Promise<Array<{ properties: Record<string, string> }>> {
   const results: Array<{ properties: Record<string, string> }> = [];
   let after: string | undefined;
 
   do {
-    const url = `/crm/v3/objects/${objectType}?limit=100&properties=${properties}${after ? `&after=${after}` : ""}`;
-    const page = await hsGet(url, token);
+    const body: Record<string, unknown> = {
+      filters: [{ propertyName: "createdate", operator: "GTE", value: String(sinceMs) }],
+      properties: properties.split(","),
+      limit: 100,
+    };
+    if (after) body.after = after;
+
+    const res = await fetch(`https://api.hubapi.com/crm/v3/objects/${objectType}/search`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`HubSpot API error ${res.status}: ${await res.text()}`);
+    const page = await res.json();
     if (Array.isArray(page.results)) results.push(...page.results);
     after = page.paging?.next?.after;
   } while (after);
@@ -43,6 +56,7 @@ interface SyncSummary {
 
 async function syncHubSpotData(orgId: string, token: string): Promise<SyncSummary> {
   const summary: SyncSummary = { contacts: 0, companies: 0, deals: 0, knowledgeEntriesCreated: 0 };
+  const sinceMs = Date.now() - 7 * 24 * 60 * 60 * 1000; // last 7 days
 
   // Replace existing HubSpot entries with fresh data
   await db.knowledgeEntry.deleteMany({
@@ -51,7 +65,7 @@ async function syncHubSpotData(orgId: string, token: string): Promise<SyncSummar
 
   // ── 1. Contacts ────────────────────────────────────────────
   try {
-    const contacts = await hsGetAll("contacts", "firstname,lastname,jobtitle,company,email,lifecyclestage", token);
+    const contacts = await hsGetAll("contacts", "firstname,lastname,jobtitle,company,email,lifecyclestage", token, sinceMs);
     summary.contacts = contacts.length;
 
     if (contacts.length > 0) {
@@ -122,7 +136,7 @@ async function syncHubSpotData(orgId: string, token: string): Promise<SyncSummar
 
   // ── 2. Companies ───────────────────────────────────────────
   try {
-    const companies = await hsGetAll("companies", "name,industry,annualrevenue,numberofemployees,country,city", token);
+    const companies = await hsGetAll("companies", "name,industry,annualrevenue,numberofemployees,country,city", token, sinceMs);
     summary.companies = companies.length;
 
     if (companies.length > 0) {
@@ -202,7 +216,7 @@ async function syncHubSpotData(orgId: string, token: string): Promise<SyncSummar
 
   // ── 3. Deals ───────────────────────────────────────────────
   try {
-    const deals = await hsGetAll("deals", "dealname,dealstage,amount,pipeline,closedate,hs_deal_stage_probability", token);
+    const deals = await hsGetAll("deals", "dealname,dealstage,amount,pipeline,closedate,hs_deal_stage_probability", token, sinceMs);
     summary.deals = deals.length;
 
     if (deals.length > 0) {
