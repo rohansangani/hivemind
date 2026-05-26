@@ -17,17 +17,26 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Access token is required" }, { status: 400 });
     }
 
-    // Verify the token works by fetching portal info
-    const verifyRes = await fetch("https://api.hubapi.com/account-info/v3/details", {
-      headers: { Authorization: `Bearer ${accessToken.trim()}` },
-    });
+    // Verify the token by hitting the OAuth token info endpoint
+    const verifyRes = await fetch(
+      `https://api.hubapi.com/oauth/v1/access-tokens/${encodeURIComponent(accessToken.trim())}`
+    );
 
-    if (!verifyRes.ok) {
-      return NextResponse.json({ error: "Invalid token — could not connect to HubSpot" }, { status: 400 });
+    let portalId = "";
+    if (verifyRes.ok) {
+      const info = await verifyRes.json();
+      portalId = String(info.hub_id || "");
+    } else {
+      // Fallback: try a basic CRM read to confirm the token works
+      const crmRes = await fetch("https://api.hubapi.com/crm/v3/objects/contacts?limit=1", {
+        headers: { Authorization: `Bearer ${accessToken.trim()}` },
+      });
+      if (!crmRes.ok) {
+        const errBody = await crmRes.json().catch(() => ({}));
+        const msg = errBody?.message || "Invalid token — could not connect to HubSpot";
+        return NextResponse.json({ error: msg }, { status: 400 });
+      }
     }
-
-    const portalInfo = await verifyRes.json();
-    const portalId = String(portalInfo.portalId || portalInfo.hub_id || "");
 
     await db.integration.upsert({
       where: { organizationId_type: { organizationId: orgId, type: "hubspot" } },
@@ -48,7 +57,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true, portalId });
   } catch (err) {
-    console.error("HubSpot save error:", err);
-    return NextResponse.json({ error: "Failed to save token" }, { status: 500 });
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    console.error("HubSpot save error:", msg);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
