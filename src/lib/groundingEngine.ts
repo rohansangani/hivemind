@@ -180,10 +180,43 @@ export function buildGroundedContext(knowledge: RetrievedKnowledge): string {
   // ── CRM Data (HubSpot) ────────────────────────────────────
   const crmItems = knowledge.items.filter(i => i.sourceType === "crm_data");
   if (crmItems.length) {
-    lines.push("\n■ CRM DATA [Source: HubSpot CRM | verified — imported from your connected HubSpot account]");
-    lines.push("This data was synced directly from your HubSpot CRM. You MAY and SHOULD use it to answer questions about contacts, companies, and deals.");
-    for (const item of crmItems) {
-      lines.push(`  • [${item.title}]\n    ${item.content}`);
+    // Split: individual searchable records vs aggregated analytics entries
+    const CRM_RECORD_TITLE_PREFIXES = [
+      "HubSpot Contact:",
+      "HubSpot Company:",
+      "HubSpot Deal:",
+      "HubSpot Company Profile:",
+    ];
+    const recordItems = crmItems.filter(i => CRM_RECORD_TITLE_PREFIXES.some(p => i.title.startsWith(p)));
+    const analyticsItems = crmItems.filter(i => !CRM_RECORD_TITLE_PREFIXES.some(p => i.title.startsWith(p)));
+
+    lines.push("\n■ CRM DATA [Source: HubSpot CRM | verified]");
+    lines.push("The system performed a targeted search of HubSpot CRM for entities matching this query.");
+
+    if (recordItems.length > 0) {
+      const hasLive = recordItems.some(i => i.content.includes("*(live from HubSpot)*"));
+      lines.push(`Found ${recordItems.length} matching record(s)${hasLive ? " (some fetched live from HubSpot API)" : " (from synced knowledge base)"}:`);
+      for (const item of recordItems) {
+        lines.push(`  • [${item.title}]\n    ${item.content}`);
+      }
+    } else {
+      lines.push("⚠ SEARCH RESULT: NO MATCHING RECORDS FOUND.");
+      lines.push("The system searched BOTH the synced knowledge base AND performed a live real-time HubSpot API search — nothing was returned.");
+      lines.push("THIS MEANS: The entity the user asked about does not currently exist in their HubSpot CRM.");
+      lines.push("REQUIRED RESPONSE BEHAVIOR:");
+      lines.push("  1. State clearly that this company/contact/deal was not found in HubSpot CRM.");
+      lines.push("  2. Do NOT recommend the user go to HubSpot to search — the system already searched HubSpot live.");
+      lines.push("  3. Do NOT list unrelated company names from analytics as alternatives.");
+      lines.push("  4. Ask if the user might be thinking of a different name or spelling.");
+    }
+
+    if (analyticsItems.length > 0) {
+      lines.push("\nCRM ANALYTICS (aggregated stats across all synced records — NOT a list of individual companies):");
+      lines.push("⚠ CRITICAL: Do NOT enumerate company/contact names from analytics as 'the companies I have records for'.");
+      lines.push("⚠ CRITICAL: Do NOT say 'I only have records for X, Y, Z companies' based on names appearing in analytics.");
+      for (const item of analyticsItems) {
+        lines.push(`  • [${item.title}]\n    ${item.content}`);
+      }
     }
   }
 
@@ -263,7 +296,14 @@ RULE 4 — STATISTICS ARE SACRED
 Only cite statistics that appear verbatim in the knowledge base. Never round, estimate, combine, or extrapolate numbers. If a stat isn't listed, say so instead of approximating.
 
 RULE 5 — KNOWLEDGE GAPS ARE HONEST
-If the user asks about something not in the knowledge base, say clearly: "I don't have verified information about [X] in the knowledge base. Would you like to [add it / check another source / proceed with what's available]?"
+If the user asks about something not in the knowledge base, say clearly: "I don't have verified information about [X] in the knowledge base. Would you like to [add it / proceed with what's available]?"
+
+RULE 5b — CRM LOOKUP BEHAVIOR (overrides RULE 5 for CRM queries)
+When the user asks about a specific company, contact, or deal:
+- The system has ALREADY searched HubSpot CRM (both the synced KB and a live real-time API call).
+- If no records were found: the entity does NOT exist in HubSpot. Say so directly. NEVER tell the user to "go search HubSpot yourself" — the system just did that.
+- If records were found: answer only from those records. NEVER invent or infer details not in the records.
+- NEVER list company names from CRM analytics/statistics as if they are the only companies available. The CRM contains tens of thousands of records — analytics show aggregates, not the complete list.
 
 ${productIsolationRule ? `RULE 6 — PRODUCT ISOLATION\n${productIsolationRule}` : ""}
 ${personaRule ? `RULE 7 — PERSONA TARGETING\n${personaRule}` : ""}
