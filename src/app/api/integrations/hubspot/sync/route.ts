@@ -155,14 +155,14 @@ async function syncObject(
   kbCategory: string,
   labelSingular: string,
   buildLine: (r: HSRecord) => string,
-  computeStats: (records: HSRecord[]) => Record<string, number>
+  computeStats: (records: HSRecord[]) => Record<string, number>,
+  getName: (r: HSRecord) => string
 ): Promise<{ state: ObjState; records: HSRecord[] }> {
   const next = emptyState();
   let fetchedRecords: HSRecord[] = [];
 
   try {
-    // Always wipe stale entries and re-fetch the most recent MAX_PER_SYNC records.
-    // This prevents unlimited accumulation and ensures retrieval stays manageable.
+    // Wipe all existing entries for this object type, then re-fetch everything.
     await db.knowledgeEntry.deleteMany({ where: { organizationId: orgId, source: "hubspot", category: kbCategory } });
 
     const { records, hubspotTotal } = await hsGetAll(objectType, properties, token, MAX_PER_SYNC);
@@ -171,7 +171,7 @@ async function syncObject(
     if (records.length === 0) return { state: next, records: [] };
     fetchedRecords = records;
 
-    // Date range of this batch
+    // Date range
     let batchOldestMs: number | null = null;
     let batchNewestMs: number | null = null;
     for (const r of records) {
@@ -188,7 +188,7 @@ async function syncObject(
     next.totalCount = records.length;
     next.stats = computeStats(records);
 
-    // Summary KB entry
+    // Summary entry (aggregate stats — always retrieved regardless of query)
     await db.knowledgeEntry.create({
       data: {
         organizationId: orgId, category: kbCategory, source: "hubspot",
@@ -198,18 +198,22 @@ async function syncObject(
       },
     });
 
-    // Detail entries in chunks
-    for (const [i, batch] of chunks(records, CHUNK_SIZE).entries()) {
-      await db.knowledgeEntry.create({
-        data: {
-          organizationId: orgId, category: kbCategory, source: "hubspot",
-          title: `HubSpot ${labelSingular} List (batch ${i + 1})`,
-          content: `HubSpot ${objectType} batch ${i + 1} (${batch.length} records):\n${batch.map(buildLine).join("\n")}`,
-          isAIGenerated: false, isApproved: true,
-        },
+    // Individual record entries — title = "HubSpot Company: So True" etc.
+    // One row per record enables direct name-based retrieval.
+    // createMany bulk-inserts for speed (one SQL INSERT per 500-row batch).
+    for (const batch of chunks(records, 500)) {
+      await db.knowledgeEntry.createMany({
+        data: batch.map(r => ({
+          organizationId: orgId,
+          category: kbCategory,
+          source: "hubspot",
+          title: `HubSpot ${labelSingular}: ${getName(r)}`,
+          content: buildLine(r),
+          isAIGenerated: false,
+          isApproved: true,
+        })),
       });
     }
-    next.nextBatch = Math.ceil(records.length / CHUNK_SIZE) + 1;
 
   } catch (err) {
     next.error = err instanceof Error ? err.message : String(err);
@@ -556,15 +560,18 @@ export async function POST() {
         syncObject(orgId, integration.accessToken, "contacts",
           ["firstname", "lastname", "jobtitle", "company", "email", "lifecyclestage", "createdate",
            "phone", "hs_lead_source", "hs_linkedin_url"],
-          "personas", "Contact", contactLine, contactStats),
+          "personas", "Contact", contactLine, contactStats,
+          r => [r.properties.firstname, r.properties.lastname].filter(Boolean).join(" ") || r.properties.email || r.id),
         syncObject(orgId, integration.accessToken, "companies",
           ["name", "industry", "annualrevenue", "numberofemployees", "country", "city", "createdate",
            "website", "description", "type"],
-          "markets", "Company", companyLine, companyStats),
+          "markets", "Company", companyLine, companyStats,
+          r => r.properties.name?.trim() || r.id),
         syncObject(orgId, integration.accessToken, "deals",
           ["dealname", "dealstage", "amount", "pipeline", "closedate", "hs_deal_stage_probability", "createdate",
            "dealtype", "description"],
-          "proof_points", "Deal", dealLine, dealStats),
+          "proof_points", "Deal", dealLine, dealStats,
+          r => r.properties.dealname?.trim() || r.id),
       ]);
 
       const contacts = contactResult.state;

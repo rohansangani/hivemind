@@ -235,6 +235,59 @@ async function searchDocumentFiles(
 //  Main Retrieval Function
 // ─────────────────────────────────────────────────────────
 
+// ─── CRM-aware entry fetcher ──────────────────────────────────
+// Splits into two targeted queries instead of loading all 50k+ individual
+// records on every request:
+//   1. Analytics entries (summaries, intel, notes) — always included (~10 rows)
+//   2. Individual record entries matching query tokens by title — take: 25
+// Title format "HubSpot Company: So True" enables direct name lookup.
+
+const CRM_RECORD_PREFIXES = [
+  { title: { startsWith: "HubSpot Contact:" } },
+  { title: { startsWith: "HubSpot Company:" } },
+  { title: { startsWith: "HubSpot Deal:" } },
+];
+
+const CRM_ENTITY_STOP = new Set([
+  "hubspot", "crm", "company", "companies", "contact", "contacts",
+  "deal", "deals", "record", "records", "data", "find", "show",
+  "list", "get", "about", "give", "all", "any", "their", "its",
+]);
+
+async function fetchCRMEntries(orgId: string, queryTokens: string[]) {
+  // Tokens meaningful for name lookup: not CRM meta-words
+  const nameTokens = queryTokens
+    .filter(t => t.length >= 2 && !CRM_ENTITY_STOP.has(t))
+    .slice(0, 6);
+
+  const [analytics, records] = await Promise.all([
+    // Always fetch summaries, Customer Intelligence, Notes — small fixed set
+    db.knowledgeEntry.findMany({
+      where: {
+        organizationId: orgId,
+        source: "hubspot",
+        NOT: { OR: CRM_RECORD_PREFIXES },
+      },
+    }),
+    // Targeted: individual records whose title contains a query token
+    nameTokens.length > 0
+      ? db.knowledgeEntry.findMany({
+          where: {
+            organizationId: orgId,
+            source: "hubspot",
+            AND: [
+              { OR: CRM_RECORD_PREFIXES },
+              { OR: nameTokens.map(t => ({ title: { contains: t, mode: "insensitive" as const } })) },
+            ],
+          },
+          take: 25,
+        })
+      : Promise.resolve([]),
+  ]);
+
+  return [...analytics, ...records];
+}
+
 export async function retrieveRelevantKnowledge(
   orgId: string,
   query: string,
@@ -248,7 +301,7 @@ export async function retrieveRelevantKnowledge(
     searchDocuments?: boolean;
   }
 ): Promise<RetrievedKnowledge> {
-  const maxItems = options?.maxItems ?? 12;
+  const maxItems = options?.maxItems ?? 20;
   const queryTokens = tokenize(query);
 
   // ── Fetch all raw data in parallel ─────────────────────
@@ -267,7 +320,7 @@ export async function retrieveRelevantKnowledge(
     db.skill.findMany({ where: { organizationId: orgId, isActive: true } }),
     db.knowledgeEntry.findMany({ where: { organizationId: orgId, category: "proof_points" }, take: 60 }),
     db.knowledgeEntry.findMany({ where: { organizationId: orgId, category: "messaging_patterns" }, take: 30 }),
-    db.knowledgeEntry.findMany({ where: { organizationId: orgId, source: "hubspot" }, orderBy: { createdAt: "desc" } }),
+    fetchCRMEntries(orgId, queryTokens),
     db.learningLog.findMany({ where: { organizationId: orgId }, orderBy: { createdAt: "desc" }, take: 80 }),
     db.industryInsight.findMany({ where: { organizationId: orgId }, orderBy: { createdAt: "desc" }, take: 20 }),
     db.market.findMany({ where: { organizationId: orgId }, orderBy: { createdAt: "asc" } }),
