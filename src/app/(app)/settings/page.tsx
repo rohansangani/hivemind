@@ -131,7 +131,12 @@ export default function SettingsPage() {
       const data = await res.json();
       if (data.success) {
         const s = data.summary;
-        setHsMessage(`Sync complete — ${s.contacts?.totalCount ?? 0} contacts, ${s.companies?.totalCount ?? 0} companies, ${s.deals?.totalCount ?? 0} deals total.`);
+        const fmt = (obj: { totalCount?: number; hubspotTotal?: number } | undefined, label: string) => {
+          const n = (obj?.totalCount ?? 0).toLocaleString();
+          const t = obj?.hubspotTotal ? ` of ${obj.hubspotTotal.toLocaleString()}` : "";
+          return `${n}${t} ${label}`;
+        };
+        setHsMessage(`Sync complete — ${fmt(s.contacts, "contacts")}, ${fmt(s.companies, "companies")}, ${fmt(s.deals, "deals")}.`);
         setHsConnected(true);
         // Refresh status
         const statusRes = await fetch("/api/integrations/hubspot/status");
@@ -1235,7 +1240,7 @@ export default function SettingsPage() {
                       </div>
                     )}
                     {hsIntegration.metadata && Object.keys(hsIntegration.metadata).length > 0 && (() => {
-                      const meta = hsIntegration.metadata! as Record<string, { totalCount?: number; syncedFrom?: string; syncedTo?: string; error?: string }>;
+                      const meta = hsIntegration.metadata! as Record<string, { totalCount?: number; hubspotTotal?: number; syncedFrom?: string; syncedTo?: string; error?: string }>;
                       return (
                         <div className="space-y-2 pt-1">
                           {[
@@ -1253,7 +1258,11 @@ export default function SettingsPage() {
                                 <div className="flex items-center gap-2">
                                   <span className="text-[13px]">{icon}</span>
                                   <div>
-                                    <span className="text-[12px] font-semibold text-[var(--hm-text)]">{count.toLocaleString()} {label}</span>
+                                    <span className="text-[12px] font-semibold text-[var(--hm-text)]">
+                                      {count.toLocaleString()}
+                                      {obj?.hubspotTotal ? <span className="font-normal text-[var(--hm-text-secondary)]"> of {obj.hubspotTotal.toLocaleString()}</span> : null}
+                                      {" "}{label}
+                                    </span>
                                     {from && to && (
                                       <p className="text-[10px] text-[var(--hm-text-tertiary)] mt-0.5">
                                         {from} → {to}
