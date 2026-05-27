@@ -10,7 +10,7 @@ const INTER_PAGE_DELAY_MS = 200;
 
 // ─── Helpers ─────────────────────────────────────────────────
 
-type HSRecord = { properties: Record<string, string> };
+type HSRecord = { id: string; properties: Record<string, string> };
 
 // HubSpot returns createdate as ISO string or ms-timestamp string
 function parseHsDate(val: string | undefined): number | null {
@@ -254,21 +254,29 @@ function buildSummary(objectType: string, state: ObjState): string {
 function contactLine(r: HSRecord): string {
   const name = [r.properties.firstname, r.properties.lastname].filter(Boolean).join(" ");
   const parts = [name, r.properties.jobtitle?.trim(), r.properties.company?.trim()].filter(Boolean).join(" — ");
-  const stage = r.properties.lifecyclestage?.trim();
+  const details = [
+    r.properties.lifecyclestage?.trim() ? `[${r.properties.lifecyclestage.trim()}]` : "",
+    r.properties.hs_lead_source?.trim() ? `source: ${r.properties.hs_lead_source.trim()}` : "",
+    r.properties.phone?.trim() ? `tel: ${r.properties.phone.trim()}` : "",
+    r.properties.hs_linkedin_url?.trim() ? `linkedin: ${r.properties.hs_linkedin_url.trim()}` : "",
+  ].filter(Boolean);
   const ts = parseHsDate(r.properties.createdate);
-  return `• ${parts || "(unnamed)"}${stage ? ` [${stage}]` : ""}${ts ? ` (added ${fmtDate(ts)})` : ""}`;
+  return `• ${parts || "(unnamed)"}${details.length ? ` ${details.join(" | ")}` : ""}${ts ? ` (added ${fmtDate(ts)})` : ""}`;
 }
 
 function companyLine(r: HSRecord): string {
   const name = r.properties.name?.trim();
   const details = [
     r.properties.industry?.trim(),
+    r.properties.type?.trim() ? `type: ${r.properties.type.trim()}` : "",
     [r.properties.city?.trim(), r.properties.country?.trim()].filter(Boolean).join(", "),
     r.properties.numberofemployees ? `${r.properties.numberofemployees} employees` : "",
     r.properties.annualrevenue ? `$${Number(r.properties.annualrevenue).toLocaleString()} revenue` : "",
+    r.properties.website?.trim() ? `web: ${r.properties.website.trim()}` : "",
   ].filter(Boolean);
+  const desc = r.properties.description?.trim();
   const ts = parseHsDate(r.properties.createdate);
-  return `• ${name || "(unnamed)"}${details.length ? ` — ${details.join(" | ")}` : ""}${ts ? ` (added ${fmtDate(ts)})` : ""}`;
+  return `• ${name || "(unnamed)"}${details.length ? ` — ${details.join(" | ")}` : ""}${desc ? `\n  "${desc}"` : ""}${ts ? ` (added ${fmtDate(ts)})` : ""}`;
 }
 
 function dealLine(r: HSRecord): string {
@@ -277,12 +285,119 @@ function dealLine(r: HSRecord): string {
   const prob = r.properties.hs_deal_stage_probability;
   const details = [
     r.properties.dealstage?.trim() ? `stage: ${r.properties.dealstage.trim()}` : "",
+    r.properties.dealtype?.trim() ? `type: ${r.properties.dealtype.trim()}` : "",
     !isNaN(amt) && amt > 0 ? `$${Math.round(amt).toLocaleString()}` : "",
     r.properties.closedate ? `close: ${r.properties.closedate.split("T")[0]}` : "",
     prob ? `${Math.round(parseFloat(prob) * 100)}% probability` : "",
   ].filter(Boolean);
+  const desc = r.properties.description?.trim();
   const ts = parseHsDate(r.properties.createdate);
-  return `• ${name || "(unnamed)"}${details.length ? ` — ${details.join(" | ")}` : ""}${ts ? ` (added ${fmtDate(ts)})` : ""}`;
+  return `• ${name || "(unnamed)"}${details.length ? ` — ${details.join(" | ")}` : ""}${desc ? `\n  "${desc}"` : ""}${ts ? ` (added ${fmtDate(ts)})` : ""}`;
+}
+
+// ─── Notes fetch ──────────────────────────────────────────────
+
+type NoteRecord = {
+  id: string;
+  body: string;
+  timestamp: string;
+  associations: { contacts: string[]; companies: string[]; deals: string[] };
+};
+
+async function fetchNotes(token: string, limit = 2000): Promise<NoteRecord[]> {
+  const notes: NoteRecord[] = [];
+  let after: string | undefined;
+
+  while (notes.length < limit) {
+    const params = new URLSearchParams({
+      properties: "hs_note_body,hs_timestamp",
+      associations: "contacts,companies,deals",
+      limit: String(Math.min(100, limit - notes.length)),
+    });
+    if (after) params.set("after", after);
+
+    const res = await fetch(`https://api.hubapi.com/crm/v3/objects/notes?${params}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.status === 429) { await sleep(10000); continue; }
+    if (!res.ok) break; // notes scope may not be granted — skip silently
+
+    const page = await res.json();
+    for (const n of (page.results || [])) {
+      const body = n.properties?.hs_note_body?.trim();
+      if (!body) continue;
+      const assoc = n.associations || {};
+      notes.push({
+        id: n.id,
+        body,
+        timestamp: n.properties?.hs_timestamp || "",
+        associations: {
+          contacts: (assoc.contacts?.results || []).map((x: { id: string }) => x.id),
+          companies: (assoc.companies?.results || []).map((x: { id: string }) => x.id),
+          deals: (assoc.deals?.results || []).map((x: { id: string }) => x.id),
+        },
+      });
+    }
+    after = page.paging?.next?.after;
+    if (!after || !page.results?.length) break;
+    await sleep(INTER_PAGE_DELAY_MS);
+  }
+  return notes;
+}
+
+async function upsertNotesKB(
+  orgId: string,
+  notes: NoteRecord[],
+  idToName: { contacts: Map<string, string>; companies: Map<string, string>; deals: Map<string, string> }
+) {
+  if (notes.length === 0) return;
+
+  // Delete old notes entries
+  await db.knowledgeEntry.deleteMany({ where: { organizationId: orgId, source: "hubspot", title: { startsWith: "HubSpot Notes" } } });
+
+  // Group notes by association type for readable KB entries
+  const grouped: { label: string; lines: string[] }[] = [
+    { label: "Contact Notes", lines: [] },
+    { label: "Company Notes", lines: [] },
+    { label: "Deal Notes", lines: [] },
+    { label: "General Notes", lines: [] },
+  ];
+
+  for (const note of notes) {
+    const ts = parseHsDate(note.timestamp);
+    const dateStr = ts ? fmtDate(ts) : "";
+    const text = note.body.replace(/\n+/g, " ").slice(0, 500);
+
+    if (note.associations.contacts.length) {
+      const names = note.associations.contacts.map(id => idToName.contacts.get(id) || `Contact ${id}`).join(", ");
+      grouped[0].lines.push(`• [${dateStr}] re ${names}: ${text}`);
+    } else if (note.associations.companies.length) {
+      const names = note.associations.companies.map(id => idToName.companies.get(id) || `Company ${id}`).join(", ");
+      grouped[1].lines.push(`• [${dateStr}] re ${names}: ${text}`);
+    } else if (note.associations.deals.length) {
+      const names = note.associations.deals.map(id => idToName.deals.get(id) || `Deal ${id}`).join(", ");
+      grouped[2].lines.push(`• [${dateStr}] re ${names}: ${text}`);
+    } else {
+      grouped[3].lines.push(`• [${dateStr}] ${text}`);
+    }
+  }
+
+  for (const group of grouped) {
+    if (group.lines.length === 0) continue;
+    for (const [i, batch] of chunks(group.lines, CHUNK_SIZE).entries()) {
+      await db.knowledgeEntry.create({
+        data: {
+          organizationId: orgId,
+          category: "proof_points",
+          source: "hubspot",
+          title: `HubSpot Notes — ${group.label}${i > 0 ? ` (batch ${i + 1})` : ""}`,
+          content: `HubSpot CRM notes (${group.label}):\n${batch.join("\n")}`,
+          isAIGenerated: false,
+          isApproved: true,
+        },
+      });
+    }
+  }
 }
 
 // ─── Stats computation per object type ───────────────────────
@@ -474,6 +589,7 @@ export async function POST() {
           oldestMs: typeof raw.oldestMs === "number" ? raw.oldestMs : null,
           newestMs: typeof raw.newestMs === "number" ? raw.newestMs : null,
           nextBatch: (raw.nextBatch as number) ?? 1,
+          stats: (raw.stats as Record<string, number>) ?? {},
         };
       }
 
@@ -485,19 +601,36 @@ export async function POST() {
 
       const [contactResult, companyResult, dealResult] = await Promise.all([
         syncObject(orgId, integration.accessToken, "contacts",
-          ["firstname", "lastname", "jobtitle", "company", "email", "lifecyclestage", "createdate"],
+          ["firstname", "lastname", "jobtitle", "company", "email", "lifecyclestage", "createdate",
+           "phone", "hs_lead_source", "hs_linkedin_url"],
           "personas", "Contact", contactLine, prev.contacts, contactStats),
         syncObject(orgId, integration.accessToken, "companies",
-          ["name", "industry", "annualrevenue", "numberofemployees", "country", "city", "createdate"],
+          ["name", "industry", "annualrevenue", "numberofemployees", "country", "city", "createdate",
+           "website", "description", "type"],
           "markets", "Company", companyLine, prev.companies, companyStats),
         syncObject(orgId, integration.accessToken, "deals",
-          ["dealname", "dealstage", "amount", "pipeline", "closedate", "hs_deal_stage_probability", "createdate"],
+          ["dealname", "dealstage", "amount", "pipeline", "closedate", "hs_deal_stage_probability", "createdate",
+           "dealtype", "description"],
           "proof_points", "Deal", dealLine, prev.deals, dealStats),
       ]);
 
       const contacts = contactResult.state;
       const companies = companyResult.state;
       const deals = dealResult.state;
+
+      // Build idToName maps for notes cross-referencing
+      const idToName = {
+        contacts: new Map(contactResult.records.map(r => [
+          r.id,
+          [r.properties.firstname, r.properties.lastname].filter(Boolean).join(" ") || r.properties.email || r.id,
+        ])),
+        companies: new Map(companyResult.records.map(r => [r.id, r.properties.name || r.id])),
+        deals: new Map(dealResult.records.map(r => [r.id, r.properties.dealname || r.id])),
+      };
+
+      // Fetch and store notes (silently skipped if scope not granted)
+      const notes = await fetchNotes(integration.accessToken);
+      await upsertNotesKB(orgId, notes, idToName);
 
       // Build synthesised customer intelligence entry from cumulative stats
       await upsertCustomerIntelligence(orgId, contacts, companies, deals);
@@ -523,8 +656,9 @@ export async function POST() {
             `Contacts: ${contacts.totalCount} total${contacts.syncedFrom ? ` (${contacts.syncedFrom} → ${contacts.syncedTo})` : ""}.`,
             `Companies: ${companies.totalCount} total${companies.syncedFrom ? ` (${companies.syncedFrom} → ${companies.syncedTo})` : ""}.`,
             `Deals: ${deals.totalCount} total${deals.syncedFrom ? ` (${deals.syncedFrom} → ${deals.syncedTo})` : ""}.`,
-          ].join(" "),
-          takeaway: "CRM data synced — cumulative contact, company, and deal records updated in knowledge base.",
+            notes.length ? `Notes: ${notes.length} synced.` : "",
+          ].filter(Boolean).join(" "),
+          takeaway: "CRM data synced — cumulative contact, company, deal records and notes updated in knowledge base.",
           kbCategories: ["personas", "markets", "proof_points"],
           tags: ["hubspot", "crm", "sync"],
         },
