@@ -234,8 +234,10 @@ function buildSummary(objectType: string, state: ObjState): string {
 function contactLine(r: HSRecord): string {
   const name = [r.properties.firstname, r.properties.lastname].filter(Boolean).join(" ");
   const parts = [name, r.properties.jobtitle?.trim(), r.properties.company?.trim()].filter(Boolean).join(" — ");
+  const lastAct = parseHsDate(r.properties.hs_last_activity_date);
   const details = [
     r.properties.lifecyclestage?.trim() ? `[${r.properties.lifecyclestage.trim()}]` : "",
+    lastAct ? `last active: ${fmtDate(lastAct)}` : "",
     r.properties.hs_lead_source?.trim() ? `source: ${r.properties.hs_lead_source.trim()}` : "",
     r.properties.phone?.trim() ? `tel: ${r.properties.phone.trim()}` : "",
     r.properties.hs_linkedin_url?.trim() ? `linkedin: ${r.properties.hs_linkedin_url.trim()}` : "",
@@ -246,6 +248,7 @@ function contactLine(r: HSRecord): string {
 
 function companyLine(r: HSRecord): string {
   const name = r.properties.name?.trim();
+  const lastAct = parseHsDate(r.properties.hs_last_activity_date);
   const details = [
     r.properties.industry?.trim(),
     r.properties.type?.trim() ? `type: ${r.properties.type.trim()}` : "",
@@ -253,6 +256,7 @@ function companyLine(r: HSRecord): string {
     r.properties.numberofemployees ? `${r.properties.numberofemployees} employees` : "",
     r.properties.annualrevenue ? `$${Number(r.properties.annualrevenue).toLocaleString()} revenue` : "",
     r.properties.website?.trim() ? `web: ${r.properties.website.trim()}` : "",
+    lastAct ? `last active: ${fmtDate(lastAct)}` : "",
   ].filter(Boolean);
   const desc = r.properties.description?.trim();
   const ts = parseHsDate(r.properties.createdate);
@@ -532,6 +536,193 @@ async function upsertCustomerIntelligence(
   });
 }
 
+// ─── Deal → Company associations ─────────────────────────────
+// Uses HubSpot v4 batch associations API (no 10k limit).
+// Returns Map<companyId, deal[]> for use in company profiles.
+
+async function fetchDealAssociations(dealRecords: HSRecord[], token: string): Promise<Map<string, HSRecord[]>> {
+  const companyToDeals = new Map<string, HSRecord[]>();
+  if (dealRecords.length === 0) return companyToDeals;
+
+  for (const batch of chunks(dealRecords, 100)) {
+    try {
+      const res = await fetch("https://api.hubapi.com/crm/v4/associations/deals/companies/batch/read", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ inputs: batch.map(r => ({ id: r.id })) }),
+      });
+      if (res.status === 429) { await sleep(10000); }
+      if (!res.ok) continue;
+
+      const data = await res.json();
+      for (const result of (data.results || [])) {
+        const dealId = result.from?.id;
+        const deal = batch.find(r => r.id === dealId);
+        if (!deal) continue;
+        for (const assoc of (result.to || [])) {
+          const companyId = String(assoc.toObjectId || assoc.id || "");
+          if (!companyId) continue;
+          if (!companyToDeals.has(companyId)) companyToDeals.set(companyId, []);
+          companyToDeals.get(companyId)!.push(deal);
+        }
+      }
+    } catch { /* non-fatal — association scope may not be granted */ }
+    await sleep(INTER_PAGE_DELAY_MS);
+  }
+
+  return companyToDeals;
+}
+
+// ─── Per-company profile KB entries ──────────────────────────
+// Aggregates contacts + deals + notes into one entry per company:
+// title = "HubSpot Company Profile: FPL"
+// This solves "associated contacts/deals/notes for FPL" queries.
+
+async function buildCompanyProfiles(
+  orgId: string,
+  companies: HSRecord[],
+  contacts: HSRecord[],
+  dealsByCompanyId: Map<string, HSRecord[]>,
+  notes: NoteRecord[],
+) {
+  // Wipe old profiles
+  await db.knowledgeEntry.deleteMany({
+    where: { organizationId: orgId, source: "hubspot", title: { startsWith: "HubSpot Company Profile:" } },
+  });
+
+  // Group contacts by associatedcompanyid (reliable HubSpot CRM link)
+  const contactsByCompanyId = new Map<string, HSRecord[]>();
+  for (const c of contacts) {
+    const companyId = c.properties.associatedcompanyid?.trim();
+    if (companyId) {
+      if (!contactsByCompanyId.has(companyId)) contactsByCompanyId.set(companyId, []);
+      contactsByCompanyId.get(companyId)!.push(c);
+    }
+  }
+
+  // Group notes by company ID
+  const notesByCompanyId = new Map<string, NoteRecord[]>();
+  for (const note of notes) {
+    for (const companyId of note.associations.companies) {
+      if (!notesByCompanyId.has(companyId)) notesByCompanyId.set(companyId, []);
+      notesByCompanyId.get(companyId)!.push(note);
+    }
+  }
+
+  const profileEntries: Array<{
+    organizationId: string;
+    category: string;
+    source: string;
+    title: string;
+    content: string;
+    isAIGenerated: boolean;
+    isApproved: boolean;
+  }> = [];
+
+  for (const company of companies) {
+    const name = company.properties.name?.trim() || "(unnamed)";
+    const companyId = company.id;
+
+    const companyContacts = contactsByCompanyId.get(companyId) || [];
+    const companyDeals = dealsByCompanyId.get(companyId) || [];
+    const companyNotes = notesByCompanyId.get(companyId) || [];
+
+    // Skip companies with no associated data — they're already covered by the individual company entry
+    if (companyContacts.length === 0 && companyDeals.length === 0 && companyNotes.length === 0) continue;
+
+    const lines: string[] = [];
+
+    // Company header
+    const lastAct = parseHsDate(company.properties.hs_last_activity_date);
+    const details = [
+      company.properties.industry?.trim(),
+      [company.properties.city?.trim(), company.properties.country?.trim()].filter(Boolean).join(", "),
+      company.properties.numberofemployees ? `${company.properties.numberofemployees} employees` : "",
+      company.properties.website?.trim() ? `website: ${company.properties.website.trim()}` : "",
+      lastAct ? `last active: ${fmtDate(lastAct)}` : "",
+    ].filter(Boolean);
+
+    lines.push(`Company: ${name}`);
+    if (details.length) lines.push(`Details: ${details.join(" | ")}`);
+    if (company.properties.description?.trim()) {
+      lines.push(`Description: ${company.properties.description.trim().slice(0, 300)}`);
+    }
+
+    // Contacts
+    if (companyContacts.length > 0) {
+      lines.push(`\nContacts (${companyContacts.length}):`);
+      for (const c of companyContacts.slice(0, 20)) {
+        const cName = [c.properties.firstname, c.properties.lastname].filter(Boolean).join(" ") || c.properties.email || c.id;
+        const cTitle = c.properties.jobtitle?.trim();
+        const cEmail = c.properties.email?.trim();
+        const cPhone = c.properties.phone?.trim();
+        const cLastAct = parseHsDate(c.properties.hs_last_activity_date);
+        const parts = [
+          cTitle || "",
+          cEmail ? `email: ${cEmail}` : "",
+          cPhone ? `tel: ${cPhone}` : "",
+          cLastAct ? `last active: ${fmtDate(cLastAct)}` : "",
+        ].filter(Boolean);
+        lines.push(`  • ${cName}${parts.length ? ` — ${parts.join(" | ")}` : ""}`);
+      }
+      if (companyContacts.length > 20) lines.push(`  … and ${companyContacts.length - 20} more contacts`);
+    }
+
+    // Deals
+    if (companyDeals.length > 0) {
+      lines.push(`\nDeals (${companyDeals.length}):`);
+      const sortedDeals = [...companyDeals].sort((a, b) => {
+        const ta = parseHsDate(a.properties.createdate) ?? 0;
+        const tb = parseHsDate(b.properties.createdate) ?? 0;
+        return tb - ta;
+      });
+      for (const d of sortedDeals.slice(0, 10)) {
+        const dName = d.properties.dealname?.trim() || "(unnamed deal)";
+        const stage = d.properties.dealstage?.trim();
+        const amt = parseFloat(d.properties.amount || "0");
+        const close = d.properties.closedate ? d.properties.closedate.split("T")[0] : "";
+        const parts = [
+          stage ? `stage: ${stage}` : "",
+          !isNaN(amt) && amt > 0 ? `$${Math.round(amt).toLocaleString()}` : "",
+          close ? `close: ${close}` : "",
+        ].filter(Boolean);
+        lines.push(`  • ${dName}${parts.length ? ` — ${parts.join(" | ")}` : ""}`);
+      }
+      if (companyDeals.length > 10) lines.push(`  … and ${companyDeals.length - 10} more deals`);
+    }
+
+    // Notes
+    if (companyNotes.length > 0) {
+      lines.push(`\nNotes (${companyNotes.length}):`);
+      const sortedNotes = [...companyNotes].sort((a, b) => {
+        const ta = parseHsDate(a.timestamp) ?? 0;
+        const tb = parseHsDate(b.timestamp) ?? 0;
+        return tb - ta;
+      });
+      for (const n of sortedNotes.slice(0, 5)) {
+        const ts = parseHsDate(n.timestamp);
+        const text = n.body.replace(/\n+/g, " ").slice(0, 300);
+        lines.push(`  • [${ts ? fmtDate(ts) : ""}] ${text}`);
+      }
+    }
+
+    profileEntries.push({
+      organizationId: orgId,
+      category: "markets",
+      source: "hubspot",
+      title: `HubSpot Company Profile: ${name}`,
+      content: lines.join("\n"),
+      isAIGenerated: false,
+      isApproved: true,
+    });
+  }
+
+  // Bulk insert in 500-row batches
+  for (const batch of chunks(profileEntries, 500)) {
+    await db.knowledgeEntry.createMany({ data: batch });
+  }
+}
+
 // ─── Route handler ────────────────────────────────────────────
 
 export async function POST() {
@@ -561,7 +752,7 @@ export async function POST() {
       // hammer HubSpot's rate limits from three concurrent streams.
       const contactResult = await syncObject(orgId, integration.accessToken, "contacts",
         ["firstname", "lastname", "jobtitle", "company", "email", "lifecyclestage", "createdate",
-         "phone", "hs_lead_source", "hs_linkedin_url"],
+         "phone", "hs_lead_source", "hs_linkedin_url", "hs_last_activity_date", "associatedcompanyid"],
         "personas", "Contact", contactLine, contactStats,
         r => {
           const name = [r.properties.firstname, r.properties.lastname].filter(Boolean).join(" ") || r.properties.email || r.id;
@@ -572,7 +763,7 @@ export async function POST() {
 
       const companyResult = await syncObject(orgId, integration.accessToken, "companies",
         ["name", "industry", "annualrevenue", "numberofemployees", "country", "city", "createdate",
-         "website", "description", "type"],
+         "website", "description", "type", "hs_last_activity_date"],
         "markets", "Company", companyLine, companyStats,
         r => r.properties.name?.trim() || r.id);
 
@@ -599,6 +790,11 @@ export async function POST() {
       // Fetch and store notes (silently skipped if scope not granted)
       const notes = await fetchNotes(integration.accessToken);
       await upsertNotesKB(orgId, notes, idToName);
+
+      // Fetch deal→company associations, then build per-company profile entries
+      // that aggregate contacts + deals + notes for each company in one KB entry.
+      const dealsByCompanyId = await fetchDealAssociations(dealResult.records, integration.accessToken);
+      await buildCompanyProfiles(orgId, companyResult.records, contactResult.records, dealsByCompanyId, notes);
 
       // Build synthesised customer intelligence entry from cumulative stats
       await upsertCustomerIntelligence(orgId, contacts, companies, deals);

@@ -246,6 +246,7 @@ const CRM_RECORD_PREFIXES = [
   { title: { startsWith: "HubSpot Contact:" } },
   { title: { startsWith: "HubSpot Company:" } },
   { title: { startsWith: "HubSpot Deal:" } },
+  { title: { startsWith: "HubSpot Company Profile:" } },
 ];
 
 const CRM_ENTITY_STOP = new Set([
@@ -253,6 +254,140 @@ const CRM_ENTITY_STOP = new Set([
   "deal", "deals", "record", "records", "data", "find", "show",
   "list", "get", "about", "give", "all", "any", "their", "its",
 ]);
+
+// ─── Live HubSpot fallback ─────────────────────────────────────
+// Called when the KB title search returns no individual records.
+// Hits the HubSpot search API directly (3 parallel calls — companies,
+// contacts, deals) and returns results in the same shape as KB entries.
+// This ensures even records not yet synced can be answered in real time.
+
+function hsDate(val: string | undefined): string {
+  if (!val) return "";
+  const ms = Number(val);
+  const d = isNaN(ms) ? new Date(val) : new Date(ms);
+  return isNaN(d.getTime()) ? "" : d.toISOString().split("T")[0];
+}
+
+async function liveHubSpotSearch(
+  orgId: string,
+  searchTerms: string[],
+): Promise<Array<{ id: string; title: string; content: string }>> {
+  if (searchTerms.length === 0) return [];
+
+  // Look up the connected HubSpot token for this org
+  const integration = await db.integration.findUnique({
+    where: { organizationId_type: { organizationId: orgId, type: "hubspot" } },
+    select: { accessToken: true },
+  });
+  if (!integration?.accessToken) return [];
+  const token = integration.accessToken;
+
+  // Build HubSpot filterGroups (OR between groups, AND within a group)
+  const filterGroups = (prop: string) =>
+    searchTerms.slice(0, 4).map(t => ({
+      filters: [{ propertyName: prop, operator: "CONTAINS_TOKEN", value: t }],
+    }));
+
+  const results: Array<{ id: string; title: string; content: string }> = [];
+
+  async function hsSearch(endpoint: string, body: object): Promise<unknown[]> {
+    try {
+      const res = await fetch(`https://api.hubapi.com/crm/v3/objects/${endpoint}/search`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ ...body, limit: 10 }),
+      });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return data.results || [];
+    } catch { return []; }
+  }
+
+  await Promise.allSettled([
+    // Companies
+    (async () => {
+      const rows = await hsSearch("companies", {
+        filterGroups: filterGroups("name"),
+        properties: ["name", "industry", "country", "city", "numberofemployees",
+                     "website", "hs_last_activity_date", "annualrevenue", "description", "type"],
+      }) as Array<{ id: string; properties: Record<string, string> }>;
+
+      for (const r of rows) {
+        const name = r.properties.name?.trim() || "(unnamed)";
+        const lastAct = hsDate(r.properties.hs_last_activity_date);
+        const details = [
+          r.properties.industry?.trim(),
+          [r.properties.city?.trim(), r.properties.country?.trim()].filter(Boolean).join(", "),
+          r.properties.numberofemployees ? `${r.properties.numberofemployees} employees` : "",
+          r.properties.website?.trim() ? `web: ${r.properties.website.trim()}` : "",
+          lastAct ? `last active: ${lastAct}` : "",
+        ].filter(Boolean);
+        const desc = r.properties.description?.trim();
+        results.push({
+          id: `live-co-${r.id}`,
+          title: `HubSpot Company: ${name}`,
+          content: `• ${name}${details.length ? ` — ${details.join(" | ")}` : ""}${desc ? `\n  "${desc.slice(0, 200)}"` : ""} *(live from HubSpot)*`,
+        });
+      }
+    })(),
+
+    // Contacts — search across company name, first name, last name
+    (async () => {
+      const contactFilterGroups = [
+        ...filterGroups("company"),
+        ...filterGroups("firstname"),
+        ...filterGroups("lastname"),
+      ];
+      const rows = await hsSearch("contacts", {
+        filterGroups: contactFilterGroups,
+        properties: ["firstname", "lastname", "jobtitle", "company", "email",
+                     "phone", "hs_last_activity_date", "lifecyclestage"],
+      }) as Array<{ id: string; properties: Record<string, string> }>;
+
+      for (const r of rows) {
+        const name = [r.properties.firstname, r.properties.lastname].filter(Boolean).join(" ") || r.properties.email || r.id;
+        const co = r.properties.company?.trim();
+        const lastAct = hsDate(r.properties.hs_last_activity_date);
+        const parts = [
+          r.properties.jobtitle?.trim(),
+          r.properties.email?.trim() ? `email: ${r.properties.email.trim()}` : "",
+          r.properties.phone?.trim() ? `tel: ${r.properties.phone.trim()}` : "",
+          lastAct ? `last active: ${lastAct}` : "",
+        ].filter(Boolean);
+        results.push({
+          id: `live-ct-${r.id}`,
+          title: `HubSpot Contact: ${name}${co ? ` at ${co}` : ""}`,
+          content: `• ${name}${parts.length ? ` — ${parts.join(" | ")}` : ""}${co ? ` (${co})` : ""} *(live from HubSpot)*`,
+        });
+      }
+    })(),
+
+    // Deals
+    (async () => {
+      const rows = await hsSearch("deals", {
+        filterGroups: filterGroups("dealname"),
+        properties: ["dealname", "dealstage", "amount", "closedate", "dealtype"],
+      }) as Array<{ id: string; properties: Record<string, string> }>;
+
+      for (const r of rows) {
+        const name = r.properties.dealname?.trim() || "(unnamed deal)";
+        const amt = parseFloat(r.properties.amount || "0");
+        const parts = [
+          r.properties.dealstage?.trim() ? `stage: ${r.properties.dealstage.trim()}` : "",
+          !isNaN(amt) && amt > 0 ? `$${Math.round(amt).toLocaleString()}` : "",
+          r.properties.closedate ? `close: ${r.properties.closedate.split("T")[0]}` : "",
+        ].filter(Boolean);
+        results.push({
+          id: `live-deal-${r.id}`,
+          title: `HubSpot Deal: ${name}`,
+          content: `• ${name}${parts.length ? ` — ${parts.join(" | ")}` : ""} *(live from HubSpot)*`,
+        });
+      }
+    })(),
+  ]);
+
+  return results;
+}
 
 async function fetchCRMEntries(orgId: string, queryTokens: string[], rawQuery: string) {
   // Tokens meaningful for name lookup: not CRM meta-words
@@ -303,7 +438,13 @@ async function fetchCRMEntries(orgId: string, queryTokens: string[], rawQuery: s
       : Promise.resolve([]),
   ]);
 
-  return [...analytics, ...records];
+  // If no individual records found in KB, fall back to a live HubSpot API search.
+  // This covers: records not yet synced, recently added contacts/companies, edge cases.
+  const liveResults = records.length === 0 && allSearchTerms.length > 0
+    ? await liveHubSpotSearch(orgId, allSearchTerms)
+    : [];
+
+  return [...analytics, ...records, ...liveResults];
 }
 
 export async function retrieveRelevantKnowledge(
