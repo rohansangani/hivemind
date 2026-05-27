@@ -563,7 +563,12 @@ export async function POST() {
         ["firstname", "lastname", "jobtitle", "company", "email", "lifecyclestage", "createdate",
          "phone", "hs_lead_source", "hs_linkedin_url"],
         "personas", "Contact", contactLine, contactStats,
-        r => [r.properties.firstname, r.properties.lastname].filter(Boolean).join(" ") || r.properties.email || r.id);
+        r => {
+          const name = [r.properties.firstname, r.properties.lastname].filter(Boolean).join(" ") || r.properties.email || r.id;
+          const co = r.properties.company?.trim();
+          // Include company in title so "contacts at So True" finds "John Smith at So True"
+          return co ? `${name} at ${co}` : name;
+        });
 
       const companyResult = await syncObject(orgId, integration.accessToken, "companies",
         ["name", "industry", "annualrevenue", "numberofemployees", "country", "city", "createdate",

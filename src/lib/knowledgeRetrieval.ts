@@ -254,11 +254,27 @@ const CRM_ENTITY_STOP = new Set([
   "list", "get", "about", "give", "all", "any", "their", "its",
 ]);
 
-async function fetchCRMEntries(orgId: string, queryTokens: string[]) {
+async function fetchCRMEntries(orgId: string, queryTokens: string[], rawQuery: string) {
   // Tokens meaningful for name lookup: not CRM meta-words
   const nameTokens = queryTokens
     .filter(t => t.length >= 2 && !CRM_ENTITY_STOP.has(t))
     .slice(0, 6);
+
+  // Bigrams: consecutive word pairs catch multi-word names like "So True" that
+  // get split into short single tokens ("so" filtered at len<3, "true" too generic).
+  // e.g. "tell me about So True" → bigram "so true" → ILIKE '%so true%' hits
+  // "HubSpot Contact: John Smith at So True" ✓
+  const words = rawQuery.toLowerCase().replace(/[^\w\s]/g, " ").split(/\s+/).filter(w => w.length >= 2);
+  const bigrams: string[] = [];
+  for (let i = 0; i < words.length - 1; i++) {
+    const bg = `${words[i]} ${words[i + 1]}`;
+    // Only include bigrams that aren't pure stop/meta words
+    if (!CRM_ENTITY_STOP.has(words[i]) || !CRM_ENTITY_STOP.has(words[i + 1])) {
+      bigrams.push(bg);
+    }
+  }
+
+  const allSearchTerms = [...new Set([...nameTokens, ...bigrams])].slice(0, 8);
 
   const [analytics, records] = await Promise.all([
     // Always fetch summaries, Customer Intelligence, Notes — small fixed set
@@ -269,18 +285,20 @@ async function fetchCRMEntries(orgId: string, queryTokens: string[]) {
         NOT: { OR: CRM_RECORD_PREFIXES },
       },
     }),
-    // Targeted: individual records whose title contains a query token
-    nameTokens.length > 0
+    // Targeted: individual records whose title contains a query token or bigram.
+    // Bigrams find "John Smith at So True" when searching "So True" (each word alone
+    // is too short/common to be a reliable token).
+    allSearchTerms.length > 0
       ? db.knowledgeEntry.findMany({
           where: {
             organizationId: orgId,
             source: "hubspot",
             AND: [
               { OR: CRM_RECORD_PREFIXES },
-              { OR: nameTokens.map(t => ({ title: { contains: t, mode: "insensitive" as const } })) },
+              { OR: allSearchTerms.map(t => ({ title: { contains: t, mode: "insensitive" as const } })) },
             ],
           },
-          take: 25,
+          take: 30,
         })
       : Promise.resolve([]),
   ]);
@@ -320,7 +338,7 @@ export async function retrieveRelevantKnowledge(
     db.skill.findMany({ where: { organizationId: orgId, isActive: true } }),
     db.knowledgeEntry.findMany({ where: { organizationId: orgId, category: "proof_points" }, take: 60 }),
     db.knowledgeEntry.findMany({ where: { organizationId: orgId, category: "messaging_patterns" }, take: 30 }),
-    fetchCRMEntries(orgId, queryTokens),
+    fetchCRMEntries(orgId, queryTokens, query),
     db.learningLog.findMany({ where: { organizationId: orgId }, orderBy: { createdAt: "desc" }, take: 80 }),
     db.industryInsight.findMany({ where: { organizationId: orgId }, orderBy: { createdAt: "desc" }, take: 20 }),
     db.market.findMany({ where: { organizationId: orgId }, orderBy: { createdAt: "asc" } }),
