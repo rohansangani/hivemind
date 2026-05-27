@@ -37,92 +37,68 @@ async function sleep(ms: number) {
   return new Promise(r => setTimeout(r, ms));
 }
 
-// ─── HubSpot search ───────────────────────────────────────────
+// ─── HubSpot fetch ───────────────────────────────────────────
 
-async function hsSearchPage(
-  objectType: string,
-  body: Record<string, unknown>,
-  token: string,
-  retries = 3
-): Promise<{ results: HSRecord[]; after?: string; total?: number }> {
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    const res = await fetch(`https://api.hubapi.com/crm/v3/objects/${objectType}/search`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (res.status === 429) {
-      const wait = parseInt(res.headers.get("Retry-After") || "10", 10) * 1000;
-      if (attempt < retries) { await sleep(wait); continue; }
-      throw new Error(`Rate limited on ${objectType} after ${retries} retries`);
-    }
-    if (!res.ok) throw new Error(`HubSpot ${objectType} error ${res.status}: ${await res.text()}`);
-    const page = await res.json();
-    return { results: page.results || [], after: page.paging?.next?.after, total: page.total };
-  }
-  return { results: [] };
-}
-
-// HubSpot search caps at 10,000 results per query via `after` pagination.
-// To fetch more, we use date-window chunking: once pagination stops (no `after`
-// but more records remain), we re-query with createdate < oldest-seen and keep going.
-async function hsSearch(
+// HubSpot search API caps at 10,000 results — use the basic GET endpoint for full
+// unlimited pagination, and a single lightweight POST search for the total count.
+async function hsGetAll(
   objectType: string,
   properties: string[],
   token: string,
   limit: number
 ): Promise<{ records: HSRecord[]; hubspotTotal: number }> {
-  const records: HSRecord[] = [];
+  // 1. Quick count via search (1 result, no pagination needed)
   let hubspotTotal = 0;
-  let oldestMs: number | null = null; // tracks the oldest createdate seen so far
+  try {
+    const countRes = await fetch(`https://api.hubapi.com/crm/v3/objects/${objectType}/search`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ properties: ["createdate"], limit: 1 }),
+    });
+    if (countRes.ok) {
+      const countData = await countRes.json();
+      hubspotTotal = countData.total ?? 0;
+    }
+  } catch { /* non-fatal */ }
 
-  // Outer loop: each iteration is a date-window pass
+  // 2. Paginate through all records using the basic GET endpoint (no 10k limit)
+  const records: HSRecord[] = [];
+  let after: string | undefined;
+
   while (records.length < limit) {
-    const filters: Array<{ propertyName: string; operator: string; value: string }> = [];
-    if (oldestMs !== null) {
-      // Next window: only records older than the oldest we've seen
-      filters.push({ propertyName: "createdate", operator: "LT", value: String(oldestMs) });
-    }
+    const params = new URLSearchParams({
+      properties: properties.join(","),
+      limit: String(Math.min(PAGE_SIZE, limit - records.length)),
+    });
+    if (after) params.set("after", after);
 
-    // Inner loop: paginate within this window (up to HubSpot's 10k per-query cap)
-    let after: string | undefined;
-    let windowCount = 0;
-    let gotAny = false;
-
-    while (records.length < limit) {
-      const body: Record<string, unknown> = {
-        properties,
-        sorts: [{ propertyName: "createdate", direction: "DESCENDING" }],
-        limit: Math.min(PAGE_SIZE, limit - records.length),
-      };
-      if (filters.length > 0) body.filterGroups = [{ filters }];
-      if (after) body.after = after;
-
-      const page = await hsSearchPage(objectType, body, token);
-      if (records.length === 0 && page.total !== undefined) hubspotTotal = page.total;
-
-      for (const r of page.results) {
-        const ts = parseHsDate(r.properties.createdate);
-        if (ts !== null && (oldestMs === null || ts < oldestMs)) oldestMs = ts;
-        records.push(r);
-        windowCount++;
-        gotAny = true;
+    let res: Response;
+    let attempt = 0;
+    while (true) {
+      res = await fetch(`https://api.hubapi.com/crm/v3/objects/${objectType}?${params}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.status === 429) {
+        const wait = parseInt(res.headers.get("Retry-After") || "10", 10) * 1000;
+        if (attempt++ < 3) { await sleep(wait); continue; }
       }
-
-      after = page.after;
-      if (!after || page.results.length === 0) break;
-      await sleep(INTER_PAGE_DELAY_MS);
+      break;
     }
+    if (!res!.ok) throw new Error(`HubSpot ${objectType} error ${res!.status}: ${await res!.text()}`);
 
-    // If we got nothing in this window, we've exhausted all records
-    if (!gotAny) break;
-    // If pagination ended naturally (no after), but oldestMs is set, try next window
-    // If we filled the limit, stop
-    if (records.length >= limit) break;
-    // If the window returned fewer records than expected, we've reached the end
-    if (windowCount < 10000) break; // HubSpot 10k cap not hit — no more records remain
-    await sleep(INTER_PAGE_DELAY_MS * 2);
+    const page = await res!.json();
+    records.push(...(page.results || []));
+    after = page.paging?.next?.after;
+    if (!after || !(page.results?.length)) break;
+    await sleep(INTER_PAGE_DELAY_MS);
   }
+
+  // Sort by createdate descending (most recent first) since GET doesn't guarantee order
+  records.sort((a, b) => {
+    const ta = parseHsDate(a.properties.createdate) ?? 0;
+    const tb = parseHsDate(b.properties.createdate) ?? 0;
+    return tb - ta;
+  });
 
   return { records, hubspotTotal };
 }
@@ -189,7 +165,7 @@ async function syncObject(
     // This prevents unlimited accumulation and ensures retrieval stays manageable.
     await db.knowledgeEntry.deleteMany({ where: { organizationId: orgId, source: "hubspot", category: kbCategory } });
 
-    const { records, hubspotTotal } = await hsSearch(objectType, properties, token, MAX_PER_SYNC);
+    const { records, hubspotTotal } = await hsGetAll(objectType, properties, token, MAX_PER_SYNC);
     next.hubspotTotal = hubspotTotal;
 
     if (records.length === 0) return { state: next, records: [] };
