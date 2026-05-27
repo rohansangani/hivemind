@@ -24,6 +24,19 @@ export async function GET() {
       },
     });
 
+    // If stuck in "syncing" for more than 10 minutes, auto-reset to error
+    if (integration?.syncStatus === "syncing" && integration.lastSyncAt) {
+      const stuckMs = Date.now() - new Date(integration.lastSyncAt).getTime();
+      if (stuckMs > 10 * 60 * 1000) {
+        await db.integration.update({
+          where: { organizationId_type: { organizationId: decoded.orgId, type: "hubspot" } },
+          data: { syncStatus: "error", lastSyncError: "Sync timed out — please try again" },
+        });
+        integration.syncStatus = "error";
+        integration.lastSyncError = "Sync timed out — please try again";
+      }
+    }
+
     return NextResponse.json({
       connected: !!integration,
       integration: integration || null,

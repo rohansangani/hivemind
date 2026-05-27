@@ -46,6 +46,7 @@ export default function SettingsPage() {
     metadata?: Record<string, unknown>;
   } | null>(null);
   const [hsSyncing, setHsSyncing] = useState(false);
+  const [hsResetting, setHsResetting] = useState(false);
   const [hsDisconnecting, setHsDisconnecting] = useState(false);
   const [hsMessage, setHsMessage] = useState("");
   const [hsToken, setHsToken] = useState("");
@@ -1195,7 +1196,7 @@ export default function SettingsPage() {
                     <div className="flex shrink-0 items-center gap-2">
                       <button
                         onClick={hsSync}
-                        disabled={hsSyncing}
+                        disabled={hsSyncing || hsIntegration?.syncStatus === "syncing"}
                         className="flex h-[32px] items-center gap-1.5 rounded-lg border border-[var(--hm-border)] px-3 text-[12px] font-medium text-[var(--hm-text)] hover:bg-[var(--hm-bg-secondary)] disabled:opacity-50"
                       >
                         {hsSyncing ? (
@@ -1207,6 +1208,25 @@ export default function SettingsPage() {
                           </>
                         ) : "Sync now"}
                       </button>
+                      {hsIntegration?.syncStatus === "syncing" && !hsSyncing && (
+                        <button
+                          onClick={async () => {
+                            setHsResetting(true);
+                            try {
+                              // Refresh status — stuck-sync auto-reset happens server-side after 10 min
+                              // For immediate reset: re-trigger status fetch
+                              const res = await fetch("/api/integrations/hubspot/status");
+                              const data = await res.json();
+                              setHsIntegration(data.integration);
+                              setHsMessage("Status refreshed.");
+                            } finally { setHsResetting(false); }
+                          }}
+                          disabled={hsResetting}
+                          className="flex h-[32px] items-center rounded-lg border border-amber-300 px-3 text-[12px] font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-50"
+                        >
+                          {hsResetting ? "Checking…" : "Check status"}
+                        </button>
+                      )}
                       <button
                         onClick={hsDisconnect}
                         disabled={hsDisconnecting}
@@ -1234,6 +1254,14 @@ export default function SettingsPage() {
                           : "Never synced"}
                       </span>
                     </div>
+                    {hsIntegration.syncStatus === "syncing" && (
+                      <div className="flex items-center gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-[12px] text-amber-700">
+                        <svg className="animate-spin shrink-0" width="12" height="12" viewBox="0 0 24 24" fill="none">
+                          <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="32" strokeDashoffset="12" strokeLinecap="round"/>
+                        </svg>
+                        Sync in progress — this can take several minutes for large CRMs. Click "Check status" to refresh.
+                      </div>
+                    )}
                     {hsIntegration.syncStatus === "error" && hsIntegration.lastSyncError && (
                       <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-[11px] text-red-600">
                         Last sync error: {hsIntegration.lastSyncError}

@@ -556,29 +556,32 @@ export async function POST() {
     });
 
     try {
-      const [contactResult, companyResult, dealResult] = await Promise.all([
-        syncObject(orgId, integration.accessToken, "contacts",
-          ["firstname", "lastname", "jobtitle", "company", "email", "lifecyclestage", "createdate",
-           "phone", "hs_lead_source", "hs_linkedin_url"],
-          "personas", "Contact", contactLine, contactStats,
-          r => [r.properties.firstname, r.properties.lastname].filter(Boolean).join(" ") || r.properties.email || r.id),
-        syncObject(orgId, integration.accessToken, "companies",
-          ["name", "industry", "annualrevenue", "numberofemployees", "country", "city", "createdate",
-           "website", "description", "type"],
-          "markets", "Company", companyLine, companyStats,
-          r => r.properties.name?.trim() || r.id),
-        syncObject(orgId, integration.accessToken, "deals",
-          ["dealname", "dealstage", "amount", "pipeline", "closedate", "hs_deal_stage_probability", "createdate",
-           "dealtype", "description"],
-          "proof_points", "Deal", dealLine, dealStats,
-          r => r.properties.dealname?.trim() || r.id),
-      ]);
+      // Run sequentially — one object type at a time.
+      // Parallel would keep all 50k+ records in memory simultaneously and
+      // hammer HubSpot's rate limits from three concurrent streams.
+      const contactResult = await syncObject(orgId, integration.accessToken, "contacts",
+        ["firstname", "lastname", "jobtitle", "company", "email", "lifecyclestage", "createdate",
+         "phone", "hs_lead_source", "hs_linkedin_url"],
+        "personas", "Contact", contactLine, contactStats,
+        r => [r.properties.firstname, r.properties.lastname].filter(Boolean).join(" ") || r.properties.email || r.id);
+
+      const companyResult = await syncObject(orgId, integration.accessToken, "companies",
+        ["name", "industry", "annualrevenue", "numberofemployees", "country", "city", "createdate",
+         "website", "description", "type"],
+        "markets", "Company", companyLine, companyStats,
+        r => r.properties.name?.trim() || r.id);
+
+      const dealResult = await syncObject(orgId, integration.accessToken, "deals",
+        ["dealname", "dealstage", "amount", "pipeline", "closedate", "hs_deal_stage_probability", "createdate",
+         "dealtype", "description"],
+        "proof_points", "Deal", dealLine, dealStats,
+        r => r.properties.dealname?.trim() || r.id);
 
       const contacts = contactResult.state;
       const companies = companyResult.state;
       const deals = dealResult.state;
 
-      // Build idToName maps for notes cross-referencing
+      // Build idToName maps for notes (records array is kept in memory only here)
       const idToName = {
         contacts: new Map(contactResult.records.map(r => [
           r.id,
