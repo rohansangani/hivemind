@@ -92,11 +92,13 @@ async function hsSearch(
 
 interface ObjState {
   totalCount: number;
-  syncedFrom: string | null;  // oldest date ever synced
-  syncedTo: string | null;    // newest date ever synced
-  oldestMs: number | null;    // cursor — extend history beyond this
-  newestMs: number | null;    // cursor — fetch new records after this
-  nextBatch: number;          // next batch number for KB entries
+  syncedFrom: string | null;
+  syncedTo: string | null;
+  oldestMs: number | null;
+  newestMs: number | null;
+  nextBatch: number;
+  // Cumulative aggregate stats — merged on every sync
+  stats?: Record<string, number>;
   error?: string;
 }
 
@@ -107,7 +109,32 @@ type SyncMeta = {
 };
 
 function emptyState(): ObjState {
-  return { totalCount: 0, syncedFrom: null, syncedTo: null, oldestMs: null, newestMs: null, nextBatch: 1 };
+  return { totalCount: 0, syncedFrom: null, syncedTo: null, oldestMs: null, newestMs: null, nextBatch: 1, stats: {} };
+}
+
+// Merge two frequency maps cumulatively
+function mergeStats(prev: Record<string, number>, incoming: Record<string, number>): Record<string, number> {
+  const merged = { ...prev };
+  for (const [k, v] of Object.entries(incoming)) merged[k] = (merged[k] || 0) + v;
+  return merged;
+}
+
+function top(map: Record<string, number>, n: number): [string, number][] {
+  return Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, n);
+}
+
+function inferSeniority(title: string): string {
+  const t = title.toLowerCase();
+  if (/\b(ceo|cto|cfo|cmo|coo|cso|cpo|chief)\b/.test(t)) return "C-Suite";
+  if (/\bfounder|co-founder|owner\b/.test(t)) return "Founder / Owner";
+  if (/\bpresident\b/.test(t)) return "President";
+  if (/\bvp|vice president\b/.test(t)) return "VP";
+  if (/\bdirector\b/.test(t)) return "Director";
+  if (/\bmanager\b/.test(t)) return "Manager";
+  if (/\blead\b/.test(t)) return "Lead";
+  if (/\banalyst|associate|specialist\b/.test(t)) return "Analyst / Associate";
+  if (/\bconsultant\b/.test(t)) return "Consultant";
+  return "Individual Contributor";
 }
 
 // ─── Sync one object type ─────────────────────────────────────
@@ -120,9 +147,11 @@ async function syncObject(
   kbCategory: string,
   labelSingular: string,
   buildLine: (r: HSRecord) => string,
-  prev: ObjState
-): Promise<ObjState> {
+  prev: ObjState,
+  computeStats: (records: HSRecord[]) => Record<string, number>
+): Promise<{ state: ObjState; records: HSRecord[] }> {
   const next: ObjState = { ...prev };
+  let returnedRecords: HSRecord[] = [];
 
   try {
     let records: HSRecord[] = [];
@@ -151,7 +180,8 @@ async function syncObject(
       records = [...newRecords, ...olderRecords];
     }
 
-    if (records.length === 0) return next;
+    if (records.length === 0) return { state: next, records: [] };
+    returnedRecords = records;
 
     // Find oldest and newest in this batch
     let batchOldestMs: number | null = null;
@@ -174,6 +204,10 @@ async function syncObject(
       next.syncedTo = fmtDate(next.newestMs);
     }
     next.totalCount = prev.totalCount + records.length;
+
+    // Merge aggregate stats cumulatively
+    const batchStats = computeStats(records);
+    next.stats = mergeStats(prev.stats || {}, batchStats);
 
     // Upsert summary KB entry
     const summaryTitle = `HubSpot ${labelSingular} Summary`;
@@ -207,7 +241,7 @@ async function syncObject(
     console.error(`HubSpot ${objectType} sync error:`, next.error);
   }
 
-  return next;
+  return { state: next, records: returnedRecords };
 }
 
 function buildSummary(objectType: string, state: ObjState): string {
@@ -249,6 +283,158 @@ function dealLine(r: HSRecord): string {
   ].filter(Boolean);
   const ts = parseHsDate(r.properties.createdate);
   return `• ${name || "(unnamed)"}${details.length ? ` — ${details.join(" | ")}` : ""}${ts ? ` (added ${fmtDate(ts)})` : ""}`;
+}
+
+// ─── Stats computation per object type ───────────────────────
+
+function contactStats(records: HSRecord[]): Record<string, number> {
+  const stats: Record<string, number> = {};
+  for (const r of records) {
+    const title = r.properties.jobtitle?.trim();
+    const stage = r.properties.lifecyclestage?.trim();
+    const company = r.properties.company?.trim();
+    if (title) {
+      stats[`title:${title}`] = (stats[`title:${title}`] || 0) + 1;
+      const seniority = inferSeniority(title);
+      stats[`seniority:${seniority}`] = (stats[`seniority:${seniority}`] || 0) + 1;
+    }
+    if (stage) stats[`stage:${stage}`] = (stats[`stage:${stage}`] || 0) + 1;
+    if (company) stats[`company:${company}`] = (stats[`company:${company}`] || 0) + 1;
+  }
+  return stats;
+}
+
+function companyStats(records: HSRecord[]): Record<string, number> {
+  const stats: Record<string, number> = {};
+  for (const r of records) {
+    const ind = r.properties.industry?.trim();
+    const country = r.properties.country?.trim();
+    const emp = parseInt(r.properties.numberofemployees || "0", 10);
+    const rev = parseFloat(r.properties.annualrevenue || "0");
+    if (ind) stats[`industry:${ind}`] = (stats[`industry:${ind}`] || 0) + 1;
+    if (country) stats[`country:${country}`] = (stats[`country:${country}`] || 0) + 1;
+    if (emp > 0) {
+      const size = emp <= 10 ? "1–10" : emp <= 50 ? "11–50" : emp <= 200 ? "51–200" : emp <= 500 ? "201–500" : emp <= 1000 ? "501–1000" : "1000+";
+      stats[`size:${size}`] = (stats[`size:${size}`] || 0) + 1;
+    }
+    if (rev > 0) {
+      const range = rev < 1e6 ? "<$1M" : rev < 10e6 ? "$1M–$10M" : rev < 50e6 ? "$10M–$50M" : rev < 100e6 ? "$50M–$100M" : "$100M+";
+      stats[`revenue:${range}`] = (stats[`revenue:${range}`] || 0) + 1;
+    }
+  }
+  return stats;
+}
+
+function dealStats(records: HSRecord[]): Record<string, number> {
+  const stats: Record<string, number> = {};
+  let totalValue = 0; let valueCount = 0;
+  for (const r of records) {
+    const stage = r.properties.dealstage?.trim();
+    const amt = parseFloat(r.properties.amount || "0");
+    if (stage) stats[`stage:${stage}`] = (stats[`stage:${stage}`] || 0) + 1;
+    if (!isNaN(amt) && amt > 0) { totalValue += amt; valueCount++; }
+  }
+  if (valueCount > 0) {
+    stats[`__totalValue`] = (stats[`__totalValue`] || 0) + totalValue;
+    stats[`__valueCount`] = (stats[`__valueCount`] || 0) + valueCount;
+  }
+  return stats;
+}
+
+// ─── Customer intelligence synthesizer ───────────────────────
+
+async function upsertCustomerIntelligence(
+  orgId: string,
+  contactState: ObjState,
+  companyState: ObjState,
+  dealState: ObjState
+) {
+  const cs = contactState.stats || {};
+  const cos = companyState.stats || {};
+  const ds = dealState.stats || {};
+
+  const lines: string[] = [];
+  lines.push(`HubSpot CRM Customer Intelligence — based on ${contactState.totalCount} contacts, ${companyState.totalCount} companies, ${dealState.totalCount} deals.`);
+  lines.push("");
+
+  // Who your customers are
+  const topTitles = top(Object.fromEntries(Object.entries(cs).filter(([k]) => k.startsWith("title:")).map(([k, v]) => [k.slice(6), v])), 10);
+  if (topTitles.length) {
+    lines.push("TOP JOB TITLES:");
+    topTitles.forEach(([t, n]) => lines.push(`  • ${t} (${n})`));
+  }
+
+  const seniorityMap = Object.fromEntries(Object.entries(cs).filter(([k]) => k.startsWith("seniority:")).map(([k, v]) => [k.slice(10), v]));
+  if (Object.keys(seniorityMap).length) {
+    lines.push("SENIORITY BREAKDOWN:");
+    top(seniorityMap, 8).forEach(([s, n]) => lines.push(`  • ${s}: ${n}`));
+  }
+
+  const stageMap = Object.fromEntries(Object.entries(cs).filter(([k]) => k.startsWith("stage:")).map(([k, v]) => [k.slice(6), v]));
+  if (Object.keys(stageMap).length) {
+    lines.push("CONTACT LIFECYCLE STAGES:");
+    top(stageMap, 6).forEach(([s, n]) => lines.push(`  • ${s}: ${n}`));
+  }
+
+  const topCompanies = top(Object.fromEntries(Object.entries(cs).filter(([k]) => k.startsWith("company:")).map(([k, v]) => [k.slice(8), v])), 15);
+  if (topCompanies.length) {
+    lines.push("TOP CUSTOMER COMPANIES:");
+    topCompanies.forEach(([c, n]) => lines.push(`  • ${c}${n > 1 ? ` (${n} contacts)` : ""}`));
+  }
+
+  // Company profile
+  const indMap = Object.fromEntries(Object.entries(cos).filter(([k]) => k.startsWith("industry:")).map(([k, v]) => [k.slice(9), v]));
+  if (Object.keys(indMap).length) {
+    lines.push("CUSTOMER INDUSTRIES:");
+    top(indMap, 8).forEach(([i, n]) => lines.push(`  • ${i}: ${n} companies`));
+  }
+
+  const countryMap = Object.fromEntries(Object.entries(cos).filter(([k]) => k.startsWith("country:")).map(([k, v]) => [k.slice(8), v]));
+  if (Object.keys(countryMap).length) {
+    lines.push("GEOGRAPHIC DISTRIBUTION:");
+    top(countryMap, 6).forEach(([c, n]) => lines.push(`  • ${c}: ${n} companies`));
+  }
+
+  const sizeMap = Object.fromEntries(Object.entries(cos).filter(([k]) => k.startsWith("size:")).map(([k, v]) => [k.slice(5), v]));
+  if (Object.keys(sizeMap).length) {
+    lines.push("COMPANY SIZE DISTRIBUTION:");
+    top(sizeMap, 6).forEach(([s, n]) => lines.push(`  • ${s} employees: ${n} companies`));
+  }
+
+  const revMap = Object.fromEntries(Object.entries(cos).filter(([k]) => k.startsWith("revenue:")).map(([k, v]) => [k.slice(8), v]));
+  if (Object.keys(revMap).length) {
+    lines.push("REVENUE RANGES:");
+    top(revMap, 5).forEach(([r, n]) => lines.push(`  • ${r}: ${n} companies`));
+  }
+
+  // Deal profile
+  const dealStageMap = Object.fromEntries(Object.entries(ds).filter(([k]) => k.startsWith("stage:")).map(([k, v]) => [k.slice(6), v]));
+  if (Object.keys(dealStageMap).length) {
+    lines.push("DEAL PIPELINE STAGES:");
+    top(dealStageMap, 8).forEach(([s, n]) => lines.push(`  • ${s}: ${n} deals`));
+  }
+
+  const totalValue = ds["__totalValue"] || 0;
+  const valueCount = ds["__valueCount"] || 0;
+  if (valueCount > 0) {
+    const avg = Math.round(totalValue / valueCount);
+    lines.push(`DEAL VALUES: Average $${avg.toLocaleString()} | Total pipeline $${Math.round(totalValue).toLocaleString()} across ${valueCount} valued deals`);
+  }
+
+  const content = lines.join("\n");
+
+  await db.knowledgeEntry.deleteMany({ where: { organizationId: orgId, source: "hubspot", title: "HubSpot Customer Intelligence" } });
+  await db.knowledgeEntry.create({
+    data: {
+      organizationId: orgId,
+      category: "personas",
+      source: "hubspot",
+      title: "HubSpot Customer Intelligence",
+      content,
+      isAIGenerated: false,
+      isApproved: true,
+    },
+  });
 }
 
 // ─── Route handler ────────────────────────────────────────────
@@ -297,17 +483,24 @@ export async function POST() {
         deals: migrateState(prevMeta.deals),
       };
 
-      const [contacts, companies, deals] = await Promise.all([
+      const [contactResult, companyResult, dealResult] = await Promise.all([
         syncObject(orgId, integration.accessToken, "contacts",
           ["firstname", "lastname", "jobtitle", "company", "email", "lifecyclestage", "createdate"],
-          "personas", "Contact", contactLine, prev.contacts),
+          "personas", "Contact", contactLine, prev.contacts, contactStats),
         syncObject(orgId, integration.accessToken, "companies",
           ["name", "industry", "annualrevenue", "numberofemployees", "country", "city", "createdate"],
-          "markets", "Company", companyLine, prev.companies),
+          "markets", "Company", companyLine, prev.companies, companyStats),
         syncObject(orgId, integration.accessToken, "deals",
           ["dealname", "dealstage", "amount", "pipeline", "closedate", "hs_deal_stage_probability", "createdate"],
-          "proof_points", "Deal", dealLine, prev.deals),
+          "proof_points", "Deal", dealLine, prev.deals, dealStats),
       ]);
+
+      const contacts = contactResult.state;
+      const companies = companyResult.state;
+      const deals = dealResult.state;
+
+      // Build synthesised customer intelligence entry from cumulative stats
+      await upsertCustomerIntelligence(orgId, contacts, companies, deals);
 
       const newMeta: SyncMeta = { contacts, companies, deals };
 
