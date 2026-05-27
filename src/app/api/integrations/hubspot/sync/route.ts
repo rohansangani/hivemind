@@ -3,30 +3,39 @@ import { cookies } from "next/headers";
 import jwt from "jsonwebtoken";
 import { db } from "@/lib/db";
 
-const MAX_PER_OBJECT = 5000;
+const MAX_PER_SYNC = 5000;   // max records to fetch per object per sync
 const PAGE_SIZE = 100;
-const CHUNK_SIZE = 200; // records per KB entry
+const CHUNK_SIZE = 200;
+const INTER_PAGE_DELAY_MS = 200;
 
-// ─── HubSpot search helper ────────────────────────────────────
+// ─── Helpers ─────────────────────────────────────────────────
 
 type HSRecord = { properties: Record<string, string> };
 
-// Parse HubSpot date — can be ISO string or ms timestamp string
+// HubSpot returns createdate as ISO string or ms-timestamp string
 function parseHsDate(val: string | undefined): number | null {
   if (!val) return null;
-  // Try as ms timestamp first (e.g. "1705320600000")
   const asMs = Number(val);
   if (!isNaN(asMs) && asMs > 1_000_000_000_000) return asMs;
-  // Fall back to ISO string (e.g. "2024-01-15T10:30:00.000Z")
   const asDate = new Date(val).getTime();
   return isNaN(asDate) ? null : asDate;
 }
 
-const INTER_PAGE_DELAY_MS = 200; // stay well under HubSpot's 110 req/10s limit
+function fmtDate(ms: number) {
+  return new Date(ms).toISOString().split("T")[0];
+}
+
+function chunks<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
 
 async function sleep(ms: number) {
-  return new Promise(res => setTimeout(res, ms));
+  return new Promise(r => setTimeout(r, ms));
 }
+
+// ─── HubSpot search ───────────────────────────────────────────
 
 async function hsSearchPage(
   objectType: string,
@@ -40,17 +49,12 @@ async function hsSearchPage(
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-
     if (res.status === 429) {
-      const retryAfter = parseInt(res.headers.get("Retry-After") || "10", 10);
-      if (attempt < retries) {
-        await sleep(retryAfter * 1000);
-        continue;
-      }
-      throw new Error(`HubSpot ${objectType} rate limited after ${retries} retries`);
+      const wait = parseInt(res.headers.get("Retry-After") || "10", 10) * 1000;
+      if (attempt < retries) { await sleep(wait); continue; }
+      throw new Error(`Rate limited on ${objectType} after ${retries} retries`);
     }
-
-    if (!res.ok) throw new Error(`HubSpot ${objectType} search error ${res.status}: ${await res.text()}`);
+    if (!res.ok) throw new Error(`HubSpot ${objectType} error ${res.status}: ${await res.text()}`);
     const page = await res.json();
     return { results: page.results || [], after: page.paging?.next?.after };
   }
@@ -66,358 +70,184 @@ async function hsSearch(
 ): Promise<HSRecord[]> {
   const results: HSRecord[] = [];
   let after: string | undefined;
-
   while (results.length < limit) {
-    const remaining = Math.min(PAGE_SIZE, limit - results.length);
     const body: Record<string, unknown> = {
       filterGroups: filters.length > 0 ? [{ filters }] : [],
       properties,
       sorts: [{ propertyName: "createdate", direction: "DESCENDING" }],
-      limit: remaining,
+      limit: Math.min(PAGE_SIZE, limit - results.length),
     };
     if (after) body.after = after;
-
     const page = await hsSearchPage(objectType, body, token);
     results.push(...page.results);
     after = page.after;
     if (!after || page.results.length === 0) break;
-
     await sleep(INTER_PAGE_DELAY_MS);
   }
-
   return results;
 }
 
-// Fetch new records (since lastSyncAt) + extend history (before syncedUntil)
-// Combined up to MAX_PER_OBJECT, recency first
-async function fetchObjectRecords(
-  objectType: string,
-  properties: string[],
-  token: string,
-  lastSyncAt: Date | null,
-  syncedUntilMs: number | null
-): Promise<{ records: HSRecord[]; oldestMs: number | null }> {
-  let records: HSRecord[] = [];
+// ─── Per-object sync state ────────────────────────────────────
 
-  if (!lastSyncAt && !syncedUntilMs) {
-    // First ever sync — fetch most recent MAX_PER_OBJECT records
-    records = await hsSearch(objectType, properties, token, [], MAX_PER_OBJECT);
-  } else {
-    // Pass 1: new records added since last sync
-    if (lastSyncAt) {
-      const newRecords = await hsSearch(
-        objectType, properties, token,
-        [{ propertyName: "createdate", operator: "GTE", value: String(lastSyncAt.getTime()) }],
-        MAX_PER_OBJECT
-      );
-      records.push(...newRecords);
-    }
-
-    // Pass 2: extend history backward from syncedUntil (fill remaining quota)
-    const remaining = MAX_PER_OBJECT - records.length;
-    if (remaining > 0 && syncedUntilMs) {
-      const olderRecords = await hsSearch(
-        objectType, properties, token,
-        [{ propertyName: "createdate", operator: "LT", value: String(syncedUntilMs) }],
-        remaining
-      );
-      records.push(...olderRecords);
-    } else if (remaining > 0 && !syncedUntilMs) {
-      // No cursor yet but has lastSyncAt — fetch all
-      const allRecords = await hsSearch(objectType, properties, token, [], MAX_PER_OBJECT);
-      records = allRecords;
-    }
-  }
-
-  // Deduplicate by createdate+name (HubSpot can return same record in both passes)
-  const seen = new Set<string>();
-  const deduped: HSRecord[] = [];
-  for (const r of records) {
-    const key = r.properties.createdate + "|" + (r.properties.name || r.properties.firstname || r.properties.dealname || "");
-    if (!seen.has(key)) { seen.add(key); deduped.push(r); }
-  }
-
-  // Find oldest createdate in this batch
-  let oldestMs: number | null = null;
-  for (const r of deduped) {
-    const ts = parseHsDate(r.properties.createdate);
-    if (ts !== null && (oldestMs === null || ts < oldestMs)) oldestMs = ts;
-  }
-
-  return { records: deduped, oldestMs };
-}
-
-// Chunk an array into smaller arrays
-function chunks<T>(arr: T[], size: number): T[][] {
-  const result: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) result.push(arr.slice(i, i + size));
-  return result;
-}
-
-function fmtDate(ms: number) {
-  return new Date(ms).toISOString().split("T")[0];
-}
-
-// ─── Sync logic ───────────────────────────────────────────────
-
-interface ObjectSyncState {
-  count: number;
-  syncedFrom: string | null; // oldest date synced (furthest back)
-  syncedTo: string | null;   // newest date synced
+interface ObjState {
+  totalCount: number;
+  syncedFrom: string | null;  // oldest date ever synced
+  syncedTo: string | null;    // newest date ever synced
+  oldestMs: number | null;    // cursor — extend history beyond this
+  newestMs: number | null;    // cursor — fetch new records after this
+  nextBatch: number;          // next batch number for KB entries
   error?: string;
 }
 
-interface SyncSummary {
-  contacts: ObjectSyncState;
-  companies: ObjectSyncState;
-  deals: ObjectSyncState;
-  knowledgeEntriesCreated: number;
-  // cursor for next sync — oldest createdate per object
-  syncedUntil: { contacts: number | null; companies: number | null; deals: number | null };
+type SyncMeta = {
+  contacts: ObjState;
+  companies: ObjState;
+  deals: ObjState;
+};
+
+function emptyState(): ObjState {
+  return { totalCount: 0, syncedFrom: null, syncedTo: null, oldestMs: null, newestMs: null, nextBatch: 1 };
 }
 
-async function syncHubSpotData(
+// ─── Sync one object type ─────────────────────────────────────
+
+async function syncObject(
   orgId: string,
   token: string,
-  lastSyncAt: Date | null,
-  prevSyncedUntil: { contacts: number | null; companies: number | null; deals: number | null }
-): Promise<SyncSummary> {
-  let knowledgeEntriesCreated = 0;
-  const newSyncedUntil = { contacts: prevSyncedUntil.contacts, companies: prevSyncedUntil.companies, deals: prevSyncedUntil.deals };
+  objectType: string,
+  properties: string[],
+  kbCategory: string,
+  labelSingular: string,
+  buildLine: (r: HSRecord) => string,
+  prev: ObjState
+): Promise<ObjState> {
+  const next: ObjState = { ...prev };
 
-  const contactState: ObjectSyncState = { count: 0, syncedFrom: null, syncedTo: null };
-  const companyState: ObjectSyncState = { count: 0, syncedFrom: null, syncedTo: null };
-  const dealState: ObjectSyncState = { count: 0, syncedFrom: null, syncedTo: null };
-
-  // Remove old HubSpot KB entries and replace with fresh full set
-  await db.knowledgeEntry.deleteMany({ where: { organizationId: orgId, source: "hubspot" } });
-
-  // ── 1. Contacts ────────────────────────────────────────────
   try {
-    const { records: contacts, oldestMs } = await fetchObjectRecords(
-      "contacts",
-      ["firstname", "lastname", "jobtitle", "company", "email", "lifecyclestage", "createdate"],
-      token,
-      lastSyncAt,
-      prevSyncedUntil.contacts
-    );
+    let records: HSRecord[] = [];
+    const isFirstSync = prev.totalCount === 0 || prev.oldestMs === null || prev.newestMs === null;
 
-    contactState.count = contacts.length;
-    if (oldestMs) {
-      newSyncedUntil.contacts = Math.min(prevSyncedUntil.contacts ?? oldestMs, oldestMs);
-      contactState.syncedFrom = fmtDate(newSyncedUntil.contacts);
+    if (isFirstSync) {
+      // First sync: wipe any stale entries and fetch most recent MAX_PER_SYNC
+      await db.knowledgeEntry.deleteMany({ where: { organizationId: orgId, source: "hubspot", category: kbCategory } });
+      records = await hsSearch(objectType, properties, token, [], MAX_PER_SYNC);
+      next.nextBatch = 1;
+    } else {
+      // Subsequent sync: fetch NEW records (after newestMs) + OLDER records (before oldestMs)
+      const newRecords = await hsSearch(
+        objectType, properties, token,
+        [{ propertyName: "createdate", operator: "GT", value: String(prev.newestMs) }],
+        MAX_PER_SYNC
+      );
+      const remaining = MAX_PER_SYNC - newRecords.length;
+      const olderRecords = remaining > 0
+        ? await hsSearch(
+            objectType, properties, token,
+            [{ propertyName: "createdate", operator: "LT", value: String(prev.oldestMs) }],
+            remaining
+          )
+        : [];
+      records = [...newRecords, ...olderRecords];
     }
 
-    if (contacts.length > 0) {
-      // Find newest date
-      const newest = contacts.reduce((mx, r) => Math.max(mx, parseHsDate(r.properties.createdate) ?? 0), 0);
-      if (newest > 0) contactState.syncedTo = fmtDate(newest);
+    if (records.length === 0) return next;
 
-      // Aggregate summary
-      const titleCounts: Record<string, number> = {};
-      const lifecycleCounts: Record<string, number> = {};
-      for (const c of contacts) {
-        const t = c.properties.jobtitle?.trim(); if (t) titleCounts[t] = (titleCounts[t] || 0) + 1;
-        const s = c.properties.lifecyclestage?.trim(); if (s) lifecycleCounts[s] = (lifecycleCounts[s] || 0) + 1;
+    // Find oldest and newest in this batch
+    let batchOldestMs: number | null = null;
+    let batchNewestMs: number | null = null;
+    for (const r of records) {
+      const ts = parseHsDate(r.properties.createdate);
+      if (ts !== null) {
+        if (batchOldestMs === null || ts < batchOldestMs) batchOldestMs = ts;
+        if (batchNewestMs === null || ts > batchNewestMs) batchNewestMs = ts;
       }
-      const topTitles = Object.entries(titleCounts).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([t, n]) => `${t} (${n})`).join(", ");
-      const lifeSummary = Object.entries(lifecycleCounts).sort((a, b) => b[1] - a[1]).map(([s, n]) => `${s}: ${n}`).join(", ");
+    }
 
+    // Update cumulative cursors
+    if (batchOldestMs !== null) {
+      next.oldestMs = prev.oldestMs === null ? batchOldestMs : Math.min(prev.oldestMs, batchOldestMs);
+      next.syncedFrom = fmtDate(next.oldestMs);
+    }
+    if (batchNewestMs !== null) {
+      next.newestMs = prev.newestMs === null ? batchNewestMs : Math.max(prev.newestMs, batchNewestMs);
+      next.syncedTo = fmtDate(next.newestMs);
+    }
+    next.totalCount = prev.totalCount + records.length;
+
+    // Upsert summary KB entry
+    const summaryTitle = `HubSpot ${labelSingular} Summary`;
+    await db.knowledgeEntry.deleteMany({ where: { organizationId: orgId, source: "hubspot", title: summaryTitle } });
+    await db.knowledgeEntry.create({
+      data: {
+        organizationId: orgId, category: kbCategory, source: "hubspot",
+        title: summaryTitle,
+        content: buildSummary(objectType, next),
+        isAIGenerated: false, isApproved: true,
+      },
+    });
+
+    // Append new batch detail entries
+    let batchNum = next.nextBatch;
+    for (const batch of chunks(records, CHUNK_SIZE)) {
       await db.knowledgeEntry.create({
         data: {
-          organizationId: orgId, category: "personas", source: "hubspot",
-          title: "HubSpot Contact Summary",
-          content: [
-            `Total HubSpot contacts synced: ${contacts.length}${contactState.syncedFrom ? ` (from ${contactState.syncedFrom} to ${contactState.syncedTo})` : ""}.`,
-            topTitles ? `Top job titles: ${topTitles}.` : "",
-            lifeSummary ? `Lifecycle stages: ${lifeSummary}.` : "",
-          ].filter(Boolean).join(" "),
+          organizationId: orgId, category: kbCategory, source: "hubspot",
+          title: `HubSpot ${labelSingular} List (batch ${batchNum})`,
+          content: `HubSpot ${objectType} batch ${batchNum} (${batch.length} records):\n${batch.map(buildLine).join("\n")}`,
           isAIGenerated: false, isApproved: true,
         },
       });
-      knowledgeEntriesCreated++;
-
-      // Chunked detail entries
-      for (const [i, batch] of chunks(contacts, CHUNK_SIZE).entries()) {
-        const lines = batch.map(c => {
-          const name = [c.properties.firstname, c.properties.lastname].filter(Boolean).join(" ");
-          const parts = [name, c.properties.jobtitle?.trim(), c.properties.company?.trim()].filter(Boolean).join(" — ");
-          const stage = c.properties.lifecyclestage?.trim();
-          const date = c.properties.createdate ? fmtDate(parseHsDate(c.properties.createdate) ?? 0) : "";
-          return `• ${parts || "(unnamed)"}${stage ? ` [${stage}]` : ""}${date ? ` (added ${date})` : ""}`;
-        });
-        await db.knowledgeEntry.create({
-          data: {
-            organizationId: orgId, category: "personas", source: "hubspot",
-            title: `HubSpot Contact List (batch ${i + 1})`,
-            content: `HubSpot contacts ${i * CHUNK_SIZE + 1}–${i * CHUNK_SIZE + batch.length} of ${contacts.length}:\n${lines.join("\n")}`,
-            isAIGenerated: false, isApproved: true,
-          },
-        });
-        knowledgeEntriesCreated++;
-      }
+      batchNum++;
     }
+    next.nextBatch = batchNum;
+
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error("HubSpot contacts sync error:", msg);
-    contactState.error = msg;
+    next.error = err instanceof Error ? err.message : String(err);
+    console.error(`HubSpot ${objectType} sync error:`, next.error);
   }
 
-  // ── 2. Companies ───────────────────────────────────────────
-  try {
-    const { records: companies, oldestMs } = await fetchObjectRecords(
-      "companies",
-      ["name", "industry", "annualrevenue", "numberofemployees", "country", "city", "createdate"],
-      token,
-      lastSyncAt,
-      prevSyncedUntil.companies
-    );
+  return next;
+}
 
-    companyState.count = companies.length;
-    if (oldestMs) {
-      newSyncedUntil.companies = Math.min(prevSyncedUntil.companies ?? oldestMs, oldestMs);
-      companyState.syncedFrom = fmtDate(newSyncedUntil.companies);
-    }
+function buildSummary(objectType: string, state: ObjState): string {
+  const range = state.syncedFrom && state.syncedTo ? ` (${state.syncedFrom} → ${state.syncedTo})` : "";
+  return `Total HubSpot ${objectType} synced: ${state.totalCount}${range}.`;
+}
 
-    if (companies.length > 0) {
-      const newest = companies.reduce((mx, r) => Math.max(mx, parseHsDate(r.properties.createdate) ?? 0), 0);
-      if (newest > 0) companyState.syncedTo = fmtDate(newest);
+// ─── Build record lines ───────────────────────────────────────
 
-      const industryCounts: Record<string, number> = {};
-      const countryCounts: Record<string, number> = {};
-      for (const co of companies) {
-        const ind = co.properties.industry?.trim(); if (ind) industryCounts[ind] = (industryCounts[ind] || 0) + 1;
-        const ctry = co.properties.country?.trim(); if (ctry) countryCounts[ctry] = (countryCounts[ctry] || 0) + 1;
-      }
-      const topInd = Object.entries(industryCounts).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([i, n]) => `${i} (${n})`).join(", ");
-      const topCtry = Object.entries(countryCounts).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([c, n]) => `${c} (${n})`).join(", ");
+function contactLine(r: HSRecord): string {
+  const name = [r.properties.firstname, r.properties.lastname].filter(Boolean).join(" ");
+  const parts = [name, r.properties.jobtitle?.trim(), r.properties.company?.trim()].filter(Boolean).join(" — ");
+  const stage = r.properties.lifecyclestage?.trim();
+  const ts = parseHsDate(r.properties.createdate);
+  return `• ${parts || "(unnamed)"}${stage ? ` [${stage}]` : ""}${ts ? ` (added ${fmtDate(ts)})` : ""}`;
+}
 
-      await db.knowledgeEntry.create({
-        data: {
-          organizationId: orgId, category: "markets", source: "hubspot",
-          title: "HubSpot Company Summary",
-          content: [
-            `Total HubSpot companies synced: ${companies.length}${companyState.syncedFrom ? ` (from ${companyState.syncedFrom} to ${companyState.syncedTo})` : ""}.`,
-            topInd ? `Top industries: ${topInd}.` : "",
-            topCtry ? `Top countries: ${topCtry}.` : "",
-          ].filter(Boolean).join(" "),
-          isAIGenerated: false, isApproved: true,
-        },
-      });
-      knowledgeEntriesCreated++;
+function companyLine(r: HSRecord): string {
+  const name = r.properties.name?.trim();
+  const details = [
+    r.properties.industry?.trim(),
+    [r.properties.city?.trim(), r.properties.country?.trim()].filter(Boolean).join(", "),
+    r.properties.numberofemployees ? `${r.properties.numberofemployees} employees` : "",
+    r.properties.annualrevenue ? `$${Number(r.properties.annualrevenue).toLocaleString()} revenue` : "",
+  ].filter(Boolean);
+  const ts = parseHsDate(r.properties.createdate);
+  return `• ${name || "(unnamed)"}${details.length ? ` — ${details.join(" | ")}` : ""}${ts ? ` (added ${fmtDate(ts)})` : ""}`;
+}
 
-      for (const [i, batch] of chunks(companies, CHUNK_SIZE).entries()) {
-        const lines = batch.map(co => {
-          const name = co.properties.name?.trim();
-          const details = [
-            co.properties.industry?.trim(),
-            [co.properties.city?.trim(), co.properties.country?.trim()].filter(Boolean).join(", "),
-            co.properties.numberofemployees ? `${co.properties.numberofemployees} employees` : "",
-            co.properties.annualrevenue ? `$${Number(co.properties.annualrevenue).toLocaleString()} revenue` : "",
-          ].filter(Boolean);
-          const date = co.properties.createdate ? fmtDate(parseHsDate(co.properties.createdate) ?? 0) : "";
-          return `• ${name || "(unnamed)"}${details.length ? ` — ${details.join(" | ")}` : ""}${date ? ` (added ${date})` : ""}`;
-        });
-        await db.knowledgeEntry.create({
-          data: {
-            organizationId: orgId, category: "markets", source: "hubspot",
-            title: `HubSpot Company List (batch ${i + 1})`,
-            content: `HubSpot companies ${i * CHUNK_SIZE + 1}–${i * CHUNK_SIZE + batch.length} of ${companies.length}:\n${lines.join("\n")}`,
-            isAIGenerated: false, isApproved: true,
-          },
-        });
-        knowledgeEntriesCreated++;
-      }
-    }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error("HubSpot companies sync error:", msg);
-    companyState.error = msg;
-  }
-
-  // ── 3. Deals ───────────────────────────────────────────────
-  try {
-    const { records: deals, oldestMs } = await fetchObjectRecords(
-      "deals",
-      ["dealname", "dealstage", "amount", "pipeline", "closedate", "hs_deal_stage_probability", "createdate"],
-      token,
-      lastSyncAt,
-      prevSyncedUntil.deals
-    );
-
-    dealState.count = deals.length;
-    if (oldestMs) {
-      newSyncedUntil.deals = Math.min(prevSyncedUntil.deals ?? oldestMs, oldestMs);
-      dealState.syncedFrom = fmtDate(newSyncedUntil.deals);
-    }
-
-    if (deals.length > 0) {
-      const newest = deals.reduce((mx, r) => Math.max(mx, parseHsDate(r.properties.createdate) ?? 0), 0);
-      if (newest > 0) dealState.syncedTo = fmtDate(newest);
-
-      const stageCounts: Record<string, number> = {};
-      let totalValue = 0; let valueCount = 0;
-      for (const d of deals) {
-        const st = d.properties.dealstage?.trim(); if (st) stageCounts[st] = (stageCounts[st] || 0) + 1;
-        const amt = parseFloat(d.properties.amount || "0");
-        if (!isNaN(amt) && amt > 0) { totalValue += amt; valueCount++; }
-      }
-      const topStages = Object.entries(stageCounts).sort((a, b) => b[1] - a[1]).map(([s, n]) => `${s}: ${n}`).join(", ");
-      const avgValue = valueCount > 0 ? Math.round(totalValue / valueCount) : 0;
-
-      await db.knowledgeEntry.create({
-        data: {
-          organizationId: orgId, category: "proof_points", source: "hubspot",
-          title: "HubSpot Pipeline Summary",
-          content: [
-            `Total HubSpot deals synced: ${deals.length}${dealState.syncedFrom ? ` (from ${dealState.syncedFrom} to ${dealState.syncedTo})` : ""}.`,
-            topStages ? `Deal stages: ${topStages}.` : "",
-            avgValue > 0 ? `Average deal value: $${avgValue.toLocaleString()}.` : "",
-            totalValue > 0 ? `Total pipeline value: $${Math.round(totalValue).toLocaleString()}.` : "",
-          ].filter(Boolean).join(" "),
-          isAIGenerated: false, isApproved: true,
-        },
-      });
-      knowledgeEntriesCreated++;
-
-      for (const [i, batch] of chunks(deals, CHUNK_SIZE).entries()) {
-        const lines = batch.map(d => {
-          const name = d.properties.dealname?.trim();
-          const amt = parseFloat(d.properties.amount || "0");
-          const prob = d.properties.hs_deal_stage_probability;
-          const details = [
-            d.properties.dealstage?.trim() ? `stage: ${d.properties.dealstage.trim()}` : "",
-            !isNaN(amt) && amt > 0 ? `$${Math.round(amt).toLocaleString()}` : "",
-            d.properties.closedate ? `close: ${d.properties.closedate.split("T")[0]}` : "",
-            prob ? `${Math.round(parseFloat(prob) * 100)}% probability` : "",
-          ].filter(Boolean);
-          const date = d.properties.createdate ? fmtDate(parseHsDate(d.properties.createdate) ?? 0) : "";
-          return `• ${name || "(unnamed)"}${details.length ? ` — ${details.join(" | ")}` : ""}${date ? ` (added ${date})` : ""}`;
-        });
-        await db.knowledgeEntry.create({
-          data: {
-            organizationId: orgId, category: "proof_points", source: "hubspot",
-            title: `HubSpot Deal List (batch ${i + 1})`,
-            content: `HubSpot deals ${i * CHUNK_SIZE + 1}–${i * CHUNK_SIZE + batch.length} of ${deals.length}:\n${lines.join("\n")}`,
-            isAIGenerated: false, isApproved: true,
-          },
-        });
-        knowledgeEntriesCreated++;
-      }
-    }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error("HubSpot deals sync error:", msg);
-    dealState.error = msg;
-  }
-
-  return {
-    contacts: contactState,
-    companies: companyState,
-    deals: dealState,
-    knowledgeEntriesCreated,
-    syncedUntil: newSyncedUntil,
-  };
+function dealLine(r: HSRecord): string {
+  const name = r.properties.dealname?.trim();
+  const amt = parseFloat(r.properties.amount || "0");
+  const prob = r.properties.hs_deal_stage_probability;
+  const details = [
+    r.properties.dealstage?.trim() ? `stage: ${r.properties.dealstage.trim()}` : "",
+    !isNaN(amt) && amt > 0 ? `$${Math.round(amt).toLocaleString()}` : "",
+    r.properties.closedate ? `close: ${r.properties.closedate.split("T")[0]}` : "",
+    prob ? `${Math.round(parseFloat(prob) * 100)}% probability` : "",
+  ].filter(Boolean);
+  const ts = parseHsDate(r.properties.createdate);
+  return `• ${name || "(unnamed)"}${details.length ? ` — ${details.join(" | ")}` : ""}${ts ? ` (added ${fmtDate(ts)})` : ""}`;
 }
 
 // ─── Route handler ────────────────────────────────────────────
@@ -444,18 +274,26 @@ export async function POST() {
     });
 
     try {
-      // Read previous sync cursor from metadata
-      const prevMeta = (integration.metadata || {}) as Record<string, unknown>;
-      const prevSyncedUntil = (prevMeta.syncedUntil as { contacts: number | null; companies: number | null; deals: number | null }) || {
-        contacts: null, companies: null, deals: null,
+      const prevMeta = (integration.metadata || {}) as Partial<SyncMeta>;
+      const prev = {
+        contacts: prevMeta.contacts ?? emptyState(),
+        companies: prevMeta.companies ?? emptyState(),
+        deals: prevMeta.deals ?? emptyState(),
       };
 
-      const syncSummary = await syncHubSpotData(
-        orgId,
-        integration.accessToken,
-        integration.lastSyncAt,
-        prevSyncedUntil
-      );
+      const [contacts, companies, deals] = await Promise.all([
+        syncObject(orgId, integration.accessToken, "contacts",
+          ["firstname", "lastname", "jobtitle", "company", "email", "lifecyclestage", "createdate"],
+          "personas", "Contact", contactLine, prev.contacts),
+        syncObject(orgId, integration.accessToken, "companies",
+          ["name", "industry", "annualrevenue", "numberofemployees", "country", "city", "createdate"],
+          "markets", "Company", companyLine, prev.companies),
+        syncObject(orgId, integration.accessToken, "deals",
+          ["dealname", "dealstage", "amount", "pipeline", "closedate", "hs_deal_stage_probability", "createdate"],
+          "proof_points", "Deal", dealLine, prev.deals),
+      ]);
+
+      const newMeta: SyncMeta = { contacts, companies, deals };
 
       await db.integration.update({
         where: { organizationId_type: { organizationId: orgId, type: "hubspot" } },
@@ -463,29 +301,27 @@ export async function POST() {
           syncStatus: "idle",
           lastSyncAt: new Date(),
           lastSyncError: null,
-          metadata: JSON.parse(JSON.stringify(syncSummary)),
+          metadata: JSON.parse(JSON.stringify(newMeta)),
         },
       });
 
-      const { contacts, companies, deals } = syncSummary;
       await db.learningLog.create({
         data: {
           organizationId: orgId,
           sourceType: "integration",
           title: "HubSpot CRM Sync",
           summary: [
-            `Contacts: ${contacts.count}${contacts.syncedFrom ? ` (${contacts.syncedFrom} → ${contacts.syncedTo})` : ""}.`,
-            `Companies: ${companies.count}${companies.syncedFrom ? ` (${companies.syncedFrom} → ${companies.syncedTo})` : ""}.`,
-            `Deals: ${deals.count}${deals.syncedFrom ? ` (${deals.syncedFrom} → ${deals.syncedTo})` : ""}.`,
-            `${syncSummary.knowledgeEntriesCreated} knowledge entries created.`,
+            `Contacts: ${contacts.totalCount} total${contacts.syncedFrom ? ` (${contacts.syncedFrom} → ${contacts.syncedTo})` : ""}.`,
+            `Companies: ${companies.totalCount} total${companies.syncedFrom ? ` (${companies.syncedFrom} → ${companies.syncedTo})` : ""}.`,
+            `Deals: ${deals.totalCount} total${deals.syncedFrom ? ` (${deals.syncedFrom} → ${deals.syncedTo})` : ""}.`,
           ].join(" "),
-          takeaway: "CRM intelligence refreshed — contacts, companies, and deals updated in knowledge base.",
+          takeaway: "CRM data synced — cumulative contact, company, and deal records updated in knowledge base.",
           kbCategories: ["personas", "markets", "proof_points"],
           tags: ["hubspot", "crm", "sync"],
         },
       });
 
-      return NextResponse.json({ success: true, summary: syncSummary });
+      return NextResponse.json({ success: true, summary: { contacts, companies, deals } });
     } catch (syncErr) {
       const errorMsg = syncErr instanceof Error ? syncErr.message : "Sync failed";
       await db.integration.update({

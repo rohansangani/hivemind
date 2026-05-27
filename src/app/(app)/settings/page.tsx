@@ -131,7 +131,7 @@ export default function SettingsPage() {
       const data = await res.json();
       if (data.success) {
         const s = data.summary;
-        setHsMessage(`Sync complete — ${s.contacts?.count ?? 0} contacts, ${s.companies?.count ?? 0} companies, ${s.deals?.count ?? 0} deals imported.`);
+        setHsMessage(`Sync complete — ${s.contacts?.totalCount ?? 0} contacts, ${s.companies?.totalCount ?? 0} companies, ${s.deals?.totalCount ?? 0} deals total.`);
         setHsConnected(true);
         // Refresh status
         const statusRes = await fetch("/api/integrations/hubspot/status");
@@ -1235,7 +1235,7 @@ export default function SettingsPage() {
                       </div>
                     )}
                     {hsIntegration.metadata && Object.keys(hsIntegration.metadata).length > 0 && (() => {
-                      const meta = hsIntegration.metadata! as Record<string, { count?: number; syncedFrom?: string; syncedTo?: string }>;
+                      const meta = hsIntegration.metadata! as Record<string, { totalCount?: number; syncedFrom?: string; syncedTo?: string; error?: string }>;
                       return (
                         <div className="space-y-2 pt-1">
                           {[
@@ -1244,7 +1244,7 @@ export default function SettingsPage() {
                             { label: "Deals", key: "deals", icon: "💼" },
                           ].map(({ label, key, icon }) => {
                             const obj = meta[key];
-                            const count = obj?.count ?? 0;
+                            const count = obj?.totalCount ?? 0;
                             const from = obj?.syncedFrom;
                             const to = obj?.syncedTo;
                             const err = (obj as { error?: string })?.error;
