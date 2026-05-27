@@ -131,7 +131,7 @@ export default function SettingsPage() {
       const data = await res.json();
       if (data.success) {
         const s = data.summary;
-        setHsMessage(`Sync complete — ${s.contacts} contacts, ${s.companies} companies, ${s.deals} deals imported.`);
+        setHsMessage(`Sync complete — ${s.contacts?.count ?? 0} contacts, ${s.companies?.count ?? 0} companies, ${s.deals?.count ?? 0} deals imported.`);
         setHsConnected(true);
         // Refresh status
         const statusRes = await fetch("/api/integrations/hubspot/status");

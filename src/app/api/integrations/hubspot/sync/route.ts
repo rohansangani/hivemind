@@ -22,6 +22,41 @@ function parseHsDate(val: string | undefined): number | null {
   return isNaN(asDate) ? null : asDate;
 }
 
+const INTER_PAGE_DELAY_MS = 200; // stay well under HubSpot's 110 req/10s limit
+
+async function sleep(ms: number) {
+  return new Promise(res => setTimeout(res, ms));
+}
+
+async function hsSearchPage(
+  objectType: string,
+  body: Record<string, unknown>,
+  token: string,
+  retries = 3
+): Promise<{ results: HSRecord[]; after?: string }> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const res = await fetch(`https://api.hubapi.com/crm/v3/objects/${objectType}/search`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (res.status === 429) {
+      const retryAfter = parseInt(res.headers.get("Retry-After") || "10", 10);
+      if (attempt < retries) {
+        await sleep(retryAfter * 1000);
+        continue;
+      }
+      throw new Error(`HubSpot ${objectType} rate limited after ${retries} retries`);
+    }
+
+    if (!res.ok) throw new Error(`HubSpot ${objectType} search error ${res.status}: ${await res.text()}`);
+    const page = await res.json();
+    return { results: page.results || [], after: page.paging?.next?.after };
+  }
+  return { results: [] };
+}
+
 async function hsSearch(
   objectType: string,
   properties: string[],
@@ -34,7 +69,6 @@ async function hsSearch(
 
   while (results.length < limit) {
     const remaining = Math.min(PAGE_SIZE, limit - results.length);
-    // Use filterGroups format — HubSpot requires this for the search endpoint
     const body: Record<string, unknown> = {
       filterGroups: filters.length > 0 ? [{ filters }] : [],
       properties,
@@ -43,16 +77,12 @@ async function hsSearch(
     };
     if (after) body.after = after;
 
-    const res = await fetch(`https://api.hubapi.com/crm/v3/objects/${objectType}/search`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) throw new Error(`HubSpot ${objectType} search error ${res.status}: ${await res.text()}`);
-    const page = await res.json();
-    if (Array.isArray(page.results)) results.push(...page.results);
-    after = page.paging?.next?.after;
-    if (!after || page.results?.length === 0) break;
+    const page = await hsSearchPage(objectType, body, token);
+    results.push(...page.results);
+    after = page.after;
+    if (!after || page.results.length === 0) break;
+
+    await sleep(INTER_PAGE_DELAY_MS);
   }
 
   return results;
