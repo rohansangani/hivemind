@@ -1247,8 +1247,9 @@ export default function SettingsPage() {
                             const count = obj?.count ?? 0;
                             const from = obj?.syncedFrom;
                             const to = obj?.syncedTo;
+                            const err = (obj as { error?: string })?.error;
                             return (
-                              <div key={key} className="flex items-center justify-between rounded-lg bg-[var(--hm-bg-secondary)] px-3 py-2">
+                              <div key={key} className={`flex items-center justify-between rounded-lg px-3 py-2 ${err ? "bg-red-50 border border-red-200" : "bg-[var(--hm-bg-secondary)]"}`}>
                                 <div className="flex items-center gap-2">
                                   <span className="text-[13px]">{icon}</span>
                                   <div>
@@ -1258,9 +1259,12 @@ export default function SettingsPage() {
                                         {from} → {to}
                                       </p>
                                     )}
+                                    {err && (
+                                      <p className="text-[10px] text-red-500 mt-0.5 max-w-[280px] truncate" title={err}>{err}</p>
+                                    )}
                                   </div>
                                 </div>
-                                <span className="text-[11px] font-semibold text-[#4361ee]">{count > 0 ? "✓" : "—"}</span>
+                                <span className={`text-[11px] font-semibold ${err ? "text-red-500" : "text-[#4361ee]"}`}>{err ? "✗" : count > 0 ? "✓" : "—"}</span>
                               </div>
                             );
                           })}

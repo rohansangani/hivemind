@@ -11,6 +11,17 @@ const CHUNK_SIZE = 200; // records per KB entry
 
 type HSRecord = { properties: Record<string, string> };
 
+// Parse HubSpot date — can be ISO string or ms timestamp string
+function parseHsDate(val: string | undefined): number | null {
+  if (!val) return null;
+  // Try as ms timestamp first (e.g. "1705320600000")
+  const asMs = Number(val);
+  if (!isNaN(asMs) && asMs > 1_000_000_000_000) return asMs;
+  // Fall back to ISO string (e.g. "2024-01-15T10:30:00.000Z")
+  const asDate = new Date(val).getTime();
+  return isNaN(asDate) ? null : asDate;
+}
+
 async function hsSearch(
   objectType: string,
   properties: string[],
@@ -23,8 +34,9 @@ async function hsSearch(
 
   while (results.length < limit) {
     const remaining = Math.min(PAGE_SIZE, limit - results.length);
+    // Use filterGroups format — HubSpot requires this for the search endpoint
     const body: Record<string, unknown> = {
-      filters,
+      filterGroups: filters.length > 0 ? [{ filters }] : [],
       properties,
       sorts: [{ propertyName: "createdate", direction: "DESCENDING" }],
       limit: remaining,
@@ -36,7 +48,7 @@ async function hsSearch(
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    if (!res.ok) throw new Error(`HubSpot API error ${res.status}: ${await res.text()}`);
+    if (!res.ok) throw new Error(`HubSpot ${objectType} search error ${res.status}: ${await res.text()}`);
     const page = await res.json();
     if (Array.isArray(page.results)) results.push(...page.results);
     after = page.paging?.next?.after;
@@ -98,8 +110,8 @@ async function fetchObjectRecords(
   // Find oldest createdate in this batch
   let oldestMs: number | null = null;
   for (const r of deduped) {
-    const ts = parseInt(r.properties.createdate || "0", 10);
-    if (ts > 0 && (oldestMs === null || ts < oldestMs)) oldestMs = ts;
+    const ts = parseHsDate(r.properties.createdate);
+    if (ts !== null && (oldestMs === null || ts < oldestMs)) oldestMs = ts;
   }
 
   return { records: deduped, oldestMs };
@@ -122,6 +134,7 @@ interface ObjectSyncState {
   count: number;
   syncedFrom: string | null; // oldest date synced (furthest back)
   syncedTo: string | null;   // newest date synced
+  error?: string;
 }
 
 interface SyncSummary {
@@ -167,7 +180,7 @@ async function syncHubSpotData(
 
     if (contacts.length > 0) {
       // Find newest date
-      const newest = contacts.reduce((mx, r) => Math.max(mx, parseInt(r.properties.createdate || "0", 10)), 0);
+      const newest = contacts.reduce((mx, r) => Math.max(mx, parseHsDate(r.properties.createdate) ?? 0), 0);
       if (newest > 0) contactState.syncedTo = fmtDate(newest);
 
       // Aggregate summary
@@ -200,7 +213,7 @@ async function syncHubSpotData(
           const name = [c.properties.firstname, c.properties.lastname].filter(Boolean).join(" ");
           const parts = [name, c.properties.jobtitle?.trim(), c.properties.company?.trim()].filter(Boolean).join(" — ");
           const stage = c.properties.lifecyclestage?.trim();
-          const date = c.properties.createdate ? fmtDate(parseInt(c.properties.createdate)) : "";
+          const date = c.properties.createdate ? fmtDate(parseHsDate(c.properties.createdate) ?? 0) : "";
           return `• ${parts || "(unnamed)"}${stage ? ` [${stage}]` : ""}${date ? ` (added ${date})` : ""}`;
         });
         await db.knowledgeEntry.create({
@@ -214,7 +227,11 @@ async function syncHubSpotData(
         knowledgeEntriesCreated++;
       }
     }
-  } catch (err) { console.warn("HubSpot contacts sync skipped:", err); }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("HubSpot contacts sync error:", msg);
+    contactState.error = msg;
+  }
 
   // ── 2. Companies ───────────────────────────────────────────
   try {
@@ -233,7 +250,7 @@ async function syncHubSpotData(
     }
 
     if (companies.length > 0) {
-      const newest = companies.reduce((mx, r) => Math.max(mx, parseInt(r.properties.createdate || "0", 10)), 0);
+      const newest = companies.reduce((mx, r) => Math.max(mx, parseHsDate(r.properties.createdate) ?? 0), 0);
       if (newest > 0) companyState.syncedTo = fmtDate(newest);
 
       const industryCounts: Record<string, number> = {};
@@ -268,7 +285,7 @@ async function syncHubSpotData(
             co.properties.numberofemployees ? `${co.properties.numberofemployees} employees` : "",
             co.properties.annualrevenue ? `$${Number(co.properties.annualrevenue).toLocaleString()} revenue` : "",
           ].filter(Boolean);
-          const date = co.properties.createdate ? fmtDate(parseInt(co.properties.createdate)) : "";
+          const date = co.properties.createdate ? fmtDate(parseHsDate(co.properties.createdate) ?? 0) : "";
           return `• ${name || "(unnamed)"}${details.length ? ` — ${details.join(" | ")}` : ""}${date ? ` (added ${date})` : ""}`;
         });
         await db.knowledgeEntry.create({
@@ -282,7 +299,11 @@ async function syncHubSpotData(
         knowledgeEntriesCreated++;
       }
     }
-  } catch (err) { console.warn("HubSpot companies sync skipped:", err); }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("HubSpot companies sync error:", msg);
+    companyState.error = msg;
+  }
 
   // ── 3. Deals ───────────────────────────────────────────────
   try {
@@ -301,7 +322,7 @@ async function syncHubSpotData(
     }
 
     if (deals.length > 0) {
-      const newest = deals.reduce((mx, r) => Math.max(mx, parseInt(r.properties.createdate || "0", 10)), 0);
+      const newest = deals.reduce((mx, r) => Math.max(mx, parseHsDate(r.properties.createdate) ?? 0), 0);
       if (newest > 0) dealState.syncedTo = fmtDate(newest);
 
       const stageCounts: Record<string, number> = {};
@@ -340,7 +361,7 @@ async function syncHubSpotData(
             d.properties.closedate ? `close: ${d.properties.closedate.split("T")[0]}` : "",
             prob ? `${Math.round(parseFloat(prob) * 100)}% probability` : "",
           ].filter(Boolean);
-          const date = d.properties.createdate ? fmtDate(parseInt(d.properties.createdate)) : "";
+          const date = d.properties.createdate ? fmtDate(parseHsDate(d.properties.createdate) ?? 0) : "";
           return `• ${name || "(unnamed)"}${details.length ? ` — ${details.join(" | ")}` : ""}${date ? ` (added ${date})` : ""}`;
         });
         await db.knowledgeEntry.create({
@@ -354,7 +375,11 @@ async function syncHubSpotData(
         knowledgeEntriesCreated++;
       }
     }
-  } catch (err) { console.warn("HubSpot deals sync skipped:", err); }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("HubSpot deals sync error:", msg);
+    dealState.error = msg;
+  }
 
   return {
     contacts: contactState,
