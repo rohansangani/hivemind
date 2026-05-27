@@ -1234,22 +1234,44 @@ export default function SettingsPage() {
                         Last sync error: {hsIntegration.lastSyncError}
                       </div>
                     )}
-                    {hsIntegration.metadata && Object.keys(hsIntegration.metadata).length > 0 && (
-                      <div className="grid grid-cols-3 gap-3 pt-1">
-                        {[
-                          { label: "Contacts", key: "contacts" },
-                          { label: "Companies", key: "companies" },
-                          { label: "Deals", key: "deals" },
-                        ].map(({ label, key }) => (
-                          <div key={key} className="rounded-lg bg-[var(--hm-bg-secondary)] px-3 py-2 text-center">
-                            <div className="text-[18px] font-bold text-[#4361ee]">
-                              {String(hsIntegration.metadata![key] ?? "—")}
-                            </div>
-                            <div className="text-[10px] text-[var(--hm-text-tertiary)] mt-0.5">{label}</div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                    {hsIntegration.metadata && Object.keys(hsIntegration.metadata).length > 0 && (() => {
+                      const meta = hsIntegration.metadata! as Record<string, { count?: number; syncedFrom?: string; syncedTo?: string }>;
+                      return (
+                        <div className="space-y-2 pt-1">
+                          {[
+                            { label: "Contacts", key: "contacts", icon: "👤" },
+                            { label: "Companies", key: "companies", icon: "🏢" },
+                            { label: "Deals", key: "deals", icon: "💼" },
+                          ].map(({ label, key, icon }) => {
+                            const obj = meta[key];
+                            const count = obj?.count ?? 0;
+                            const from = obj?.syncedFrom;
+                            const to = obj?.syncedTo;
+                            return (
+                              <div key={key} className="flex items-center justify-between rounded-lg bg-[var(--hm-bg-secondary)] px-3 py-2">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[13px]">{icon}</span>
+                                  <div>
+                                    <span className="text-[12px] font-semibold text-[var(--hm-text)]">{count.toLocaleString()} {label}</span>
+                                    {from && to && (
+                                      <p className="text-[10px] text-[var(--hm-text-tertiary)] mt-0.5">
+                                        {from} → {to}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                                <span className="text-[11px] font-semibold text-[#4361ee]">{count > 0 ? "✓" : "—"}</span>
+                              </div>
+                            );
+                          })}
+                          {(meta.syncedUntil as unknown as { contacts?: number }) && (
+                            <p className="text-[10px] text-[var(--hm-text-tertiary)] pt-1">
+                              Next sync will extend history further back and add any new records.
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
 
