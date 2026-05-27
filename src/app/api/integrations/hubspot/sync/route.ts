@@ -3,10 +3,12 @@ import { cookies } from "next/headers";
 import jwt from "jsonwebtoken";
 import { db } from "@/lib/db";
 
-const MAX_PER_SYNC = 5000;   // max records to fetch per object per sync
+export const maxDuration = 300; // 5 min — needed for large CRM syncs
+
+const MAX_PER_SYNC = 100_000; // fetch all records (HubSpot caps search at 10,000 per query — we paginate through all)
 const PAGE_SIZE = 100;
-const CHUNK_SIZE = 200;
-const INTER_PAGE_DELAY_MS = 200;
+const CHUNK_SIZE = 500;       // larger chunks = fewer KB entries = better retrieval
+const INTER_PAGE_DELAY_MS = 100;
 
 // ─── Helpers ─────────────────────────────────────────────────
 
@@ -61,6 +63,9 @@ async function hsSearchPage(
   return { results: [] };
 }
 
+// HubSpot search caps at 10,000 results per query via `after` pagination.
+// To fetch more, we use date-window chunking: once pagination stops (no `after`
+// but more records remain), we re-query with createdate < oldest-seen and keep going.
 async function hsSearch(
   objectType: string,
   properties: string[],
@@ -68,22 +73,57 @@ async function hsSearch(
   limit: number
 ): Promise<{ records: HSRecord[]; hubspotTotal: number }> {
   const records: HSRecord[] = [];
-  let after: string | undefined;
   let hubspotTotal = 0;
+  let oldestMs: number | null = null; // tracks the oldest createdate seen so far
+
+  // Outer loop: each iteration is a date-window pass
   while (records.length < limit) {
-    const body: Record<string, unknown> = {
-      properties,
-      sorts: [{ propertyName: "createdate", direction: "DESCENDING" }],
-      limit: Math.min(PAGE_SIZE, limit - records.length),
-    };
-    if (after) body.after = after;
-    const page = await hsSearchPage(objectType, body, token);
-    if (records.length === 0 && page.total !== undefined) hubspotTotal = page.total;
-    records.push(...page.results);
-    after = page.after;
-    if (!after || page.results.length === 0) break;
-    await sleep(INTER_PAGE_DELAY_MS);
+    const filters: Array<{ propertyName: string; operator: string; value: string }> = [];
+    if (oldestMs !== null) {
+      // Next window: only records older than the oldest we've seen
+      filters.push({ propertyName: "createdate", operator: "LT", value: String(oldestMs) });
+    }
+
+    // Inner loop: paginate within this window (up to HubSpot's 10k per-query cap)
+    let after: string | undefined;
+    let windowCount = 0;
+    let gotAny = false;
+
+    while (records.length < limit) {
+      const body: Record<string, unknown> = {
+        properties,
+        sorts: [{ propertyName: "createdate", direction: "DESCENDING" }],
+        limit: Math.min(PAGE_SIZE, limit - records.length),
+      };
+      if (filters.length > 0) body.filterGroups = [{ filters }];
+      if (after) body.after = after;
+
+      const page = await hsSearchPage(objectType, body, token);
+      if (records.length === 0 && page.total !== undefined) hubspotTotal = page.total;
+
+      for (const r of page.results) {
+        const ts = parseHsDate(r.properties.createdate);
+        if (ts !== null && (oldestMs === null || ts < oldestMs)) oldestMs = ts;
+        records.push(r);
+        windowCount++;
+        gotAny = true;
+      }
+
+      after = page.after;
+      if (!after || page.results.length === 0) break;
+      await sleep(INTER_PAGE_DELAY_MS);
+    }
+
+    // If we got nothing in this window, we've exhausted all records
+    if (!gotAny) break;
+    // If pagination ended naturally (no after), but oldestMs is set, try next window
+    // If we filled the limit, stop
+    if (records.length >= limit) break;
+    // If the window returned fewer records than expected, we've reached the end
+    if (windowCount < 10000) break; // HubSpot 10k cap not hit — no more records remain
+    await sleep(INTER_PAGE_DELAY_MS * 2);
   }
+
   return { records, hubspotTotal };
 }
 
