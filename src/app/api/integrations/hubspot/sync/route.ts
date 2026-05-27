@@ -72,11 +72,12 @@ async function hsSearch(
   let after: string | undefined;
   while (results.length < limit) {
     const body: Record<string, unknown> = {
-      filterGroups: filters.length > 0 ? [{ filters }] : [],
       properties,
       sorts: [{ propertyName: "createdate", direction: "DESCENDING" }],
       limit: Math.min(PAGE_SIZE, limit - results.length),
     };
+    // Omit filterGroups entirely when no filters — HubSpot rejects filterGroups:[]
+    if (filters.length > 0) body.filterGroups = [{ filters }];
     if (after) body.after = after;
     const page = await hsSearchPage(objectType, body, token);
     results.push(...page.results);
@@ -125,7 +126,7 @@ async function syncObject(
 
   try {
     let records: HSRecord[] = [];
-    const isFirstSync = prev.totalCount === 0 || prev.oldestMs === null || prev.newestMs === null;
+    const isFirstSync = !prev.oldestMs || !prev.newestMs;
 
     if (isFirstSync) {
       // First sync: wipe any stale entries and fetch most recent MAX_PER_SYNC
@@ -274,11 +275,26 @@ export async function POST() {
     });
 
     try {
-      const prevMeta = (integration.metadata || {}) as Partial<SyncMeta>;
+      const prevMeta = (integration.metadata || {}) as Record<string, Record<string, unknown>>;
+
+      // Migrate old metadata shapes — old syncs used different field names
+      function migrateState(raw: Record<string, unknown> | undefined): ObjState {
+        if (!raw) return emptyState();
+        return {
+          totalCount: (raw.totalCount as number) ?? (raw.count as number) ?? 0,
+          syncedFrom: (raw.syncedFrom as string) ?? null,
+          syncedTo: (raw.syncedTo as string) ?? null,
+          // oldestMs/newestMs missing in old metadata → treated as first sync
+          oldestMs: typeof raw.oldestMs === "number" ? raw.oldestMs : null,
+          newestMs: typeof raw.newestMs === "number" ? raw.newestMs : null,
+          nextBatch: (raw.nextBatch as number) ?? 1,
+        };
+      }
+
       const prev = {
-        contacts: prevMeta.contacts ?? emptyState(),
-        companies: prevMeta.companies ?? emptyState(),
-        deals: prevMeta.deals ?? emptyState(),
+        contacts: migrateState(prevMeta.contacts),
+        companies: migrateState(prevMeta.companies),
+        deals: migrateState(prevMeta.deals),
       };
 
       const [contacts, companies, deals] = await Promise.all([
