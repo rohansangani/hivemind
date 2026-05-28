@@ -111,10 +111,9 @@ export default function IndustryInsightsPage() {
     syncFreq === "weekly"  ? 6 * 24 * 60 * 60 * 1000 :
     syncFreq === "monthly" ? 28 * 24 * 60 * 60 * 1000 :
     syncFreq === "manual"  ? 60 * 60 * 1000 :
-    20 * 60 * 60 * 1000;
+    24 * 60 * 60 * 1000;
 
-  // Cooldown disabled for testing — set back to true expression when re-enabling
-  const isCoolingDown = false;
+  const isCoolingDown = !!(lastRefreshedAt && (Date.now() - new Date(lastRefreshedAt).getTime()) < COOLDOWN_MS);
 
   const nextRefreshLabel = (() => {
     if (!lastRefreshedAt || !isCoolingDown) return null;

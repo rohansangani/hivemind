@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
     syncFreq === "weekly"  ? 6 * 24 * 60 * 60 * 1000 :
     syncFreq === "monthly" ? 28 * 24 * 60 * 60 * 1000 :
     syncFreq === "manual"  ? 60 * 60 * 1000 :
-    20 * 60 * 60 * 1000;
+    24 * 60 * 60 * 1000;
 
   const [orgCheck, insightCount] = await Promise.all([
     db.$queryRaw<{ insightLastRefreshedAt: Date | null }[]>`
@@ -78,14 +78,13 @@ export async function POST(req: NextRequest) {
     `,
     db.industryInsight.count({ where: { organizationId: decoded.orgId } }),
   ]);
-  // Cooldown disabled for testing — re-enable once insights generation is verified
-  // if (orgCheck[0]?.insightLastRefreshedAt && insightCount > 0) {
-  //   const elapsed = Date.now() - new Date(orgCheck[0].insightLastRefreshedAt).getTime();
-  //   if (elapsed < COOLDOWN_MS) {
-  //     const nextRefreshMs = COOLDOWN_MS - elapsed;
-  //     return NextResponse.json({ error: "cooldown", nextRefreshMs, cooldownMs: COOLDOWN_MS }, { status: 429 });
-  //   }
-  // }
+  if (orgCheck[0]?.insightLastRefreshedAt && insightCount > 0) {
+    const elapsed = Date.now() - new Date(orgCheck[0].insightLastRefreshedAt).getTime();
+    if (elapsed < COOLDOWN_MS) {
+      const nextRefreshMs = COOLDOWN_MS - elapsed;
+      return NextResponse.json({ error: "cooldown", nextRefreshMs, cooldownMs: COOLDOWN_MS }, { status: 429 });
+    }
+  }
 
   const orgId = decoded.orgId;
   const encoder = new TextEncoder();
