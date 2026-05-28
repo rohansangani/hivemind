@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
     const members = await db.user.findMany({
       where: { organizationId: orgId },
       orderBy: { createdAt: "asc" },
-      select: { id: true, name: true, email: true, role: true, department: true, jobTitle: true, inviteStatus: true, lastActiveAt: true, createdAt: true },
+      select: { id: true, name: true, email: true, role: true, department: true, jobTitle: true, inviteStatus: true, lastActiveAt: true, createdAt: true, password: true },
     });
 
     // Fetch custom permissions for all members in one query.
@@ -44,7 +44,7 @@ export async function GET(req: NextRequest) {
       }
     } catch { /* non-critical — table may not exist yet */ }
 
-    const membersWithPerms = members.map(m => ({ ...m, customPermissions: permMap[m.id] ?? null }));
+    const membersWithPerms = members.map(m => ({ ...m, hasPassword: !!m.password, password: undefined, customPermissions: permMap[m.id] ?? null }));
     return NextResponse.json({ members: membersWithPerms });
   } catch (error) {
     console.error("Team error:", error);

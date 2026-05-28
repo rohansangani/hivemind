@@ -21,6 +21,7 @@ const NAV_ITEMS = [
 
 const ADMIN_ITEMS = [
   { href: "/team",     label: "Team",     icon: "team" },
+  { href: "/activity", label: "Activity", icon: "activity" },
   { href: "/settings", label: "Settings", icon: "settings" },
 ];
 
@@ -75,6 +76,11 @@ function NavIcon({ icon, active }: { icon: string; active: boolean }) {
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
         <circle cx="8" cy="8" r="2.5" stroke={c} strokeWidth={w} />
         <path d="M8 2v2M8 12v2M2 8h2M12 8h2M3.75 3.75l1.5 1.5M10.75 10.75l1.5 1.5M12.25 3.75l-1.5 1.5M5.25 10.75l-1.5 1.5" stroke={c} strokeWidth="1.1" strokeLinecap="round" />
+      </svg>
+    );
+    case "activity": return (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path d="M2 8h2.5l2-4 3 8 2-4H14" stroke={c} strokeWidth={w} strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     );
     default: return null;
@@ -243,7 +249,7 @@ export default function Sidebar({ userName, userRole, onClose }: SidebarProps) {
             })}
           </div>
 
-          {userRole === "admin" && (
+          {(userRole === "admin" || userRole === "owner") && (
             <>
               <div className="h-px bg-[var(--hm-border)] my-3 mx-1" role="separator" />
               {showLabels && (

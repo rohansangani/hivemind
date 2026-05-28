@@ -14,6 +14,7 @@ const ROUTE_LABELS: Record<string, string> = {
   "content-generator":  "Content Generator",
   "knowledge-base":     "Knowledge Base",
   "team":               "Team",
+  "activity":           "Activity",
   "settings":           "Settings",
 };
 

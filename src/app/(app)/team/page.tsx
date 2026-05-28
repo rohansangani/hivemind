@@ -17,6 +17,7 @@ interface Member {
   inviteStatus: string | null;
   lastActiveAt: string | null;
   createdAt: string;
+  hasPassword?: boolean;
   customPermissions: ModulePermissions | null;
 }
 
@@ -409,6 +410,40 @@ function DeleteModal({ member, onClose, onDeleted }: { member: Member; onClose: 
   );
 }
 
+// ── Reset password confirmation ───────────────────────────────────────────────
+function ResetPasswordModal({ member, onClose, onDone }: { member: Member; onClose: () => void; onDone: () => void }) {
+  const [resetting, setResetting] = useState(false);
+  const [error, setError] = useState("");
+  const handleReset = async () => {
+    setResetting(true);
+    const res = await fetch(`/api/team/${member.id}/reset-password`, { method: "POST" });
+    if (!res.ok) { const d = await res.json(); setError(d.error || "Error"); setResetting(false); return; }
+    onDone(); onClose();
+  };
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.5)" }}>
+      <div className="w-[400px] rounded-2xl shadow-2xl border border-[var(--hm-border)] p-6 animate-fade-in" style={{ background: "var(--hm-bg)" }}>
+        <div className="flex items-start gap-3 mb-4">
+          <div className="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M11 2a4 4 0 010 5.66L5.66 13A4 4 0 012 9.34V8a1 1 0 011-1h1.34L9.66 1.66A4 4 0 0111 2z" stroke="#3B82F6" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /><circle cx="4.5" cy="11.5" r="1" fill="#3B82F6" /></svg>
+          </div>
+          <div>
+            <p className="text-[14px] font-semibold" style={{ color: "var(--hm-text)" }}>Reset password for {member.name || member.email}?</p>
+            <p className="text-[12px] mt-1" style={{ color: "var(--hm-text-secondary)" }}>They will be prompted to create a new password the next time they log in.</p>
+          </div>
+        </div>
+        {error && <p className="text-[11px] text-red-500 mb-3">{error}</p>}
+        <div className="flex gap-2">
+          <button onClick={onClose} className="flex-1 h-[36px] rounded-lg text-[12px] border border-[var(--hm-border)]" style={{ color: "var(--hm-text-secondary)" }}>Cancel</button>
+          <button onClick={handleReset} disabled={resetting} className="flex-1 h-[36px] rounded-lg text-[12px] font-medium text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-50">
+            {resetting ? "Sending…" : "Reset password"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Read-only permissions viewer (for non-admin self-view) ───────────────────
 function ViewPermsModal({ member, onClose }: { member: Member; onClose: () => void }) {
   const effectivePerms = getEffectivePermissions(member.role, member.customPermissions);
@@ -472,7 +507,7 @@ function ViewPermsModal({ member, onClose }: { member: Member; onClose: () => vo
 
 // ── Member row (extracted for reuse between active and pending sections) ───────
 function MemberRow({
-  m, user, canManage, timeAgo, getInitials, setEditTarget, setDeleteTarget, setViewPermsTarget, setLeaveOpen,
+  m, user, canManage, timeAgo, getInitials, setEditTarget, setDeleteTarget, setViewPermsTarget, setLeaveOpen, setResetTarget,
 }: {
   m: Member;
   user: CurrentUser | null;
@@ -483,6 +518,7 @@ function MemberRow({
   setDeleteTarget: (v: Member | null) => void;
   setViewPermsTarget: (v: Member | null) => void;
   setLeaveOpen: (v: boolean) => void;
+  setResetTarget: (v: Member | null) => void;
 }) {
   const isPending = m.inviteStatus === "pending";
   const isMe = m.id === user?.id;
@@ -575,6 +611,16 @@ function MemberRow({
             Leave
           </button>
         )}
+        {canEdit && !isPending && m.hasPassword && (
+          <button onClick={() => setResetTarget(m)}
+            className="w-7 h-7 rounded-lg flex items-center justify-center transition-all"
+            style={{ color: "var(--hm-text-tertiary)" }}
+            onMouseEnter={e => { const el = e.currentTarget as HTMLElement; el.style.background = "#EFF6FF"; el.style.color = "#3B82F6"; }}
+            onMouseLeave={e => { const el = e.currentTarget as HTMLElement; el.style.background = ""; el.style.color = "var(--hm-text-tertiary)"; }}
+            title="Reset password">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M10 2a5 5 0 11-4.9 6H2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /><path d="M2 4v4h4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </button>
+        )}
         {canEdit && (
           <button onClick={() => setEditTarget(m)}
             className="w-7 h-7 rounded-lg flex items-center justify-center transition-all"
@@ -618,6 +664,8 @@ export default function TeamPage() {
   const [editTarget, setEditTarget] = useState<Member | null | "new">(null);
   const [deleteTarget, setDeleteTarget] = useState<Member | null>(null);
   const [viewPermsTarget, setViewPermsTarget] = useState<Member | null>(null);
+  const [resetTarget, setResetTarget] = useState<Member | null>(null);
+  const [resetDoneFor, setResetDoneFor] = useState<string | null>(null);
   const [leaveOpen, setLeaveOpen] = useState(false);
   const [search, setSearch] = useState("");
 
@@ -779,7 +827,7 @@ export default function TeamPage() {
                           Active members ({activeFiltered.length})
                         </div>
                       )}
-                      {activeFiltered.map(m => <MemberRow key={m.id} m={m} user={user} canManage={canManage} timeAgo={timeAgo} getInitials={getInitials} setEditTarget={setEditTarget} setDeleteTarget={setDeleteTarget} setViewPermsTarget={setViewPermsTarget} setLeaveOpen={setLeaveOpen} />)}
+                      {activeFiltered.map(m => <MemberRow key={m.id} m={m} user={user} canManage={canManage} timeAgo={timeAgo} getInitials={getInitials} setEditTarget={setEditTarget} setDeleteTarget={setDeleteTarget} setViewPermsTarget={setViewPermsTarget} setLeaveOpen={setLeaveOpen} setResetTarget={setResetTarget} />)}
                     </>
                   )}
 
@@ -791,7 +839,7 @@ export default function TeamPage() {
                         <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />
                         Pending invites ({pendingFiltered.length}) — awaiting acceptance
                       </div>
-                      {pendingFiltered.map(m => <MemberRow key={m.id} m={m} user={user} canManage={canManage} timeAgo={timeAgo} getInitials={getInitials} setEditTarget={setEditTarget} setDeleteTarget={setDeleteTarget} setViewPermsTarget={setViewPermsTarget} setLeaveOpen={setLeaveOpen} />)}
+                      {pendingFiltered.map(m => <MemberRow key={m.id} m={m} user={user} canManage={canManage} timeAgo={timeAgo} getInitials={getInitials} setEditTarget={setEditTarget} setDeleteTarget={setDeleteTarget} setViewPermsTarget={setViewPermsTarget} setLeaveOpen={setLeaveOpen} setResetTarget={setResetTarget} />)}
                     </>
                   )}
                 </div>
@@ -823,6 +871,19 @@ export default function TeamPage() {
       )}
       {leaveOpen && (
         <LeaveModal onClose={() => setLeaveOpen(false)} />
+      )}
+      {resetTarget && (
+        <ResetPasswordModal
+          member={resetTarget}
+          onClose={() => setResetTarget(null)}
+          onDone={() => { setResetDoneFor(resetTarget.name || resetTarget.email); setTimeout(() => setResetDoneFor(null), 3500); }}
+        />
+      )}
+      {resetDoneFor && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-3 rounded-xl shadow-lg border border-blue-200 bg-blue-50 text-blue-700 text-[13px] font-medium animate-fade-in flex items-center gap-2">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.5" stroke="#3B82F6" strokeWidth="1.3" /><path d="M5 8l2 2 4-4" stroke="#3B82F6" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          Password reset requested for {resetDoneFor}
+        </div>
       )}
     </div>
   );

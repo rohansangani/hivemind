@@ -57,7 +57,8 @@ model User {
   department     String?
   jobTitle       String?
   jobRole        String?
-  onboarded      Boolean   @default(false)
+  onboarded           Boolean   @default(false)
+  mustResetPassword   Boolean   @default(false)
   inviteStatus   String?
   inviteToken    String?   @unique
   lastActiveAt   DateTime?

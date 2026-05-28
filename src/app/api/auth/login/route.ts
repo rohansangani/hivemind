@@ -42,6 +42,16 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Admin requested a password reset — force user to set a new one before continuing.
+    if (user.mustResetPassword) {
+      const resetToken = jwt.sign(
+        { userId: user.id, mustReset: true },
+        process.env.NEXTAUTH_SECRET || "fallback-secret",
+        { expiresIn: "10m" }
+      );
+      return NextResponse.json({ mustResetPassword: true, resetToken });
+    }
+
     await db.user.update({
       where: { id: user.id },
       data: { lastActiveAt: new Date() },

@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
   const [tab, setTab] = useState<"login" | "signup">("login");
+  const [phase, setPhase] = useState<"form" | "set-password">("form");
+  const [resetToken, setResetToken] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -15,6 +17,12 @@ export default function LoginPage() {
   const [emailError, setEmailError] = useState("");
   const [passwordError, setPasswordError] = useState("");
   const [googleLoading, setGoogleLoading] = useState(false);
+  // Set-password phase state
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [newPasswordError, setNewPasswordError] = useState("");
+  const [confirmPasswordError, setConfirmPasswordError] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
   const router = useRouter();
 
   // Auto-focus refs
@@ -99,6 +107,12 @@ export default function LoginPage() {
         return;
       }
 
+      if (data.mustResetPassword) {
+        setResetToken(data.resetToken);
+        setPhase("set-password");
+        return;
+      }
+
       if (data.joinedOrg) {
         // Joined an existing workspace as viewer — show brief message then redirect
         setSuccessMessage(`You've joined ${data.orgName} as a viewer.`);
@@ -115,6 +129,54 @@ export default function LoginPage() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, email, password, name, router]);
+
+  const validateNewPassword = (value: string) => {
+    if (!value) return "Password is required";
+    if (value.length < 8) return "Must be at least 8 characters";
+    if (!/[A-Z]/.test(value)) return "Must contain an uppercase letter";
+    if (!/[a-z]/.test(value)) return "Must contain a lowercase letter";
+    if (!/[0-9]/.test(value)) return "Must contain a number";
+    return "";
+  };
+
+  const handleSetPassword = useCallback(async () => {
+    const pwErr = validateNewPassword(newPassword);
+    const confirmErr = newPassword !== confirmPassword ? "Passwords do not match" : "";
+    setNewPasswordError(pwErr);
+    setConfirmPasswordError(confirmErr);
+    if (pwErr || confirmErr) return;
+
+    setError("");
+    setLoading(true);
+    try {
+      const res = await fetch("/api/auth/set-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resetToken, newPassword }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (res.status === 401) {
+          // Reset token expired — send user back to log in again
+          setPhase("form");
+          setError(data.error || "Session expired. Please log in again.");
+          return;
+        }
+        setError(data.error || "Something went wrong");
+        return;
+      }
+      if (data.user.onboarded) {
+        router.push("/dashboard");
+      } else {
+        router.push("/welcome");
+      }
+    } catch {
+      setError("Something went wrong. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resetToken, newPassword, confirmPassword, router]);
 
   // Submit on Enter key from any field
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -197,6 +259,98 @@ export default function LoginPage() {
       {/* Right panel — form */}
       <div className="flex-1 flex items-center justify-center p-10">
         <div className="w-full max-w-[340px]">
+
+          {/* ── Set new password phase ── */}
+          {phase === "set-password" && (
+            <>
+              <div className="mb-8">
+                <h2 className="text-[20px] font-semibold mb-1" style={{ color: "var(--hm-text)" }}>Create a new password</h2>
+                <p className="text-[13px]" style={{ color: "var(--hm-text-tertiary)" }}>
+                  Your admin has requested a password reset. Set a new password to continue.
+                </p>
+              </div>
+
+              {error && (
+                <div role="alert" className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600 animate-fade-in-fast">
+                  {error}
+                </div>
+              )}
+
+              <form onSubmit={(e) => { e.preventDefault(); handleSetPassword(); }} noValidate>
+                <div className="mb-4">
+                  <label htmlFor="new-password" className="block text-[13px] text-[var(--hm-text-secondary)] mb-1.5 font-medium">
+                    New password
+                  </label>
+                  <div className="relative">
+                    <input
+                      id="new-password"
+                      type={showNewPassword ? "text" : "password"}
+                      placeholder="Min 8 characters"
+                      value={newPassword}
+                      onChange={(e) => { setNewPassword(e.target.value); if (newPasswordError) setNewPasswordError(""); }}
+                      onBlur={(e) => setNewPasswordError(validateNewPassword(e.target.value))}
+                      autoComplete="new-password"
+                      className={`w-full pr-10${newPasswordError ? " border-red-400 focus:border-red-400 focus:ring-red-200" : ""}`}
+                    />
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      onClick={() => setShowNewPassword((v) => !v)}
+                      aria-label={showNewPassword ? "Hide password" : "Show password"}
+                      className="absolute inset-y-0 right-0 flex items-center px-3 text-[var(--hm-text-tertiary)] hover:text-[var(--hm-text-secondary)] transition-colors"
+                    >
+                      {showNewPassword ? (
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94" />
+                          <path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19" />
+                          <line x1="1" y1="1" x2="23" y2="23" />
+                        </svg>
+                      ) : (
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                          <circle cx="12" cy="12" r="3" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                  {newPasswordError && <p className="text-[11px] text-red-500 mt-1">{newPasswordError}</p>}
+                  {!newPasswordError && <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-1.5">Must contain uppercase, lowercase, and a number</p>}
+                </div>
+
+                <div className="mb-6">
+                  <label htmlFor="confirm-password" className="block text-[13px] text-[var(--hm-text-secondary)] mb-1.5 font-medium">
+                    Confirm password
+                  </label>
+                  <input
+                    id="confirm-password"
+                    type={showNewPassword ? "text" : "password"}
+                    placeholder="Re-enter your password"
+                    value={confirmPassword}
+                    onChange={(e) => { setConfirmPassword(e.target.value); if (confirmPasswordError) setConfirmPasswordError(""); }}
+                    autoComplete="new-password"
+                    className={`w-full${confirmPasswordError ? " border-red-400 focus:border-red-400 focus:ring-red-200" : ""}`}
+                  />
+                  {confirmPasswordError && <p className="text-[11px] text-red-500 mt-1">{confirmPasswordError}</p>}
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full h-11 bg-[var(--hm-accent)] text-white rounded-lg text-sm font-medium hover:opacity-90 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {loading ? (
+                    <span role="status" className="flex items-center justify-center gap-2">
+                      <span aria-hidden="true" className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      <span className="sr-only">Loading…</span>
+                    </span>
+                  ) : "Set new password"}
+                </button>
+              </form>
+            </>
+          )}
+
+          {/* ── Login / Signup phase ── */}
+          {phase === "form" && <>
           {/* Tabs */}
           <div role="tablist" className="flex border-b border-[var(--hm-border)]  mb-8">
             <button
@@ -417,6 +571,7 @@ export default function LoginPage() {
               Privacy Policy
             </button>
           </p>
+          </>}
         </div>
       </div>
     </div>
