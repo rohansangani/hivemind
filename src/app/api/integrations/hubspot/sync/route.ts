@@ -8,7 +8,7 @@ export const maxDuration = 300; // 5 min — needed for large CRM syncs
 const MAX_PER_SYNC = 100_000; // fetch all records (HubSpot caps search at 10,000 per query — we paginate through all)
 const PAGE_SIZE = 100;
 const CHUNK_SIZE = 500;       // larger chunks = fewer KB entries = better retrieval
-const INTER_PAGE_DELAY_MS = 100;
+const INTER_PAGE_DELAY_MS = 50;
 
 // ─── Helpers ─────────────────────────────────────────────────
 
@@ -747,25 +747,26 @@ export async function POST() {
     });
 
     try {
-      // Run sequentially — one object type at a time.
-      // Parallel would keep all 50k+ records in memory simultaneously and
-      // hammer HubSpot's rate limits from three concurrent streams.
-      const contactResult = await syncObject(orgId, integration.accessToken, "contacts",
-        ["firstname", "lastname", "jobtitle", "company", "email", "lifecyclestage", "createdate",
-         "phone", "hs_lead_source", "hs_linkedin_url", "hs_last_activity_date", "associatedcompanyid"],
-        "personas", "Contact", contactLine, contactStats,
-        r => {
-          const name = [r.properties.firstname, r.properties.lastname].filter(Boolean).join(" ") || r.properties.email || r.id;
-          const co = r.properties.company?.trim();
-          // Include company in title so "contacts at So True" finds "John Smith at So True"
-          return co ? `${name} at ${co}` : name;
-        });
+      // Contacts and companies write to different KB categories ("personas" vs "markets")
+      // so they can be fetched in parallel safely — cuts total sync time roughly in half.
+      const [contactResult, companyResult] = await Promise.all([
+        syncObject(orgId, integration.accessToken, "contacts",
+          ["firstname", "lastname", "jobtitle", "company", "email", "lifecyclestage", "createdate",
+           "phone", "hs_lead_source", "hs_linkedin_url", "hs_last_activity_date", "associatedcompanyid"],
+          "personas", "Contact", contactLine, contactStats,
+          r => {
+            const name = [r.properties.firstname, r.properties.lastname].filter(Boolean).join(" ") || r.properties.email || r.id;
+            const co = r.properties.company?.trim();
+            // Include company in title so "contacts at So True" finds "John Smith at So True"
+            return co ? `${name} at ${co}` : name;
+          }),
 
-      const companyResult = await syncObject(orgId, integration.accessToken, "companies",
-        ["name", "industry", "annualrevenue", "numberofemployees", "country", "city", "createdate",
-         "website", "description", "type", "hs_last_activity_date"],
-        "markets", "Company", companyLine, companyStats,
-        r => r.properties.name?.trim() || r.id);
+        syncObject(orgId, integration.accessToken, "companies",
+          ["name", "industry", "annualrevenue", "numberofemployees", "country", "city", "createdate",
+           "website", "description", "type", "hs_last_activity_date"],
+          "markets", "Company", companyLine, companyStats,
+          r => r.properties.name?.trim() || r.id),
+      ]);
 
       const dealResult = await syncObject(orgId, integration.accessToken, "deals",
         ["dealname", "dealstage", "amount", "pipeline", "closedate", "hs_deal_stage_probability", "createdate",
