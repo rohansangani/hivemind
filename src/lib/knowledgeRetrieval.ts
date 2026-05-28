@@ -250,9 +250,16 @@ const CRM_RECORD_PREFIXES = [
 ];
 
 const CRM_ENTITY_STOP = new Set([
+  // CRM meta-words
   "hubspot", "crm", "company", "companies", "contact", "contacts",
   "deal", "deals", "record", "records", "data", "find", "show",
   "list", "get", "about", "give", "all", "any", "their", "its",
+  // Common query words that look like names but aren't entity names
+  "notes", "note", "look", "stand", "last", "next", "steps", "step",
+  "take", "tell", "want", "need", "check", "see", "open", "follow",
+  "active", "recent", "latest", "current", "new", "old", "past",
+  "email", "phone", "status", "update", "where", "when", "latest",
+  "update", "updates", "info", "information", "details", "summary",
 ]);
 
 // ─── Live HubSpot fallback ─────────────────────────────────────
@@ -438,10 +445,16 @@ async function fetchCRMEntries(orgId: string, queryTokens: string[], rawQuery: s
       : Promise.resolve([]),
   ]);
 
-  // If no individual records found in KB, fall back to a live HubSpot API search.
-  // This covers: records not yet synced, recently added contacts/companies, edge cases.
-  const liveResults = records.length === 0 && allSearchTerms.length > 0
-    ? await liveHubSpotSearch(orgId, allSearchTerms)
+  // Only suppress live search if a returned record actually contains one of the
+  // primary name tokens — not just any noise-word match like "next" hitting "NextGen".
+  const hasEntityMatch = nameTokens.length > 0 && records.some(r =>
+    nameTokens.some(t => r.title.toLowerCase().includes(t.toLowerCase()))
+  );
+
+  // Fall back to live HubSpot API search when KB has no matching entity records.
+  // Pass only nameTokens (not bigrams/noise) so we search by the actual entity name.
+  const liveResults = !hasEntityMatch && nameTokens.length > 0
+    ? await liveHubSpotSearch(orgId, nameTokens)
     : [];
 
   return [...analytics, ...records, ...liveResults];
