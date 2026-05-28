@@ -52,6 +52,18 @@ export default function SettingsPage() {
   const [hsToken, setHsToken] = useState("");
   const [hsSaving, setHsSaving] = useState(false);
 
+  // Confluence integration state
+  type IntegrationRecord = { portalId?: string; syncStatus: string; lastSyncAt?: string; lastSyncError?: string; metadata?: Record<string, unknown> };
+  const [cfConnected, setCfConnected] = useState(false);
+  const [cfIntegration, setCfIntegration] = useState<IntegrationRecord | null>(null);
+  const [cfSyncing, setCfSyncing] = useState(false);
+  const [cfDisconnecting, setCfDisconnecting] = useState(false);
+  const [cfMessage, setCfMessage] = useState("");
+  const [cfBaseUrl, setCfBaseUrl] = useState("");
+  const [cfEmail, setCfEmail] = useState("");
+  const [cfApiToken, setCfApiToken] = useState("");
+  const [cfSaving, setCfSaving] = useState(false);
+
   useEffect(() => {
     fetch("/api/settings")
       .then((r) => r.json())
@@ -90,6 +102,15 @@ export default function SettingsPage() {
       .then((d) => {
         setHsConnected(d.connected);
         setHsIntegration(d.integration);
+      })
+      .catch(() => {});
+
+    // Load Confluence integration status
+    fetch("/api/integrations/confluence/status")
+      .then((r) => r.json())
+      .then((d) => {
+        setCfConnected(d.connected);
+        setCfIntegration(d.integration);
       })
       .catch(() => {});
 
@@ -167,6 +188,74 @@ export default function SettingsPage() {
       setHsMessage("Disconnect failed — please try again.");
     } finally {
       setHsDisconnecting(false);
+    }
+  };
+
+  const cfSave = async () => {
+    if (!cfBaseUrl.trim() || !cfEmail.trim() || !cfApiToken.trim()) return;
+    setCfSaving(true);
+    setCfMessage("");
+    try {
+      const res = await fetch("/api/integrations/confluence/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ baseUrl: cfBaseUrl, email: cfEmail, apiToken: cfApiToken }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setCfConnected(true);
+        setCfApiToken("");
+        setCfMessage(`Connected to ${data.site}${data.displayName ? ` as ${data.displayName}` : ""}. Run a sync to import pages.`);
+        const s = await fetch("/api/integrations/confluence/status").then(r => r.json());
+        setCfIntegration(s.integration);
+      } else {
+        setCfMessage(data.error || "Failed to connect Confluence.");
+      }
+    } catch {
+      setCfMessage("Network error — please try again.");
+    } finally {
+      setCfSaving(false);
+      setTimeout(() => setCfMessage(""), 8000);
+    }
+  };
+
+  const cfSync = async () => {
+    setCfSyncing(true);
+    setCfMessage("");
+    try {
+      const res = await fetch("/api/integrations/confluence/sync", { method: "POST" });
+      const data = await res.json();
+      if (data.success) {
+        const s = data.summary;
+        setCfMessage(`Sync complete — ${s.pagesCount.toLocaleString()} pages from ${s.spacesCount} space${s.spacesCount !== 1 ? "s" : ""} imported.`);
+        const status = await fetch("/api/integrations/confluence/status").then(r => r.json());
+        setCfIntegration(status.integration);
+      } else {
+        setCfMessage("Sync failed: " + (data.error || "Unknown error"));
+      }
+    } catch {
+      setCfMessage("Sync failed — network error.");
+    } finally {
+      setCfSyncing(false);
+      setTimeout(() => setCfMessage(""), 8000);
+    }
+  };
+
+  const cfDisconnect = async () => {
+    if (!confirm("Disconnect Confluence? All synced pages will be removed from the knowledge base.")) return;
+    setCfDisconnecting(true);
+    try {
+      await fetch("/api/integrations/confluence/disconnect", { method: "DELETE" });
+      setCfConnected(false);
+      setCfIntegration(null);
+      setCfBaseUrl("");
+      setCfEmail("");
+      setCfMessage("Confluence disconnected.");
+      setTimeout(() => setCfMessage(""), 4000);
+    } catch {
+      setCfMessage("Disconnect failed — please try again.");
+    } finally {
+      setCfDisconnecting(false);
     }
   };
 
@@ -1352,6 +1441,194 @@ export default function SettingsPage() {
                       <p className="mt-1.5 text-[10px] text-[var(--hm-text-tertiary)]">
                         Create a private app in HubSpot Settings → Integrations → Private Apps. Required scopes: crm.objects.contacts.read, crm.objects.companies.read, crm.objects.deals.read
                       </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Confluence card */}
+              <div className="mt-5 rounded-xl border border-[var(--hm-border)] bg-white overflow-hidden">
+                <div className="flex items-center gap-4 px-5 py-4 border-b border-[var(--hm-border)]">
+                  {/* Confluence logo */}
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#0052CC] text-white">
+                    <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                      <path d="M2 13.2c-.2.3-.1.7.3.9l3.3 1.8c.4.2.8.1 1-.3L9 12.2c1.3-2.3 2.9-3.4 5.7-3.6.4 0 .6-.4.5-.7L13.7 4c-.1-.4-.5-.6-.8-.5C8.5 4.2 5.2 6.8 2 13.2z" fill="white" opacity="0.6"/>
+                      <path d="M16 4.8c.2-.3.1-.7-.3-.9l-3.3-1.8c-.4-.2-.8-.1-1 .3L9 5.8C7.7 8.1 6.1 9.2 3.3 9.4c-.4 0-.6.4-.5.7L3.3 14c.1.4.5.6.8.5 4.4-.7 7.7-3.3 11.9-9.7z" fill="white"/>
+                    </svg>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[13px] font-semibold">Confluence</span>
+                      {cfConnected && (
+                        <span className="flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-semibold text-emerald-600">
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 inline-block"/>
+                          Connected
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-0.5">
+                      {cfConnected && cfIntegration?.portalId
+                        ? cfIntegration.portalId
+                        : "Sync Confluence pages into your knowledge base"}
+                    </p>
+                  </div>
+                  {cfConnected && (
+                    <div className="flex shrink-0 items-center gap-2">
+                      <button
+                        onClick={cfSync}
+                        disabled={cfSyncing || cfIntegration?.syncStatus === "syncing"}
+                        className="flex h-[30px] items-center gap-1.5 rounded-lg bg-[#4361ee] px-3 text-[11px] font-medium text-white hover:opacity-90 disabled:opacity-50"
+                      >
+                        {cfSyncing || cfIntegration?.syncStatus === "syncing" ? (
+                          <>
+                            <svg className="animate-spin" width="10" height="10" viewBox="0 0 24 24" fill="none">
+                              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="32" strokeDashoffset="12" strokeLinecap="round"/>
+                            </svg>
+                            Syncing…
+                          </>
+                        ) : "Sync now"}
+                      </button>
+                      <button
+                        onClick={cfDisconnect}
+                        disabled={cfDisconnecting}
+                        className="flex h-[30px] items-center rounded-lg border border-[var(--hm-border)] px-3 text-[11px] text-[var(--hm-text-secondary)] hover:border-red-300 hover:text-red-500 disabled:opacity-50"
+                      >
+                        {cfDisconnecting ? "Disconnecting…" : "Disconnect"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {cfMessage && (
+                  <div className={`mx-5 mt-3 rounded-lg px-3 py-2 text-[11px] font-medium ${
+                    cfMessage.toLowerCase().includes("fail") || cfMessage.toLowerCase().includes("error")
+                      ? "bg-red-50 text-red-600 border border-red-200"
+                      : "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                  }`}>
+                    {cfMessage}
+                  </div>
+                )}
+
+                {cfConnected && cfIntegration && (
+                  <div className="px-5 py-4 space-y-3">
+                    <div className="flex items-center gap-4 text-[11px] text-[var(--hm-text-secondary)]">
+                      <span>
+                        Last sync:{" "}
+                        <span className="font-medium text-[var(--hm-text)]">
+                          {cfIntegration.lastSyncAt
+                            ? new Date(cfIntegration.lastSyncAt).toLocaleString()
+                            : "Never"}
+                        </span>
+                      </span>
+                      {(cfIntegration.metadata as { pagesCount?: number })?.pagesCount !== undefined && (
+                        <span>
+                          Pages:{" "}
+                          <span className="font-medium text-[var(--hm-text)]">
+                            {((cfIntegration.metadata as { pagesCount?: number }).pagesCount ?? 0).toLocaleString()}
+                          </span>
+                        </span>
+                      )}
+                      {(cfIntegration.metadata as { spacesCount?: number })?.spacesCount !== undefined && (
+                        <span>
+                          Spaces:{" "}
+                          <span className="font-medium text-[var(--hm-text)]">
+                            {((cfIntegration.metadata as { spacesCount?: number }).spacesCount ?? 0).toLocaleString()}
+                          </span>
+                        </span>
+                      )}
+                    </div>
+                    {cfIntegration.syncStatus === "syncing" && (
+                      <div className="flex items-center gap-2 rounded-lg bg-blue-50 border border-blue-200 px-3 py-2 text-[11px] text-blue-600">
+                        <svg className="animate-spin shrink-0" width="10" height="10" viewBox="0 0 24 24" fill="none">
+                          <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="32" strokeDashoffset="12" strokeLinecap="round"/>
+                        </svg>
+                        Sync in progress — this can take several minutes for large Confluence instances.
+                      </div>
+                    )}
+                    {cfIntegration.syncStatus === "error" && cfIntegration.lastSyncError && (
+                      <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-[11px] text-red-600">
+                        Last sync error: {cfIntegration.lastSyncError}
+                      </div>
+                    )}
+                    {(() => {
+                      const spaces = (cfIntegration.metadata as { spaces?: { name: string; count: number }[] })?.spaces;
+                      if (!spaces || spaces.length === 0) return null;
+                      return (
+                        <div className="space-y-1.5">
+                          {spaces.map((sp) => (
+                            <div key={sp.name} className="flex items-center justify-between rounded-lg bg-[var(--hm-bg-secondary)] px-3 py-2">
+                              <span className="text-[12px] text-[var(--hm-text)] truncate max-w-[320px]" title={sp.name}>{sp.name}</span>
+                              <span className="text-[11px] font-semibold text-[#4361ee] shrink-0 ml-3">{sp.count.toLocaleString()} pages</span>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+
+                {!cfConnected && (
+                  <div className="px-5 py-4 space-y-3">
+                    <p className="text-[11px] text-[var(--hm-text-tertiary)] leading-relaxed">
+                      Connect your Confluence Cloud instance using an Atlassian API token. HiveMind will sync all pages from your global spaces into the knowledge base.
+                    </p>
+                    <div>
+                      <label className="mb-1.5 block text-[12px] font-medium text-[var(--hm-text-secondary)]">
+                        Base URL
+                      </label>
+                      <input
+                        type="text"
+                        value={cfBaseUrl}
+                        onChange={(e) => setCfBaseUrl(e.target.value)}
+                        placeholder="https://yourcompany.atlassian.net"
+                        className="w-full text-[13px]"
+                      />
+                    </div>
+                    <div className="flex gap-3">
+                      <div className="flex-1">
+                        <label className="mb-1.5 block text-[12px] font-medium text-[var(--hm-text-secondary)]">
+                          Atlassian email
+                        </label>
+                        <input
+                          type="email"
+                          value={cfEmail}
+                          onChange={(e) => setCfEmail(e.target.value)}
+                          placeholder="you@yourcompany.com"
+                          className="w-full text-[13px]"
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <label className="mb-1.5 block text-[12px] font-medium text-[var(--hm-text-secondary)]">
+                          API token
+                        </label>
+                        <input
+                          type="password"
+                          value={cfApiToken}
+                          onChange={(e) => setCfApiToken(e.target.value)}
+                          placeholder="••••••••••••••••"
+                          className="w-full font-mono text-[12px]"
+                          onKeyDown={(e) => { if (e.key === "Enter") cfSave(); }}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <p className="text-[10px] text-[var(--hm-text-tertiary)]">
+                        Generate an API token at id.atlassian.com → Security → API tokens.
+                      </p>
+                      <button
+                        onClick={cfSave}
+                        disabled={cfSaving || !cfBaseUrl.trim() || !cfEmail.trim() || !cfApiToken.trim()}
+                        className="flex h-[34px] shrink-0 items-center gap-1.5 rounded-lg bg-[#4361ee] px-4 text-[12px] font-medium text-white hover:opacity-90 disabled:opacity-50"
+                      >
+                        {cfSaving ? (
+                          <>
+                            <svg className="animate-spin" width="10" height="10" viewBox="0 0 24 24" fill="none">
+                              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="32" strokeDashoffset="12" strokeLinecap="round"/>
+                            </svg>
+                            Connecting…
+                          </>
+                        ) : "Connect"}
+                      </button>
                     </div>
                   </div>
                 )}

@@ -35,7 +35,8 @@ export default function ContentLibraryPage() {
   const [avgScore, setAvgScore] = useState<number | null>(null);
   const [products, setProducts] = useState<{ name: string }[]>([]);
   const [markets, setMarkets] = useState<{ name: string }[]>([]);
-  const [view, setView] = useState<"tile" | "list">("tile");
+  const [view, setView] = useState<"tile" | "list" | "grouped">("tile");
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [showUpload, setShowUpload] = useState(false);
   const [uploadName, setUploadName] = useState("");
   const [uploadType, setUploadType] = useState("pdf");
@@ -258,13 +259,40 @@ export default function ContentLibraryPage() {
           </button>
         </div>
 
+        {/* Content-type tab strip */}
+        <div className="px-4 md:px-7 bg-white border-b border-[var(--hm-border)] flex items-center overflow-x-auto">
+          {(
+            [
+              { value: "", label: "All" },
+              { value: "deck", label: "Decks" },
+              { value: "one_pager", label: "One-pagers" },
+              { value: "case_study", label: "Case studies" },
+              { value: "blog", label: "Blog posts" },
+              { value: "brochure", label: "Brochures" },
+              { value: "whitepaper", label: "Whitepapers" },
+            ] as { value: string; label: string }[]
+          ).map((t) => (
+            <button
+              key={t.value}
+              onClick={() => setFilterType(t.value)}
+              className={
+                "whitespace-nowrap border-b-2 px-4 py-2.5 text-[12px] transition-colors shrink-0 " +
+                (filterType === t.value
+                  ? "border-[#4361ee] font-semibold text-[#4361ee]"
+                  : "border-transparent text-[var(--hm-text-tertiary)] hover:text-[var(--hm-text)] hover:border-[var(--hm-border)]")
+              }
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
         <div className="px-4 md:px-7 py-3 bg-white border-b border-[var(--hm-border)] flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2 flex-1 min-w-0 overflow-x-auto">
             <div className="relative flex-1 max-w-[240px]">
               <svg width="13" height="13" viewBox="0 0 16 16" fill="none" style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)", zIndex: 1 }}><circle cx="6.5" cy="6.5" r="5" stroke="#999" strokeWidth="1.1" /><path d="M14 14l-3-3" stroke="#999" strokeWidth="1.1" strokeLinecap="round" /></svg>
               <input type="text" placeholder="Search files, tags..." value={search} onChange={(e) => setSearch(e.target.value)} className="search-input" />
             </div>
-            <select value={filterType} onChange={(e) => setFilterType(e.target.value)} style={{ height: "38px", fontSize: "12px" }}><option value="">All types</option><option value="deck">Presentations</option><option value="one_pager">One-pagers</option><option value="case_study">Case studies</option><option value="blog">Blog posts</option><option value="brochure">Brochures</option></select>
             <select value={filterProduct} onChange={(e) => setFilterProduct(e.target.value)} style={{ height: "38px", fontSize: "12px" }}><option value="">All products</option>{[...new Set(products.map((p) => p.name))].map((name) => <option key={name} value={name}>{name}</option>)}</select>
             <select value={filterMarket} onChange={(e) => setFilterMarket(e.target.value)} style={{ height: "38px", fontSize: "12px" }}><option value="">All markets</option>{[...new Set(markets.map((m) => m.name))].map((name) => <option key={name} value={name}>{name}</option>)}</select>
             <select value={filterScore} onChange={(e) => setFilterScore(e.target.value)} style={{ height: "38px", fontSize: "12px" }}><option value="">Any score</option><option value="75+">75%+</option><option value="50-74">50-74%</option><option value="below60">Below 60%</option><option value="below50">Below 50%</option></select>
@@ -272,8 +300,9 @@ export default function ContentLibraryPage() {
             {hasActiveFilters && <button onClick={clearFilters} className="text-[11px] text-[#4361ee] hover:underline whitespace-nowrap transition-colors duration-150 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-1">Clear</button>}
           </div>
           <div className="flex items-center gap-0.5 bg-[var(--hm-bg-secondary)] rounded-lg p-0.5 flex-shrink-0">
-            <button onClick={() => setView("tile")} className={"w-7 h-7 flex items-center justify-center rounded-md transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] " + (view === "tile" ? "bg-white shadow-sm" : "hover:bg-white/60")}><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1" stroke={view === "tile" ? "#4361ee" : "#999"} strokeWidth="1.1" /><rect x="9" y="1" width="6" height="6" rx="1" stroke={view === "tile" ? "#4361ee" : "#999"} strokeWidth="1.1" /><rect x="1" y="9" width="6" height="6" rx="1" stroke={view === "tile" ? "#4361ee" : "#999"} strokeWidth="1.1" /><rect x="9" y="9" width="6" height="6" rx="1" stroke={view === "tile" ? "#4361ee" : "#999"} strokeWidth="1.1" /></svg></button>
-            <button onClick={() => setView("list")} className={"w-7 h-7 flex items-center justify-center rounded-md transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] " + (view === "list" ? "bg-white shadow-sm" : "hover:bg-white/60")}><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M2 8h12M2 12h12" stroke={view === "list" ? "#4361ee" : "#999"} strokeWidth="1.2" strokeLinecap="round" /></svg></button>
+            <button onClick={() => setView("tile")} title="Tile view" className={"w-7 h-7 flex items-center justify-center rounded-md transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] " + (view === "tile" ? "bg-white shadow-sm" : "hover:bg-white/60")}><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1" stroke={view === "tile" ? "#4361ee" : "#999"} strokeWidth="1.1" /><rect x="9" y="1" width="6" height="6" rx="1" stroke={view === "tile" ? "#4361ee" : "#999"} strokeWidth="1.1" /><rect x="1" y="9" width="6" height="6" rx="1" stroke={view === "tile" ? "#4361ee" : "#999"} strokeWidth="1.1" /><rect x="9" y="9" width="6" height="6" rx="1" stroke={view === "tile" ? "#4361ee" : "#999"} strokeWidth="1.1" /></svg></button>
+            <button onClick={() => setView("list")} title="List view" className={"w-7 h-7 flex items-center justify-center rounded-md transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] " + (view === "list" ? "bg-white shadow-sm" : "hover:bg-white/60")}><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M2 8h12M2 12h12" stroke={view === "list" ? "#4361ee" : "#999"} strokeWidth="1.2" strokeLinecap="round" /></svg></button>
+            <button onClick={() => setView("grouped")} title="Grouped by product" className={"w-7 h-7 flex items-center justify-center rounded-md transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] " + (view === "grouped" ? "bg-white shadow-sm" : "hover:bg-white/60")}><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M1 4.5h5.5l1 1.5H15v7H1V4.5z" stroke={view === "grouped" ? "#4361ee" : "#999"} strokeWidth="1.1" strokeLinejoin="round" /><path d="M1 7.5h14" stroke={view === "grouped" ? "#4361ee" : "#999"} strokeWidth="1.1" /></svg></button>
           </div>
         </div>
 
@@ -478,6 +507,108 @@ export default function ContentLibraryPage() {
                 ))}
               </div>
             )}
+
+            {/* Grouped view */}
+            {!loading && assets.length > 0 && view === "grouped" && (() => {
+              // Group by first product tag, or "General" if untagged
+              const groupOrder: string[] = [];
+              const groups: Record<string, Asset[]> = {};
+              for (const a of assets) {
+                const key = a.productTags[0] || "General";
+                if (!groups[key]) { groups[key] = []; groupOrder.push(key); }
+                groups[key].push(a);
+              }
+              const toggleGroup = (group: string) => setCollapsedGroups(prev => {
+                const next = new Set(prev);
+                if (next.has(group)) next.delete(group); else next.add(group);
+                return next;
+              });
+              return (
+                <div className="space-y-5">
+                  {groupOrder.map((group) => {
+                    const items = groups[group];
+                    const isCollapsed = collapsedGroups.has(group);
+                    const scoredItems = items.filter(a => a.brandScore !== null);
+                    const avgGroupScore = scoredItems.length > 0
+                      ? Math.round(scoredItems.reduce((s, a) => s + a.brandScore!, 0) / scoredItems.length)
+                      : null;
+                    return (
+                      <div key={group}>
+                        <button
+                          onClick={() => toggleGroup(group)}
+                          className="w-full flex items-center gap-2.5 mb-3 group/hdr"
+                        >
+                          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className={"shrink-0 transition-transform duration-150 " + (isCollapsed ? "" : "rotate-90")}><path d="M6 4l4 4-4 4" stroke="#4361ee" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                          <span className="text-[13px] font-semibold text-[var(--hm-text)]">{group}</span>
+                          <span className="text-[11px] text-[var(--hm-text-tertiary)]">{items.length} asset{items.length !== 1 ? "s" : ""}</span>
+                          {avgGroupScore !== null && (
+                            <span className={"text-[10px] px-2 py-0.5 rounded-full font-semibold text-white shrink-0 " + scoreBg(avgGroupScore)}>
+                              avg {avgGroupScore}%
+                            </span>
+                          )}
+                          <div className="flex-1 h-px bg-[var(--hm-border)]" />
+                        </button>
+                        {!isCollapsed && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                            {items.map((a) => (
+                              <div key={a.id} className={"bg-white border rounded-xl overflow-hidden transition-all group " + (selectedIds.has(a.id) ? "border-[#4361ee] ring-2 ring-[#4361ee]/30" : panelAsset?.id === a.id ? "border-[#4361ee] ring-1 ring-[#4361ee]/20" : "border-[var(--hm-border)] hover:border-[#4361ee]/40")} style={{ boxShadow: "var(--hm-shadow-card)" }}>
+                                {a.fileUrl ? (
+                                  <a href={`/view/${a.id}`} target="_blank" rel="noopener" className="block h-[110px] relative overflow-hidden cursor-pointer">
+                                    <button onClick={(e) => toggleSelect(a.id, e)} title="Select" className={"absolute top-2 left-2 z-10 w-5 h-5 rounded border-2 flex items-center justify-center transition-all " + (selectedIds.has(a.id) ? "bg-[#4361ee] border-[#4361ee]" : "bg-white/80 border-white/50 opacity-0 group-hover:opacity-100")} style={{ backdropFilter: "blur(4px)" }}>
+                                      {selectedIds.has(a.id) && <svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="M3 8l4 4 6-6" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                                    </button>
+                                    {isImage(a.fileType || "") ? (
+                                      <img src={a.fileUrl} alt={a.name} className="w-full h-full object-cover object-left-top" />
+                                    ) : (
+                                      <div className="w-full h-full bg-gradient-to-br from-[#1a1a2e] to-[#0f3460] flex items-center justify-center">
+                                        <div className={"w-12 h-12 rounded-xl flex items-center justify-center text-[14px] font-medium " + typeColor(a.fileType || "")}>{(a.fileType || "?").toUpperCase().slice(0, 4)}</div>
+                                      </div>
+                                    )}
+                                    <span className="absolute top-2 text-[10px] px-2 py-0.5 bg-black/50 text-white rounded-md font-medium uppercase backdrop-blur-sm" style={{ left: "30px" }}>{a.fileType || "FILE"}</span>
+                                    {a.brandScore !== null ? <span className={"absolute top-2 right-2 text-[10px] px-2 py-0.5 text-white rounded-md font-medium " + scoreBg(a.brandScore)}>{Math.round(a.brandScore)}%</span> : <span className="absolute top-2 right-2 text-[10px] px-2 py-0.5 bg-black/40 text-white/70 rounded-md font-medium backdrop-blur-sm">Pending</span>}
+                                    {a.scoreStatus === "analyzed" && <span className="absolute bottom-2 left-2 text-[9px] px-1.5 py-0.5 bg-purple-500/80 text-white rounded-md backdrop-blur-sm">AI Reviewed</span>}
+                                    <span className="absolute inset-0 transition-all flex items-center justify-center" style={{ background: "rgba(0,0,0,0)" }} onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "rgba(0,0,0,0.45)"} onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "rgba(0,0,0,0)"}>
+                                      <span className="opacity-0 group-hover:opacity-100 transition-opacity rounded-lg shadow-md flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5" style={{ background: "#ffffff", color: "#111827" }}>
+                                        <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M7 2H3a1 1 0 00-1 1v10a1 1 0 001 1h10a1 1 0 001-1V9" stroke="#111827" strokeWidth="1.5" strokeLinecap="round" /><path d="M10 2h4v4M14 2L8 8" stroke="#111827" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                                        Open file
+                                      </span>
+                                    </span>
+                                  </a>
+                                ) : (
+                                  <div className="h-[110px] relative overflow-hidden">
+                                    <div className="w-full h-full bg-gradient-to-br from-[#1a1a2e] to-[#0f3460] flex items-center justify-center">
+                                      <div className={"w-12 h-12 rounded-xl flex items-center justify-center text-[14px] font-medium " + typeColor(a.fileType || "")}>{(a.fileType || "?").toUpperCase().slice(0, 4)}</div>
+                                    </div>
+                                    <span className="absolute top-2 text-[10px] px-2 py-0.5 bg-black/50 text-white rounded-md font-medium uppercase backdrop-blur-sm" style={{ left: "30px" }}>{a.fileType || "FILE"}</span>
+                                    {a.brandScore !== null ? <span className={"absolute top-2 right-2 text-[10px] px-2 py-0.5 text-white rounded-md font-medium " + scoreBg(a.brandScore)}>{Math.round(a.brandScore)}%</span> : <span className="absolute top-2 right-2 text-[10px] px-2 py-0.5 bg-black/40 text-white/70 rounded-md font-medium backdrop-blur-sm">Pending</span>}
+                                    {a.scoreStatus === "analyzed" && <span className="absolute bottom-2 left-2 text-[9px] px-1.5 py-0.5 bg-purple-500/80 text-white rounded-md backdrop-blur-sm">AI Reviewed</span>}
+                                  </div>
+                                )}
+                                <div className="p-3.5">
+                                  <p className="text-[13px] font-medium truncate">{a.name}</p>
+                                  <div className="flex flex-wrap gap-1 mt-2 mb-2">
+                                    {a.productTags.map((t) => <span key={t} className="text-[9px] px-1.5 py-0.5 bg-blue-50 text-[#4361ee] rounded-md">{t}</span>)}
+                                    {a.marketTags.map((t) => <span key={t} className="text-[9px] px-1.5 py-0.5 bg-[var(--hm-bg-secondary)] text-[var(--hm-text-tertiary)] rounded-md">{t}</span>)}
+                                    {a.contentType && <span className="text-[9px] px-1.5 py-0.5 bg-[var(--hm-bg-secondary)] text-[var(--hm-text-tertiary)] rounded-md capitalize">{a.contentType.replace(/_/g, " ")}</span>}
+                                  </div>
+                                  <div className="flex items-center justify-between">
+                                    <p className="text-[10px] text-[var(--hm-text-tertiary)]">{a.uploadedBy.name} &middot; {timeAgo(a.createdAt)}</p>
+                                    <button onClick={(e) => { e.stopPropagation(); openPanel(a); }} className="text-[10px] text-[#4361ee] hover:underline flex items-center gap-1">
+                                      View details
+                                      <svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="#4361ee" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
 
             {/* Pagination controls */}
             {pagination && pagination.totalPages > 1 && (

@@ -369,14 +369,23 @@ CONVERSATION BEHAVIOR:
         if (historyMessages.length === 0 && assistantReply) {
           callClaude(
             apiKey,
-            "Generate a concise 4-6 word conversation title. Return ONLY the title.",
+            "Generate a concise 4-6 word conversation title. Return ONLY the plain title text — no quotes, no markdown, no bold, no asterisks.",
             [{ role: "user", content: `Question: "${message.slice(0, 150)}"\nAbout: "${assistantReply.slice(0, 150)}"` }],
             25
-          ).then(title => {
-            if (title.trim()) {
+          ).then(raw => {
+            const title = raw
+              .trim()
+              .replace(/\*\*/g, "")
+              .replace(/\*/g, "")
+              .replace(/__/g, "")
+              .replace(/_/g, "")
+              .replace(/^["'`]+|["'`]+$/g, "")
+              .replace(/^#+\s*/, "")
+              .trim();
+            if (title) {
               db.conversation.update({
                 where: { id: convo!.id },
-                data: { title: title.trim().replace(/^["']|["']$/g, "") },
+                data: { title },
               }).catch(() => {});
             }
           }).catch(() => {});

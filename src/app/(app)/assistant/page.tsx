@@ -23,6 +23,17 @@ interface Conversation {
   updatedAt: string;
 }
 
+function cleanTitle(raw: string): string {
+  return raw
+    .replace(/\*\*/g, "")
+    .replace(/\*/g, "")
+    .replace(/__/g, "")
+    .replace(/_/g, "")
+    .replace(/^["'`]+|["'`]+$/g, "")
+    .replace(/^#+\s*/, "")
+    .trim();
+}
+
 export default function AssistantPage() {
   const user = useUser();
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -294,14 +305,14 @@ export default function AssistantPage() {
               "truncate text-[13px] leading-snug " +
               (active ? "font-semibold text-[#4361ee]" : "font-normal text-[var(--hm-text)]")
             }>
-              {c.title || "New conversation"}
+              {cleanTitle(c.title) || "New conversation"}
             </p>
             <p className="text-[10px] text-[var(--hm-text-tertiary)] mt-[2px] leading-none">{timeAgo(c.updatedAt)} ago</p>
           </div>
         </button>
         <button
           onClick={(e) => deleteConversation(c.id, e)}
-          aria-label={`Delete conversation: ${c.title || "New conversation"}`}
+          aria-label={`Delete conversation: ${cleanTitle(c.title) || "New conversation"}`}
           className="absolute top-1/2 -translate-y-1/2 right-3 opacity-0 group-hover/conv:opacity-100 transition-opacity w-[22px] h-[22px] rounded-md flex items-center justify-center text-[var(--hm-text-tertiary)] hover:bg-red-50 hover:text-red-500"
         >
           <svg aria-hidden="true" width="10" height="10" viewBox="0 0 16 16" fill="none">
