@@ -191,11 +191,14 @@ ${lengthInstruction}
 ${keyPoints ? "Key points to include: " + keyPoints + "." : ""}
 ${useWebSearch ? "You have access to a web search tool — use it to find current industry statistics, news, and trends relevant to the topic. Cite web sources inline." : ""}
 
-CONTENT GENERATION RULES:
-- Use brand proof points, features, and messaging from the VERIFIED KNOWLEDGE BASE for company-specific claims
-- Flag any company-specific claim you cannot source from the knowledge base with ⚠
-- Mirror the brand voice and preferred language exactly as specified
-- Return ONLY the finished content — no meta-commentary, no preamble`
+CONTENT GENERATION RULES (these override the grounding contract above for this task):
+- You are writing marketing content, NOT answering a factual question. You MUST produce the full requested format.
+- Use your complete writing expertise — industry knowledge, narrative craft, structure — to write full, complete content.
+- For company-specific facts (exact stats, product feature names, customer case studies): only use what is in the knowledge base; mark anything unverifiable with ⚠.
+- For general industry insight, trends, writing structure, examples, and editorial judgement: write freely without restriction.
+- NEVER stop early because the knowledge base lacks data. Always produce a complete, publication-ready piece.
+- Mirror the brand voice and preferred language as specified.
+- Return ONLY the finished content — no meta-commentary, no preamble.`
       );
 
       // Use format-appropriate token budget — short formats don't need 4096 tokens
