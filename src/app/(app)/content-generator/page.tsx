@@ -181,7 +181,7 @@ export default function ContentGeneratorPage() {
 
   // Form state
   const [topic, setTopic] = useState("");
-  const [selectedFormats, setSelectedFormats] = useState<string[]>(["blog"]);
+  const [selectedFormats, setSelectedFormats] = useState<string[]>([]);
   const [customFormatLabel, setCustomFormatLabel] = useState("");
   const [targetProduct, setTargetProduct] = useState("");
   const [targetMarket, setTargetMarket] = useState("");
