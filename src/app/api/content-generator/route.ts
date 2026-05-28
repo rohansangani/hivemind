@@ -203,7 +203,7 @@ CONTENT GENERATION RULES:
         twitter: 200, ad_copy: 400, email_outreach: 500,
         linkedin: 700, ceo_linkedin: 700, meta_post: 700, one_pager: 800,
         email_marketing: 900, press_release: 1200, landing_page: 1500,
-        blog: 3000, thought_leadership: 4000, custom: 2000,
+        blog: 6000, thought_leadership: 8000, custom: 3000,
       };
       const maxTokens = maxTokensForFormat[format] ?? 1500;
 
