@@ -424,7 +424,7 @@ export default function ContentLibraryPage() {
             )}
 
             {/* Tile view */}
-            {!loading && assets.length > 0 && view === "tile" && (
+            {assets.length > 0 && view === "tile" && (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {assets.map((a) => (
                   <div key={a.id} className={"bg-white border rounded-xl overflow-hidden transition-all group " + (selectedIds.has(a.id) ? "border-[#4361ee] ring-2 ring-[#4361ee]/30" : panelAsset?.id === a.id ? "border-[#4361ee] ring-1 ring-[#4361ee]/20" : "border-[var(--hm-border)] hover:border-[#4361ee]/40")} style={{ boxShadow: "var(--hm-shadow-card)" }}>
@@ -486,7 +486,7 @@ export default function ContentLibraryPage() {
             )}
 
             {/* List view */}
-            {!loading && assets.length > 0 && view === "list" && (
+            {assets.length > 0 && view === "list" && (
               <div className="bg-white border border-[var(--hm-border)] rounded-xl overflow-x-auto">
                 <div className="grid grid-cols-[28px_2fr_80px_80px_70px_55px_70px_60px] gap-2 px-4 py-2.5 border-b border-[var(--hm-border)] text-[10px] text-[var(--hm-text-tertiary)] uppercase tracking-wide font-medium">
                   <button onClick={toggleSelectAll} title={allSelected ? "Deselect all" : "Select all"} className={"w-4 h-4 rounded border-2 flex items-center justify-center transition-all flex-shrink-0 " + (allSelected ? "bg-[#4361ee] border-[#4361ee]" : "border-[var(--hm-border)] hover:border-[#4361ee]")}>{allSelected && <svg width="8" height="8" viewBox="0 0 16 16" fill="none"><path d="M3 8l4 4 6-6" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/></svg>}</button>
@@ -526,7 +526,7 @@ export default function ContentLibraryPage() {
             )}
 
             {/* Grouped view */}
-            {!loading && assets.length > 0 && view === "grouped" && (() => {
+            {assets.length > 0 && view === "grouped" && (() => {
               // Group by first product tag, or "General" if untagged
               const groupOrder: string[] = [];
               const groups: Record<string, Asset[]> = {};
