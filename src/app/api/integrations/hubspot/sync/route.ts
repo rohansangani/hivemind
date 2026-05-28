@@ -7,7 +7,8 @@ export const maxDuration = 300; // 5 min — needed for large CRM syncs
 
 const MAX_PER_SYNC = 100_000; // fetch all records (HubSpot caps search at 10,000 per query — we paginate through all)
 const PAGE_SIZE = 100;
-const CHUNK_SIZE = 500;       // larger chunks = fewer KB entries = better retrieval
+const CHUNK_SIZE = 500;       // bulk insert batch size for records
+const NOTES_CHUNK_SIZE = 25;  // notes lines per KB entry — keep small to avoid token overflow
 const INTER_PAGE_DELAY_MS = 50;
 
 // ─── Helpers ─────────────────────────────────────────────────
@@ -368,7 +369,7 @@ async function upsertNotesKB(
 
   for (const group of grouped) {
     if (group.lines.length === 0) continue;
-    for (const [i, batch] of chunks(group.lines, CHUNK_SIZE).entries()) {
+    for (const [i, batch] of chunks(group.lines, NOTES_CHUNK_SIZE).entries()) {
       await db.knowledgeEntry.create({
         data: {
           organizationId: orgId,

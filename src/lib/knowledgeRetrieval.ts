@@ -623,14 +623,20 @@ export async function retrieveRelevantKnowledge(
   }
 
   // CRM data (HubSpot)
+  // Notes batch entries can be 50k+ tokens each — truncate before scoring/rendering
+  // to prevent system prompt overflow (200k token limit).
+  const MAX_CRM_CHARS = 1500;
   for (const entry of crmEntries) {
+    const content = entry.content.length > MAX_CRM_CHARS
+      ? entry.content.slice(0, MAX_CRM_CHARS) + "…"
+      : entry.content;
     allItems.push({
       id: `crm-${entry.id}`,
       title: entry.title,
-      content: entry.content,
+      content,
       source: "HubSpot CRM",
       sourceType: "crm_data",
-      relevanceScore: scoreItem(entry.title + " " + entry.content, queryTokens, entities, { verifiedBoost: 0.15 }),
+      relevanceScore: scoreItem(entry.title + " " + content, queryTokens, entities, { verifiedBoost: 0.15 }),
       confidence: "verified",
     });
   }
