@@ -208,8 +208,8 @@ export default function DashboardPage() {
               <div className="w-3.5 h-3.5 border-[1.5px] border-[var(--hm-border)] border-t-[var(--hm-text-secondary)] rounded-full animate-spin" />
             ) : (
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ color: "var(--hm-text-secondary)" }}>
-                <path d="M13.5 8A5.5 5.5 0 1 1 2.5 8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-                <path d="M13.5 3.5v4h-4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M14 8.7a6 6 0 1 1-2-5.2L14 5.3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M14 1.3v4h-4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             )}
           </button>

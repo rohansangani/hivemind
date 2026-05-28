@@ -618,7 +618,7 @@ function MemberRow({
             onMouseEnter={e => { const el = e.currentTarget as HTMLElement; el.style.background = "#EFF6FF"; el.style.color = "#3B82F6"; }}
             onMouseLeave={e => { const el = e.currentTarget as HTMLElement; el.style.background = ""; el.style.color = "var(--hm-text-tertiary)"; }}
             title="Reset password">
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M10 2a5 5 0 11-4.9 6H2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /><path d="M2 4v4h4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="3" y="7" width="10" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.3"/><path d="M5 7V5a3 3 0 0 1 6 0v2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
           </button>
         )}
         {canEdit && (
