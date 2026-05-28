@@ -211,9 +211,10 @@ export function buildGroundedContext(knowledge: RetrievedKnowledge): string {
     }
 
     if (analyticsItems.length > 0) {
-      lines.push("\nCRM ANALYTICS (aggregated stats across all synced records — NOT a list of individual companies):");
+      lines.push("\nCRM ANALYTICS (aggregated stats across all synced records — for context only):");
       lines.push("⚠ CRITICAL: Do NOT enumerate company/contact names from analytics as 'the companies I have records for'.");
       lines.push("⚠ CRITICAL: Do NOT say 'I only have records for X, Y, Z companies' based on names appearing in analytics.");
+      lines.push("⚠ CRITICAL: Do NOT say 'the system searched across all N records' — the search was a targeted name lookup, not a full scan.");
       for (const item of analyticsItems) {
         lines.push(`  • [${item.title}]\n    ${item.content}`);
       }
