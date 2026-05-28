@@ -67,6 +67,9 @@ export default function ContentLibraryPage() {
   const [editMarketTags, setEditMarketTags] = useState<string[]>([]);
   const [savingEdit, setSavingEdit] = useState(false);
 
+  // Auto-review polling state
+  const [isAutoReviewing, setIsAutoReviewing] = useState(false);
+
   // Bulk selection state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deleteConfirm, setDeleteConfirm] = useState(false);
@@ -111,6 +114,17 @@ export default function ContentLibraryPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  // Auto-poll every 5s while any visible asset is pending review
+  useEffect(() => {
+    const hasPending = assets.some(a => a.scoreStatus === "pending");
+    if (!hasPending) {
+      if (isAutoReviewing) setIsAutoReviewing(false);
+      return;
+    }
+    const id = setInterval(fetchData, 5000);
+    return () => clearInterval(id);
+  }, [assets, fetchData, isAutoReviewing]);
+
   const handleFileSelect = (file: File) => { fileRef.current = file; setUploadName(file.name.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ")); setUploadType(file.name.split(".").pop()?.toLowerCase() || "pdf"); };
   const resetUpload = () => { setShowUpload(false); setUploadName(""); setUploadProgress(""); setUploadError(""); fileRef.current = null; };
 
@@ -153,7 +167,7 @@ export default function ContentLibraryPage() {
       const res = await fetch("/api/content-library", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ files: [{ name: uploadName, fileName: actualFileName || uploadName.toLowerCase().replace(/\s+/g, "-") + "." + uploadType, fileUrl, fileSize, fileType: uploadType, contentType: uploadContentType, productTags: uploadProduct ? [uploadProduct] : [], marketTags: uploadMarket ? [uploadMarket] : [] }] }) });
       const data = await res.json();
       if (!res.ok) { setUploadError(data.error || "Failed to save asset."); }
-      else { resetUpload(); fetchData(); }
+      else { resetUpload(); fetchData(); setIsAutoReviewing(true); }
     } catch (e) { console.error(e); setUploadError("Failed to save asset. Please try again."); }
     finally { setUploading(false); setUploadProgress(""); }
   };
@@ -269,7 +283,7 @@ export default function ContentLibraryPage() {
               { value: "case_study", label: "Case studies" },
               { value: "blog", label: "Blog posts" },
               { value: "brochure", label: "Brochures" },
-              { value: "whitepaper", label: "Whitepapers" },
+              { value: "ebook", label: "Ebooks" },
             ] as { value: string; label: string }[]
           ).map((t) => (
             <button
@@ -339,7 +353,7 @@ export default function ContentLibraryPage() {
                     <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1 font-medium">Asset name *</label><input type="text" value={uploadName} onChange={(e) => setUploadName(e.target.value)} className="text-[13px]" /></div>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                       <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1 font-medium">File type</label><select value={uploadType} onChange={(e) => setUploadType(e.target.value)} style={{ fontSize: "12px" }}><option value="pdf">PDF</option><option value="pptx">PPTX</option><option value="docx">DOCX</option><option value="xlsx">XLSX</option><option value="jpg">JPG</option><option value="png">PNG</option><option value="mp4">MP4</option></select></div>
-                      <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1 font-medium">Content type</label><select value={uploadContentType} onChange={(e) => setUploadContentType(e.target.value)} style={{ fontSize: "12px" }}><option value="deck">Deck</option><option value="one_pager">One-pager</option><option value="case_study">Case Study</option><option value="blog">Blog Post</option><option value="brochure">Brochure</option><option value="whitepaper">Whitepaper</option></select></div>
+                      <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1 font-medium">Content type</label><select value={uploadContentType} onChange={(e) => setUploadContentType(e.target.value)} style={{ fontSize: "12px" }}><option value="deck">Deck</option><option value="one_pager">One-pager</option><option value="case_study">Case Study</option><option value="blog">Blog Post</option><option value="brochure">Brochure</option><option value="ebook">Ebook</option></select></div>
                       <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1 font-medium">Product</label><select value={uploadProduct} onChange={(e) => setUploadProduct(e.target.value)} style={{ fontSize: "12px" }}><option value="">All</option>{products.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}</select></div>
                       <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1 font-medium">Market</label><select value={uploadMarket} onChange={(e) => setUploadMarket(e.target.value)} style={{ fontSize: "12px" }}><option value="">Global</option>{markets.map((m) => <option key={m.name} value={m.name}>{m.name}</option>)}</select></div>
                     </div>
@@ -428,7 +442,7 @@ export default function ContentLibraryPage() {
                           </div>
                         )}
                         <span className="absolute top-2 text-[10px] px-2 py-0.5 bg-black/50 text-white rounded-md font-medium uppercase backdrop-blur-sm" style={{ left: "30px" }}>{a.fileType || "FILE"}</span>
-                        {a.brandScore !== null ? <span className={"absolute top-2 right-2 text-[10px] px-2 py-0.5 text-white rounded-md font-medium " + scoreBg(a.brandScore)}>{Math.round(a.brandScore)}%</span> : <span className="absolute top-2 right-2 text-[10px] px-2 py-0.5 bg-black/40 text-white/70 rounded-md font-medium backdrop-blur-sm">Pending</span>}
+                        {a.brandScore !== null ? <span className={"absolute top-2 right-2 text-[10px] px-2 py-0.5 text-white rounded-md font-medium " + scoreBg(a.brandScore)}>{Math.round(a.brandScore)}%</span> : isAutoReviewing ? <span className="absolute top-2 right-2 flex items-center gap-1 text-[10px] px-2 py-0.5 bg-blue-500/80 text-white rounded-md font-medium backdrop-blur-sm"><span className="w-2 h-2 border border-white/50 border-t-white rounded-full animate-spin inline-block shrink-0" />Analyzing</span> : <span className="absolute top-2 right-2 text-[10px] px-2 py-0.5 bg-black/40 text-white/70 rounded-md font-medium backdrop-blur-sm">Pending</span>}
                         {a.scoreStatus === "analyzed" && <span className="absolute bottom-2 left-2 text-[9px] px-1.5 py-0.5 bg-purple-500/80 text-white rounded-md backdrop-blur-sm">AI Reviewed</span>}
                         <span className="absolute inset-0 transition-all flex items-center justify-center" style={{ background: "rgba(0,0,0,0)" }} onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "rgba(0,0,0,0.45)"} onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "rgba(0,0,0,0)"}>
                           <span className="opacity-0 group-hover:opacity-100 transition-opacity rounded-lg shadow-md flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5" style={{ background: "#ffffff", color: "#111827" }}>
@@ -443,7 +457,7 @@ export default function ContentLibraryPage() {
                           <div className={"w-12 h-12 rounded-xl flex items-center justify-center text-[14px] font-medium " + typeColor(a.fileType || "")}>{(a.fileType || "?").toUpperCase().slice(0, 4)}</div>
                         </div>
                         <span className="absolute top-2 text-[10px] px-2 py-0.5 bg-black/50 text-white rounded-md font-medium uppercase backdrop-blur-sm" style={{ left: "30px" }}>{a.fileType || "FILE"}</span>
-                        {a.brandScore !== null ? <span className={"absolute top-2 right-2 text-[10px] px-2 py-0.5 text-white rounded-md font-medium " + scoreBg(a.brandScore)}>{Math.round(a.brandScore)}%</span> : <span className="absolute top-2 right-2 text-[10px] px-2 py-0.5 bg-black/40 text-white/70 rounded-md font-medium backdrop-blur-sm">Pending</span>}
+                        {a.brandScore !== null ? <span className={"absolute top-2 right-2 text-[10px] px-2 py-0.5 text-white rounded-md font-medium " + scoreBg(a.brandScore)}>{Math.round(a.brandScore)}%</span> : isAutoReviewing ? <span className="absolute top-2 right-2 flex items-center gap-1 text-[10px] px-2 py-0.5 bg-blue-500/80 text-white rounded-md font-medium backdrop-blur-sm"><span className="w-2 h-2 border border-white/50 border-t-white rounded-full animate-spin inline-block shrink-0" />Analyzing</span> : <span className="absolute top-2 right-2 text-[10px] px-2 py-0.5 bg-black/40 text-white/70 rounded-md font-medium backdrop-blur-sm">Pending</span>}
                         {a.scoreStatus === "analyzed" && <span className="absolute bottom-2 left-2 text-[9px] px-1.5 py-0.5 bg-purple-500/80 text-white rounded-md backdrop-blur-sm">AI Reviewed</span>}
                       </div>
                     )}
@@ -496,7 +510,10 @@ export default function ContentLibraryPage() {
                     <span className="text-[11px] text-[var(--hm-text-secondary)] truncate">{a.productTags[0] || "All"}</span>
                     <span className="text-[11px] text-[var(--hm-text-secondary)] truncate">{a.marketTags[0] || "Global"}</span>
                     <span className={"text-[11px] font-medium " + scoreText(a.brandScore)}>{a.brandScore !== null ? Math.round(a.brandScore) + "%" : "—"}</span>
-                    <span className={"text-[9px] px-1.5 py-0.5 rounded-md font-medium w-fit " + (a.scoreStatus === "analyzed" ? "bg-purple-50 text-purple-600" : a.brandScore !== null ? "bg-emerald-50 text-emerald-600" : "bg-gray-100 text-gray-400")}>{a.scoreStatus === "analyzed" ? "Reviewed" : a.brandScore !== null ? "Scored" : "Pending"}</span>
+                    <span className={"text-[9px] px-1.5 py-0.5 rounded-md font-medium w-fit flex items-center gap-1 " + (a.scoreStatus === "analyzed" ? "bg-purple-50 text-purple-600" : a.brandScore !== null ? "bg-emerald-50 text-emerald-600" : isAutoReviewing ? "bg-blue-50 text-blue-600" : "bg-gray-100 text-gray-400")}>
+                      {isAutoReviewing && a.scoreStatus === "pending" && <span className="w-2 h-2 border border-blue-400/50 border-t-blue-600 rounded-full animate-spin inline-block shrink-0" />}
+                      {a.scoreStatus === "analyzed" ? "Reviewed" : a.brandScore !== null ? "Scored" : isAutoReviewing ? "Analyzing…" : "Pending"}
+                    </span>
                     <button
                       onClick={() => openPanel(a)}
                       className="text-[10px] text-[#4361ee] hover:underline whitespace-nowrap"
@@ -565,7 +582,7 @@ export default function ContentLibraryPage() {
                                       </div>
                                     )}
                                     <span className="absolute top-2 text-[10px] px-2 py-0.5 bg-black/50 text-white rounded-md font-medium uppercase backdrop-blur-sm" style={{ left: "30px" }}>{a.fileType || "FILE"}</span>
-                                    {a.brandScore !== null ? <span className={"absolute top-2 right-2 text-[10px] px-2 py-0.5 text-white rounded-md font-medium " + scoreBg(a.brandScore)}>{Math.round(a.brandScore)}%</span> : <span className="absolute top-2 right-2 text-[10px] px-2 py-0.5 bg-black/40 text-white/70 rounded-md font-medium backdrop-blur-sm">Pending</span>}
+                                    {a.brandScore !== null ? <span className={"absolute top-2 right-2 text-[10px] px-2 py-0.5 text-white rounded-md font-medium " + scoreBg(a.brandScore)}>{Math.round(a.brandScore)}%</span> : isAutoReviewing ? <span className="absolute top-2 right-2 flex items-center gap-1 text-[10px] px-2 py-0.5 bg-blue-500/80 text-white rounded-md font-medium backdrop-blur-sm"><span className="w-2 h-2 border border-white/50 border-t-white rounded-full animate-spin inline-block shrink-0" />Analyzing</span> : <span className="absolute top-2 right-2 text-[10px] px-2 py-0.5 bg-black/40 text-white/70 rounded-md font-medium backdrop-blur-sm">Pending</span>}
                                     {a.scoreStatus === "analyzed" && <span className="absolute bottom-2 left-2 text-[9px] px-1.5 py-0.5 bg-purple-500/80 text-white rounded-md backdrop-blur-sm">AI Reviewed</span>}
                                     <span className="absolute inset-0 transition-all flex items-center justify-center" style={{ background: "rgba(0,0,0,0)" }} onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "rgba(0,0,0,0.45)"} onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "rgba(0,0,0,0)"}>
                                       <span className="opacity-0 group-hover:opacity-100 transition-opacity rounded-lg shadow-md flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5" style={{ background: "#ffffff", color: "#111827" }}>
@@ -580,7 +597,7 @@ export default function ContentLibraryPage() {
                                       <div className={"w-12 h-12 rounded-xl flex items-center justify-center text-[14px] font-medium " + typeColor(a.fileType || "")}>{(a.fileType || "?").toUpperCase().slice(0, 4)}</div>
                                     </div>
                                     <span className="absolute top-2 text-[10px] px-2 py-0.5 bg-black/50 text-white rounded-md font-medium uppercase backdrop-blur-sm" style={{ left: "30px" }}>{a.fileType || "FILE"}</span>
-                                    {a.brandScore !== null ? <span className={"absolute top-2 right-2 text-[10px] px-2 py-0.5 text-white rounded-md font-medium " + scoreBg(a.brandScore)}>{Math.round(a.brandScore)}%</span> : <span className="absolute top-2 right-2 text-[10px] px-2 py-0.5 bg-black/40 text-white/70 rounded-md font-medium backdrop-blur-sm">Pending</span>}
+                                    {a.brandScore !== null ? <span className={"absolute top-2 right-2 text-[10px] px-2 py-0.5 text-white rounded-md font-medium " + scoreBg(a.brandScore)}>{Math.round(a.brandScore)}%</span> : isAutoReviewing ? <span className="absolute top-2 right-2 flex items-center gap-1 text-[10px] px-2 py-0.5 bg-blue-500/80 text-white rounded-md font-medium backdrop-blur-sm"><span className="w-2 h-2 border border-white/50 border-t-white rounded-full animate-spin inline-block shrink-0" />Analyzing</span> : <span className="absolute top-2 right-2 text-[10px] px-2 py-0.5 bg-black/40 text-white/70 rounded-md font-medium backdrop-blur-sm">Pending</span>}
                                     {a.scoreStatus === "analyzed" && <span className="absolute bottom-2 left-2 text-[9px] px-1.5 py-0.5 bg-purple-500/80 text-white rounded-md backdrop-blur-sm">AI Reviewed</span>}
                                   </div>
                                 )}
@@ -869,7 +886,7 @@ export default function ContentLibraryPage() {
                     <label className="block text-xs text-[var(--hm-text-secondary)] mb-1 font-medium">Content type</label>
                     <select value={editContentType} onChange={(e) => setEditContentType(e.target.value)} style={{ fontSize: "12px" }}>
                       <option value="deck">Deck</option><option value="one_pager">One-pager</option><option value="case_study">Case Study</option>
-                      <option value="blog">Blog Post</option><option value="brochure">Brochure</option><option value="whitepaper">Whitepaper</option><option value="video">Video</option>
+                      <option value="blog">Blog Post</option><option value="brochure">Brochure</option><option value="ebook">Ebook</option><option value="video">Video</option>
                     </select>
                   </div>
                   <div>

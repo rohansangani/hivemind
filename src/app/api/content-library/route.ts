@@ -111,6 +111,28 @@ export async function POST(req: NextRequest) {
       });
       created.push(asset);
     }
+
+    // Fire-and-forget auto brand review for each uploaded asset.
+    // Each fetch spawns an independent Vercel function invocation, so the
+    // upload response returns immediately while reviews run in the background.
+    if (created.length > 0 && process.env.ANTHROPIC_API_KEY) {
+      try {
+        const proto = req.headers.get("x-forwarded-proto") || "https";
+        const host = req.headers.get("host") || "";
+        const baseUrl = host ? `${proto}://${host}` : "";
+        const cookie = req.headers.get("cookie") || "";
+        if (baseUrl) {
+          for (const asset of created) {
+            fetch(`${baseUrl}/api/content-library/brand-review`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "Cookie": cookie },
+              body: JSON.stringify({ assetId: asset.id }),
+            }).catch(() => {});
+          }
+        }
+      } catch { /* non-critical — user can still run review manually */ }
+    }
+
     return NextResponse.json({ assets: created });
   } catch (error) {
     console.error("Content upload error:", error);
