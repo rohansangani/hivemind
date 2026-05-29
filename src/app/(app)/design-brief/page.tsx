@@ -93,7 +93,7 @@ function BriefSection({ label, children, copyText }: { label: string; children: 
   );
 }
 
-function BriefView({ item, onDelete }: { item: BriefItem; onDelete: (id: string) => void }) {
+function BriefView({ item, onDelete, onRegenerate, regenerating }: { item: BriefItem; onDelete: (id: string) => void; onRegenerate: () => void; regenerating: boolean }) {
   const b = item.brief;
   const [deleting, setDeleting] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
@@ -155,6 +155,29 @@ function BriefView({ item, onDelete }: { item: BriefItem; onDelete: (id: string)
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <CopyButton text={fullBrief} label="Copy all" />
+          <button
+            onClick={onRegenerate}
+            disabled={regenerating || deleting}
+            className="flex items-center gap-1 text-[10px] px-2 py-1 rounded-md border border-[var(--hm-border)] text-[var(--hm-text-tertiary)] hover:text-[#4361ee] hover:border-[#4361ee]/40 transition-colors disabled:opacity-40"
+            title="Regenerate with same prompt"
+          >
+            {regenerating ? (
+              <>
+                <svg className="animate-spin" width="10" height="10" viewBox="0 0 24 24" fill="none">
+                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="32" strokeDashoffset="12" strokeLinecap="round" />
+                </svg>
+                Regenerating…
+              </>
+            ) : (
+              <>
+                <svg width="10" height="10" viewBox="0 0 16 16" fill="none">
+                  <path d="M13.5 8A5.5 5.5 0 112.5 5.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                  <path d="M2.5 2.5v3h3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                Regenerate
+              </>
+            )}
+          </button>
           {confirmDel ? (
             <div className="flex items-center gap-1.5">
               <span className="text-[10px] text-red-500">Delete?</span>
@@ -162,7 +185,7 @@ function BriefView({ item, onDelete }: { item: BriefItem; onDelete: (id: string)
               <button onClick={() => setConfirmDel(false)} className="text-[10px] px-2 py-1 rounded-md border border-[var(--hm-border)] hover:bg-[var(--hm-bg-secondary)]">No</button>
             </div>
           ) : (
-            <button onClick={() => setConfirmDel(true)} className="text-[10px] px-2 py-1 rounded-md border border-[var(--hm-border)] text-[var(--hm-text-tertiary)] hover:border-red-300 hover:text-red-500 transition-colors">Delete</button>
+            <button onClick={() => setConfirmDel(true)} disabled={regenerating} className="text-[10px] px-2 py-1 rounded-md border border-[var(--hm-border)] text-[var(--hm-text-tertiary)] hover:border-red-300 hover:text-red-500 transition-colors disabled:opacity-40">Delete</button>
           )}
         </div>
       </div>
@@ -265,6 +288,7 @@ export default function DesignBriefPage() {
   const [activeBrief, setActiveBrief] = useState<BriefItem | null>(null);
   const [prompt, setPrompt] = useState("");
   const [generating, setGenerating] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
   const [error, setError] = useState("");
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -305,6 +329,28 @@ export default function DesignBriefPage() {
       setError("Network error — please try again.");
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const handleRegenerate = async () => {
+    if (!activeBrief || regenerating) return;
+    setRegenerating(true);
+    setError("");
+    try {
+      const res = await fetch("/api/design-brief", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: activeBrief.prompt }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error || "Failed to regenerate brief"); return; }
+      const updated: BriefItem = { id: data.id, prompt: activeBrief.prompt, platform: data.brief.platform || null, format: data.brief.format || null, brief: data.brief, createdAt: data.createdAt };
+      setBriefs(prev => [updated, ...prev.filter(b => b.id !== activeBrief.id)]);
+      setActiveBrief(updated);
+    } catch {
+      setError("Network error — please try again.");
+    } finally {
+      setRegenerating(false);
     }
   };
 
@@ -394,7 +440,10 @@ export default function DesignBriefPage() {
         <div className="flex-1 overflow-y-auto p-6">
           {activeBrief ? (
             <div className="max-w-[760px] mx-auto">
-              <BriefView item={activeBrief} onDelete={handleDelete} />
+              <BriefView item={activeBrief} onDelete={handleDelete} onRegenerate={handleRegenerate} regenerating={regenerating} />
+              {error && (
+                <p className="mt-3 text-[12px] text-red-500 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
+              )}
             </div>
           ) : (
             <div className="max-w-[640px] mx-auto">
