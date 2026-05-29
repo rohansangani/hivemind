@@ -681,19 +681,19 @@ function DesignBriefsTab() {
 
                 {isOpen && (
                   <div className="px-4 pb-4 pt-1 border-t space-y-3" style={{ borderColor: "var(--hm-border)" }}>
-                    {brief.visualConcept && (
+                    {!!brief.visualConcept && (
                       <div>
                         <p className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: "var(--hm-text-tertiary)" }}>Visual Concept</p>
                         <p className="text-[12px]" style={{ color: "var(--hm-text-secondary)" }}>{String(brief.visualConcept)}</p>
                       </div>
                     )}
-                    {brief.mood && (
+                    {!!brief.mood && (
                       <div>
                         <p className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: "var(--hm-text-tertiary)" }}>Mood</p>
                         <p className="text-[12px]" style={{ color: "var(--hm-text-secondary)" }}>{String(brief.mood)}</p>
                       </div>
                     )}
-                    {brief.imagePrompt && (
+                    {!!brief.imagePrompt && (
                       <div className="rounded-lg p-3" style={{ background: "var(--hm-surface)" }}>
                         <p className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: "var(--hm-text-tertiary)" }}>AI Image Prompt</p>
                         <p className="text-[12px] font-mono leading-relaxed" style={{ color: "var(--hm-text)" }}>{String(brief.imagePrompt)}</p>
