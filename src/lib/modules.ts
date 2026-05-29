@@ -25,6 +25,7 @@ export const MODULES: ModuleDef[] = [
   { id: "content_library",    label: "Content Library",    description: "Upload and manage content assets",            icon: "library",   group: "content" },
   { id: "ai_assistant",       label: "AI Assistant",       description: "Conversational AI grounded in knowledge base",icon: "assistant", group: "content" },
   { id: "content_generator",  label: "Content Generator",  description: "Generate on-brand marketing content",         icon: "generator", group: "content" },
+  { id: "design_brief",       label: "Design Brief",       description: "Generate brand-grounded visual design briefs",icon: "design",    group: "content" },
   { id: "knowledge_base",     label: "Knowledge Base",     description: "Products, personas, competitors, skills",     icon: "knowledge", group: "content" },
   // Admin
   { id: "team",               label: "Team",               description: "Invite and manage team members",              icon: "team",      group: "admin" },
@@ -37,27 +38,27 @@ export type ModulePermissions = Record<string, AccessLevel>;
 export const ROLE_DEFAULT_PERMISSIONS: Record<string, ModulePermissions> = {
   owner: {
     dashboard: "edit", industry_insights: "edit",
-    content_library: "edit", ai_assistant: "edit", content_generator: "edit", knowledge_base: "edit",
+    content_library: "edit", ai_assistant: "edit", content_generator: "edit", design_brief: "edit", knowledge_base: "edit",
     team: "edit", settings: "edit",
   },
   admin: {
     dashboard: "edit", industry_insights: "edit",
-    content_library: "edit", ai_assistant: "edit", content_generator: "edit", knowledge_base: "edit",
+    content_library: "edit", ai_assistant: "edit", content_generator: "edit", design_brief: "edit", knowledge_base: "edit",
     team: "edit", settings: "edit",
   },
   editor: {
     dashboard: "view", industry_insights: "view",
-    content_library: "edit", ai_assistant: "edit", content_generator: "edit", knowledge_base: "edit",
+    content_library: "edit", ai_assistant: "edit", content_generator: "edit", design_brief: "edit", knowledge_base: "edit",
     team: "none", settings: "none",
   },
   member: {
     dashboard: "view", industry_insights: "view",
-    content_library: "edit", ai_assistant: "edit", content_generator: "edit", knowledge_base: "edit",
+    content_library: "edit", ai_assistant: "edit", content_generator: "edit", design_brief: "edit", knowledge_base: "edit",
     team: "none", settings: "none",
   },
   viewer: {
     dashboard: "view", industry_insights: "view",
-    content_library: "view", ai_assistant: "view", content_generator: "none", knowledge_base: "view",
+    content_library: "view", ai_assistant: "view", content_generator: "none", design_brief: "none", knowledge_base: "view",
     team: "none", settings: "none",
   },
 };
