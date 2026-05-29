@@ -171,8 +171,8 @@ function BriefView({ item, onDelete, onRegenerate, regenerating }: { item: Brief
             ) : (
               <>
                 <svg width="10" height="10" viewBox="0 0 16 16" fill="none">
-                  <path d="M13.5 8A5.5 5.5 0 112.5 5.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-                  <path d="M2.5 2.5v3h3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M14 8A6 6 0 1 1 9 2.1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                  <polyline points="9,1 9,4 12,4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
                 Regenerate
               </>
