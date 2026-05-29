@@ -94,7 +94,26 @@ function BriefSection({ label, children, copyText }: { label: string; children: 
 }
 
 function BriefView({ item, onDelete, onRegenerate, regenerating }: { item: BriefItem; onDelete: (id: string) => void; onRegenerate: () => void; regenerating: boolean }) {
-  const b = item.brief;
+  const raw = item.brief as unknown as Record<string, unknown>;
+  // Normalise — guard against Claude returning colorPalette as a string
+  const b: BriefOutput = {
+    platform: String(raw.platform || ""),
+    format: String(raw.format || ""),
+    dimensions: String(raw.dimensions || ""),
+    visualConcept: String(raw.visualConcept || ""),
+    mood: String(raw.mood || ""),
+    colorPalette: Array.isArray(raw.colorPalette)
+      ? (raw.colorPalette as string[])
+      : typeof raw.colorPalette === "string"
+        ? (raw.colorPalette as string).split(/[,;]+/).map(s => s.trim()).filter(Boolean)
+        : [],
+    typography: String(raw.typography || ""),
+    subjectScene: String(raw.subjectScene || ""),
+    textOverlay: raw.textOverlay ? String(raw.textOverlay) : null,
+    imagePrompt: String(raw.imagePrompt || ""),
+    negativePrompts: String(raw.negativePrompts || ""),
+    artDirectionNotes: String(raw.artDirectionNotes || ""),
+  };
   const [deleting, setDeleting] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
 

@@ -115,9 +115,10 @@ export async function POST(req: NextRequest) {
       ? kbEntries.map(e => `[${e.category}] ${e.title}: ${e.content.slice(0, 200)}`).join("\n")
       : "No additional brand guidelines.";
 
-    const colorPaletteInstruction = styleGuide?.colors?.length
-      ? `["USE ONLY these exact brand hex codes: ${styleGuide.colors.filter(c => c.hex).map(c => `${c.hex} (${c.name || "color"})`).join(", ")}. Do not invent other colors."]`
-      : `["derive from brand archetype and traits. Provide 3-5 hex codes that feel on-brand"]`;
+    const brandColorHexes = styleGuide?.colors?.filter(c => c.hex).map(c => `"${c.hex}"`) ?? [];
+    const colorPaletteInstruction = brandColorHexes.length
+      ? `[${brandColorHexes.join(", ")}]  // REQUIRED: use ONLY these exact brand hex codes — do not change or add others`
+      : `["#hexcode1", "#hexcode2", "#hexcode3"]  // derive 3-5 hex codes that fit the brand archetype and mood`;
 
     const typographyInstruction = styleGuide?.typography
       ? `"USE the brand fonts defined above. Specify weight and size hierarchy for each text element in this piece."`
