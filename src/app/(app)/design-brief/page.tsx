@@ -100,7 +100,9 @@ function BriefView({ item, onDelete }: { item: BriefItem; onDelete: (id: string)
 
   const fullBrief = [
     `DESIGN BRIEF`,
-    `Platform: ${b.platform} — ${b.format}`,
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    `Platform: ${b.platform}`,
+    `Format: ${b.format}`,
     `Dimensions: ${b.dimensions}`,
     ``,
     `VISUAL CONCEPT`,
@@ -110,7 +112,7 @@ function BriefView({ item, onDelete }: { item: BriefItem; onDelete: (id: string)
     b.mood,
     ``,
     `COLOR PALETTE`,
-    b.colorPalette.join(", "),
+    b.colorPalette.join("  ·  "),
     ``,
     `TYPOGRAPHY`,
     b.typography,
@@ -119,10 +121,13 @@ function BriefView({ item, onDelete }: { item: BriefItem; onDelete: (id: string)
     b.subjectScene,
     ...(b.textOverlay ? [``, `TEXT OVERLAY`, b.textOverlay] : []),
     ``,
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     `AI IMAGE GENERATION PROMPT`,
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
     b.imagePrompt,
     ``,
-    `NEGATIVE PROMPTS`,
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    `NEGATIVE PROMPTS (what to avoid)`,
     b.negativePrompts,
     ``,
     `ART DIRECTION NOTES`,
@@ -227,6 +232,27 @@ function BriefView({ item, onDelete }: { item: BriefItem; onDelete: (id: string)
         <BriefSection label="Art Direction Notes" copyText={b.artDirectionNotes}>
           <p className="text-[12px] text-[var(--hm-text)] leading-relaxed">{b.artDirectionNotes}</p>
         </BriefSection>
+      </div>
+
+      {/* Complete AI Prompt — all-in-one copy block */}
+      <div className="rounded-xl border-2 border-emerald-200 overflow-hidden" style={{ background: "linear-gradient(135deg, #f0fdf4 0%, #f0f9ff 100%)" }}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-emerald-200/60">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded-md bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center shrink-0">
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                <path d="M2 4h12M2 8h8M2 12h10" stroke="white" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+            </div>
+            <div>
+              <span className="text-[11px] font-bold text-emerald-700 uppercase tracking-wide">Complete AI Prompt</span>
+              <span className="text-[10px] text-emerald-600/70 ml-2">Paste this entire block into any AI tool</span>
+            </div>
+          </div>
+          <CopyButton text={fullBrief} label="Copy all" />
+        </div>
+        <div className="px-4 py-4">
+          <pre className="text-[12px] text-gray-700 leading-relaxed whitespace-pre-wrap font-mono break-words">{fullBrief}</pre>
+        </div>
       </div>
     </div>
   );
