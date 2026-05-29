@@ -140,21 +140,42 @@ INDUSTRY: ${org?.industry || "not specified"}
 Your task: generate a detailed, tool-agnostic design brief that works equally well when pasted into Claude, ChatGPT, Midjourney, Adobe Firefly, Canva AI, or any other image generation tool.
 ${brandStyleBlock ? "IMPORTANT: The brand style guide above contains exact colors and fonts — use these precisely, do not substitute or invent alternatives." : ""}
 
+CANONICAL DIMENSIONS (use exactly):
+- LinkedIn Single image / Sponsored: 1200 × 627px (1.91:1 landscape)
+- LinkedIn Carousel: 1080 × 1080px (1:1 square) — each frame must be 1:1
+- LinkedIn Story / Event cover: 1920 × 1080px (16:9)
+- Meta / Facebook Single image ad: 1200 × 628px (1.91:1)
+- Meta / Facebook Carousel: 1080 × 1080px (1:1 square)
+- Instagram Feed Single: 1080 × 1080px (1:1 square) or 1080 × 1350px (4:5 portrait)
+- Instagram Story / Reel: 1080 × 1920px (9:16 vertical)
+- Twitter/X: 1600 × 900px (16:9)
+- Blog header image: 1920 × 1080px (16:9) or 1200 × 628px
+- Email header: 600 × 200px (3:1)
+- YouTube thumbnail: 1280 × 720px (16:9)
+
+CAROUSEL-SPECIFIC RULES (apply when format is a carousel):
+- Every frame must use the SAME 1:1 (1080×1080px) dimensions
+- Frame 1 (Cover): strong hook — must work as a standalone image even if the viewer swipes no further
+- Middle frames: each frame advances the narrative or reveals one key point; visual continuity across frames (consistent color, style, character/subject)
+- Last frame (CTA): clear call-to-action visual; text overlay with next step
+- Design for LEFT-EDGE SAFE ZONE on all frames except the last — LinkedIn/Meta partially hides the right edge when carousel is in-feed
+- The imagePrompt field must describe EACH FRAME separately: "Frame 1: [description]. Frame 2: [description]. ..." etc.
+
 Return ONLY valid JSON — no markdown, no backticks, no explanation outside the JSON.
 
 {
   "platform": "auto-detect from the prompt — LinkedIn | Meta | Instagram | Blog | Twitter/X | YouTube | Email | Website | General",
-  "format": "auto-detect — Single image | Carousel (N frames) | Story | Header image | Banner | Thumbnail | Ad creative | etc.",
-  "dimensions": "width × height px with aspect ratio, e.g. '1200 × 627px (1.91:1 landscape)'",
-  "visualConcept": "2-3 sentences describing the core visual idea, composition approach, and how it connects to the brand and objective",
+  "format": "auto-detect — Single image | LinkedIn Carousel (N slides) | Meta Carousel (N slides) | Story | Header image | Banner | Thumbnail | Ad creative | etc.",
+  "dimensions": "use canonical dimensions above — e.g. '1080 × 1080px (1:1 square)' for LinkedIn Carousel",
+  "visualConcept": "2-3 sentences describing the core visual idea, composition approach, and how it connects to the brand and objective. For carousels: describe the narrative arc across frames.",
   "mood": "comma-separated mood/atmosphere/feeling keywords, e.g. 'confident, modern, aspirational, clean'",
   "colorPalette": ${colorPaletteInstruction},
   "typography": ${typographyInstruction},
-  "subjectScene": "detailed description of the main subject, background/setting, lighting direction, camera angle/distance, depth of field",
-  "textOverlay": "exact headline and supporting copy to overlay on the image, or null if no text overlay",
-  "imagePrompt": "a complete, ready-to-use prompt for any AI image generator. Write in rich natural language. Cover: subject, setting, lighting, color mood, composition, style reference, technical quality. Do NOT include brand name or text in image. Make it specific and visual.",
+  "subjectScene": "detailed description of the main subject, background/setting, lighting direction, camera angle/distance, depth of field. For carousels: describe visual consistency rules across frames.",
+  "textOverlay": "exact headline and supporting copy for each frame (Frame 1: '...', Frame 2: '...'), or null if no text overlay",
+  "imagePrompt": "For single images: one complete AI image generation prompt. For carousels: 'Frame 1: [full prompt]. Frame 2: [full prompt]. ...' — each frame prompt must be self-contained and ready to paste into any AI tool.",
   "negativePrompts": "what to avoid — list specific visual clichés, technical issues, style elements that conflict with brand, separated by commas",
-  "artDirectionNotes": "composition safe zones for text overlays, brand-specific guidance, accessibility notes, anything a designer would need to know"
+  "artDirectionNotes": "safe zones for text overlays, carousel swipe continuity notes, brand-specific guidance, accessibility notes, anything a designer would need to know"
 }`;
 
     const raw = await callClaude(apiKey, systemPrompt, `Generate a design brief for:\n\n"${prompt.trim()}"`);

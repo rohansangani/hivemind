@@ -488,7 +488,7 @@ export default function DesignBriefPage() {
                   value={prompt}
                   onChange={e => setPrompt(e.target.value)}
                   onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") handleGenerate(); }}
-                  placeholder={`Examples:\n• Blog header image for our Q3 product launch targeting enterprise CTOs\n• LinkedIn single image ad promoting our new pricing plan — aspirational, not salesy\n• 3-frame Meta carousel for a webinar on AI in marketing\n• Instagram story announcing a product update for SMB customers`}
+                  placeholder={`Examples:\n• LinkedIn carousel (5 slides, 1:1) breaking down our product benefits for enterprise buyers\n• Blog header image for our Q3 product launch targeting enterprise CTOs\n• LinkedIn single image ad promoting our new pricing plan — aspirational, not salesy\n• 3-frame Meta carousel for a webinar on AI in marketing\n• Instagram story announcing a product update for SMB customers`}
                   className="w-full resize-none text-[13px] border border-[var(--hm-border)] rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#4361ee]/30 focus:border-[#4361ee]"
                   style={{ minHeight: "160px", background: "var(--hm-bg-secondary)" }}
                   disabled={generating}
@@ -523,12 +523,14 @@ export default function DesignBriefPage() {
               </div>
 
               {/* Examples / hints */}
-              <div className="mt-5 grid grid-cols-2 gap-3">
+              <div className="mt-5 grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {[
                   { label: "LinkedIn ad", example: "LinkedIn single image ad for our enterprise product, targeting VP-level buyers, professional and confident tone" },
+                  { label: "LinkedIn carousel", example: "LinkedIn carousel (5 slides, 1:1) breaking down our top 3 product benefits for enterprise buyers — bold, data-driven, swipe-worthy" },
                   { label: "Blog header", example: "Blog header image for an article about AI trends in marketing, modern and editorial style" },
                   { label: "Meta carousel", example: "3-frame Meta carousel showcasing our 3 core product benefits for SMB customers, clean and bold" },
                   { label: "Instagram story", example: "Instagram story announcing our product launch — premium feel, minimal text, strong visual hook" },
+                  { label: "Meta ad", example: "Meta single image ad promoting our new pricing plan — aspirational, not salesy, targeting SMB decision makers" },
                 ].map(hint => (
                   <button
                     key={hint.label}
