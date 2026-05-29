@@ -40,6 +40,7 @@ model Organization {
   skills           Skill[]
   contentAssets    ContentAsset[]
   contentPieces    GeneratedContent[]
+  designBriefs     DesignBrief[]
   insights           IndustryInsight[]
   learningLogs       LearningLog[]
   knowledgeEntries   KnowledgeEntry[]
@@ -71,6 +72,7 @@ model User {
   contentAssets    ContentAsset[]
   generatedContent GeneratedContent[]
   conversations    Conversation[]
+  designBriefs     DesignBrief[]
 }
 
 model Account {
@@ -367,4 +369,21 @@ model Integration {
   updatedAt     DateTime  @updatedAt
 
   @@unique([organizationId, type])
+}
+
+// ═══════════════════════════════════════
+// DESIGN BRIEF
+// ═══════════════════════════════════════
+
+model DesignBrief {
+  id             String   @id @default(cuid())
+  prompt         String
+  platform       String?
+  format         String?
+  brief          Json     @default("{}")
+  createdById    String
+  createdBy      User     @relation(fields: [createdById], references: [id])
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  createdAt      DateTime @default(now())
 }

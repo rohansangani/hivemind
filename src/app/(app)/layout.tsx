@@ -12,6 +12,7 @@ const ROUTE_LABELS: Record<string, string> = {
   "content-library":    "Asset Library",
   "assistant":          "Ask Halo",
   "content-generator":  "Content Generator",
+  "design-brief":       "Design Brief",
   "knowledge-base":     "Knowledge Base",
   "team":               "Team",
   "activity":           "Activity",

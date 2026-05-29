@@ -38,6 +38,16 @@ interface ConversationItem {
   updatedAt: string;
 }
 
+interface DesignBriefAdminItem {
+  id: string;
+  prompt: string;
+  platform: string | null;
+  format: string | null;
+  brief: Record<string, unknown>;
+  createdBy: UserRef;
+  createdAt: string;
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 const FORMAT_LABELS: Record<string, string> = {
@@ -533,12 +543,205 @@ function ConversationsTab() {
   );
 }
 
+// ── Design Briefs Tab ──────────────────────────────────────────────────────────
+
+const PLATFORM_COLORS: Record<string, string> = {
+  linkedin: "#0A66C2", meta: "#1877F2", instagram: "#E1306C",
+  twitter: "#1DA1F2", blog: "#F59E0B", email: "#8B5CF6", general: "#6B7280",
+};
+
+function DesignBriefsTab() {
+  const [items, setItems] = useState<DesignBriefAdminItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [search, setSearch] = useState("");
+
+  const load = useCallback(async (cursor?: string) => {
+    if (cursor) setLoadingMore(true); else setLoading(true);
+    try {
+      const url = `/api/admin/design-briefs${cursor ? `?cursor=${cursor}` : ""}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      setItems(prev => cursor ? [...prev, ...(data.briefs || [])] : (data.briefs || []));
+      setNextCursor(data.nextCursor || null);
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const filtered = items.filter(item =>
+    !search ||
+    item.prompt.toLowerCase().includes(search.toLowerCase()) ||
+    (item.platform || "").toLowerCase().includes(search.toLowerCase()) ||
+    (item.createdBy.name || item.createdBy.email).toLowerCase().includes(search.toLowerCase())
+  );
+
+  function toggleExpand(id: string) {
+    setExpanded(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  if (loading) {
+    return (
+      <div className="space-y-3">
+        {[1,2,3].map(i => (
+          <div key={i} className="h-16 rounded-xl animate-pulse" style={{ background: "var(--hm-surface)" }} />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Search */}
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1 max-w-sm">
+          <svg className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ color: "var(--hm-text-tertiary)" }}>
+            <circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.3" />
+            <path d="M10.5 10.5l3 3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+          </svg>
+          <input
+            type="text"
+            placeholder="Search briefs…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="w-full h-9 pl-9 pr-3 rounded-lg border text-[13px] outline-none"
+            style={{ borderColor: "var(--hm-border)", background: "var(--hm-bg)", color: "var(--hm-text)" }}
+          />
+        </div>
+        <span className="text-[12px] ml-auto" style={{ color: "var(--hm-text-tertiary)" }}>
+          {filtered.length} {filtered.length === 1 ? "brief" : "briefs"}
+        </span>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="py-16 text-center">
+          <p className="text-[13px]" style={{ color: "var(--hm-text-tertiary)" }}>
+            {search ? "No briefs match your search." : "No design briefs have been generated yet."}
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map(item => {
+            const isOpen = expanded.has(item.id);
+            const platformColor = PLATFORM_COLORS[(item.platform || "general").toLowerCase()] || PLATFORM_COLORS.general;
+            const brief = item.brief as Record<string, unknown>;
+            return (
+              <div key={item.id} className="rounded-xl border overflow-hidden" style={{ borderColor: "var(--hm-border)", background: "var(--hm-bg)" }}>
+                <button
+                  onClick={() => toggleExpand(item.id)}
+                  className="w-full flex items-start gap-3 px-4 py-3 text-left hover:bg-[var(--hm-surface-hover)] transition-colors"
+                >
+                  {/* Avatar */}
+                  <div
+                    className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[11px] font-semibold flex-shrink-0 mt-0.5"
+                    style={{ background: userColor(item.createdBy.id) }}
+                  >
+                    {userInitials(item.createdBy)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[13px] font-medium" style={{ color: "var(--hm-text)" }}>
+                        {item.createdBy.name || item.createdBy.email}
+                      </span>
+                      {item.platform && (
+                        <span className="inline-flex items-center h-5 px-2 rounded text-[10px] font-semibold text-white" style={{ background: platformColor }}>
+                          {item.platform}
+                        </span>
+                      )}
+                      {item.format && (
+                        <span className="inline-flex items-center h-5 px-2 rounded text-[10px] border" style={{ borderColor: "var(--hm-border)", color: "var(--hm-text-secondary)" }}>
+                          {item.format}
+                        </span>
+                      )}
+                      <span className="text-[11px] ml-auto" style={{ color: "var(--hm-text-tertiary)" }}>
+                        {timeAgo(item.createdAt)}
+                      </span>
+                    </div>
+                    <p className="text-[12px] mt-0.5 truncate" style={{ color: "var(--hm-text-secondary)" }}>
+                      {item.prompt}
+                    </p>
+                  </div>
+                  <svg
+                    className="flex-shrink-0 mt-1 transition-transform"
+                    style={{ transform: isOpen ? "rotate(180deg)" : "rotate(0deg)", color: "var(--hm-text-tertiary)" }}
+                    width="12" height="12" viewBox="0 0 12 12" fill="none"
+                  >
+                    <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </button>
+
+                {isOpen && (
+                  <div className="px-4 pb-4 pt-1 border-t space-y-3" style={{ borderColor: "var(--hm-border)" }}>
+                    {brief.visualConcept && (
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: "var(--hm-text-tertiary)" }}>Visual Concept</p>
+                        <p className="text-[12px]" style={{ color: "var(--hm-text-secondary)" }}>{String(brief.visualConcept)}</p>
+                      </div>
+                    )}
+                    {brief.mood && (
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: "var(--hm-text-tertiary)" }}>Mood</p>
+                        <p className="text-[12px]" style={{ color: "var(--hm-text-secondary)" }}>{String(brief.mood)}</p>
+                      </div>
+                    )}
+                    {brief.imagePrompt && (
+                      <div className="rounded-lg p-3" style={{ background: "var(--hm-surface)" }}>
+                        <p className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: "var(--hm-text-tertiary)" }}>AI Image Prompt</p>
+                        <p className="text-[12px] font-mono leading-relaxed" style={{ color: "var(--hm-text)" }}>{String(brief.imagePrompt)}</p>
+                      </div>
+                    )}
+                    {Array.isArray(brief.colorPalette) && brief.colorPalette.length > 0 && (
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--hm-text-tertiary)" }}>Color Palette</p>
+                        <div className="flex gap-2 flex-wrap">
+                          {(brief.colorPalette as string[]).map((hex, i) => (
+                            <div key={i} className="flex items-center gap-1.5">
+                              <div className="w-5 h-5 rounded border" style={{ background: hex, borderColor: "var(--hm-border)" }} />
+                              <span className="text-[10px] font-mono" style={{ color: "var(--hm-text-secondary)" }}>{hex}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {nextCursor && (
+        <div className="flex justify-center">
+          <button
+            onClick={() => load(nextCursor)}
+            disabled={loadingMore}
+            className="h-9 px-5 rounded-lg text-[12px] border border-[var(--hm-border)] disabled:opacity-50"
+            style={{ color: "var(--hm-text-secondary)" }}
+          >
+            {loadingMore ? "Loading…" : "Load more"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main page ──────────────────────────────────────────────────────────────────
 
 export default function ActivityPage() {
   const user = useUser();
   const router = useRouter();
-  const [tab, setTab] = useState<"content" | "conversations">("content");
+  const [tab, setTab] = useState<"content" | "conversations" | "briefs">("content");
 
   useEffect(() => {
     if (user && !hasPermission(user.role, "manage_team")) {
@@ -583,6 +786,14 @@ export default function ActivityPage() {
               <path d="M2 12V4a2 2 0 012-2h8a2 2 0 012 2v5a2 2 0 01-2 2H5l-3 3z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
             </svg>
           )},
+          { id: "briefs", label: "Design Briefs", icon: (
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <rect x="2" y="2" width="5" height="7" rx="1" stroke="currentColor" strokeWidth="1.3" />
+              <rect x="9" y="2" width="5" height="4" rx="1" stroke="currentColor" strokeWidth="1.3" />
+              <rect x="9" y="8" width="5" height="6" rx="1" stroke="currentColor" strokeWidth="1.3" />
+              <rect x="2" y="11" width="5" height="3" rx="1" stroke="currentColor" strokeWidth="1.3" />
+            </svg>
+          )},
         ] as const).map(t => (
           <button
             key={t.id}
@@ -603,6 +814,7 @@ export default function ActivityPage() {
       <div className="flex-1 overflow-y-auto p-7">
         {tab === "content" && <ContentTab />}
         {tab === "conversations" && <ConversationsTab />}
+        {tab === "briefs" && <DesignBriefsTab />}
       </div>
     </div>
   );

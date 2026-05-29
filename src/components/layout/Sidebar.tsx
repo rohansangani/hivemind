@@ -16,6 +16,7 @@ const NAV_ITEMS = [
   { href: "/content-library",   label: "Asset Library",      icon: "library" },
   { href: "/assistant",         label: "Ask Halo",           icon: "assistant" },
   { href: "/content-generator", label: "Content Generator",  icon: "generator" },
+  { href: "/design-brief",      label: "Design Brief",       icon: "design" },
   { href: "/knowledge-base",    label: "Knowledge Base",     icon: "knowledge" },
 ];
 
@@ -76,6 +77,14 @@ function NavIcon({ icon, active }: { icon: string; active: boolean }) {
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
         <circle cx="8" cy="8" r="2.5" stroke={c} strokeWidth={w} />
         <path d="M8 2v2M8 12v2M2 8h2M12 8h2M3.75 3.75l1.5 1.5M10.75 10.75l1.5 1.5M12.25 3.75l-1.5 1.5M5.25 10.75l-1.5 1.5" stroke={c} strokeWidth="1.1" strokeLinecap="round" />
+      </svg>
+    );
+    case "design": return (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <rect x="1" y="1" width="6" height="6" rx="1" stroke={c} strokeWidth={w} />
+        <rect x="9" y="1" width="6" height="4" rx="1" stroke={c} strokeWidth={w} />
+        <rect x="9" y="7" width="6" height="8" rx="1" stroke={c} strokeWidth={w} />
+        <rect x="1" y="9" width="6" height="6" rx="1" stroke={c} strokeWidth={w} />
       </svg>
     );
     case "activity": return (
