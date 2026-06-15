@@ -34,7 +34,7 @@ function AiBtn({ loading, onClick, label }: { loading: boolean; onClick: () => v
 
 export default function KnowledgeBasePage() {
   const user = useUser();
-  const [tab, setTab] = useState<"overview" | "skills" | "learning" | "documents" | "brand_style">("overview");
+  const [tab, setTab] = useState<"overview" | "skills" | "learning" | "documents" | "brand_style" | "custom">("overview");
   const [org, setOrg] = useState<Org | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [markets, setMarkets] = useState<Market[]>([]);
@@ -107,10 +107,81 @@ export default function KnowledgeBasePage() {
   const [fullAiSuggestions, setFullAiSuggestions] = useState<Record<string, unknown> | null>(null);
   const [fullAiSections, setFullAiSections] = useState<string[]>(["company", "products", "markets", "personas", "competitors", "brand"]);
 
+  // Custom knowledge entries state
+  interface KnowledgeEntry { id: string; category: string; title: string; content: string; source: string; isAIGenerated: boolean; createdAt: string; updatedAt: string; }
+  const ENTRY_CATEGORIES = [
+    { id: "company_facts", label: "Company Facts", color: "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400", desc: "Key facts, stats, and verified claims about your company" },
+    { id: "product_context", label: "Product Context", color: "bg-violet-50 text-violet-600 dark:bg-violet-900/30 dark:text-violet-400", desc: "Additional product details, use cases, or technical specs" },
+    { id: "market_intelligence", label: "Market Intelligence", color: "bg-teal-50 text-teal-600 dark:bg-teal-900/30 dark:text-teal-400", desc: "Market trends, customer insights, or industry knowledge" },
+    { id: "competitive_intel", label: "Competitive Intel", color: "bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400", desc: "Competitor info, positioning notes, differentiators" },
+    { id: "messaging_guidelines", label: "Messaging Guidelines", color: "bg-pink-50 text-pink-600 dark:bg-pink-900/30 dark:text-pink-400", desc: "How to talk about specific topics, approved phrases, disclaimers" },
+    { id: "proof_points", label: "Proof Points", color: "bg-lime-50 text-lime-600 dark:bg-lime-900/30 dark:text-lime-400", desc: "Stats, testimonials, case study highlights, awards" },
+    { id: "corrections", label: "Corrections & Updates", color: "bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400", desc: "Override outdated info or correct AI assumptions" },
+    { id: "general", label: "General", color: "bg-gray-50 text-gray-600 dark:bg-gray-900/30 dark:text-gray-400", desc: "Anything else the AI should know" },
+  ];
+  const [customEntries, setCustomEntries] = useState<KnowledgeEntry[]>([]);
+  const [customLoading, setCustomLoading] = useState(false);
+  const [showAddEntry, setShowAddEntry] = useState(false);
+  const [editingEntry, setEditingEntry] = useState<KnowledgeEntry | null>(null);
+  const [entryForm, setEntryForm] = useState({ category: "company_facts", title: "", content: "" });
+  const [entrySaving, setEntrySaving] = useState(false);
+  const [entryMessage, setEntryMessage] = useState("");
+  const [entryFilter, setEntryFilter] = useState("all");
+  const [entrySearch, setEntrySearch] = useState("");
+  const [deletingEntryId, setDeletingEntryId] = useState<string | null>(null);
+
+  const fetchCustomEntries = async () => {
+    setCustomLoading(true);
+    try {
+      const res = await fetch("/api/knowledge/entries");
+      const data = await res.json();
+      setCustomEntries(data.entries || []);
+    } catch { /* ignore */ }
+    finally { setCustomLoading(false); }
+  };
+
+  const saveEntry = async () => {
+    if (!entryForm.title.trim() || !entryForm.content.trim()) return;
+    setEntrySaving(true);
+    setEntryMessage("");
+    try {
+      const isEdit = !!editingEntry;
+      const res = await fetch("/api/knowledge/entries", {
+        method: isEdit ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(isEdit ? { id: editingEntry.id, ...entryForm } : entryForm),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setEntryMessage(isEdit ? "Entry updated" : "Entry added");
+        setEntryForm({ category: "company_facts", title: "", content: "" });
+        setShowAddEntry(false);
+        setEditingEntry(null);
+        await fetchCustomEntries();
+      } else {
+        setEntryMessage(data.error || "Failed to save");
+      }
+    } catch { setEntryMessage("Network error"); }
+    finally {
+      setEntrySaving(false);
+      setTimeout(() => setEntryMessage(""), 4000);
+    }
+  };
+
+  const deleteEntry = async (id: string) => {
+    setDeletingEntryId(id);
+    try {
+      await fetch(`/api/knowledge/entries?id=${id}`, { method: "DELETE" });
+      await fetchCustomEntries();
+    } catch { /* ignore */ }
+    finally { setDeletingEntryId(null); }
+  };
+
   const fetchAll = () => {
     fetch("/api/knowledge").then(r => r.json()).then(d => { setOrg(d.org); setProducts(d.products || []); setMarkets(d.markets || []); setPersonas(d.personas || []); setCompetitors(d.competitors || []); setBrand(d.brandProfile); setLogs(d.learningLogs || []); });
     fetch("/api/skills").then(r => r.json()).then(d => setSkills(d.skills || []));
     fetch("/api/knowledge/documents").then(r => r.json()).then(d => setDocs(d.documents || []));
+    fetchCustomEntries();
   };
 
   const fetchStyleGuide = () => {
@@ -315,6 +386,7 @@ export default function KnowledgeBasePage() {
             { id: "documents" as const, l: "Documents", b: docs.length > 0 ? String(docs.length) : null },
             { id: "skills" as const, l: "Skills", b: skills.length > 0 ? String(skills.length) : null },
             { id: "learning" as const, l: "Learning log", b: logs.length > 0 ? String(logs.length) : null },
+            { id: "custom" as const, l: "Custom knowledge", b: customEntries.length > 0 ? String(customEntries.length) : null },
           ] as Array<{ id: typeof tab; l: string; b?: string | null }>).map(t => (
             <button key={t.id} onClick={() => setTab(t.id)} className={"px-4 py-2.5 text-[12px] border-b-2 flex items-center gap-1.5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#4361ee] " + (tab === t.id ? "font-medium text-[#4361ee] border-[#4361ee]" : "text-[var(--hm-text-tertiary)] border-transparent hover:text-[var(--hm-text)] hover:bg-[var(--hm-bg-secondary)]")}>{t.l}{t.b && <span className={"text-[9px] px-1.5 py-0.5 rounded-md " + (t.b === "✓" ? "bg-emerald-500 text-white" : "bg-[#4361ee] text-white")}>{t.b}</span>}</button>
           ))}
@@ -1360,6 +1432,254 @@ export default function KnowledgeBasePage() {
                   </div>
                 );
               })}
+            </div>
+          )}
+
+          {/* Custom Knowledge */}
+          {tab === "custom" && (
+            <div className="animate-fade-in max-w-[800px]">
+              {/* Header */}
+              <div className="flex items-start justify-between mb-5">
+                <div>
+                  <h3 className="text-[15px] font-medium">Custom knowledge</h3>
+                  <p className="text-[12px] text-[var(--hm-text-tertiary)] mt-0.5">
+                    Add facts, context, corrections, or guidelines that the AI should know. These feed directly into all AI features.
+                  </p>
+                </div>
+                {!showAddEntry && !editingEntry && (
+                  <button
+                    onClick={() => { setShowAddEntry(true); setEntryForm({ category: "company_facts", title: "", content: "" }); }}
+                    className="h-8 px-4 bg-[#4361ee] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all flex items-center gap-1.5 flex-shrink-0"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
+                    Add entry
+                  </button>
+                )}
+              </div>
+
+              {/* Success / error message */}
+              {entryMessage && (
+                <div className={`mb-4 px-3 py-2 rounded-lg text-[12px] font-medium animate-fade-in ${entryMessage.includes("error") || entryMessage.includes("Failed") ? "bg-red-50 text-red-600 border border-red-200" : "bg-green-50 text-green-700 border border-green-200"}`}>
+                  {entryMessage}
+                </div>
+              )}
+
+              {/* Add / Edit form */}
+              {(showAddEntry || editingEntry) && (
+                <div className="bg-white border border-[var(--hm-border)] rounded-xl p-5 mb-5 shadow-sm">
+                  <h4 className="text-[13px] font-semibold mb-4">{editingEntry ? "Edit entry" : "Add new knowledge entry"}</h4>
+
+                  {/* Category selector */}
+                  <div className="mb-4">
+                    <label className="text-[11px] font-medium text-[var(--hm-text-secondary)] uppercase tracking-wider mb-2 block">Category</label>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {ENTRY_CATEGORIES.map(cat => (
+                        <button
+                          key={cat.id}
+                          type="button"
+                          onClick={() => setEntryForm(f => ({ ...f, category: cat.id }))}
+                          className={`px-3 py-2 rounded-lg text-[11px] border transition-all text-left ${
+                            entryForm.category === cat.id
+                              ? "border-[#4361ee] bg-blue-50 ring-1 ring-[#4361ee]/30"
+                              : "border-[var(--hm-border)] hover:border-[#4361ee]/40"
+                          }`}
+                        >
+                          <span className={`inline-block w-2 h-2 rounded-full mr-1.5 ${cat.color.split(" ")[0]}`} style={{ backgroundColor: cat.color.includes("blue") ? "#3b82f6" : cat.color.includes("violet") ? "#8b5cf6" : cat.color.includes("teal") ? "#14b8a6" : cat.color.includes("red") ? "#ef4444" : cat.color.includes("pink") ? "#ec4899" : cat.color.includes("lime") ? "#84cc16" : cat.color.includes("amber") ? "#f59e0b" : "#6b7280" }} />
+                          {cat.label}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-1.5">
+                      {ENTRY_CATEGORIES.find(c => c.id === entryForm.category)?.desc}
+                    </p>
+                  </div>
+
+                  {/* Title */}
+                  <div className="mb-3">
+                    <label className="text-[11px] font-medium text-[var(--hm-text-secondary)] uppercase tracking-wider mb-1.5 block">Title</label>
+                    <input
+                      type="text"
+                      value={entryForm.title}
+                      onChange={e => setEntryForm(f => ({ ...f, title: e.target.value }))}
+                      placeholder="e.g. Q4 2024 ARR milestone, New compliance requirement, Updated pricing tiers..."
+                      className="w-full h-9 px-3 text-[13px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[#4361ee]"
+                    />
+                  </div>
+
+                  {/* Content */}
+                  <div className="mb-4">
+                    <label className="text-[11px] font-medium text-[var(--hm-text-secondary)] uppercase tracking-wider mb-1.5 block">Content</label>
+                    <textarea
+                      value={entryForm.content}
+                      onChange={e => setEntryForm(f => ({ ...f, content: e.target.value }))}
+                      placeholder="Write the information the AI should know. Be specific and factual. You can include numbers, dates, approved phrasing, or corrections to existing knowledge."
+                      rows={5}
+                      className="w-full px-3 py-2.5 text-[13px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[#4361ee] resize-none leading-relaxed"
+                    />
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex items-center justify-between">
+                    <button
+                      onClick={() => { setShowAddEntry(false); setEditingEntry(null); setEntryForm({ category: "company_facts", title: "", content: "" }); }}
+                      className="h-8 px-4 border border-[var(--hm-border)] rounded-lg text-[12px] text-[var(--hm-text-secondary)] hover:bg-[var(--hm-bg-secondary)] transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={saveEntry}
+                      disabled={entrySaving || !entryForm.title.trim() || !entryForm.content.trim()}
+                      className="h-8 px-5 bg-[#4361ee] text-white rounded-lg text-[12px] font-medium hover:opacity-90 disabled:opacity-40 flex items-center gap-2 transition-all"
+                    >
+                      {entrySaving ? <><span className="w-3 h-3 border-[1.5px] border-white/30 border-t-white rounded-full animate-spin" />Saving...</> : editingEntry ? "Update entry" : "Add to knowledge base"}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Filters */}
+              {!showAddEntry && !editingEntry && customEntries.length > 0 && (
+                <div className="flex flex-col sm:flex-row gap-3 mb-4">
+                  <div className="flex-1">
+                    <input
+                      type="text"
+                      value={entrySearch}
+                      onChange={e => setEntrySearch(e.target.value)}
+                      placeholder="Search entries..."
+                      className="w-full h-9 px-3 text-[12px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[#4361ee]"
+                    />
+                  </div>
+                  <div className="flex gap-1.5 flex-wrap">
+                    <button
+                      onClick={() => setEntryFilter("all")}
+                      className={`px-3 py-1.5 rounded-lg text-[11px] border transition-colors ${entryFilter === "all" ? "border-[#4361ee] bg-blue-50 text-[#4361ee] font-medium" : "border-[var(--hm-border)] text-[var(--hm-text-tertiary)] hover:border-[#4361ee]/40"}`}
+                    >
+                      All ({customEntries.length})
+                    </button>
+                    {ENTRY_CATEGORIES.filter(cat => customEntries.some(e => e.category === cat.id)).map(cat => (
+                      <button
+                        key={cat.id}
+                        onClick={() => setEntryFilter(cat.id)}
+                        className={`px-3 py-1.5 rounded-lg text-[11px] border transition-colors ${entryFilter === cat.id ? "border-[#4361ee] bg-blue-50 text-[#4361ee] font-medium" : "border-[var(--hm-border)] text-[var(--hm-text-tertiary)] hover:border-[#4361ee]/40"}`}
+                      >
+                        {cat.label} ({customEntries.filter(e => e.category === cat.id).length})
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Loading */}
+              {customLoading && (
+                <div className="flex items-center justify-center py-16">
+                  <div className="w-5 h-5 border-2 border-[#4361ee]/30 border-t-[#4361ee] rounded-full animate-spin" />
+                </div>
+              )}
+
+              {/* Empty state */}
+              {!customLoading && customEntries.length === 0 && !showAddEntry && (
+                <div className="bg-white border border-[var(--hm-border)] rounded-xl p-10 text-center">
+                  <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-blue-50 flex items-center justify-center">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="#4361ee" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                  </div>
+                  <p className="text-[14px] font-medium mb-1">No custom knowledge entries yet</p>
+                  <p className="text-[12px] text-[var(--hm-text-tertiary)] mb-4 max-w-sm mx-auto">
+                    Add facts, context, corrections, or guidelines that the AI should reference when generating content or answering questions.
+                  </p>
+                  <button
+                    onClick={() => { setShowAddEntry(true); setEntryForm({ category: "company_facts", title: "", content: "" }); }}
+                    className="h-9 px-5 bg-[#4361ee] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all inline-flex items-center gap-1.5"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
+                    Add your first entry
+                  </button>
+                </div>
+              )}
+
+              {/* Entries list */}
+              {!customLoading && !showAddEntry && !editingEntry && (() => {
+                const filtered = customEntries
+                  .filter(e => entryFilter === "all" || e.category === entryFilter)
+                  .filter(e => {
+                    if (!entrySearch.trim()) return true;
+                    const q = entrySearch.toLowerCase();
+                    return e.title.toLowerCase().includes(q) || e.content.toLowerCase().includes(q);
+                  });
+
+                if (filtered.length === 0 && customEntries.length > 0) {
+                  return (
+                    <div className="bg-white border border-[var(--hm-border)] rounded-xl p-8 text-center">
+                      <p className="text-[13px] text-[var(--hm-text-tertiary)]">No entries match your filters.</p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="space-y-3">
+                    {filtered.map(entry => {
+                      const cat = ENTRY_CATEGORIES.find(c => c.id === entry.category);
+                      return (
+                        <div key={entry.id} className="bg-white border border-[var(--hm-border)] rounded-xl p-4 hover:border-[#4361ee]/30 transition-colors group">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1.5">
+                                <span className={`text-[10px] px-2 py-0.5 rounded-md font-medium ${cat?.color || "bg-gray-50 text-gray-600"}`}>
+                                  {cat?.label || entry.category}
+                                </span>
+                                {entry.source === "manual" && (
+                                  <span className="text-[10px] text-[var(--hm-text-tertiary)]">Manual</span>
+                                )}
+                                {entry.isAIGenerated && (
+                                  <span className="text-[10px] text-violet-500">AI-generated</span>
+                                )}
+                              </div>
+                              <h4 className="text-[13px] font-medium text-[var(--hm-text)] mb-1">{entry.title}</h4>
+                              <p className="text-[12px] text-[var(--hm-text-secondary)] leading-relaxed whitespace-pre-wrap line-clamp-3">
+                                {entry.content}
+                              </p>
+                              <p className="text-[10px] text-[var(--hm-text-tertiary)] mt-2">
+                                Added {new Date(entry.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                              <button
+                                onClick={() => {
+                                  setEditingEntry(entry);
+                                  setEntryForm({ category: entry.category, title: entry.title, content: entry.content });
+                                  setShowAddEntry(false);
+                                }}
+                                className="w-7 h-7 flex items-center justify-center rounded-md border border-[var(--hm-border)] text-[var(--hm-text-tertiary)] hover:text-[#4361ee] hover:border-[#4361ee]/40 transition-colors"
+                                title="Edit"
+                              >
+                                <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M11.5 2.5l2 2L5 13H3v-2l8.5-8.5z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" /></svg>
+                              </button>
+                              <button
+                                onClick={() => { if (confirm(`Delete "${entry.title}"?`)) deleteEntry(entry.id); }}
+                                disabled={deletingEntryId === entry.id}
+                                className="w-7 h-7 flex items-center justify-center rounded-md border border-[var(--hm-border)] text-[var(--hm-text-tertiary)] hover:text-red-500 hover:border-red-300 transition-colors disabled:opacity-50"
+                                title="Delete"
+                              >
+                                {deletingEntryId === entry.id ? (
+                                  <span className="w-3 h-3 border-[1.5px] border-red-300 border-t-red-500 rounded-full animate-spin" />
+                                ) : (
+                                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M3 4h10M6 4V3h4v1M5 4v8.5a1 1 0 001 1h4a1 1 0 001-1V4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+
+              {/* Info note */}
+              {!showAddEntry && !editingEntry && customEntries.length > 0 && (
+                <p className="text-[11px] text-[var(--hm-text-tertiary)] text-center mt-6">
+                  All entries are automatically used by the AI when generating content, answering questions, or analyzing assets.
+                </p>
+              )}
             </div>
           )}
         </div>
