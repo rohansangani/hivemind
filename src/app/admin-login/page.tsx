@@ -39,11 +39,16 @@ export default function AdminLoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-[#f8f9fb]">
       <div className="w-full max-w-[380px] mx-4">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-[#1a1a2e] mb-4">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-              <path d="M12 2L2 7l10 5 10-5-10-5z" fill="#4361ee" opacity="0.8" />
-              <path d="M2 17l10 5 10-5" stroke="#4361ee" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              <path d="M2 12l10 5 10-5" stroke="#4361ee" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-[#4361ee] mb-4 shadow-lg shadow-[#4361ee]/20">
+            <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
+              <path d="M16 2L28 9v14l-12 7L4 23V9z" fill="white" opacity="0.2" />
+              <circle cx="16" cy="16" r="4" fill="white" opacity="0.9" />
+              <line x1="16" y1="12" x2="16" y2="6" stroke="white" strokeWidth="1.5" opacity="0.6" />
+              <line x1="19.5" y1="14" x2="24" y2="10" stroke="white" strokeWidth="1.5" opacity="0.6" />
+              <line x1="19.5" y1="18" x2="24" y2="22" stroke="white" strokeWidth="1.5" opacity="0.6" />
+              <line x1="16" y1="20" x2="16" y2="26" stroke="white" strokeWidth="1.5" opacity="0.6" />
+              <line x1="12.5" y1="18" x2="8" y2="22" stroke="white" strokeWidth="1.5" opacity="0.6" />
+              <line x1="12.5" y1="14" x2="8" y2="10" stroke="white" strokeWidth="1.5" opacity="0.6" />
             </svg>
           </div>
           <h1 className="text-[20px] font-bold text-[#1a1a2e]">HiveMind Admin</h1>
