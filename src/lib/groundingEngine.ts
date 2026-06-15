@@ -221,6 +221,37 @@ export function buildGroundedContext(knowledge: RetrievedKnowledge): string {
     }
   }
 
+  // ── Content Asset Intelligence ─────────────────────────
+  const assetItems = knowledge.items.filter(i => i.sourceType === "content_asset");
+  if (assetItems.length) {
+    lines.push("\n■ CONTENT ASSET INTELLIGENCE [Extracted from analyzed case studies, white papers & marketing assets — high trust]");
+    lines.push("These are facts, metrics, and insights extracted directly from the company's own content assets.");
+    for (const item of assetItems) {
+      lines.push(`  • ${item.content} [${item.source}${item.date ? " · " + item.date : ""}]`);
+    }
+  }
+
+  // ── Custom Knowledge (admin-curated) ──────────────────
+  const customItems = knowledge.items.filter(i => i.sourceType === "custom_knowledge");
+  if (customItems.length) {
+    const corrections = customItems.filter(i => i.source.includes("Corrections"));
+    const other = customItems.filter(i => !i.source.includes("Corrections"));
+
+    if (corrections.length) {
+      lines.push("\n■ CORRECTIONS & UPDATES [Admin-curated — HIGHEST PRIORITY, overrides older info]");
+      lines.push("⚠ These corrections take precedence over any conflicting information from other sources.");
+      for (const item of corrections) {
+        lines.push(`  ⚡ ${item.content} [${item.source}]`);
+      }
+    }
+    if (other.length) {
+      lines.push("\n■ CUSTOM KNOWLEDGE [Admin-curated facts & context — verified]");
+      for (const item of other) {
+        lines.push(`  • ${item.content} [${item.source}]`);
+      }
+    }
+  }
+
   // ── Industry Signals ──────────────────────────────────
   const signals = knowledge.items.filter(i => i.sourceType === "industry_signal");
   if (signals.length) {

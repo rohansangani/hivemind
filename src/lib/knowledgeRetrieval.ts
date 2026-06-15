@@ -18,7 +18,8 @@ export type KnowledgeSourceType =
   | "skill" | "proof_point" | "messaging_pattern"
   | "document_learning" | "content_learning"
   | "conversation_learning" | "document_excerpt"
-  | "industry_signal" | "org" | "crm_data";
+  | "industry_signal" | "org" | "crm_data"
+  | "content_asset" | "custom_knowledge";
 
 export interface KnowledgeItem {
   id: string;
@@ -473,13 +474,13 @@ export async function retrieveRelevantKnowledge(
     searchDocuments?: boolean;
   }
 ): Promise<RetrievedKnowledge> {
-  const maxItems = options?.maxItems ?? 20;
+  const maxItems = options?.maxItems ?? 30;
   const queryTokens = tokenize(query);
 
   // ── Fetch all raw data in parallel ─────────────────────
   const [
     org, products, personas, competitors, brandProfile, skills,
-    proofPoints, messagingPatterns, crmEntries, learnings, insights, markets,
+    allKnowledgeEntries, crmEntries, learnings, insights, markets, contentAssets,
   ] = await Promise.all([
     db.organization.findUnique({ where: { id: orgId } }),
     db.product.findMany({
@@ -490,13 +491,33 @@ export async function retrieveRelevantKnowledge(
     db.competitor.findMany({ where: { organizationId: orgId } }),
     db.brandProfile.findFirst({ where: { organizationId: orgId } }),
     db.skill.findMany({ where: { organizationId: orgId, isActive: true } }),
-    db.knowledgeEntry.findMany({ where: { organizationId: orgId, category: "proof_points" }, take: 60 }),
-    db.knowledgeEntry.findMany({ where: { organizationId: orgId, category: "messaging_patterns" }, take: 30 }),
+    // Fetch ALL knowledge entries — proof points, messaging, custom entries, content analyses, corrections
+    db.knowledgeEntry.findMany({
+      where: { organizationId: orgId },
+      orderBy: { createdAt: "desc" },
+      take: 200,
+    }),
     fetchCRMEntries(orgId, queryTokens, query),
     db.learningLog.findMany({ where: { organizationId: orgId }, orderBy: { createdAt: "desc" }, take: 80 }),
     db.industryInsight.findMany({ where: { organizationId: orgId }, orderBy: { createdAt: "desc" }, take: 20 }),
     db.market.findMany({ where: { organizationId: orgId }, orderBy: { createdAt: "asc" } }),
+    // Fetch analyzed content assets (case studies, white papers, etc.) with their AI summaries
+    db.contentAsset.findMany({
+      where: { organizationId: orgId, scoreStatus: "analyzed", aiSummary: { not: null } },
+      select: { id: true, name: true, contentType: true, aiSummary: true, productTags: true, marketTags: true, personaTags: true, customTags: true, createdAt: true },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    }),
   ]);
+
+  // Split knowledge entries by category
+  const proofPoints = allKnowledgeEntries.filter(e => e.category === "proof_points");
+  const messagingPatterns = allKnowledgeEntries.filter(e => e.category === "messaging_patterns");
+  const customEntries = allKnowledgeEntries.filter(e =>
+    !["proof_points", "messaging_patterns", "content_analysis"].includes(e.category) &&
+    e.source !== "hubspot"
+  );
+  const contentAnalysisEntries = allKnowledgeEntries.filter(e => e.category === "content_analysis");
 
   // ── Resolve focus entities ──────────────────────────────
   const effectiveProduct = options?.targetProduct || entities.products[0] || null;
@@ -636,8 +657,76 @@ export async function retrieveRelevantKnowledge(
       content,
       source: "HubSpot CRM",
       sourceType: "crm_data",
-      relevanceScore: scoreItem(entry.title + " " + content, queryTokens, entities, { verifiedBoost: 0.15 }),
+      relevanceScore: scoreItem(entry.title + " " + content, queryTokens, entities, { verifiedBoost: 0.05 }),
       confidence: "verified",
+    });
+  }
+
+  // Content assets (case studies, white papers, etc.) — summaries from analyzed assets
+  for (const asset of contentAssets) {
+    const allTags = [...(asset.productTags as string[] || []), ...(asset.marketTags as string[] || []), ...(asset.personaTags as string[] || []), ...(asset.customTags as string[] || [])];
+    const text = `${asset.name}${asset.contentType ? ` (${asset.contentType})` : ""}: ${asset.aiSummary || ""}${allTags.length ? `. Tags: ${allTags.join(", ")}` : ""}`;
+    allItems.push({
+      id: `asset-${asset.id}`,
+      title: `Asset: ${asset.name}`,
+      content: text,
+      source: `Content Library: ${asset.name}`,
+      sourceType: "content_asset",
+      relevanceScore: scoreItem(text, queryTokens, entities, { verifiedBoost: 0.12 }),
+      confidence: "verified",
+      date: new Date(asset.createdAt).toISOString().split("T")[0],
+    });
+  }
+
+  // Content analysis entries — detailed analysis extracted from assets
+  for (const entry of contentAnalysisEntries) {
+    let summary = entry.title;
+    try {
+      const d = JSON.parse(entry.content);
+      if (d.summary) summary += ": " + d.summary;
+      // Include key themes and proof points from analysis
+      if (d.keyThemes?.length) summary += `. Key themes: ${d.keyThemes.join(", ")}`;
+      if (d.proofPoints?.length) {
+        const claims = d.proofPoints.map((pp: { claim: string }) => pp.claim).join("; ");
+        summary += `. Proof points: ${claims}`;
+      }
+    } catch {}
+    allItems.push({
+      id: `ca-${entry.id}`,
+      title: entry.title,
+      content: summary.slice(0, 1500),
+      source: `Content Analysis: ${entry.title.replace("Analysis: ", "")}`,
+      sourceType: "content_asset",
+      relevanceScore: scoreItem(summary, queryTokens, entities, { verifiedBoost: 0.1 }),
+      confidence: "extracted",
+      date: new Date(entry.createdAt).toISOString().split("T")[0],
+    });
+  }
+
+  // Custom knowledge entries (manual admin entries: facts, corrections, context, guidelines)
+  const CUSTOM_CATEGORY_LABELS: Record<string, string> = {
+    company_facts: "Company Facts",
+    product_context: "Product Context",
+    market_intelligence: "Market Intelligence",
+    competitive_intel: "Competitive Intel",
+    messaging_guidelines: "Messaging Guidelines",
+    corrections: "Corrections & Updates",
+    general: "General Knowledge",
+  };
+  for (const entry of customEntries) {
+    const text = `${entry.title}: ${entry.content}`;
+    const categoryLabel = CUSTOM_CATEGORY_LABELS[entry.category] || entry.category;
+    // Corrections get a strong boost — they're explicit overrides
+    const boost = entry.category === "corrections" ? 0.2 : 0.1;
+    allItems.push({
+      id: `custom-${entry.id}`,
+      title: entry.title,
+      content: text.slice(0, 1500),
+      source: `Custom Knowledge: ${categoryLabel}`,
+      sourceType: "custom_knowledge",
+      relevanceScore: scoreItem(text, queryTokens, entities, { verifiedBoost: boost }),
+      confidence: "verified",
+      date: new Date(entry.createdAt).toISOString().split("T")[0],
     });
   }
 
