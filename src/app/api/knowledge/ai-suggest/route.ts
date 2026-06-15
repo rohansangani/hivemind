@@ -4,12 +4,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import jwt from "jsonwebtoken";
 import { getAnthropicKey, AIKeyNotConfiguredError } from "@/lib/aiProvider";
+import { logTokenUsage, extractAnthropicUsage } from "@/lib/tokenTracking";
 
 export async function POST(req: NextRequest) {
   try {
     const token = req.cookies.get("hm-token")?.value;
     if (!token) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-    const decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as { orgId: string };
+    const decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as { orgId: string; userId?: string };
 
     const apiKey = await getAnthropicKey(decoded.orgId);
 
@@ -85,6 +86,17 @@ export async function POST(req: NextRequest) {
     });
 
     const data = await response.json();
+
+    const tokenUsage = extractAnthropicUsage(data);
+    if (tokenUsage) {
+      logTokenUsage({
+        feature: "knowledge",
+        inputTokens: tokenUsage.inputTokens,
+        outputTokens: tokenUsage.outputTokens,
+        organizationId: decoded.orgId,
+        userId: decoded.userId,
+      });
+    }
 
     if (!response.ok || data.error) {
       const errMsg = data.error?.message || "Anthropic API error";

@@ -4,8 +4,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import jwt from "jsonwebtoken";
 import { getAnthropicKey, AIKeyNotConfiguredError } from "@/lib/aiProvider";
+import { logTokenUsage, extractAnthropicUsage } from "@/lib/tokenTracking";
 
-async function callClaude(apiKey: string, prompt: string): Promise<string> {
+async function callClaude(apiKey: string, prompt: string): Promise<{ text: string; usage: { inputTokens: number; outputTokens: number } | null }> {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
@@ -17,7 +18,7 @@ async function callClaude(apiKey: string, prompt: string): Promise<string> {
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error?.message || "Claude API error");
-  return data.content?.[0]?.text || "";
+  return { text: data.content?.[0]?.text || "", usage: extractAnthropicUsage(data) };
 }
 
 const FORMAT_NAMES: Record<string, string> = {
@@ -168,8 +169,17 @@ ${styleGuide?.logoVariants?.length ? `## Logo usage
 
 Write clearly and concisely. Be specific and opinionated — vague briefs are useless. No intro preamble, start directly with ## Overview.`;
 
-    const brief = await callClaude(apiKey, prompt);
-    return NextResponse.json({ brief });
+    const result = await callClaude(apiKey, prompt);
+    if (result.usage) {
+      logTokenUsage({
+        feature: "design_brief",
+        inputTokens: result.usage.inputTokens,
+        outputTokens: result.usage.outputTokens,
+        organizationId: decoded.orgId,
+        userId: decoded.userId,
+      });
+    }
+    return NextResponse.json({ brief: result.text });
   } catch (error) {
     if (error instanceof AIKeyNotConfiguredError) {
       return NextResponse.json({ error: error.message }, { status: 400 });

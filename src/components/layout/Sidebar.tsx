@@ -23,6 +23,7 @@ const NAV_ITEMS = [
 const ADMIN_ITEMS = [
   { href: "/team",     label: "Team",     icon: "team" },
   { href: "/activity", label: "Activity", icon: "activity" },
+  { href: "/usage",    label: "Usage",    icon: "usage" },
   { href: "/settings", label: "Settings", icon: "settings" },
 ];
 
@@ -90,6 +91,12 @@ function NavIcon({ icon, active }: { icon: string; active: boolean }) {
     case "activity": return (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
         <path d="M2 8h2.5l2-4 3 8 2-4H14" stroke={c} strokeWidth={w} strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+    case "usage": return (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path d="M14 8A6 6 0 118 2v6h6z" stroke={c} strokeWidth={w} strokeLinejoin="round" />
+        <path d="M10 2.5A6 6 0 0113.5 6H10V2.5z" stroke={c} strokeWidth={w} strokeLinejoin="round" />
       </svg>
     );
     default: return null;

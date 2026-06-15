@@ -7,6 +7,7 @@ import { classifyIntent, resolveEntities, getIntentInstructions } from "@/lib/in
 import { retrieveRelevantKnowledge } from "@/lib/knowledgeRetrieval";
 import { buildGroundedSystemPrompt, getGroundedResponseInstructions } from "@/lib/groundingEngine";
 import { getAnthropicKey, AIKeyNotConfiguredError } from "@/lib/aiProvider";
+import { logTokenUsage, extractAnthropicUsage } from "@/lib/tokenTracking";
 import pg from "pg";
 
 // ─────────────────────────────────────────────────────────
@@ -22,7 +23,7 @@ async function callClaude(
   system: string,
   messages: Array<{ role: string; content: string }>,
   maxTokens = 2048
-): Promise<string> {
+): Promise<{ text: string; usage: { inputTokens: number; outputTokens: number } | null }> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 55_000); // 55 s hard timeout
 
@@ -52,7 +53,7 @@ async function callClaude(
     const msg = data.error?.message || "Claude API error";
     throw new Error(`[${res.status}] ${msg}`);
   }
-  return data.content?.[0]?.text || "";
+  return { text: data.content?.[0]?.text || "", usage: extractAnthropicUsage(data) };
 }
 
 // ─────────────────────────────────────────────────────────
@@ -77,14 +78,14 @@ Return a JSON array (may be empty []). Each item:
 
 Return ONLY the JSON array.`;
 
-    const raw = await callClaude(
+    const result = await callClaude(
       apiKey,
       "Extract structured facts from conversations. Return only valid JSON arrays.",
       [{ role: "user", content: prompt }],
       400
     );
 
-    const match = raw.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim().match(/\[[\s\S]*\]/);
+    const match = result.text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim().match(/\[[\s\S]*\]/);
     if (!match) return;
 
     const learnings: Array<{ title: string; summary: string; takeaway: string; tags: string[]; kbCategory: string }> = JSON.parse(match[0]);
@@ -141,14 +142,14 @@ async function buildConversationContext(
       .map(m => `${m.role === "user" ? "User" : "Assistant"}: ${m.content.slice(0, 300)}`)
       .join("\n");
 
-    const summary = await callClaude(
+    const summaryResult = await callClaude(
       apiKey,
       "Summarize conversations concisely. Focus on facts, decisions, and entities mentioned.",
       [{ role: "user", content: `Summarise in ≤120 words. Keep: topics discussed, facts stated, products/competitors mentioned, user corrections.\n\n${transcript}` }],
       200
     );
 
-    return { history: recent, memoryBlock: `=== EARLIER IN THIS CONVERSATION ===\n${summary}\n` };
+    return { history: recent, memoryBlock: `=== EARLIER IN THIS CONVERSATION ===\n${summaryResult.text}\n` };
   } catch {
     return { history: recent, memoryBlock: "" };
   }
@@ -373,7 +374,17 @@ CONVERSATION BEHAVIOR:
         for (const m of history) claudeMessages.push({ role: m.role, content: m.content });
         claudeMessages.push({ role: "user", content: message });
 
-        assistantReply = await callClaude(apiKey, systemPrompt, claudeMessages, 2048);
+        const mainResult = await callClaude(apiKey, systemPrompt, claudeMessages, 2048);
+        assistantReply = mainResult.text;
+        if (mainResult.usage) {
+          logTokenUsage({
+            feature: "assistant",
+            inputTokens: mainResult.usage.inputTokens,
+            outputTokens: mainResult.usage.outputTokens,
+            organizationId: decoded.orgId,
+            userId: decoded.userId,
+          });
+        }
 
         // ── Auto-title after first turn ───────────────────
         if (historyMessages.length === 0 && assistantReply) {
@@ -382,8 +393,17 @@ CONVERSATION BEHAVIOR:
             "Generate a concise 4-6 word conversation title. Return ONLY the plain title text — no quotes, no markdown, no bold, no asterisks.",
             [{ role: "user", content: `Question: "${message.slice(0, 150)}"\nAbout: "${assistantReply.slice(0, 150)}"` }],
             25
-          ).then(raw => {
-            const title = raw
+          ).then(titleResult => {
+            if (titleResult.usage) {
+              logTokenUsage({
+                feature: "assistant",
+                inputTokens: titleResult.usage.inputTokens,
+                outputTokens: titleResult.usage.outputTokens,
+                organizationId: decoded.orgId,
+                userId: decoded.userId,
+              });
+            }
+            const title = titleResult.text
               .trim()
               .replace(/\*\*/g, "")
               .replace(/\*/g, "")

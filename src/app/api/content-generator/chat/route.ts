@@ -7,6 +7,7 @@ import { buildGroundedSystemPrompt } from "@/lib/groundingEngine";
 import { classifyIntent, resolveEntities, getIntentInstructions } from "@/lib/intentEngine";
 import { db } from "@/lib/db";
 import { getAnthropicKey, AIKeyNotConfiguredError } from "@/lib/aiProvider";
+import { logTokenUsage, extractAnthropicUsage } from "@/lib/tokenTracking";
 
 export async function POST(req: NextRequest) {
   try {
@@ -104,6 +105,18 @@ IMPORTANT: When providing a [CONTENT_SNIPPET], make it immediately usable — co
       const errMsg = data.error?.message || `Claude API error ${response.status}`;
       return NextResponse.json({ error: errMsg }, { status: 500 });
     }
+
+    const tokenUsage = extractAnthropicUsage(data);
+    if (tokenUsage) {
+      logTokenUsage({
+        feature: "content_generator",
+        inputTokens: tokenUsage.inputTokens,
+        outputTokens: tokenUsage.outputTokens,
+        organizationId: decoded.orgId,
+        userId: decoded.userId,
+      });
+    }
+
     const reply = data.content?.[0]?.text;
     if (!reply) {
       const errMsg = data.error?.message || "No reply from AI";

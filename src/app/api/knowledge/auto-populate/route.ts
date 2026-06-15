@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import jwt from "jsonwebtoken";
 import { getAnthropicKey, AIKeyNotConfiguredError } from "@/lib/aiProvider";
+import { logTokenUsage, extractAnthropicUsage } from "@/lib/tokenTracking";
 
 export async function POST(req: NextRequest) {
   try {
@@ -128,6 +129,18 @@ Provide 3-5 products, 3-5 markets, 2-4 personas, 3-5 competitors, and complete b
     const data = await response.json();
     console.log("ANTHROPIC STATUS:", response.status);
     console.log("ANTHROPIC DATA:", JSON.stringify(data).slice(0, 2000));
+
+    const tokenUsage = extractAnthropicUsage(data);
+    if (tokenUsage) {
+      logTokenUsage({
+        feature: "knowledge",
+        inputTokens: tokenUsage.inputTokens,
+        outputTokens: tokenUsage.outputTokens,
+        organizationId: decoded.orgId,
+        userId: decoded.userId,
+      });
+    }
+
     const text = data.content?.[0]?.text || "";
     
     // Parse JSON from response

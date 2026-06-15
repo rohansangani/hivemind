@@ -5,6 +5,7 @@ import jwt from "jsonwebtoken";
 import pg from "pg";
 import { db } from "@/lib/db";
 import { getAnthropicClient, AIKeyNotConfiguredError } from "@/lib/aiProvider";
+import { logTokenUsage } from "@/lib/tokenTracking";
 
 function cuid() {
   return crypto.randomUUID().replace(/-/g, "");
@@ -22,9 +23,11 @@ export async function POST(req: NextRequest) {
     const token = req.cookies.get("hm-token")?.value;
     if (!token) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     let orgId: string;
+    let userId: string | undefined;
     try {
-      const decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as { orgId: string };
+      const decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as { orgId: string; userId?: string };
       orgId = decoded.orgId;
+      userId = decoded.userId;
     } catch {
       return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
     }
@@ -72,6 +75,14 @@ Return ONLY the JSON, no markdown, no explanation.`;
       model: "claude-sonnet-4-6",
       max_tokens: 2048,
       messages: [{ role: "user", content: prompt }],
+    });
+
+    logTokenUsage({
+      feature: "seo",
+      inputTokens: message.usage?.input_tokens || 0,
+      outputTokens: message.usage?.output_tokens || 0,
+      organizationId: orgId,
+      userId,
     });
 
     const raw = (message.content[0] as { type: string; text: string }).text.trim();

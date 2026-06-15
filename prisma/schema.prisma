@@ -47,6 +47,7 @@ model Organization {
   knowledgeDocuments KnowledgeDocument[]
   integrations       Integration[]
   aiProviders        AIProviderConfig[]
+  tokenUsageLogs     TokenUsageLog[]
 }
 
 model User {
@@ -347,6 +348,27 @@ model KnowledgeDocument {
   organizationId  String
   organization    Organization @relation(fields: [organizationId], references: [id])
   createdAt       DateTime @default(now())
+}
+
+// ═══════════════════════════════════════
+// TOKEN USAGE TRACKING
+// ═══════════════════════════════════════
+
+model TokenUsageLog {
+  id             String   @id @default(cuid())
+  feature        String   // "assistant" | "content_generator" | "design_brief" | "seo" | "brand_review" | "content_analysis" | "knowledge" | "industry_insights" | "setup_wizard"
+  model          String   @default("claude-sonnet-4-6")
+  provider       String   @default("anthropic")
+  inputTokens    Int      @default(0)
+  outputTokens   Int      @default(0)
+  totalTokens    Int      @default(0)
+  userId         String?
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, feature])
 }
 
 // ═══════════════════════════════════════

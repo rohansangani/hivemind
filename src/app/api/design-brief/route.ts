@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import jwt from "jsonwebtoken";
 import { getAnthropicKey, AIKeyNotConfiguredError } from "@/lib/aiProvider";
+import { logTokenUsage, extractAnthropicUsage } from "@/lib/tokenTracking";
 
 interface BriefOutput {
   platform: string;
@@ -20,7 +21,7 @@ interface BriefOutput {
   artDirectionNotes: string;
 }
 
-async function callClaude(apiKey: string, system: string, userMessage: string): Promise<string> {
+async function callClaude(apiKey: string, system: string, userMessage: string): Promise<{ text: string; usage: { inputTokens: number; outputTokens: number } | null }> {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
@@ -33,7 +34,7 @@ async function callClaude(apiKey: string, system: string, userMessage: string): 
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error?.message || "Claude API error");
-  return data.content?.[0]?.text || "";
+  return { text: data.content?.[0]?.text || "", usage: extractAnthropicUsage(data) };
 }
 
 // ── POST — generate and save a brief ─────────────────────────────────────────
@@ -178,11 +179,20 @@ Return ONLY valid JSON — no markdown, no backticks, no explanation outside the
   "artDirectionNotes": "safe zones for text overlays, carousel swipe continuity notes, brand-specific guidance, accessibility notes, anything a designer would need to know"
 }`;
 
-    const raw = await callClaude(apiKey, systemPrompt, `Generate a design brief for:\n\n"${prompt.trim()}"`);
+    const result = await callClaude(apiKey, systemPrompt, `Generate a design brief for:\n\n"${prompt.trim()}"`);
+    if (result.usage) {
+      logTokenUsage({
+        feature: "design_brief",
+        inputTokens: result.usage.inputTokens,
+        outputTokens: result.usage.outputTokens,
+        organizationId: decoded.orgId,
+        userId: decoded.userId,
+      });
+    }
 
     let brief: BriefOutput;
     try {
-      const clean = raw.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+      const clean = result.text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
       const match = clean.match(/\{[\s\S]*\}/);
       if (!match) throw new Error("No JSON found");
       brief = JSON.parse(match[0]);

@@ -5,6 +5,7 @@ import jwt from "jsonwebtoken";
 import pg from "pg";
 import { db } from "@/lib/db";
 import { getAnthropicKey } from "@/lib/aiProvider";
+import { logTokenUsage, extractAnthropicUsage } from "@/lib/tokenTracking";
 
 // Cooldown: do not re-synthesize more than once every 5 minutes per org
 const SYNTHESIS_COOLDOWN_MS = 5 * 60 * 1000;
@@ -38,7 +39,7 @@ const KB_CATEGORY_ALIASES: Record<string, string> = {
   seo_analysis: "seo",        // SEO route sourceType label
 };
 
-async function callClaude(apiKey: string, prompt: string): Promise<string> {
+async function callClaude(apiKey: string, prompt: string): Promise<{ text: string; usage: { inputTokens: number; outputTokens: number } | null }> {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -54,7 +55,7 @@ async function callClaude(apiKey: string, prompt: string): Promise<string> {
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error?.message || "Claude API error");
-  return data.content?.[0]?.text || "";
+  return { text: data.content?.[0]?.text || "", usage: extractAnthropicUsage(data) };
 }
 
 export async function POST(req: NextRequest) {
@@ -178,7 +179,11 @@ Write a skill instruction (150–250 words) that tells an AI assistant exactly h
 
 Write ONLY the instruction text. No labels, no preamble.`;
 
-          instructions = await callClaude(apiKey, prompt);
+          const result = await callClaude(apiKey, prompt);
+          instructions = result.text;
+          if (result.usage) {
+            logTokenUsage({ feature: "skills", inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens, organizationId: orgId });
+          }
         } catch {
           // Fallback to compiled version
           instructions =

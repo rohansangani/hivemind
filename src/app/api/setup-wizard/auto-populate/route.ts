@@ -3,6 +3,7 @@ export const maxDuration = 60;
 import { NextRequest, NextResponse } from "next/server";
 import jwt from "jsonwebtoken";
 import { getAnthropicKey, AIKeyNotConfiguredError } from "@/lib/aiProvider";
+import { logTokenUsage, extractAnthropicUsage } from "@/lib/tokenTracking";
 
 function authError() {
   return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
@@ -47,7 +48,7 @@ export async function POST(req: NextRequest) {
   try {
     const token = req.cookies.get("hm-token")?.value;
     if (!token) return authError();
-    const decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as { orgId: string };
+    const decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as { orgId: string; userId?: string };
 
     const { website } = await req.json();
     if (!website?.trim()) {
@@ -95,6 +96,17 @@ export async function POST(req: NextRequest) {
 
     const data = await res.json();
     if (!res.ok) throw new Error(data.error?.message || "Claude API error");
+
+    const tokenUsage = extractAnthropicUsage(data);
+    if (tokenUsage) {
+      logTokenUsage({
+        feature: "setup_wizard",
+        inputTokens: tokenUsage.inputTokens,
+        outputTokens: tokenUsage.outputTokens,
+        organizationId: decoded.orgId,
+        userId: decoded.userId,
+      });
+    }
 
     const raw = data.content?.[0]?.text || "{}";
     const clean = raw.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();

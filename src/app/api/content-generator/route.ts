@@ -7,6 +7,7 @@ import { buildGroundedSystemPrompt, buildGroundedContext } from "@/lib/grounding
 import { resolveEntities } from "@/lib/intentEngine";
 import { ANTHROPIC_WEB_SEARCH_TOOL, ANTHROPIC_WEB_SEARCH_BETA } from "@/lib/webSearch";
 import { getAnthropicKey, AIKeyNotConfiguredError } from "@/lib/aiProvider";
+import { logTokenUsage, extractAnthropicUsage } from "@/lib/tokenTracking";
 import jwt from "jsonwebtoken";
 
 export async function POST(req: NextRequest) {
@@ -79,7 +80,7 @@ export async function POST(req: NextRequest) {
 
     const formatResults = await Promise.all(
       formats.map(format =>
-        generateForFormat(format, topic, knowledge, toneOverride, keyPoints, brandProfile, effectiveProduct, focusKeyword, secondaryKeywords, length, !!webSearch, customFormatLabel, apiKey)
+        generateForFormat(format, topic, knowledge, toneOverride, keyPoints, brandProfile, effectiveProduct, focusKeyword, secondaryKeywords, length, !!webSearch, customFormatLabel, apiKey, decoded.orgId, decoded.userId)
       )
     );
 
@@ -171,7 +172,9 @@ async function generateForFormat(
   length?: string | null,
   useWebSearch?: boolean,
   customFormatLabel?: string | null,
-  apiKey?: string | null
+  apiKey?: string | null,
+  orgId?: string,
+  userId?: string
 ): Promise<string> {
   if (apiKey) {
     try {
@@ -238,6 +241,18 @@ CONTENT GENERATION RULES (these override the grounding contract above for this t
       if (!response.ok) {
         throw new Error(data.error?.message || `Claude API error ${response.status}`);
       }
+
+      const usage = extractAnthropicUsage(data);
+      if (usage && orgId) {
+        logTokenUsage({
+          feature: "content_generator",
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
+          organizationId: orgId,
+          userId,
+        });
+      }
+
       // Response may contain multiple content blocks (web_search_tool_use, web_search_tool_result, text)
       // Extract the final text block
       const textBlock = Array.isArray(data.content)

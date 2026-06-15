@@ -7,6 +7,7 @@ import { buildGroundedSystemPrompt } from "@/lib/groundingEngine";
 import { resolveEntities } from "@/lib/intentEngine";
 import { db } from "@/lib/db";
 import { getAnthropicKey, AIKeyNotConfiguredError } from "@/lib/aiProvider";
+import { logTokenUsage, extractAnthropicUsage } from "@/lib/tokenTracking";
 
 export async function POST(req: NextRequest) {
   try {
@@ -83,6 +84,18 @@ Return ONLY the refined content — no explanations, no preamble, no meta-commen
       const errMsg = data.error?.message || `Claude API error ${response.status}`;
       return NextResponse.json({ error: errMsg }, { status: 500 });
     }
+
+    const tokenUsage = extractAnthropicUsage(data);
+    if (tokenUsage) {
+      logTokenUsage({
+        feature: "content_generator",
+        inputTokens: tokenUsage.inputTokens,
+        outputTokens: tokenUsage.outputTokens,
+        organizationId: decoded.orgId,
+        userId: decoded.userId,
+      });
+    }
+
     const refined = data.content?.[0]?.text;
     if (!refined) return NextResponse.json({ error: "Failed to refine content" }, { status: 500 });
 

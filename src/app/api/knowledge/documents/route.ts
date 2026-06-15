@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import jwt from "jsonwebtoken";
 import pg from "pg";
 import { getAnthropicKey } from "@/lib/aiProvider";
+import { logTokenUsage, extractAnthropicUsage } from "@/lib/tokenTracking";
 
 function getRawPool() {
   return new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -69,7 +70,7 @@ Return ONLY valid JSON (no markdown, no backticks):
 async function callClaude(
   apiKey: string,
   messages: Array<{ role: string; content: unknown }>
-): Promise<string> {
+): Promise<{ text: string; usage: { inputTokens: number; outputTokens: number } | null }> {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
@@ -77,7 +78,7 @@ async function callClaude(
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error?.message || "Claude API error");
-  return data.content?.[0]?.text || "";
+  return { text: data.content?.[0]?.text || "", usage: extractAnthropicUsage(data) };
 }
 
 function parseLearnings(raw: string): Learning[] {
@@ -98,7 +99,8 @@ async function analyzeDocument(
   fileName: string,
   orgName: string,
   orgIndustry: string,
-  apiKey: string
+  apiKey: string,
+  orgId?: string
 ): Promise<Learning[]> {
   const prompt = ANALYSIS_PROMPT(orgName, orgIndustry, fileName);
 
@@ -119,14 +121,17 @@ async function analyzeDocument(
     if (pdfBuffer) {
       try {
         const base64 = pdfBuffer.toString("base64");
-        const raw = await callClaude(apiKey, [{
+        const result = await callClaude(apiKey, [{
           role: "user",
           content: [
             { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 } },
             { type: "text", text: prompt },
           ],
         }]);
-        const learnings = parseLearnings(raw);
+        if (result.usage && orgId) {
+          logTokenUsage({ feature: "knowledge", inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens, organizationId: orgId });
+        }
+        const learnings = parseLearnings(result.text);
         if (learnings.length > 0) return learnings;
         console.warn("[documents] Base64 PDF returned 0 learnings");
       } catch (e) {
@@ -136,14 +141,17 @@ async function analyzeDocument(
 
     // Try 2: pass the public Vercel Blob URL directly — Anthropic fetches the PDF on their end
     try {
-      const raw = await callClaude(apiKey, [{
+      const result = await callClaude(apiKey, [{
         role: "user",
         content: [
           { type: "document", source: { type: "url", url: fileUrl } },
           { type: "text", text: prompt },
         ],
       }]);
-      const learnings = parseLearnings(raw);
+      if (result.usage && orgId) {
+        logTokenUsage({ feature: "knowledge", inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens, organizationId: orgId });
+      }
+      const learnings = parseLearnings(result.text);
       if (learnings.length > 0) return learnings;
       console.warn("[documents] URL-based PDF returned 0 learnings");
     } catch (e) {
@@ -179,11 +187,14 @@ async function analyzeDocument(
 
   if (text.length < 30) return [];
 
-  const raw = await callClaude(apiKey, [{
+  const result = await callClaude(apiKey, [{
     role: "user",
     content: `${prompt}\n\nDocument content:\n${text}`,
   }]);
-  return parseLearnings(raw);
+  if (result.usage && orgId) {
+    logTokenUsage({ feature: "knowledge", inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens, organizationId: orgId });
+  }
+  return parseLearnings(result.text);
 }
 
 function cuid() {
@@ -216,7 +227,7 @@ async function processFile(
 
   try {
     if (apiKey) {
-      learnings = await analyzeDocument(fileUrl, ext, fileName, orgName, orgIndustry, apiKey);
+      learnings = await analyzeDocument(fileUrl, ext, fileName, orgName, orgIndustry, apiKey, orgId);
     }
   } catch (e) {
     console.error("[knowledge/documents] analysis error:", e);

@@ -4,6 +4,7 @@ import jwt from "jsonwebtoken";
 import { readFile } from "fs/promises";
 import path from "path";
 import { getAnthropicKey, AIKeyNotConfiguredError } from "@/lib/aiProvider";
+import { logTokenUsage, extractAnthropicUsage } from "@/lib/tokenTracking";
 
 export const maxDuration = 60;
 
@@ -15,7 +16,7 @@ async function callClaude(
   apiKey: string,
   messages: Array<{ role: string; content: unknown }>,
   maxTokens = 4000
-): Promise<string> {
+): Promise<{ text: string; usage: { inputTokens: number; outputTokens: number } | null }> {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
@@ -23,7 +24,7 @@ async function callClaude(
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error?.message || "Claude API error");
-  return data.content?.[0]?.text || "";
+  return { text: data.content?.[0]?.text || "", usage: extractAnthropicUsage(data) };
 }
 
 async function fetchBuf(url: string): Promise<Buffer> {
@@ -255,7 +256,17 @@ Rules:
 
     let raw: string;
     try {
-      raw = await callClaude(apiKey, messages, 4000);
+      const result = await callClaude(apiKey, messages, 4000);
+      raw = result.text;
+      if (result.usage) {
+        logTokenUsage({
+          feature: "brand_review",
+          inputTokens: result.usage.inputTokens,
+          outputTokens: result.usage.outputTokens,
+          organizationId: decoded.orgId,
+          userId: decoded.userId,
+        });
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       return NextResponse.json({ error: "AI analysis failed: " + msg }, { status: 500 });

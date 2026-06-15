@@ -16,6 +16,7 @@ const ROUTE_LABELS: Record<string, string> = {
   "knowledge-base":     "Knowledge Base",
   "team":               "Team",
   "activity":           "Activity",
+  "usage":              "Usage",
   "settings":           "Settings",
 };
 

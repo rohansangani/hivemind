@@ -5,6 +5,7 @@ import pg from "pg";
 import { readFile } from "fs/promises";
 import path from "path";
 import { getAnthropicKey, AIKeyNotConfiguredError } from "@/lib/aiProvider";
+import { logTokenUsage, extractAnthropicUsage } from "@/lib/tokenTracking";
 
 export const maxDuration = 60;
 
@@ -16,7 +17,7 @@ async function callClaude(
   apiKey: string,
   messages: Array<{ role: string; content: unknown }>,
   maxTokens = 3000
-): Promise<string> {
+): Promise<{ text: string; usage: { inputTokens: number; outputTokens: number } | null }> {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
@@ -24,7 +25,7 @@ async function callClaude(
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error?.message || "Claude API error");
-  return data.content?.[0]?.text || "";
+  return { text: data.content?.[0]?.text || "", usage: extractAnthropicUsage(data) };
 }
 
 async function fetchBuf(url: string): Promise<Buffer> {
@@ -196,7 +197,17 @@ Every learning MUST be grounded in something explicitly present — quote or clo
     // Single Claude call for both analysis + learnings
     let combinedRaw: string;
     try {
-      combinedRaw = await callClaude(apiKey, combinedMessages, 6000);
+      const result = await callClaude(apiKey, combinedMessages, 6000);
+      combinedRaw = result.text;
+      if (result.usage) {
+        logTokenUsage({
+          feature: "content_analysis",
+          inputTokens: result.usage.inputTokens,
+          outputTokens: result.usage.outputTokens,
+          organizationId: decoded.orgId,
+          userId: decoded.userId,
+        });
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error("Claude API call failed:", msg);

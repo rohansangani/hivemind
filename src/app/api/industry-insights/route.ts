@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import jwt from "jsonwebtoken";
 import { getAnthropicKey, AIKeyNotConfiguredError } from "@/lib/aiProvider";
+import { logTokenUsage, extractAnthropicUsage } from "@/lib/tokenTracking";
 
 const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
 
@@ -398,6 +399,17 @@ Return ONLY a valid JSON array:
       });
 
       const data = await resp.json();
+
+      const tokenUsage = extractAnthropicUsage(data);
+      if (tokenUsage) {
+        logTokenUsage({
+          feature: "industry_insights",
+          inputTokens: tokenUsage.inputTokens,
+          outputTokens: tokenUsage.outputTokens,
+          organizationId: orgId,
+        });
+      }
+
       if (data.content && !data.error) {
         const text = data.content.find((b: { type: string }) => b.type === "text")?.text || "";
         try {
