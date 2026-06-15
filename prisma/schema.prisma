@@ -25,7 +25,7 @@ model Organization {
   yearFounded Int?
   mission     String?
   vision      String?
-  allowedDomains          String[]
+  allowedDomains          String[]  @default([])
   setupComplete           Boolean   @default(false)
   insightLastRefreshedAt  DateTime?
   createdAt   DateTime @default(now())

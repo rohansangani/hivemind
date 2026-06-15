@@ -89,40 +89,40 @@ export async function GET(req: NextRequest) {
         where: { allowedDomains: { has: domain } },
       });
 
-      const result = await db.$transaction(async (tx) => {
-        if (matchingOrg) {
-          const newUser = await tx.user.create({
-            data: {
-              email,
-              name: googleUser.name,
-              image: googleUser.picture,
-              role: "member",
-              organizationId: matchingOrg.id,
-              lastActiveAt: new Date(),
-            },
-          });
-          return { user: newUser, org: matchingOrg };
-        } else {
-          const org = await tx.organization.create({
-            data: { name: "My Organization" },
-          });
-          const newUser = await tx.user.create({
-            data: {
-              email,
-              name: googleUser.name,
-              image: googleUser.picture,
-              role: "admin",
-              organizationId: org.id,
-              lastActiveAt: new Date(),
-            },
-          });
-          return { user: newUser, org };
-        }
-      });
+      let resultUser;
+      let resultOrg;
 
-      user = { ...result.user, organization: result.org };
-      orgId = result.org.id;
-      role = result.user.role;
+      if (matchingOrg) {
+        resultUser = await db.user.create({
+          data: {
+            email,
+            name: googleUser.name,
+            image: googleUser.picture,
+            role: "member",
+            organizationId: matchingOrg.id,
+            lastActiveAt: new Date(),
+          },
+        });
+        resultOrg = matchingOrg;
+      } else {
+        resultOrg = await db.organization.create({
+          data: { name: "My Organization" },
+        });
+        resultUser = await db.user.create({
+          data: {
+            email,
+            name: googleUser.name,
+            image: googleUser.picture,
+            role: "admin",
+            organizationId: resultOrg.id,
+            lastActiveAt: new Date(),
+          },
+        });
+      }
+
+      user = { ...resultUser, organization: resultOrg };
+      orgId = resultOrg.id;
+      role = resultUser.role;
     }
 
     // Issue JWT

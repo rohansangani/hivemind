@@ -48,37 +48,37 @@ export async function POST(req: NextRequest) {
       where: { allowedDomains: { has: domain } },
     });
 
-    const { org, user } = await db.$transaction(async (tx) => {
-      if (matchingOrg) {
-        // Auto-join the existing org as a viewer (read-only)
-        const user = await tx.user.create({
-          data: {
-            email,
-            name,
-            password: hashedPassword,
-            role: "viewer",
-            organizationId: matchingOrg.id,
-            onboarded: true, // skip setup wizard — joining an existing org
-          },
-        });
-        return { org: matchingOrg, user };
-      } else {
-        // No domain match — create a new org, user becomes admin
-        const org = await tx.organization.create({
-          data: { name: "My Organization" },
-        });
-        const user = await tx.user.create({
-          data: {
-            email,
-            name,
-            password: hashedPassword,
-            role: "admin",
-            organizationId: org.id,
-          },
-        });
-        return { org, user };
-      }
-    });
+    let org: { id: string; name: string };
+    let user: { id: string; email: string; name: string | null; role: string; onboarded: boolean };
+
+    if (matchingOrg) {
+      // Auto-join the existing org as a viewer (read-only)
+      org = matchingOrg;
+      user = await db.user.create({
+        data: {
+          email,
+          name,
+          password: hashedPassword,
+          role: "viewer",
+          organizationId: matchingOrg.id,
+          onboarded: true, // skip setup wizard — joining an existing org
+        },
+      });
+    } else {
+      // No domain match — create a new org, user becomes admin
+      org = await db.organization.create({
+        data: { name: "My Organization" },
+      });
+      user = await db.user.create({
+        data: {
+          email,
+          name,
+          password: hashedPassword,
+          role: "admin",
+          organizationId: org.id,
+        },
+      });
+    }
 
     // Create JWT token
     const token = jwt.sign(
