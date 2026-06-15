@@ -46,6 +46,7 @@ model Organization {
   knowledgeEntries   KnowledgeEntry[]
   knowledgeDocuments KnowledgeDocument[]
   integrations       Integration[]
+  aiProviders        AIProviderConfig[]
 }
 
 model User {
@@ -346,6 +347,25 @@ model KnowledgeDocument {
   organizationId  String
   organization    Organization @relation(fields: [organizationId], references: [id])
   createdAt       DateTime @default(now())
+}
+
+// ═══════════════════════════════════════
+// AI PROVIDER CONFIGURATION (BYOK)
+// ═══════════════════════════════════════
+
+model AIProviderConfig {
+  id             String   @id @default(cuid())
+  provider       String   // "anthropic" | "openai" | "google"
+  encryptedKey   String   // AES-256-GCM encrypted API key
+  keyHint        String?  // last 4 chars for display, e.g. "...xK9m"
+  isActive       Boolean  @default(true)
+  modelOverride  String?  // optional default model override
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([organizationId, provider])
 }
 
 // ═══════════════════════════════════════

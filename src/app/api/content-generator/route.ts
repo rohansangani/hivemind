@@ -6,6 +6,7 @@ import { retrieveRelevantKnowledge } from "@/lib/knowledgeRetrieval";
 import { buildGroundedSystemPrompt, buildGroundedContext } from "@/lib/groundingEngine";
 import { resolveEntities } from "@/lib/intentEngine";
 import { ANTHROPIC_WEB_SEARCH_TOOL, ANTHROPIC_WEB_SEARCH_BETA } from "@/lib/webSearch";
+import { getAnthropicKey, AIKeyNotConfiguredError } from "@/lib/aiProvider";
 import jwt from "jsonwebtoken";
 
 export async function POST(req: NextRequest) {
@@ -70,12 +71,15 @@ export async function POST(req: NextRequest) {
       searchDocuments: true,
     });
 
+    // Resolve API key for this workspace
+    const apiKey = await getAnthropicKey(decoded.orgId);
+
     // Generate content for all formats in parallel (was sequential — 3 formats × 40s = 120s → 504)
     const outputs: Record<string, { content: string; wordCount: number; score: number; scoreBreakdown: Record<string, number> }> = {};
 
     const formatResults = await Promise.all(
       formats.map(format =>
-        generateForFormat(format, topic, knowledge, toneOverride, keyPoints, brandProfile, effectiveProduct, focusKeyword, secondaryKeywords, length, !!webSearch, customFormatLabel)
+        generateForFormat(format, topic, knowledge, toneOverride, keyPoints, brandProfile, effectiveProduct, focusKeyword, secondaryKeywords, length, !!webSearch, customFormatLabel, apiKey)
       )
     );
 
@@ -106,6 +110,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ id: saved.id, outputs });
   } catch (error) {
+    if (error instanceof AIKeyNotConfiguredError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
     console.error("Content generator error:", error);
     const msg = error instanceof Error ? error.message : "Something went wrong";
     return NextResponse.json({ error: msg }, { status: 500 });
@@ -163,10 +170,9 @@ async function generateForFormat(
   secondaryKeywords?: string[],
   length?: string | null,
   useWebSearch?: boolean,
-  customFormatLabel?: string | null
+  customFormatLabel?: string | null,
+  apiKey?: string | null
 ): Promise<string> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-
   if (apiKey) {
     try {
       const formatInstructions = getFormatInstructions(format, customFormatLabel);

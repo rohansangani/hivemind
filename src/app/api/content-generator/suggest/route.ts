@@ -6,6 +6,7 @@ import { retrieveRelevantKnowledge } from "@/lib/knowledgeRetrieval";
 import { buildGroundedContext } from "@/lib/groundingEngine";
 import { resolveEntities } from "@/lib/intentEngine";
 import { db } from "@/lib/db";
+import { getAnthropicKey, AIKeyNotConfiguredError } from "@/lib/aiProvider";
 
 export async function POST(req: NextRequest) {
   try {
@@ -29,8 +30,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "topic is required" }, { status: 400 });
     }
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) return NextResponse.json({ error: "Anthropic API key required" }, { status: 400 });
+    const apiKey = await getAnthropicKey(decoded.orgId);
 
     // Resolve entities from the topic for smarter context selection
     const [products, personas, competitors] = await Promise.all([
@@ -117,6 +117,9 @@ Return ONLY valid JSON:
 
     return NextResponse.json({ suggestions: [] });
   } catch (error) {
+    if (error instanceof AIKeyNotConfiguredError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
     console.error("Suggest error:", error);
     const msg = error instanceof Error ? error.message : "Something went wrong";
     return NextResponse.json({ error: msg }, { status: 500 });

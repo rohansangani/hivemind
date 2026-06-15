@@ -3,6 +3,7 @@ export const maxDuration = 60;
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import jwt from "jsonwebtoken";
+import { getAnthropicKey, AIKeyNotConfiguredError } from "@/lib/aiProvider";
 
 interface BriefOutput {
   platform: string;
@@ -44,8 +45,7 @@ export async function POST(req: NextRequest) {
     const decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as { userId: string; orgId: string; role?: string };
     if (decoded.role === "viewer") return NextResponse.json({ error: "Read-only access" }, { status: 403 });
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) return NextResponse.json({ error: "Anthropic API key not configured" }, { status: 400 });
+    const apiKey = await getAnthropicKey(decoded.orgId);
 
     const { prompt } = await req.json();
     if (!prompt?.trim()) return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
@@ -204,6 +204,9 @@ Return ONLY valid JSON — no markdown, no backticks, no explanation outside the
 
     return NextResponse.json({ id: saved.id, brief, createdAt: saved.createdAt });
   } catch (error) {
+    if (error instanceof AIKeyNotConfiguredError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
     const msg = error instanceof Error ? error.message : "Unknown error";
     console.error("Design brief generate error:", msg);
     return NextResponse.json({ error: msg }, { status: 500 });

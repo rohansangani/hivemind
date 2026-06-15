@@ -3,6 +3,7 @@ export const maxDuration = 60;
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import jwt from "jsonwebtoken";
+import { getAnthropicKey, AIKeyNotConfiguredError } from "@/lib/aiProvider";
 
 export async function POST(req: NextRequest) {
   try {
@@ -10,8 +11,7 @@ export async function POST(req: NextRequest) {
     if (!token) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     const decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as { orgId: string };
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) return NextResponse.json({ error: "Add ANTHROPIC_API_KEY to .env and purchase credits at console.anthropic.com" }, { status: 400 });
+    const apiKey = await getAnthropicKey(decoded.orgId);
 
     const { type, context } = await req.json();
 
@@ -111,6 +111,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ suggestion: parsed });
   } catch (error) {
+    if (error instanceof AIKeyNotConfiguredError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
     console.error("AI suggest error:", error);
     return NextResponse.json({ error: "Something went wrong" }, { status: 500 });
   }

@@ -1,12 +1,10 @@
 export const maxDuration = 60;
 
 import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
 import jwt from "jsonwebtoken";
 import pg from "pg";
 import { db } from "@/lib/db";
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+import { getAnthropicClient, AIKeyNotConfiguredError } from "@/lib/aiProvider";
 
 function cuid() {
   return crypto.randomUUID().replace(/-/g, "");
@@ -20,21 +18,28 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "content and focusKeyword are required" }, { status: 400 });
     }
 
+    // ── Auth & org resolution ─────────────────────────────────────────────────
+    const token = req.cookies.get("hm-token")?.value;
+    if (!token) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    let orgId: string;
+    try {
+      const decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as { orgId: string };
+      orgId = decoded.orgId;
+    } catch {
+      return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
+    }
+
+    const anthropic = await getAnthropicClient(orgId);
+
     // ── Load org's active SEO skills ─────────────────────────────────────────
     let seoSkillsBlock = "";
-    let orgId: string | null = null;
     try {
-      const token = req.cookies.get("hm-token")?.value;
-      if (token) {
-        const decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as { orgId: string };
-        orgId = decoded.orgId;
-        const seoSkills = await db.skill.findMany({
-          where: { organizationId: orgId, isActive: true, category: "seo" },
-          select: { name: true, instructions: true },
-        });
-        if (seoSkills.length > 0) {
-          seoSkillsBlock = `\nORG SEO GUIDELINES (defined by this organisation — score and recommend against these, not just generic best practices):\n${seoSkills.map(s => `[${s.name}] ${s.instructions}`).join("\n")}\n`;
-        }
+      const seoSkills = await db.skill.findMany({
+        where: { organizationId: orgId, isActive: true, category: "seo" },
+        select: { name: true, instructions: true },
+      });
+      if (seoSkills.length > 0) {
+        seoSkillsBlock = `\nORG SEO GUIDELINES (defined by this organisation — score and recommend against these, not just generic best practices):\n${seoSkills.map(s => `[${s.name}] ${s.instructions}`).join("\n")}\n`;
       }
     } catch {
       // Non-critical — proceed without skills
@@ -151,6 +156,9 @@ Return ONLY the JSON, no markdown, no explanation.`;
 
     return NextResponse.json(result);
   } catch (error) {
+    if (error instanceof AIKeyNotConfiguredError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
     console.error("SEO deep analysis error:", error);
     return NextResponse.json({ error: "Analysis failed" }, { status: 500 });
   }

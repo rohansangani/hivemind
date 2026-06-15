@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import jwt from "jsonwebtoken";
 import pg from "pg";
 import { db } from "@/lib/db";
+import { getAnthropicKey } from "@/lib/aiProvider";
 
 // Cooldown: do not re-synthesize more than once every 5 minutes per org
 const SYNTHESIS_COOLDOWN_MS = 5 * 60 * 1000;
@@ -65,7 +66,8 @@ export async function POST(req: NextRequest) {
       process.env.NEXTAUTH_SECRET || "fallback-secret"
     ) as { orgId: string };
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
+    let apiKey: string | null = null;
+    try { apiKey = await getAnthropicKey(decoded.orgId); } catch { /* no key — will use compiled fallback */ }
     const orgId = decoded.orgId;
 
     // ── Cooldown guard ───────────────────────────────────────

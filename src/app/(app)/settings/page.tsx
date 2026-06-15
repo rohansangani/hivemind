@@ -52,6 +52,72 @@ export default function SettingsPage() {
   const [hsToken, setHsToken] = useState("");
   const [hsSaving, setHsSaving] = useState(false);
 
+  // AI Provider BYOK state
+  type AIProviderStatus = { provider: string; keyHint: string | null; isActive: boolean; modelOverride: string | null; updatedAt: string };
+  type AIProviderInfo = { id: string; label: string; color: string; placeholder: string; helpUrl: string; defaultModel: string; configured: boolean };
+  const [aiProviders, setAiProviders] = useState<AIProviderStatus[]>([]);
+  const [aiAvailable, setAiAvailable] = useState<AIProviderInfo[]>([]);
+  const [aiExpandedProvider, setAiExpandedProvider] = useState<string | null>(null);
+  const [aiKeyInput, setAiKeyInput] = useState("");
+  const [aiSaving, setAiSaving] = useState(false);
+  const [aiMessage, setAiMessage] = useState("");
+  const [aiDisconnecting, setAiDisconnecting] = useState<string | null>(null);
+
+  const loadAiProviders = async () => {
+    try {
+      const res = await fetch("/api/integrations/ai-providers");
+      const data = await res.json();
+      setAiProviders(data.providers || []);
+      setAiAvailable(data.available || []);
+    } catch { /* ignore */ }
+  };
+
+  const aiSave = async (provider: string) => {
+    if (!aiKeyInput.trim()) return;
+    setAiSaving(true);
+    setAiMessage("");
+    try {
+      const res = await fetch("/api/integrations/ai-providers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider, apiKey: aiKeyInput }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setAiKeyInput("");
+        setAiExpandedProvider(null);
+        setAiMessage(data.message);
+        await loadAiProviders();
+      } else {
+        setAiMessage(data.error || "Failed to save key.");
+      }
+    } catch {
+      setAiMessage("Network error — please try again.");
+    } finally {
+      setAiSaving(false);
+      setTimeout(() => setAiMessage(""), 8000);
+    }
+  };
+
+  const aiDisconnect = async (provider: string) => {
+    const info = aiAvailable.find(a => a.id === provider);
+    if (!confirm(`Remove ${info?.label || provider} API key? AI features using this provider will stop working.`)) return;
+    setAiDisconnecting(provider);
+    try {
+      const res = await fetch(`/api/integrations/ai-providers?provider=${provider}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.success) {
+        setAiMessage(data.message);
+        await loadAiProviders();
+      }
+    } catch {
+      setAiMessage("Disconnect failed — please try again.");
+    } finally {
+      setAiDisconnecting(null);
+      setTimeout(() => setAiMessage(""), 4000);
+    }
+  };
+
   // Confluence integration state
   type IntegrationRecord = { portalId?: string; syncStatus: string; lastSyncAt?: string; lastSyncError?: string; metadata?: Record<string, unknown> };
   const [cfConnected, setCfConnected] = useState(false);
@@ -113,6 +179,9 @@ export default function SettingsPage() {
         setCfIntegration(d.integration);
       })
       .catch(() => {});
+
+    // Load AI provider configs
+    loadAiProviders();
 
   }, []);
 
@@ -1243,7 +1312,130 @@ export default function SettingsPage() {
 
           {tab === "integrations" && (
             <>
-              <h2 className="mb-1 text-[15px] font-semibold">Integrations</h2>
+              <h2 className="mb-1 text-[15px] font-semibold">AI providers</h2>
+              <p className="mb-4 text-[12px] text-[var(--hm-text-tertiary)] leading-relaxed">
+                Add your own API keys to power HiveMind&apos;s AI features. Each workspace needs at least an Anthropic key to use content generation, the assistant, and design briefs.
+              </p>
+
+              {aiMessage && (
+                <p className={`mb-4 rounded-lg px-4 py-2.5 text-[12px] font-medium ${
+                  aiMessage.toLowerCase().includes("fail") || aiMessage.toLowerCase().includes("invalid") || aiMessage.toLowerCase().includes("error")
+                    ? "bg-red-50 text-red-600 border border-red-200"
+                    : "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                }`}>
+                  {aiMessage}
+                </p>
+              )}
+
+              <div className="space-y-3 mb-8">
+                {aiAvailable.map((prov) => {
+                  const configured = aiProviders.find(p => p.provider === prov.id && p.isActive);
+                  const isExpanded = aiExpandedProvider === prov.id;
+
+                  return (
+                    <div key={prov.id} className="rounded-xl border border-[var(--hm-border)] bg-white overflow-hidden">
+                      <div className="flex items-center gap-4 px-5 py-4">
+                        <div
+                          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white text-[12px] font-bold"
+                          style={{ backgroundColor: prov.color }}
+                        >
+                          {prov.id === "anthropic" ? "A" : prov.id === "openai" ? "AI" : "G"}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[13px] font-semibold">{prov.label}</span>
+                            {configured && (
+                              <span className="flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-semibold text-emerald-600">
+                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 inline-block" />
+                                Connected
+                              </span>
+                            )}
+                            {prov.id === "anthropic" && !configured && (
+                              <span className="rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-[10px] font-semibold text-amber-600">
+                                Required
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-0.5">
+                            {configured
+                              ? `Key: ${configured.keyHint || "••••"} · Updated ${new Date(configured.updatedAt).toLocaleDateString()}`
+                              : `Default model: ${prov.defaultModel}`}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          {configured ? (
+                            <>
+                              <button
+                                onClick={() => setAiExpandedProvider(isExpanded ? null : prov.id)}
+                                className="flex h-[30px] items-center rounded-lg border border-[var(--hm-border)] px-3 text-[11px] text-[var(--hm-text-secondary)] hover:bg-[var(--hm-bg-secondary)]"
+                              >
+                                {isExpanded ? "Cancel" : "Update key"}
+                              </button>
+                              <button
+                                onClick={() => aiDisconnect(prov.id)}
+                                disabled={aiDisconnecting === prov.id}
+                                className="flex h-[30px] items-center rounded-lg border border-[var(--hm-border)] px-3 text-[11px] text-[var(--hm-text-secondary)] hover:border-red-300 hover:text-red-500 disabled:opacity-50"
+                              >
+                                {aiDisconnecting === prov.id ? "Removing…" : "Remove"}
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              onClick={() => setAiExpandedProvider(isExpanded ? null : prov.id)}
+                              className="flex h-[30px] items-center rounded-lg bg-[#4361ee] px-3 text-[11px] font-medium text-white hover:opacity-90"
+                            >
+                              {isExpanded ? "Cancel" : "Add key"}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {isExpanded && (
+                        <div className="border-t border-[var(--hm-border)] px-5 py-4 space-y-3">
+                          <div>
+                            <label className="mb-1.5 block text-[12px] font-medium text-[var(--hm-text-secondary)]">
+                              API key
+                            </label>
+                            <div className="flex gap-2">
+                              <input
+                                type="password"
+                                value={aiKeyInput}
+                                onChange={(e) => setAiKeyInput(e.target.value)}
+                                placeholder={prov.placeholder}
+                                className="flex-1 font-mono text-[12px]"
+                                onKeyDown={(e) => { if (e.key === "Enter") aiSave(prov.id); }}
+                              />
+                              <button
+                                onClick={() => aiSave(prov.id)}
+                                disabled={aiSaving || !aiKeyInput.trim()}
+                                className="flex h-[38px] shrink-0 items-center gap-1.5 rounded-lg bg-[#4361ee] px-4 text-[12px] font-medium text-white hover:opacity-90 disabled:opacity-50"
+                              >
+                                {aiSaving ? (
+                                  <>
+                                    <Spinner />
+                                    Validating…
+                                  </>
+                                ) : configured ? "Update" : "Connect"}
+                              </button>
+                            </div>
+                            <p className="mt-1.5 text-[10px] text-[var(--hm-text-tertiary)]">
+                              Get your API key from{" "}
+                              <a href={prov.helpUrl} target="_blank" rel="noopener noreferrer" className="underline hover:text-[var(--hm-text-secondary)]">
+                                {prov.helpUrl.replace("https://", "")}
+                              </a>
+                              . The key is validated before saving and encrypted at rest.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <hr className="my-6 border-[var(--hm-border)]" />
+
+              <h2 className="mb-1 text-[15px] font-semibold">Data integrations</h2>
               <p className="mb-4 text-[12px] text-[var(--hm-text-tertiary)] leading-relaxed">
                 Connect external tools to pull data into your knowledge base and enrich HiveMind with real CRM intelligence.
               </p>

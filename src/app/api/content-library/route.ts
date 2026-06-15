@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import jwt from "jsonwebtoken";
+import { getAnthropicKey } from "@/lib/aiProvider";
 
 export async function GET(req: NextRequest) {
   try {
@@ -115,7 +116,9 @@ export async function POST(req: NextRequest) {
     // Fire-and-forget auto brand review for each uploaded asset.
     // Each fetch spawns an independent Vercel function invocation, so the
     // upload response returns immediately while reviews run in the background.
-    if (created.length > 0 && process.env.ANTHROPIC_API_KEY) {
+    let hasApiKey = false;
+    try { await getAnthropicKey(decoded.orgId); hasApiKey = true; } catch { /* no key — skip auto-review */ }
+    if (created.length > 0 && hasApiKey) {
       try {
         const proto = req.headers.get("x-forwarded-proto") || "https";
         const host = req.headers.get("host") || "";

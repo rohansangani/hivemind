@@ -6,6 +6,7 @@ import { retrieveRelevantKnowledge } from "@/lib/knowledgeRetrieval";
 import { buildGroundedSystemPrompt } from "@/lib/groundingEngine";
 import { classifyIntent, resolveEntities, getIntentInstructions } from "@/lib/intentEngine";
 import { db } from "@/lib/db";
+import { getAnthropicKey, AIKeyNotConfiguredError } from "@/lib/aiProvider";
 
 export async function POST(req: NextRequest) {
   try {
@@ -29,8 +30,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "topic is required" }, { status: 400 });
     }
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) return NextResponse.json({ error: "Anthropic API key required" }, { status: 400 });
+    const apiKey = await getAnthropicKey(decoded.orgId);
 
     // Resolve entities from the message + topic for smart context
     const [products, personas, competitors] = await Promise.all([
@@ -114,6 +114,9 @@ IMPORTANT: When providing a [CONTENT_SNIPPET], make it immediately usable — co
 
     return NextResponse.json({ reply, hasSnippet, intent });
   } catch (error) {
+    if (error instanceof AIKeyNotConfiguredError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
     console.error("Content chat error:", error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Something went wrong" },

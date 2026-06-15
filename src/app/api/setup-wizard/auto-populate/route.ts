@@ -2,6 +2,7 @@ export const maxDuration = 60;
 
 import { NextRequest, NextResponse } from "next/server";
 import jwt from "jsonwebtoken";
+import { getAnthropicKey, AIKeyNotConfiguredError } from "@/lib/aiProvider";
 
 function authError() {
   return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
@@ -46,17 +47,14 @@ export async function POST(req: NextRequest) {
   try {
     const token = req.cookies.get("hm-token")?.value;
     if (!token) return authError();
-    jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret");
+    const decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as { orgId: string };
 
     const { website } = await req.json();
     if (!website?.trim()) {
       return NextResponse.json({ error: "Website URL is required" }, { status: 400 });
     }
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({ error: "AI not configured" }, { status: 503 });
-    }
+    const apiKey = await getAnthropicKey(decoded.orgId);
 
     // Normalize URL
     const url = website.startsWith("http") ? website : `https://${website}`;
@@ -106,6 +104,9 @@ export async function POST(req: NextRequest) {
     const parsed = JSON.parse(match[0]);
     return NextResponse.json({ data: parsed });
   } catch (e) {
+    if (e instanceof AIKeyNotConfiguredError) {
+      return NextResponse.json({ error: e.message }, { status: 400 });
+    }
     const msg = e instanceof Error ? e.message : String(e);
     console.error("[auto-populate]", msg);
     return NextResponse.json({ error: "Something went wrong" }, { status: 500 });

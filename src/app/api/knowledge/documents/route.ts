@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import jwt from "jsonwebtoken";
 import pg from "pg";
+import { getAnthropicKey } from "@/lib/aiProvider";
 
 function getRawPool() {
   return new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -298,7 +299,8 @@ export async function POST(req: NextRequest) {
     const org = await db.organization.findUnique({ where: { id: decoded.orgId } });
     const orgName = org?.name || "the company";
     const orgIndustry = org?.industry || "technology";
-    const apiKey = process.env.ANTHROPIC_API_KEY;
+    let apiKey: string | undefined;
+    try { apiKey = await getAnthropicKey(decoded.orgId); } catch { /* no key — processFile handles undefined */ }
 
     const results = [];
     for (const f of body.files) {

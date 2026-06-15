@@ -6,6 +6,7 @@ import jwt from "jsonwebtoken";
 import { classifyIntent, resolveEntities, getIntentInstructions } from "@/lib/intentEngine";
 import { retrieveRelevantKnowledge } from "@/lib/knowledgeRetrieval";
 import { buildGroundedSystemPrompt, getGroundedResponseInstructions } from "@/lib/groundingEngine";
+import { getAnthropicKey, AIKeyNotConfiguredError } from "@/lib/aiProvider";
 import pg from "pg";
 
 // ─────────────────────────────────────────────────────────
@@ -293,7 +294,16 @@ export async function POST(req: NextRequest) {
       markets: markets.map(m => m.name),
     });
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
+    let apiKey: string | null = null;
+    try {
+      apiKey = await getAnthropicKey(decoded.orgId);
+    } catch (err) {
+      if (err instanceof AIKeyNotConfiguredError) {
+        // No key configured — fall through to fallback reply
+      } else {
+        throw err;
+      }
+    }
     let assistantReply = "";
 
     if (apiKey) {

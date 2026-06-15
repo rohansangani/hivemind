@@ -3,6 +3,7 @@ export const maxDuration = 60;
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import jwt from "jsonwebtoken";
+import { getAnthropicKey, AIKeyNotConfiguredError } from "@/lib/aiProvider";
 
 async function callClaude(apiKey: string, prompt: string): Promise<string> {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -40,8 +41,7 @@ export async function POST(req: NextRequest) {
     if (!token) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     const decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as { userId: string; orgId: string };
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) return NextResponse.json({ error: "Anthropic API key required" }, { status: 400 });
+    const apiKey = await getAnthropicKey(decoded.orgId);
 
     const { content, format, topic, targetProduct, targetPersona, targetMarket } = await req.json();
     if (!content || typeof content !== "string" || !content.trim()) {
@@ -171,6 +171,9 @@ Write clearly and concisely. Be specific and opinionated — vague briefs are us
     const brief = await callClaude(apiKey, prompt);
     return NextResponse.json({ brief });
   } catch (error) {
+    if (error instanceof AIKeyNotConfiguredError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
     const msg = error instanceof Error ? error.message : String(error);
     console.error("Design brief error:", msg);
     return NextResponse.json({ error: msg }, { status: 500 });

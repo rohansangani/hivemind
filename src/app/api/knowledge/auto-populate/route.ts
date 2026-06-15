@@ -3,6 +3,7 @@ export const maxDuration = 60;
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import jwt from "jsonwebtoken";
+import { getAnthropicKey, AIKeyNotConfiguredError } from "@/lib/aiProvider";
 
 export async function POST(req: NextRequest) {
   try {
@@ -13,8 +14,7 @@ export async function POST(req: NextRequest) {
     const { website, orgName } = await req.json();
     if (!website) return NextResponse.json({ error: "Website URL required" }, { status: 400 });
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) return NextResponse.json({ error: "Anthropic API key not configured. Add ANTHROPIC_API_KEY to .env" }, { status: 400 });
+    const apiKey = await getAnthropicKey(decoded.orgId);
 
     // Fetch website content
     let websiteContent = "";
@@ -160,6 +160,9 @@ Provide 3-5 products, 3-5 markets, 2-4 personas, 3-5 competitors, and complete b
 
     return NextResponse.json({ suggestions: parsed, websiteScraped: websiteContent.length > 100 });
   } catch (error) {
+    if (error instanceof AIKeyNotConfiguredError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
     console.error("Auto-populate error:", error);
     return NextResponse.json({ error: "Something went wrong" }, { status: 500 });
   }

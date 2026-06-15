@@ -4,6 +4,7 @@ import jwt from "jsonwebtoken";
 import pg from "pg";
 import { readFile } from "fs/promises";
 import path from "path";
+import { getAnthropicKey, AIKeyNotConfiguredError } from "@/lib/aiProvider";
 
 export const maxDuration = 60;
 
@@ -67,8 +68,7 @@ export async function POST(req: NextRequest) {
     const decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as { userId: string; orgId: string; role?: string };
     if (decoded.role === "viewer") return NextResponse.json({ error: "Read-only access" }, { status: 403 });
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) return NextResponse.json({ error: "Anthropic API key required" }, { status: 400 });
+    const apiKey = await getAnthropicKey(decoded.orgId);
 
     const { assetId } = await req.json();
     if (!assetId) return NextResponse.json({ error: "Asset ID required" }, { status: 400 });
@@ -341,6 +341,9 @@ Every learning MUST be grounded in something explicitly present — quote or clo
 
     return NextResponse.json({ analysis, learnings, entriesCreated: entries.length });
   } catch (error) {
+    if (error instanceof AIKeyNotConfiguredError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
     const msg = error instanceof Error ? error.message : String(error);
     console.error("Content analysis error:", msg);
     return NextResponse.json({ error: msg }, { status: 500 });

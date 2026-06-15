@@ -3,6 +3,7 @@ export const maxDuration = 300;
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import jwt from "jsonwebtoken";
+import { getAnthropicKey, AIKeyNotConfiguredError } from "@/lib/aiProvider";
 
 const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
 
@@ -99,11 +100,16 @@ export async function POST(req: NextRequest) {
 
       try {
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
+    let apiKey: string;
+    try {
+      apiKey = await getAnthropicKey(orgId);
+    } catch (err) {
       clearInterval(keepalive);
+      const msg = err instanceof AIKeyNotConfiguredError
+        ? err.message
+        : "Failed to retrieve API key";
       controller.enqueue(encoder.encode(
-        "\n" + JSON.stringify({ error: "Anthropic API key is not configured. Add ANTHROPIC_API_KEY to your environment variables." })
+        "\n" + JSON.stringify({ error: msg })
       ));
       controller.close();
       return;
