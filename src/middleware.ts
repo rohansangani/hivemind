@@ -13,18 +13,44 @@ const SECRET = new TextEncoder().encode(
   process.env.NEXTAUTH_SECRET || "fallback-secret"
 );
 
-export async function middleware(req: NextRequest) {
+/**
+ * Check whether the request targets the admin console — either via
+ * subdomain (admin.yourdomain.com) or via path (/admin-login, /admin-dashboard).
+ */
+function isAdminRoute(req: NextRequest): boolean {
   const host = req.headers.get("host") || "";
-  const isAdminSubdomain = host.startsWith("admin.");
+  if (host.startsWith("admin.")) return true;
+  const { pathname } = req.nextUrl;
+  return pathname.startsWith("/admin-login") || pathname.startsWith("/admin-dashboard");
+}
 
-  if (!isAdminSubdomain) return NextResponse.next();
+async function verifyAdminToken(req: NextRequest): Promise<boolean> {
+  const token = req.cookies.get("hm-admin-token")?.value;
+  if (!token) return false;
+  try {
+    const { payload } = await jwtVerify(token, SECRET);
+    const email = payload.email as string;
+    return SUPER_ADMIN_EMAILS.includes(email);
+  } catch {
+    return false;
+  }
+}
 
-  // ── Admin subdomain detected ──────────────────────────────────────────
+export async function middleware(req: NextRequest) {
+  if (!isAdminRoute(req)) return NextResponse.next();
+
+  // ── Admin route detected (subdomain or path) ─────────────────────────
 
   const { pathname } = req.nextUrl;
 
-  // Allow admin login page and its API
-  if (pathname === "/admin-login" || pathname.startsWith("/api/auth/")) {
+  // Allow admin login page — unauthenticated access
+  if (pathname === "/admin-login") {
+    // If already authenticated, redirect to dashboard
+    if (await verifyAdminToken(req)) {
+      const url = req.nextUrl.clone();
+      url.pathname = "/admin-dashboard";
+      return NextResponse.redirect(url);
+    }
     return NextResponse.next();
   }
 
@@ -43,34 +69,24 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // Check for super-admin token
-  const token = req.cookies.get("hm-admin-token")?.value;
-  if (!token) {
-    const loginUrl = req.nextUrl.clone();
-    loginUrl.pathname = "/admin-login";
-    return NextResponse.redirect(loginUrl);
-  }
+  // ── Protected admin routes — require valid super-admin token ──────────
 
-  try {
-    const { payload } = await jwtVerify(token, SECRET);
-    const email = payload.email as string;
+  const isValid = await verifyAdminToken(req);
 
-    if (!SUPER_ADMIN_EMAILS.includes(email)) {
-      const loginUrl = req.nextUrl.clone();
-      loginUrl.pathname = "/admin-login";
-      return NextResponse.redirect(loginUrl);
-    }
-  } catch {
-    // Invalid token — redirect to login
+  if (!isValid) {
     const loginUrl = req.nextUrl.clone();
     loginUrl.pathname = "/admin-login";
     const response = NextResponse.redirect(loginUrl);
-    response.cookies.delete("hm-admin-token");
+    // Clear stale token if present
+    if (req.cookies.get("hm-admin-token")) {
+      response.cookies.delete("hm-admin-token");
+    }
     return response;
   }
 
-  // Rewrite admin subdomain root to the (admin) route group
-  if (pathname === "/" || pathname === "") {
+  // Subdomain root → rewrite to dashboard
+  const host = req.headers.get("host") || "";
+  if (host.startsWith("admin.") && (pathname === "/" || pathname === "")) {
     const url = req.nextUrl.clone();
     url.pathname = "/admin-dashboard";
     return NextResponse.rewrite(url);
