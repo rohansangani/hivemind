@@ -3,28 +3,32 @@
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { useState, useEffect } from "react";
+import { ROLE_DEFAULT_PERMISSIONS, getEffectivePermissions } from "@/lib/modules";
+import { normalizeRole, ROLE_META } from "@/lib/permissions";
 
 interface SidebarProps {
   userName: string;
   userRole: string;
+  customPermissions?: Record<string, string> | null;
   onClose?: () => void;
 }
 
-const NAV_ITEMS = [
-  { href: "/dashboard",         label: "Dashboard",          icon: "home" },
-  { href: "/industry-insights", label: "Industry Insights",  icon: "insights" },
-  { href: "/content-library",   label: "Asset Library",      icon: "library" },
-  { href: "/assistant",         label: "Ask Halo",           icon: "assistant" },
-  { href: "/content-generator", label: "Content Generator",  icon: "generator" },
-  { href: "/design-brief",      label: "Design Brief",       icon: "design" },
-  { href: "/knowledge-base",    label: "Knowledge Base",     icon: "knowledge" },
+// Module ID → route mapping
+const MODULE_ROUTES: Array<{ moduleId: string; href: string; label: string; icon: string }> = [
+  { moduleId: "dashboard",          href: "/dashboard",         label: "Dashboard",         icon: "home" },
+  { moduleId: "industry_insights",  href: "/industry-insights", label: "Industry Insights",  icon: "insights" },
+  { moduleId: "content_library",    href: "/content-library",   label: "Asset Library",      icon: "library" },
+  { moduleId: "ai_assistant",       href: "/assistant",         label: "Ask Halo",           icon: "assistant" },
+  { moduleId: "content_generator",  href: "/content-generator", label: "Content Generator",  icon: "generator" },
+  { moduleId: "design_brief",       href: "/design-brief",      label: "Design Brief",       icon: "design" },
+  { moduleId: "knowledge_base",     href: "/knowledge-base",    label: "Knowledge Base",     icon: "knowledge" },
 ];
 
-const ADMIN_ITEMS = [
-  { href: "/team",     label: "Team",     icon: "team" },
-  { href: "/activity", label: "Activity", icon: "activity" },
-  { href: "/usage",    label: "Usage",    icon: "usage" },
-  { href: "/settings", label: "Settings", icon: "settings" },
+const ADMIN_ROUTES: Array<{ moduleId: string; href: string; label: string; icon: string }> = [
+  { moduleId: "team",     href: "/team",     label: "Team",     icon: "team" },
+  { moduleId: "activity", href: "/activity", label: "Activity", icon: "activity" },
+  { moduleId: "usage",    href: "/usage",    label: "Usage",    icon: "usage" },
+  { moduleId: "settings", href: "/settings", label: "Settings", icon: "settings" },
 ];
 
 function NavIcon({ icon, active }: { icon: string; active: boolean }) {
@@ -59,7 +63,6 @@ function NavIcon({ icon, active }: { icon: string; active: boolean }) {
         <path d="M9.5 4.5l2 2" stroke={c} strokeWidth={w} />
       </svg>
     );
-    // Bar-chart icon replacing the clock — more appropriate for "Industry Insights"
     case "insights": return (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
         <path d="M2 13h12" stroke={c} strokeWidth={w} strokeLinecap="round" />
@@ -120,10 +123,32 @@ function MoonIcon() {
   );
 }
 
-export default function Sidebar({ userName, userRole, onClose }: SidebarProps) {
+export default function Sidebar({ userName, userRole, customPermissions, onClose }: SidebarProps) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [isDark, setIsDark] = useState(false);
+
+  // Compute effective module permissions
+  const effectivePerms = getEffectivePermissions(userRole, customPermissions ?? null);
+  const normalized = normalizeRole(userRole);
+  const roleMeta = ROLE_META[userRole] ?? ROLE_META[normalized];
+  const isAdmin = normalized === "owner" || normalized === "admin";
+
+  // Filter nav items based on module access (view or edit)
+  const visibleNavItems = MODULE_ROUTES.filter(item => {
+    const level = effectivePerms[item.moduleId] ?? "none";
+    return level === "view" || level === "edit";
+  });
+
+  // Admin items visible only if user has team or settings access
+  const visibleAdminItems = ADMIN_ROUTES.filter(item => {
+    if (item.moduleId === "activity" || item.moduleId === "usage") {
+      // Activity and Usage follow team/settings access
+      return isAdmin;
+    }
+    const level = effectivePerms[item.moduleId] ?? "none";
+    return level === "view" || level === "edit";
+  });
 
   // Sync isDark with html class on mount
   useEffect(() => {
@@ -151,11 +176,10 @@ export default function Sidebar({ userName, userRole, onClose }: SidebarProps) {
   const getInitials = (name: string) =>
     name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
 
-  // Match active for exact routes and sub-routes (e.g. /content-library/asset/123)
   const isActive = (href: string) =>
     pathname === href || (href !== "/dashboard" && pathname.startsWith(href + "/"));
 
-  const isMobile = !!onClose; // when onClose is provided we're in the mobile drawer
+  const isMobile = !!onClose;
   const showLabels = !collapsed || isMobile;
 
   return (
@@ -175,7 +199,6 @@ export default function Sidebar({ userName, userRole, onClose }: SidebarProps) {
       {/* Logo */}
       <div style={{ padding: showLabels ? "20px 16px 0" : "20px 0 0", flexShrink: 0 }}>
         <div className={["flex items-center mb-5", showLabels ? "gap-2.5 px-1" : "justify-center"].join(" ")}>
-          {/* Logo links to dashboard */}
           <Link
             href="/dashboard"
             className="flex items-center gap-2.5 min-w-0"
@@ -196,7 +219,6 @@ export default function Sidebar({ userName, userRole, onClose }: SidebarProps) {
             )}
           </Link>
 
-          {/* Collapse toggle — desktop only */}
           {!isMobile && showLabels && (
             <button
               onClick={() => setCollapsed(c => !c)}
@@ -235,7 +257,7 @@ export default function Sidebar({ userName, userRole, onClose }: SidebarProps) {
       >
         <nav aria-label="Main navigation">
           <div className="flex flex-col gap-0.5">
-            {NAV_ITEMS.map((item) => {
+            {visibleNavItems.map((item) => {
               const active = isActive(item.href);
               return (
                 <Link
@@ -251,7 +273,6 @@ export default function Sidebar({ userName, userRole, onClose }: SidebarProps) {
                       : "text-[var(--hm-text-secondary)] hover:text-[var(--hm-text)] hover:bg-[var(--hm-surface-hover)]",
                   ].join(" ")}
                 >
-                  {/* Left accent bar on active item */}
                   {active && showLabels && (
                     <span
                       className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-[var(--hm-accent)]"
@@ -265,7 +286,7 @@ export default function Sidebar({ userName, userRole, onClose }: SidebarProps) {
             })}
           </div>
 
-          {(userRole === "admin" || userRole === "owner") && (
+          {visibleAdminItems.length > 0 && (
             <>
               <div className="h-px bg-[var(--hm-border)] my-3 mx-1" role="separator" />
               {showLabels && (
@@ -274,7 +295,7 @@ export default function Sidebar({ userName, userRole, onClose }: SidebarProps) {
                 </p>
               )}
               <div className="flex flex-col gap-0.5">
-                {ADMIN_ITEMS.map((item) => {
+                {visibleAdminItems.map((item) => {
                   const active = isActive(item.href);
                   return (
                     <Link
@@ -310,7 +331,6 @@ export default function Sidebar({ userName, userRole, onClose }: SidebarProps) {
       {/* Fixed user footer */}
       <div style={{ padding: "12px", borderTop: "1px solid var(--hm-border)", flexShrink: 0 }}>
         {showLabels ? (
-          /* Expanded: avatar + name + theme toggle in a row */
           <div className="flex items-center gap-2.5 mb-2.5 px-1">
             <div
               className="w-8 h-8 rounded-full bg-[#4361ee] flex items-center justify-center text-[11px] font-medium text-white flex-shrink-0"
@@ -320,13 +340,12 @@ export default function Sidebar({ userName, userRole, onClose }: SidebarProps) {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-[12px] font-medium text-[var(--hm-text)] truncate">{userName}</p>
-              {userRole === "viewer" ? (
-                <span className="inline-block text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400">
-                  Viewer
-                </span>
-              ) : (
-                <p className="text-[10px] text-[var(--hm-text-tertiary)] capitalize">{userRole}</p>
-              )}
+              <span
+                className="inline-block text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded"
+                style={{ background: roleMeta.bg, color: roleMeta.color }}
+              >
+                {roleMeta.label}
+              </span>
             </div>
             <button
               onClick={toggleTheme}
@@ -338,12 +357,11 @@ export default function Sidebar({ userName, userRole, onClose }: SidebarProps) {
             </button>
           </div>
         ) : (
-          /* Collapsed: avatar + theme toggle stacked */
           <div className="flex flex-col items-center gap-2 mb-2">
             <div
               className="w-8 h-8 rounded-full bg-[#4361ee] flex items-center justify-center text-[11px] font-medium text-white"
-              title={`${userName} (${userRole})`}
-              aria-label={`${userName}, ${userRole}`}
+              title={`${userName} (${roleMeta.label})`}
+              aria-label={`${userName}, ${roleMeta.label}`}
             >
               {getInitials(userName)}
             </div>

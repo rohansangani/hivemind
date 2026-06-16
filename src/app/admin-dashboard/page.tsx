@@ -56,7 +56,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   google: "Google",
 };
 
-const ROLES = ["owner", "admin", "editor", "member", "viewer"];
+const ROLES = ["owner", "admin", "marketing", "sales", "others"];
 
 // ── Reusable components ─────────────────────────────────────────────────────
 

@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
           email,
           name,
           password: hashedPassword,
-          role: "viewer",
+          role: "others",
           organizationId: matchingOrg.id,
           onboarded: true, // skip setup wizard — joining an existing org
         },

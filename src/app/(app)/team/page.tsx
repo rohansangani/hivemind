@@ -153,7 +153,7 @@ function UserModal({
   const [tab, setTab] = useState<"profile" | "permissions">("profile");
   const [name, setName] = useState(member?.name ?? "");
   const [email, setEmail] = useState(member?.email ?? "");
-  const [role, setRole] = useState<Role>((member?.role as Role) ?? "viewer");
+  const [role, setRole] = useState<Role>((member?.role as Role) ?? "others");
   const [department, setDepartment] = useState(member?.department ?? "");
   const [jobTitle, setJobTitle] = useState(member?.jobTitle ?? "");
   const [permissions, setPermissions] = useState<ModulePermissions>(
@@ -169,8 +169,8 @@ function UserModal({
   };
 
   const roleOptions = actorRole === "owner"
-    ? (["owner", "admin", "editor", "viewer"] as Role[])
-    : (["admin", "editor", "viewer"] as Role[]);
+    ? (["owner", "admin", "marketing", "sales", "others"] as Role[])
+    : (["admin", "marketing", "sales", "others"] as Role[]);
 
   const effectivePerms = getEffectivePermissions(role, permissions);
 
@@ -736,7 +736,8 @@ export default function TeamPage() {
             {[
               { label: "Active members", value: members.filter(m => m.inviteStatus !== "pending").length, color: "var(--hm-text)" },
               { label: "Owners & admins", value: members.filter(m => m.role === "owner" || m.role === "admin").length, color: ROLE_META.admin.color },
-              { label: "Editors & viewers", value: members.filter(m => m.role === "editor" || m.role === "viewer" || m.role === "member").length, color: ROLE_META.editor.color },
+              { label: "Marketing", value: members.filter(m => ["marketing", "editor", "member"].includes(m.role)).length, color: ROLE_META.marketing.color },
+              { label: "Sales & Others", value: members.filter(m => ["sales", "others", "viewer"].includes(m.role)).length, color: ROLE_META.sales.color },
               { label: "Pending invites", value: members.filter(m => m.inviteStatus === "pending").length, color: "#F59E0B" },
             ].map(s => (
               <div key={s.label} className="p-4 rounded-xl border border-[var(--hm-border)]" style={{ background: "var(--hm-bg)" }}>

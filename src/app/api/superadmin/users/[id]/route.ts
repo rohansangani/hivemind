@@ -16,7 +16,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const user = await db.user.findUnique({ where: { id }, select: { id: true } });
     if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
-    const validRoles = ["owner", "admin", "editor", "member", "viewer"];
+    const validRoles = ["owner", "admin", "marketing", "sales", "others", "editor", "member", "viewer"];
     if (role && !validRoles.includes(role)) {
       return NextResponse.json({ error: "Invalid role" }, { status: 400 });
     }

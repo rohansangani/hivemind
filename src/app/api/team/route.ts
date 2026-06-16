@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
     const { email, role, name, department, jobTitle } = await req.json();
     if (!email) return NextResponse.json({ error: "Email is required" }, { status: 400 });
 
-    const assignRole = role || "viewer";
+    const assignRole = role || "others";
     if (!canAssignRole(actorRole, assignRole)) {
       return NextResponse.json({ error: "Cannot assign that role" }, { status: 403 });
     }

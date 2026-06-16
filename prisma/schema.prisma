@@ -56,7 +56,7 @@ model User {
   name           String?
   password       String?
   image          String?
-  role           String    @default("member")
+  role           String    @default("others")
   department     String?
   jobTitle       String?
   jobRole        String?
