@@ -113,9 +113,9 @@ export async function POST(req: NextRequest) {
       created.push(asset);
     }
 
-    // Fire-and-forget auto brand review for each uploaded asset.
-    // Each fetch spawns an independent Vercel function invocation, so the
-    // upload response returns immediately while reviews run in the background.
+    // Fire-and-forget: auto-analyze + brand-review for each uploaded asset.
+    // Analyze extracts learnings, proof points, and metrics into the knowledge base.
+    // Brand-review scores brand compliance. Both run as independent serverless invocations.
     let hasApiKey = false;
     try { await getAnthropicKey(decoded.orgId); hasApiKey = true; } catch { /* no key — skip auto-review */ }
     if (created.length > 0 && hasApiKey) {
@@ -126,6 +126,13 @@ export async function POST(req: NextRequest) {
         const cookie = req.headers.get("cookie") || "";
         if (baseUrl) {
           for (const asset of created) {
+            // Content analysis — extracts learnings, proof points, messaging patterns
+            fetch(`${baseUrl}/api/content-library/analyze`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "Cookie": cookie },
+              body: JSON.stringify({ assetId: asset.id }),
+            }).catch(() => {});
+            // Brand review — scores brand compliance
             fetch(`${baseUrl}/api/content-library/brand-review`, {
               method: "POST",
               headers: { "Content-Type": "application/json", "Cookie": cookie },

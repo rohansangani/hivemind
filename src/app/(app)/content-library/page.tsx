@@ -69,6 +69,24 @@ export default function ContentLibraryPage() {
 
   // Auto-review polling state
   const [isAutoReviewing, setIsAutoReviewing] = useState(false);
+  const [batchAnalyzing, setBatchAnalyzing] = useState(false);
+  const [batchResult, setBatchResult] = useState<{ analyzed: number; total: number; message: string } | null>(null);
+
+  const runBatchAnalyze = async () => {
+    setBatchAnalyzing(true);
+    setBatchResult(null);
+    try {
+      const res = await fetch("/api/content-library/analyze-batch", { method: "POST" });
+      const data = await res.json();
+      setBatchResult(data);
+      fetchData();
+    } catch {
+      setBatchResult({ analyzed: 0, total: 0, message: "Batch analysis failed." });
+    } finally {
+      setBatchAnalyzing(false);
+      setTimeout(() => setBatchResult(null), 10000);
+    }
+  };
 
   // Bulk selection state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -267,11 +285,34 @@ export default function ContentLibraryPage() {
             <h1 className="text-[18px] md:text-[22px] font-semibold leading-tight">Asset library</h1>
             <p className="text-[12px] text-[var(--hm-text-tertiary)] mt-0.5">{pagination ? pagination.total : assets.length} asset{(pagination ? pagination.total : assets.length) !== 1 ? "s" : ""}{hasActiveFilters ? " (filtered)" : ""}{pagination && pagination.totalPages > 1 ? ` · Page ${page} of ${pagination.totalPages}` : ""}{avgScore !== null ? " · Avg. score: " + avgScore + "%" : ""}</p>
           </div>
-          <button onClick={() => setShowUpload(true)} className="h-[34px] w-full sm:w-auto px-4 bg-[#4361ee] text-white rounded-lg text-[12px] font-medium flex items-center justify-center gap-1.5 hover:opacity-90 active:opacity-100 active:scale-95 transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-2 flex-shrink-0" style={{ boxShadow: "0 1px 2px rgba(67,97,238,0.3)" }}>
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 2v8M5 4l3-3 3 3" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /><path d="M2 13h12" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" /></svg>
-            Upload files
-          </button>
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            {assets.some(a => a.scoreStatus === "pending") && (
+              <button
+                onClick={runBatchAnalyze}
+                disabled={batchAnalyzing}
+                className="h-[34px] px-4 border border-[#7c3aed] text-[#7c3aed] rounded-lg text-[12px] font-medium flex items-center justify-center gap-1.5 hover:bg-purple-50 active:scale-95 transition-all duration-150 disabled:opacity-50 flex-shrink-0"
+              >
+                {batchAnalyzing ? (
+                  <><span className="w-3 h-3 border-[1.5px] border-purple-300 border-t-purple-600 rounded-full animate-spin" />Analyzing...</>
+                ) : (
+                  <><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 2a6 6 0 110 12A6 6 0 018 2z" stroke="currentColor" strokeWidth="1.3" /><path d="M8 5v3.5l2.5 1.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>Analyze all</>
+                )}
+              </button>
+            )}
+            <button onClick={() => setShowUpload(true)} className="h-[34px] w-full sm:w-auto px-4 bg-[#4361ee] text-white rounded-lg text-[12px] font-medium flex items-center justify-center gap-1.5 hover:opacity-90 active:opacity-100 active:scale-95 transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-2 flex-shrink-0" style={{ boxShadow: "0 1px 2px rgba(67,97,238,0.3)" }}>
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 2v8M5 4l3-3 3 3" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /><path d="M2 13h12" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" /></svg>
+              Upload files
+            </button>
+          </div>
         </div>
+
+        {/* Batch analysis result notification */}
+        {batchResult && (
+          <div className={`mx-4 md:mx-7 mt-3 px-4 py-2.5 rounded-lg text-[12px] font-medium flex items-center gap-2 animate-fade-in ${batchResult.analyzed > 0 ? "bg-green-50 text-green-700 border border-green-200" : "bg-amber-50 text-amber-700 border border-amber-200"}`}>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5l3 3 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
+            {batchResult.message} {batchResult.analyzed > 0 && "Learnings have been extracted and added to the knowledge base."}
+          </div>
+        )}
 
         {/* Content-type tab strip */}
         <div className="px-4 md:px-7 bg-white border-b border-[var(--hm-border)] flex items-center overflow-x-auto">
