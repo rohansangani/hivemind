@@ -84,7 +84,7 @@ export default function ContentLibraryPage() {
       setBatchResult({ analyzed: 0, total: 0, message: "Batch analysis failed." });
     } finally {
       setBatchAnalyzing(false);
-      setTimeout(() => setBatchResult(null), 10000);
+      setTimeout(() => setBatchResult(null), 15000);
     }
   };
 
@@ -286,16 +286,17 @@ export default function ContentLibraryPage() {
             <p className="text-[12px] text-[var(--hm-text-tertiary)] mt-0.5">{pagination ? pagination.total : assets.length} asset{(pagination ? pagination.total : assets.length) !== 1 ? "s" : ""}{hasActiveFilters ? " (filtered)" : ""}{pagination && pagination.totalPages > 1 ? ` · Page ${page} of ${pagination.totalPages}` : ""}{avgScore !== null ? " · Avg. score: " + avgScore + "%" : ""}</p>
           </div>
           <div className="flex items-center gap-2 w-full sm:w-auto">
-            {assets.some(a => a.scoreStatus === "pending") && (
+            {assets.length > 0 && (
               <button
                 onClick={runBatchAnalyze}
                 disabled={batchAnalyzing}
                 className="h-[34px] px-4 border border-[#7c3aed] text-[#7c3aed] rounded-lg text-[12px] font-medium flex items-center justify-center gap-1.5 hover:bg-purple-50 active:scale-95 transition-all duration-150 disabled:opacity-50 flex-shrink-0"
+                title="Extract learnings, metrics, and proof points from all assets into the knowledge base"
               >
                 {batchAnalyzing ? (
-                  <><span className="w-3 h-3 border-[1.5px] border-purple-300 border-t-purple-600 rounded-full animate-spin" />Analyzing...</>
+                  <><span className="w-3 h-3 border-[1.5px] border-purple-300 border-t-purple-600 rounded-full animate-spin" />Extracting intelligence...</>
                 ) : (
-                  <><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 2a6 6 0 110 12A6 6 0 018 2z" stroke="currentColor" strokeWidth="1.3" /><path d="M8 5v3.5l2.5 1.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>Analyze all</>
+                  <><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M2 13h12" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /><rect x="3" y="8" width="2.5" height="5" rx="0.5" stroke="currentColor" strokeWidth="1.1" /><rect x="6.75" y="5" width="2.5" height="8" rx="0.5" stroke="currentColor" strokeWidth="1.1" /><rect x="10.5" y="2" width="2.5" height="11" rx="0.5" stroke="currentColor" strokeWidth="1.1" /></svg>Extract intelligence</>
                 )}
               </button>
             )}
