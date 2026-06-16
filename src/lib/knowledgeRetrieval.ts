@@ -123,6 +123,97 @@ const STOP = new Set([
   "what","how","when","where","why","who","can","get","use","make","tell","show",
 ]);
 
+// ─────────────────────────────────────────────────────────
+//  Query Intent → Content Type Relevance Boosting
+//  Detects what the user is asking about and boosts
+//  learnings from the most relevant content types.
+// ─────────────────────────────────────────────────────────
+
+interface ContentTypeSignals {
+  /** Keywords that signal this intent category */
+  keywords: string[];
+  /** Content types to boost, with multipliers */
+  boosts: Record<string, number>;
+}
+
+const QUERY_INTENT_SIGNALS: ContentTypeSignals[] = [
+  {
+    // Asking about metrics, ROI, results → case studies are gold
+    keywords: ["metric", "metrics", "roi", "result", "results", "improvement", "improve", "improved",
+               "reduction", "reduce", "reduced", "increase", "increased", "outcome", "outcomes",
+               "performance", "kpi", "kpis", "impact", "stats", "statistics", "number", "numbers",
+               "percentage", "before", "after", "savings", "saved", "achieved", "growth"],
+    boosts: { case_study: 0.25, ebook: 0.08 },
+  },
+  {
+    // Asking about messaging, positioning → decks and one-pagers
+    keywords: ["messaging", "positioning", "value prop", "value proposition", "pitch", "elevator",
+               "differentiator", "differentiation", "usp", "unique", "competitive advantage",
+               "why us", "why choose", "selling point", "selling points"],
+    boosts: { deck: 0.22, one_pager: 0.18, brochure: 0.10 },
+  },
+  {
+    // Asking about features, product details → decks and brochures
+    keywords: ["feature", "features", "capability", "capabilities", "product", "platform",
+               "integration", "integrations", "spec", "specs", "specification", "pricing",
+               "architecture", "module", "modules", "functionality"],
+    boosts: { deck: 0.18, brochure: 0.20, one_pager: 0.10 },
+  },
+  {
+    // Asking about customers, testimonials → case studies and videos
+    keywords: ["customer", "customers", "client", "clients", "testimonial", "testimonials",
+               "quote", "quotes", "story", "stories", "case study", "case studies",
+               "reference", "references", "success"],
+    boosts: { case_study: 0.25, video: 0.15 },
+  },
+  {
+    // Asking about tone, voice, writing style → blogs
+    keywords: ["tone", "voice", "writing style", "writing pattern", "brand voice", "personality",
+               "vocabulary", "phrasing", "language", "style guide", "content style"],
+    boosts: { blog: 0.22, brochure: 0.08 },
+  },
+  {
+    // Asking about taglines, headlines → one-pagers and blogs
+    keywords: ["tagline", "taglines", "headline", "headlines", "hook", "hooks", "cta",
+               "call to action", "one-liner", "slogan", "copy", "copywriting"],
+    boosts: { one_pager: 0.20, blog: 0.15, deck: 0.10 },
+  },
+  {
+    // Asking about industry, market, trends → ebooks and blogs
+    keywords: ["industry", "market", "trend", "trends", "research", "report", "analysis",
+               "landscape", "outlook", "forecast", "benchmark", "benchmarks", "survey",
+               "sector", "vertical", "segment"],
+    boosts: { ebook: 0.22, blog: 0.15 },
+  },
+  {
+    // Asking about personas, pain points, buyer journey → ebooks
+    keywords: ["persona", "personas", "pain point", "pain points", "buyer", "journey",
+               "decision maker", "decision criteria", "icp", "ideal customer",
+               "jobs to be done", "jtbd", "audience", "target audience"],
+    boosts: { ebook: 0.20, deck: 0.10, case_study: 0.08 },
+  },
+];
+
+/**
+ * Given a query, returns a map of content type → additional boost score.
+ * Multiple signal categories can stack.
+ */
+function getContentTypeBoosts(query: string): Record<string, number> {
+  const lower = query.toLowerCase();
+  const boosts: Record<string, number> = {};
+
+  for (const signal of QUERY_INTENT_SIGNALS) {
+    const matches = signal.keywords.some(kw => lower.includes(kw));
+    if (matches) {
+      for (const [contentType, boost] of Object.entries(signal.boosts)) {
+        boosts[contentType] = (boosts[contentType] || 0) + boost;
+      }
+    }
+  }
+
+  return boosts;
+}
+
 function tokenize(text: string): string[] {
   return text.toLowerCase().replace(/[^\w\s]/g, " ").split(/\s+/).filter(w => w.length > 2 && !STOP.has(w));
 }
@@ -587,6 +678,9 @@ export async function retrieveRelevantKnowledge(
   const now = Date.now();
   const allItems: KnowledgeItem[] = [];
 
+  // Content-type-aware boosting based on query intent
+  const contentTypeBoosts = getContentTypeBoosts(query);
+
   // If no focus product but only 1 product exists, use it automatically
   if (!focusProductRec && uniqueProducts.length > 0 && entities.products.length === 0) {
     // Don't auto-select — leave focusProduct null and list all
@@ -611,7 +705,8 @@ export async function retrieveRelevantKnowledge(
     }
   }
 
-  // Proof points
+  // Proof points — boost based on query intent (metrics queries boost case study proof points)
+  const proofPointIntentBoost = (contentTypeBoosts["case_study"] || 0) * 0.5; // Half the case study boost applies to all proof points
   for (const pp of proofPoints) {
     const text = pp.title;
     let sourceLabel = "Knowledge Base: Proof Points";
@@ -622,7 +717,7 @@ export async function retrieveRelevantKnowledge(
       content: text,
       source: sourceLabel,
       sourceType: "proof_point",
-      relevanceScore: scoreItem(text, queryTokens, entities, { verifiedBoost: 0.1 }),
+      relevanceScore: scoreItem(text, queryTokens, entities, { verifiedBoost: 0.1 + proofPointIntentBoost }),
       confidence: "verified",
     });
   }
@@ -663,26 +758,32 @@ export async function retrieveRelevantKnowledge(
   }
 
   // Content assets (case studies, white papers, etc.) — summaries from analyzed assets
+  // Apply content-type-aware boosting: if the query asks about metrics, case studies get extra boost, etc.
   for (const asset of contentAssets) {
     const allTags = [...(asset.productTags as string[] || []), ...(asset.marketTags as string[] || []), ...(asset.personaTags as string[] || []), ...(asset.customTags as string[] || [])];
     const text = `${asset.name}${asset.contentType ? ` (${asset.contentType})` : ""}: ${asset.aiSummary || ""}${allTags.length ? `. Tags: ${allTags.join(", ")}` : ""}`;
+    const baseBoost = 0.12;
+    const intentBoost = asset.contentType ? (contentTypeBoosts[asset.contentType] || 0) : 0;
     allItems.push({
       id: `asset-${asset.id}`,
       title: `Asset: ${asset.name}`,
       content: text,
       source: `Content Library: ${asset.name}`,
       sourceType: "content_asset",
-      relevanceScore: scoreItem(text, queryTokens, entities, { verifiedBoost: 0.12 }),
+      relevanceScore: scoreItem(text, queryTokens, entities, { verifiedBoost: baseBoost + intentBoost }),
       confidence: "verified",
       date: new Date(asset.createdAt).toISOString().split("T")[0],
     });
   }
 
   // Content analysis entries — detailed analysis extracted from assets
+  // Extract content type from stored JSON to apply intent-based boosting
   for (const entry of contentAnalysisEntries) {
     let summary = entry.title;
+    let entryContentType = "";
     try {
       const d = JSON.parse(entry.content);
+      entryContentType = d._contentType || "";
       if (d.summary) summary += ": " + d.summary;
       // Include key themes and proof points from analysis
       if (d.keyThemes?.length) summary += `. Key themes: ${d.keyThemes.join(", ")}`;
@@ -691,13 +792,15 @@ export async function retrieveRelevantKnowledge(
         summary += `. Proof points: ${claims}`;
       }
     } catch {}
+    const baseBoost = 0.1;
+    const intentBoost = entryContentType ? (contentTypeBoosts[entryContentType] || 0) : 0;
     allItems.push({
       id: `ca-${entry.id}`,
       title: entry.title,
       content: summary.slice(0, 1500),
       source: `Content Analysis: ${entry.title.replace("Analysis: ", "")}`,
       sourceType: "content_asset",
-      relevanceScore: scoreItem(summary, queryTokens, entities, { verifiedBoost: 0.1 }),
+      relevanceScore: scoreItem(summary, queryTokens, entities, { verifiedBoost: baseBoost + intentBoost }),
       confidence: "extracted",
       date: new Date(entry.createdAt).toISOString().split("T")[0],
     });
@@ -730,12 +833,24 @@ export async function retrieveRelevantKnowledge(
     });
   }
 
-  // Learning log
+  // Learning log — with content-type-aware intent boosting
+  // Learnings from content_analysis carry contentType:X tags for intent matching
   const dayMs = 24 * 60 * 60 * 1000;
   for (const l of learnings) {
     const text = `${l.title}: ${l.summary}${l.takeaway ? ` → ${l.takeaway}` : ""}`;
     const ageMs = now - new Date(l.createdAt).getTime();
     const recencyBoost = ageMs < 7 * dayMs ? 0.1 : ageMs < 30 * dayMs ? 0.05 : 0;
+
+    // Extract content type from tags (e.g., "contentType:case_study")
+    const tags = (l.tags as string[]) || [];
+    const ctTag = tags.find(t => t.startsWith("contentType:"));
+    const learningContentType = ctTag ? ctTag.replace("contentType:", "") : "";
+    const intentBoost = learningContentType ? (contentTypeBoosts[learningContentType] || 0) : 0;
+
+    // Priority tag boost — critical learnings from content analysis get extra weight
+    const priorityTag = tags.find(t => t.startsWith("priority:"));
+    const priorityBoost = priorityTag === "priority:critical" ? 0.08
+      : priorityTag === "priority:high" ? 0.04 : 0;
 
     const sType: KnowledgeSourceType =
       l.sourceType === "document_upload" ? "document_learning"
@@ -755,7 +870,7 @@ export async function retrieveRelevantKnowledge(
       content: text,
       source: sourceLabel,
       sourceType: sType,
-      relevanceScore: scoreItem(text, queryTokens, entities, { recencyBoost }),
+      relevanceScore: scoreItem(text, queryTokens, entities, { recencyBoost: recencyBoost + intentBoost + priorityBoost }),
       confidence: l.sourceType === "conversation" ? "inferred" : "extracted",
       date: new Date(l.createdAt).toISOString().split("T")[0],
     });

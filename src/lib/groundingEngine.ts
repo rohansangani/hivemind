@@ -159,12 +159,16 @@ export function buildGroundedContext(knowledge: RetrievedKnowledge): string {
     }
   }
 
-  // ── Learnings from Content Analysis ──────────────────
+  // ── Learnings from Content Analysis — prioritized ─────
   const contentLearnings = knowledge.items.filter(i => i.sourceType === "content_learning");
   if (contentLearnings.length) {
-    lines.push("\n■ INTELLIGENCE FROM CONTENT ASSETS [Extracted from analyzed marketing content]");
-    for (const item of contentLearnings) {
-      lines.push(`  • ${item.content} [${item.source}]`);
+    // Sort by relevance score (higher = more relevant to query intent) to surface priority learnings first
+    const sorted = [...contentLearnings].sort((a, b) => b.relevanceScore - a.relevanceScore);
+    lines.push("\n■ INTELLIGENCE FROM CONTENT ASSETS [Extracted from analyzed marketing content — ranked by relevance]");
+    lines.push("Items at the top are most relevant to this query based on content type and topic matching.");
+    for (const item of sorted) {
+      const marker = item.relevanceScore >= 0.4 ? "⚡" : item.relevanceScore >= 0.2 ? "▸" : "•";
+      lines.push(`  ${marker} ${item.content} [${item.source}]`);
     }
   }
 
@@ -221,13 +225,26 @@ export function buildGroundedContext(knowledge: RetrievedKnowledge): string {
     }
   }
 
-  // ── Content Asset Intelligence ─────────────────────────
+  // ── Content Asset Intelligence — grouped by asset type priority ────
   const assetItems = knowledge.items.filter(i => i.sourceType === "content_asset");
   if (assetItems.length) {
-    lines.push("\n■ CONTENT ASSET INTELLIGENCE [Extracted from analyzed case studies, white papers & marketing assets — high trust]");
-    lines.push("These are facts, metrics, and insights extracted directly from the company's own content assets.");
-    for (const item of assetItems) {
-      lines.push(`  • ${item.content} [${item.source}${item.date ? " · " + item.date : ""}]`);
+    // Categorize by source content type for clearer framing
+    const caseStudyItems = assetItems.filter(i => i.content.includes("(case_study)") || i.source.toLowerCase().includes("case stud"));
+    const otherAssetItems = assetItems.filter(i => !caseStudyItems.includes(i));
+
+    if (caseStudyItems.length) {
+      lines.push("\n■ CASE STUDY INTELLIGENCE [Extracted from customer case studies — HIGHEST trust for metrics & proof points]");
+      lines.push("These contain verified customer results, metrics, and outcomes. Use exact numbers — do NOT round or alter.");
+      for (const item of caseStudyItems) {
+        lines.push(`  ⚡ ${item.content} [${item.source}${item.date ? " · " + item.date : ""}]`);
+      }
+    }
+    if (otherAssetItems.length) {
+      lines.push("\n■ CONTENT ASSET INTELLIGENCE [Extracted from analyzed marketing assets — high trust]");
+      lines.push("Facts, messaging patterns, and insights extracted directly from the company's own content assets.");
+      for (const item of otherAssetItems) {
+        lines.push(`  • ${item.content} [${item.source}${item.date ? " · " + item.date : ""}]`);
+      }
     }
   }
 

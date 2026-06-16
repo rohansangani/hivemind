@@ -62,6 +62,135 @@ async function extractTextFromUrl(url: string, ext: string): Promise<string> {
   return "";
 }
 
+// ── Learning Priority Matrix ─────────────────────────────────
+// Defines content-type-specific extraction priorities so the AI
+// focuses on what matters most for each asset type.
+
+interface PriorityDimension {
+  level: "critical" | "high" | "standard";
+  dimension: string;
+  instructions: string;
+  minItems: number;
+  maxItems: number;
+}
+
+const CONTENT_TYPE_PRIORITIES: Record<string, PriorityDimension[]> = {
+  case_study: [
+    { level: "critical", dimension: "Proof points & metrics", instructions: "Extract EVERY exact number, percentage, ROI figure, before/after stat, improvement metric (e.g., '28% reduction in RTO'), revenue impact, time savings. Quote the exact figures verbatim.", minItems: 3, maxItems: 6 },
+    { level: "critical", dimension: "Customer stories", instructions: "Extract customer name, industry, company size, exact quotes, testimonial snippets, named stakeholders. Preserve exact wording.", minItems: 2, maxItems: 4 },
+    { level: "critical", dimension: "Results & outcomes", instructions: "Extract business outcomes achieved, KPIs impacted, timeline to results, scale of deployment, implementation milestones.", minItems: 2, maxItems: 4 },
+    { level: "high", dimension: "Product knowledge", instructions: "Which features/products were used, integration details, implementation approach.", minItems: 1, maxItems: 3 },
+    { level: "high", dimension: "Customer intelligence", instructions: "Pain points addressed, use case, decision criteria, why they chose this solution.", minItems: 1, maxItems: 2 },
+    { level: "standard", dimension: "Competitive positioning", instructions: "Competitor replaced, switching story — only if explicitly mentioned.", minItems: 0, maxItems: 1 },
+    { level: "standard", dimension: "Market & industry", instructions: "Vertical, company segment, market context.", minItems: 0, maxItems: 1 },
+  ],
+  deck: [
+    { level: "critical", dimension: "Positioning & messaging", instructions: "Extract core value propositions, key messages per slide, elevator pitches, headline claims. Quote exact phrasing.", minItems: 3, maxItems: 5 },
+    { level: "critical", dimension: "Product knowledge", instructions: "Feature descriptions, capabilities, platform architecture, differentiators, USPs.", minItems: 3, maxItems: 5 },
+    { level: "critical", dimension: "Competitive positioning", instructions: "Market positioning, competitor comparisons, differentiation framework, why-us arguments.", minItems: 2, maxItems: 4 },
+    { level: "high", dimension: "Proof points & metrics", instructions: "Stats used to support claims, benchmark data, customer logos mentioned.", minItems: 1, maxItems: 3 },
+    { level: "high", dimension: "Customer intelligence", instructions: "Target personas, ICP descriptions, pain points addressed per segment.", minItems: 1, maxItems: 2 },
+    { level: "standard", dimension: "Brand & voice", instructions: "Tone of the deck, vocabulary choices, presentation style.", minItems: 0, maxItems: 1 },
+    { level: "standard", dimension: "Content patterns", instructions: "Slide structures, narrative flow, CTA approaches.", minItems: 0, maxItems: 1 },
+  ],
+  one_pager: [
+    { level: "critical", dimension: "Positioning & messaging", instructions: "Extract headline, tagline, primary value proposition, key differentiators. Quote exact phrasing.", minItems: 3, maxItems: 5 },
+    { level: "critical", dimension: "Product knowledge", instructions: "Core features highlighted, key capabilities, solution summary.", minItems: 2, maxItems: 4 },
+    { level: "high", dimension: "Proof points & metrics", instructions: "Stats/claims used as social proof, key numbers.", minItems: 1, maxItems: 3 },
+    { level: "high", dimension: "Brand & voice", instructions: "Tagline style, tone, vocabulary, CTA phrasing.", minItems: 1, maxItems: 2 },
+    { level: "high", dimension: "Customer intelligence", instructions: "Target audience, persona signals, pain points addressed.", minItems: 1, maxItems: 2 },
+    { level: "standard", dimension: "Competitive positioning", instructions: "How positioned vs. alternatives.", minItems: 0, maxItems: 1 },
+    { level: "standard", dimension: "Content patterns", instructions: "Layout structure, headline formula, CTA approach.", minItems: 0, maxItems: 1 },
+  ],
+  blog: [
+    { level: "critical", dimension: "Market & industry", instructions: "Industry trends, market claims, data points cited, thought leadership positions.", minItems: 3, maxItems: 5 },
+    { level: "critical", dimension: "Brand & voice", instructions: "Writing tone, vocabulary patterns, sentence structure, personality cues, author voice.", minItems: 2, maxItems: 4 },
+    { level: "critical", dimension: "Content patterns", instructions: "Headline formulas, intro hooks, CTA approaches, narrative structures, section patterns.", minItems: 2, maxItems: 4 },
+    { level: "high", dimension: "Positioning & messaging", instructions: "Key messages woven through content, implicit value props.", minItems: 1, maxItems: 3 },
+    { level: "high", dimension: "Product knowledge", instructions: "Features/capabilities mentioned, use cases described.", minItems: 1, maxItems: 2 },
+    { level: "high", dimension: "Customer intelligence", instructions: "Pain points discussed, audience signals, jobs-to-be-done framing.", minItems: 1, maxItems: 2 },
+    { level: "standard", dimension: "Proof points & metrics", instructions: "Stats cited, research referenced.", minItems: 0, maxItems: 1 },
+    { level: "standard", dimension: "Competitive positioning", instructions: "Competitor mentions, market differentiation.", minItems: 0, maxItems: 1 },
+  ],
+  brochure: [
+    { level: "critical", dimension: "Product knowledge", instructions: "Full product/service descriptions, feature lists, capabilities, specs, pricing tiers.", minItems: 3, maxItems: 5 },
+    { level: "critical", dimension: "Positioning & messaging", instructions: "Brand promise, value propositions, key selling points per section.", minItems: 3, maxItems: 5 },
+    { level: "high", dimension: "Proof points & metrics", instructions: "Trust signals, customer counts, performance stats, awards.", minItems: 1, maxItems: 3 },
+    { level: "high", dimension: "Customer intelligence", instructions: "Target segments addressed, use cases per persona.", minItems: 1, maxItems: 2 },
+    { level: "high", dimension: "Brand & voice", instructions: "Headline style, CTA language, vocabulary, formality level.", minItems: 1, maxItems: 2 },
+    { level: "standard", dimension: "Competitive positioning", instructions: "Positioning claims, uniqueness statements.", minItems: 0, maxItems: 1 },
+    { level: "standard", dimension: "Content patterns", instructions: "Section structure, headline-subhead patterns.", minItems: 0, maxItems: 1 },
+  ],
+  ebook: [
+    { level: "critical", dimension: "Market & industry", instructions: "Deep industry analysis, trends, data, market sizing, future projections.", minItems: 3, maxItems: 5 },
+    { level: "critical", dimension: "Customer intelligence", instructions: "Detailed persona insights, buyer journey, pain points, decision frameworks.", minItems: 3, maxItems: 5 },
+    { level: "critical", dimension: "Proof points & metrics", instructions: "Research data, benchmarks, survey results, case examples within chapters.", minItems: 2, maxItems: 4 },
+    { level: "high", dimension: "Product knowledge", instructions: "Solutions positioned within industry context, capabilities mapped to problems.", minItems: 1, maxItems: 3 },
+    { level: "high", dimension: "Positioning & messaging", instructions: "Thought leadership angle, implied positioning, narrative framing.", minItems: 1, maxItems: 2 },
+    { level: "high", dimension: "Content patterns", instructions: "Chapter structures, argument flow, gating/lead-gen hooks.", minItems: 1, maxItems: 2 },
+    { level: "standard", dimension: "Brand & voice", instructions: "Long-form writing patterns, tone consistency.", minItems: 0, maxItems: 1 },
+    { level: "standard", dimension: "Competitive positioning", instructions: "Market landscape analysis, competitor mentions.", minItems: 0, maxItems: 1 },
+  ],
+  video: [
+    { level: "critical", dimension: "Customer stories", instructions: "Testimonials, speaker quotes, named customers, use case narratives. Quote exact words.", minItems: 3, maxItems: 5 },
+    { level: "critical", dimension: "Positioning & messaging", instructions: "Key messages delivered, pitch narrative, demo talking points.", minItems: 2, maxItems: 4 },
+    { level: "high", dimension: "Product knowledge", instructions: "Features demonstrated, workflow shown, capabilities highlighted.", minItems: 1, maxItems: 3 },
+    { level: "high", dimension: "Proof points & metrics", instructions: "Stats mentioned verbally, results shown on screen.", minItems: 1, maxItems: 2 },
+    { level: "high", dimension: "Brand & voice", instructions: "Speaking tone, presentation style, energy level, vocabulary.", minItems: 1, maxItems: 2 },
+    { level: "standard", dimension: "Customer intelligence", instructions: "Audience addressed, persona signals.", minItems: 0, maxItems: 1 },
+    { level: "standard", dimension: "Content patterns", instructions: "Video structure, hook style, CTA approach.", minItems: 0, maxItems: 1 },
+  ],
+};
+
+function getContentTypePriorityInstructions(contentType: string): string {
+  const priorities = CONTENT_TYPE_PRIORITIES[contentType];
+
+  if (!priorities) {
+    // Fallback: generic extraction for unknown types
+    return `For learnings: extract 15–25 comprehensive, SPECIFIC items covering ALL dimensions present in the content:
+- Product knowledge (features, capabilities, use cases, technical specs)
+- Positioning & messaging (value props, taglines, key messages, differentiators)
+- Customer intelligence (segments, pain points, jobs-to-be-done, decision criteria)
+- Proof points & metrics (stats, benchmarks, ROI claims, customer results)
+- Customer stories (named customers, testimonials, exact quotes)
+- Competitive intelligence (competitor mentions, win/loss patterns, differentiation)
+- Brand & voice (tone rules, vocabulary, writing patterns, personality cues)
+- Content patterns (headline formulas, CTA approaches, narrative structures)
+- Market & industry (verticals, trends referenced, market claims)`;
+  }
+
+  const totalMin = priorities.reduce((s, p) => s + p.minItems, 0);
+  const totalMax = priorities.reduce((s, p) => s + p.maxItems, 0);
+
+  const lines: string[] = [];
+  lines.push(`This is a ${contentType.replace(/_/g, " ").toUpperCase()} asset. Extract ${totalMin}–${totalMax} learnings with the following PRIORITY WEIGHTING:\n`);
+
+  const critical = priorities.filter(p => p.level === "critical");
+  const high = priorities.filter(p => p.level === "high");
+  const standard = priorities.filter(p => p.level === "standard");
+
+  if (critical.length) {
+    lines.push("🔴 CRITICAL PRIORITY (extract these FIRST — maximum depth, exact quotes/numbers mandatory):");
+    for (const p of critical) {
+      lines.push(`  - ${p.dimension} [${p.minItems}–${p.maxItems} items]: ${p.instructions}`);
+    }
+  }
+  if (high.length) {
+    lines.push("\n🟡 HIGH PRIORITY (extract after critical dimensions are covered):");
+    for (const p of high) {
+      lines.push(`  - ${p.dimension} [${p.minItems}–${p.maxItems} items]: ${p.instructions}`);
+    }
+  }
+  if (standard.length) {
+    lines.push("\n🟢 STANDARD (only if clearly present in the content):");
+    for (const p of standard) {
+      lines.push(`  - ${p.dimension} [${p.minItems}–${p.maxItems} items]: ${p.instructions}`);
+    }
+  }
+
+  return `For learnings:\n${lines.join("\n")}`;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const token = req.cookies.get("hm-token")?.value;
@@ -145,17 +274,9 @@ Return ONLY valid JSON (no markdown, no backticks):
   ]
 }
 
-For learnings: extract 10–20 comprehensive, SPECIFIC items covering ALL dimensions present in the content:
-- Product knowledge (features, capabilities, use cases, technical specs)
-- Positioning & messaging (value props, taglines, key messages, differentiators)
-- Customer intelligence (segments, pain points, jobs-to-be-done, decision criteria)
-- Proof points & metrics (stats, benchmarks, ROI claims, customer results)
-- Customer stories (named customers, testimonials, exact quotes)
-- Competitive intelligence (competitor mentions, win/loss patterns, differentiation)
-- Brand & voice (tone rules, vocabulary, writing patterns, personality cues)
-- Content patterns (headline formulas, CTA approaches, narrative structures)
-- Market & industry (verticals, trends referenced, market claims)
-Every learning MUST be grounded in something explicitly present — quote or closely paraphrase. Do NOT generate generic advice.`;
+${getContentTypePriorityInstructions(asset.contentType || "general")}
+Every learning MUST be grounded in something explicitly present — quote or closely paraphrase. Do NOT generate generic advice.
+IMPORTANT: Tag each learning with "contentType:${asset.contentType || "general"}" in the tags array, plus its priority level tag "priority:critical", "priority:high", or "priority:standard".`;
 
     // Build a single Claude message (PDF sent once)
     let combinedMessages: Array<{ role: string; content: unknown }>;
@@ -237,7 +358,7 @@ Every learning MUST be grounded in something explicitly present — quote or clo
     entries.push({
       category: "content_analysis",
       title: "Analysis: " + asset.name,
-      content: JSON.stringify(analysis),
+      content: JSON.stringify({ ...analysis, _contentType: asset.contentType || "general" }),
       source: "content_library",
       organizationId: decoded.orgId,
     });
