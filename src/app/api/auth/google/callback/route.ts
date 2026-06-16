@@ -98,7 +98,7 @@ export async function GET(req: NextRequest) {
             email,
             name: googleUser.name,
             image: googleUser.picture,
-            role: "marketing",
+            role: "others",
             organizationId: matchingOrg.id,
             lastActiveAt: new Date(),
           },
