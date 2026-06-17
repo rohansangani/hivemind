@@ -365,15 +365,17 @@ export default function KnowledgeBasePage() {
   const confirmAndDelSkill = (id: string, name: string) => setConfirmDelete({ section: "__skill__", id, label: name });
   const toggleSkill = async (s: Skill) => { await fetch("/api/skills", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: s.id, isActive: !s.isActive }) }); fetchAll(); };
 
+  const [synthError, setSynthError] = useState<string | null>(null);
   const synthesizeSkills = async () => {
-    setSynthesizing(true); setSynthResult(null);
+    setSynthesizing(true); setSynthResult(null); setSynthError(null);
     try {
       const res = await fetch("/api/knowledge/synthesize-skills", { method: "POST" });
       const data = await res.json();
       if (data.synthesized !== undefined) { setSynthResult(data); }
       else if (data.skipped) { setSynthResult({ synthesized: -1, categories: [] }); }
+      else if (data.error) { setSynthError(data.error); }
       fetchAll();
-    } catch { setSynthResult({ synthesized: -2, categories: [] }); }
+    } catch (e) { setSynthError(e instanceof Error ? e.message : "Network error"); }
     finally { setSynthesizing(false); }
   };
 
@@ -908,10 +910,10 @@ export default function KnowledgeBasePage() {
                     <p className="text-[11px] text-amber-700">Skills were recently synthesized. Try again in a few minutes.</p>
                   </div>
                 )}
-                {synthResult && synthResult.synthesized === -2 && (
+                {synthError && (
                   <div className="mb-3 p-3 bg-red-50 border border-red-100 rounded-lg flex items-center gap-2">
                     <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="#ef4444" strokeWidth="1.2"/><path d="M6 6l4 4M10 6l-4 4" stroke="#ef4444" strokeWidth="1.4" strokeLinecap="round"/></svg>
-                    <p className="text-[11px] text-red-700">Synthesis failed. Check your API key in settings.</p>
+                    <p className="text-[11px] text-red-700">Synthesis failed: {synthError}</p>
                   </div>
                 )}
                 {synthResult && synthResult.synthesized === 0 && (

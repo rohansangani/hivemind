@@ -236,7 +236,8 @@ Write ONLY the instruction text. No labels, no preamble.`;
       categories: synthesized.map((s) => ({ name: s.name, count: s.count })),
     });
   } catch (error) {
-    console.error("Synthesize skills error:", error);
-    return NextResponse.json({ error: "Synthesis failed" }, { status: 500 });
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error("Synthesize skills error:", msg, error);
+    return NextResponse.json({ error: `Synthesis failed: ${msg}` }, { status: 500 });
   }
 }
