@@ -1,6 +1,7 @@
 export const maxDuration = 60;
 
 import { NextRequest, NextResponse } from "next/server";
+import { after } from "next/server";
 import { db } from "@/lib/db";
 import jwt from "jsonwebtoken";
 import { classifyIntent, resolveEntities, getIntentInstructions } from "@/lib/intentEngine";
@@ -60,6 +61,18 @@ async function callClaude(
 //  Auto-learning: extract new facts from conversation turns
 // ─────────────────────────────────────────────────────────
 
+async function synthesizeSkillsInline(orgId: string, cookie: string) {
+  try {
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000";
+    await fetch(`${baseUrl}/api/knowledge/synthesize-skills`, {
+      method: "POST",
+      headers: { cookie },
+    });
+  } catch {
+    // Non-critical
+  }
+}
+
 async function extractAndSaveLearnings(
   apiKey: string,
   orgId: string,
@@ -111,12 +124,8 @@ Return ONLY the JSON array.`;
       await pool.end();
     }
 
-    // Fire-and-forget skill synthesis so new learnings are reflected immediately
     if (reqContext) {
-      fetch(new URL("/api/knowledge/synthesize-skills", reqContext.url).toString(), {
-        method: "POST",
-        headers: { cookie: reqContext.cookie },
-      }).catch(() => {});
+      await synthesizeSkillsInline(orgId, reqContext.cookie);
     }
   } catch {
     // Non-critical
@@ -426,7 +435,7 @@ CONVERSATION BEHAVIOR:
         const userTurns = historyMessages.filter(m => m.role === "user").length;
         const turnCount = userTurns + 1; // 1-based current turn number
         if (autoLearn && turnCount > 0 && turnCount % 3 === 0) {
-          extractAndSaveLearnings(apiKey, decoded.orgId, message, assistantReply, { url: req.url, cookie: req.headers.get("cookie") || "" }).catch(() => {});
+          after(() => extractAndSaveLearnings(apiKey, decoded.orgId, message, assistantReply, { url: req.url, cookie: req.headers.get("cookie") || "" }).catch(() => {}));
         }
       } catch (e) {
         console.error("Anthropic error:", e);

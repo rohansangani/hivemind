@@ -170,7 +170,7 @@ function UserModal({
 
   const roleOptions = actorRole === "owner"
     ? (["owner", "admin", "marketing", "sales", "others"] as Role[])
-    : (["admin", "marketing", "sales", "others"] as Role[]);
+    : (["marketing", "sales", "others"] as Role[]);
 
   const effectivePerms = getEffectivePermissions(role, permissions);
 

@@ -96,9 +96,11 @@ export function canManageUser(actorRole: Role | string, targetRole: Role | strin
 
 export function canAssignRole(actorRole: Role | string, newRole: Role | string): boolean {
   if (!hasPermission(actorRole, "manage_team")) return false;
-  const actorRank = ROLE_RANK[actorRole] ?? 0;
+  const normalized = normalizeRole(actorRole);
+  if (normalized === "owner") return true;
   const newRank = ROLE_RANK[newRole] ?? 0;
-  return actorRank >= newRank;
+  const adminRank = ROLE_RANK["admin"];
+  return newRank < adminRank;
 }
 
 export const ROLE_META: Record<string, { label: string; color: string; bg: string; description: string }> = {

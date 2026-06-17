@@ -327,6 +327,7 @@ export default function ContentLibraryPage() {
               { value: "blog", label: "Blog posts" },
               { value: "brochure", label: "Brochures" },
               { value: "ebook", label: "Ebooks" },
+              { value: "report", label: "Reports" },
             ] as { value: string; label: string }[]
           ).map((t) => (
             <button
@@ -396,7 +397,7 @@ export default function ContentLibraryPage() {
                     <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1 font-medium">Asset name *</label><input type="text" value={uploadName} onChange={(e) => setUploadName(e.target.value)} className="text-[13px]" /></div>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                       <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1 font-medium">File type</label><select value={uploadType} onChange={(e) => setUploadType(e.target.value)} style={{ fontSize: "12px" }}><option value="pdf">PDF</option><option value="pptx">PPTX</option><option value="docx">DOCX</option><option value="xlsx">XLSX</option><option value="jpg">JPG</option><option value="png">PNG</option><option value="mp4">MP4</option></select></div>
-                      <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1 font-medium">Content type</label><select value={uploadContentType} onChange={(e) => setUploadContentType(e.target.value)} style={{ fontSize: "12px" }}><option value="deck">Deck</option><option value="one_pager">One-pager</option><option value="case_study">Case Study</option><option value="blog">Blog Post</option><option value="brochure">Brochure</option><option value="ebook">Ebook</option></select></div>
+                      <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1 font-medium">Content type</label><select value={uploadContentType} onChange={(e) => setUploadContentType(e.target.value)} style={{ fontSize: "12px" }}><option value="deck">Deck</option><option value="one_pager">One-pager</option><option value="case_study">Case Study</option><option value="blog">Blog Post</option><option value="brochure">Brochure</option><option value="ebook">Ebook</option><option value="report">Report</option></select></div>
                       <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1 font-medium">Product</label><select value={uploadProduct} onChange={(e) => setUploadProduct(e.target.value)} style={{ fontSize: "12px" }}><option value="">All</option>{products.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}</select></div>
                       <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1 font-medium">Market</label><select value={uploadMarket} onChange={(e) => setUploadMarket(e.target.value)} style={{ fontSize: "12px" }}><option value="">Global</option>{markets.map((m) => <option key={m.name} value={m.name}>{m.name}</option>)}</select></div>
                     </div>
@@ -961,7 +962,7 @@ export default function ContentLibraryPage() {
                     <label className="block text-xs text-[var(--hm-text-secondary)] mb-1 font-medium">Content type</label>
                     <select value={editContentType} onChange={(e) => setEditContentType(e.target.value)} style={{ fontSize: "12px" }}>
                       <option value="deck">Deck</option><option value="one_pager">One-pager</option><option value="case_study">Case Study</option>
-                      <option value="blog">Blog Post</option><option value="brochure">Brochure</option><option value="ebook">Ebook</option><option value="video">Video</option>
+                      <option value="blog">Blog Post</option><option value="brochure">Brochure</option><option value="ebook">Ebook</option><option value="report">Report</option><option value="video">Video</option>
                     </select>
                   </div>
                   <div>

@@ -7,8 +7,7 @@ import { db } from "@/lib/db";
 import { getAnthropicKey } from "@/lib/aiProvider";
 import { logTokenUsage, extractAnthropicUsage } from "@/lib/tokenTracking";
 
-// Cooldown: do not re-synthesize more than once every 5 minutes per org
-const SYNTHESIS_COOLDOWN_MS = 5 * 60 * 1000;
+const SYNTHESIS_COOLDOWN_MS = 2 * 60 * 1000;
 const lastSynthesisTime: Record<string, number> = {};
 
 function cuid() {

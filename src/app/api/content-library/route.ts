@@ -130,18 +130,22 @@ export async function POST(req: NextRequest) {
 
       after(async () => {
         for (const asset of created) {
-          // Intelligence extraction — runs in-process, no HTTP round-trip
           await analyzeAsset(asset.id, orgId, userId).catch((e) =>
             console.error(`[auto-analyze] ${asset.name}:`, e instanceof Error ? e.message : e)
           );
-          // Brand review — still separate route (lightweight, different logic)
           if (baseUrl) {
-            fetch(`${baseUrl}/api/content-library/brand-review`, {
+            await fetch(`${baseUrl}/api/content-library/brand-review`, {
               method: "POST",
               headers: { "Content-Type": "application/json", "Cookie": cookie },
               body: JSON.stringify({ assetId: asset.id }),
             }).catch(() => {});
           }
+        }
+        if (baseUrl) {
+          await fetch(`${baseUrl}/api/knowledge/synthesize-skills`, {
+            method: "POST",
+            headers: { "Cookie": cookie },
+          }).catch(() => {});
         }
       });
     }

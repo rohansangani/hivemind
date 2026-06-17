@@ -33,27 +33,29 @@ async function fetchBuf(url: string): Promise<Buffer> {
   return Buffer.from(await r.arrayBuffer());
 }
 
-async function extractTextFromUrl(url: string, ext: string): Promise<string> {
+async function extractTextFromUrl(url: string, ext: string, contentType?: string): Promise<string> {
+  const limit = contentType === "report" ? 60000 : 12000;
   if (["txt", "md", "csv"].includes(ext)) {
     const buf = await fetchBuf(url);
-    return buf.toString("utf-8").slice(0, 12000);
+    return buf.toString("utf-8").slice(0, limit);
   }
   if (["html", "htm"].includes(ext)) {
     const cheerio = await import("cheerio");
     const buf = await fetchBuf(url);
     const $ = cheerio.load(buf.toString("utf-8"));
     $("script, style").remove();
-    return $.text().replace(/\s+/g, " ").trim().slice(0, 12000);
+    return $.text().replace(/\s+/g, " ").trim().slice(0, limit);
   }
   if (["docx", "pptx", "xlsx"].includes(ext)) {
+    const docLimit = contentType === "report" ? 60000 : 10000;
     const buf = await fetchBuf(url);
     return buf
-      .toString("utf-8", 0, Math.min(buf.length, 25000))
+      .toString("utf-8", 0, Math.min(buf.length, contentType === "report" ? 100000 : 25000))
       .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, " ")
       .replace(/<[^>]+>/g, " ")
       .replace(/\s+/g, " ")
       .trim()
-      .slice(0, 10000);
+      .slice(0, docLimit);
   }
   return "";
 }
@@ -133,6 +135,16 @@ const CONTENT_TYPE_PRIORITIES: Record<string, PriorityDimension[]> = {
     { level: "high", dimension: "Brand & voice", instructions: "Speaking tone, presentation style, energy level, vocabulary.", minItems: 1, maxItems: 2 },
     { level: "standard", dimension: "Customer intelligence", instructions: "Audience addressed, persona signals.", minItems: 0, maxItems: 1 },
     { level: "standard", dimension: "Content patterns", instructions: "Video structure, hook style, CTA approach.", minItems: 0, maxItems: 1 },
+  ],
+  report: [
+    { level: "critical", dimension: "Proof points & metrics", instructions: "Extract EVERY data point, statistic, percentage, benchmark, survey result, growth figure, market size, revenue number, conversion rate, adoption rate, YoY change, and quantitative claim. There is NO LIMIT — capture every single number and its full context. Quote exact figures verbatim with surrounding sentence for context.", minItems: 10, maxItems: 100 },
+    { level: "critical", dimension: "Market & industry", instructions: "Extract ALL market sizing data, industry trends, growth projections, segment breakdowns, regional data, adoption curves, maturity models, technology trends, regulatory impacts, and market forecasts. Capture every trend and projection with its timeframe and source.", minItems: 5, maxItems: 50 },
+    { level: "critical", dimension: "Customer intelligence", instructions: "Extract ALL buyer behavior data, segment profiles, persona insights, purchase drivers, pain points quantified, adoption barriers, satisfaction scores, NPS data, churn reasons, feature requests, and preference data. Capture every insight with its supporting data.", minItems: 5, maxItems: 50 },
+    { level: "critical", dimension: "Competitive positioning", instructions: "Extract ALL competitive data — market share figures, vendor rankings, feature comparisons, win/loss data, switching patterns, satisfaction by vendor, pricing comparisons, and analyst evaluations. Every competitive data point matters.", minItems: 3, maxItems: 30 },
+    { level: "high", dimension: "Product knowledge", instructions: "Extract technology trends, feature adoption rates, capability gaps, integration patterns, platform comparisons, and technology maturity assessments.", minItems: 3, maxItems: 20 },
+    { level: "high", dimension: "Positioning & messaging", instructions: "Extract key narratives, industry framing, category definitions, and strategic themes that can inform messaging.", minItems: 2, maxItems: 10 },
+    { level: "standard", dimension: "Content patterns", instructions: "Report structure, data visualization approaches, executive summary patterns.", minItems: 0, maxItems: 3 },
+    { level: "standard", dimension: "Brand & voice", instructions: "Report tone, authority signals, citation patterns.", minItems: 0, maxItems: 2 },
   ],
 };
 
@@ -305,7 +317,7 @@ IMPORTANT: Tag each learning with "contentType:${asset.contentType || "general"}
       let fileText = "";
       if (asset.fileUrl) {
         try {
-          fileText = await extractTextFromUrl(asset.fileUrl, ext);
+          fileText = await extractTextFromUrl(asset.fileUrl, ext, asset.contentType || undefined);
         } catch (e) {
           console.error("File fetch error:", e);
         }
@@ -317,7 +329,8 @@ IMPORTANT: Tag each learning with "contentType:${asset.contentType || "general"}
       combinedMessages = [{ role: "user", content: combinedPrompt + "\n\nContent:\n" + content }];
     }
 
-    const result = await callClaude(apiKey, combinedMessages, 6000);
+    const isReport = (asset.contentType || "").toLowerCase() === "report";
+    const result = await callClaude(apiKey, combinedMessages, isReport ? 16000 : 6000);
     const combinedRaw = result.text;
     if (result.usage) {
       logTokenUsage({

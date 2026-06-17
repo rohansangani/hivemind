@@ -370,8 +370,11 @@ export default function KnowledgeBasePage() {
     try {
       const res = await fetch("/api/knowledge/synthesize-skills", { method: "POST" });
       const data = await res.json();
-      if (data.synthesized !== undefined) { setSynthResult(data); fetchAll(); }
-    } finally { setSynthesizing(false); }
+      if (data.synthesized !== undefined) { setSynthResult(data); }
+      else if (data.skipped) { setSynthResult({ synthesized: -1, categories: [] }); }
+      fetchAll();
+    } catch { setSynthResult({ synthesized: -2, categories: [] }); }
+    finally { setSynthesizing(false); }
   };
 
   const kbCats = org ? [!!org.description, products.length > 0, markets.length > 0, personas.length > 0, competitors.length > 0, !!brand] : [];
@@ -899,7 +902,25 @@ export default function KnowledgeBasePage() {
                     <button onClick={() => setImportError("")} className="text-red-400 hover:text-red-600 text-[12px]">✕</button>
                   </div>
                 )}
-                {synthResult && (
+                {synthResult && synthResult.synthesized === -1 && (
+                  <div className="mb-3 p-3 bg-amber-50 border border-amber-100 rounded-lg flex items-center gap-2">
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="#d97706" strokeWidth="1.2"/><path d="M8 5v3M8 10h.01" stroke="#d97706" strokeWidth="1.4" strokeLinecap="round"/></svg>
+                    <p className="text-[11px] text-amber-700">Skills were recently synthesized. Try again in a few minutes.</p>
+                  </div>
+                )}
+                {synthResult && synthResult.synthesized === -2 && (
+                  <div className="mb-3 p-3 bg-red-50 border border-red-100 rounded-lg flex items-center gap-2">
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="#ef4444" strokeWidth="1.2"/><path d="M6 6l4 4M10 6l-4 4" stroke="#ef4444" strokeWidth="1.4" strokeLinecap="round"/></svg>
+                    <p className="text-[11px] text-red-700">Synthesis failed. Check your API key in settings.</p>
+                  </div>
+                )}
+                {synthResult && synthResult.synthesized === 0 && (
+                  <div className="mb-3 p-3 bg-amber-50 border border-amber-100 rounded-lg flex items-center gap-2">
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="#d97706" strokeWidth="1.2"/><path d="M8 5v3M8 10h.01" stroke="#d97706" strokeWidth="1.4" strokeLinecap="round"/></svg>
+                    <p className="text-[11px] text-amber-700">No learnings found to synthesize. Upload content or chat with Halo to build learnings first.</p>
+                  </div>
+                )}
+                {synthResult && synthResult.synthesized > 0 && (
                   <div className="mb-3 p-3 bg-emerald-50 border border-emerald-100 rounded-lg flex items-center gap-2">
                     <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="#10b981" strokeWidth="1.2"/><path d="M5 8l2 2 4-4" stroke="#10b981" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
                     <p className="text-[11px] text-emerald-700">{synthResult.synthesized} skills synthesized — {synthResult.categories.map(c => `${c.name} (${c.count})`).join(", ")}</p>
