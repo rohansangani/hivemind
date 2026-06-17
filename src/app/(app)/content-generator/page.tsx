@@ -637,8 +637,9 @@ export default function ContentGeneratorPage() {
                           }
                         >
                           <p className={"text-[12px] font-medium leading-snug mb-1.5 pr-6 " + (isActive ? "text-[#4361ee]" : "text-[var(--hm-text)]")}
+                            title={item.topic.charAt(0).toUpperCase() + item.topic.slice(1)}
                             style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
-                            {item.topic}
+                            {item.topic.charAt(0).toUpperCase() + item.topic.slice(1)}
                           </p>
                           <div className="flex items-center gap-1.5 flex-wrap">
                             {item.formats.slice(0, 3).map(f => (

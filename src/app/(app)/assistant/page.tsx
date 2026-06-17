@@ -24,7 +24,7 @@ interface Conversation {
 }
 
 function cleanTitle(raw: string): string {
-  return raw
+  const cleaned = raw
     .replace(/\*\*/g, "")
     .replace(/\*/g, "")
     .replace(/__/g, "")
@@ -32,6 +32,7 @@ function cleanTitle(raw: string): string {
     .replace(/^["'`]+|["'`]+$/g, "")
     .replace(/^#+\s*/, "")
     .trim();
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
 }
 
 export default function AssistantPage() {
@@ -301,10 +302,13 @@ export default function AssistantPage() {
             (active ? "bg-[#4361ee]" : "bg-transparent")
           } />
           <div className="flex-1 min-w-0 pr-5">
-            <p className={
-              "truncate text-[13px] leading-snug " +
-              (active ? "font-semibold text-[#4361ee]" : "font-normal text-[var(--hm-text)]")
-            }>
+            <p
+              title={cleanTitle(c.title) || "New conversation"}
+              className={
+                "truncate text-[13px] leading-snug " +
+                (active ? "font-semibold text-[#4361ee]" : "font-normal text-[var(--hm-text)]")
+              }
+            >
               {cleanTitle(c.title) || "New conversation"}
             </p>
             <p className="text-[10px] text-[var(--hm-text-tertiary)] mt-[2px] leading-none">{timeAgo(c.updatedAt)} ago</p>

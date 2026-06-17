@@ -208,6 +208,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Asset not found" }, { status: 404 });
     }
 
+    await db.contentAsset.update({
+      where: { id: assetId },
+      data: { intelligenceStatus: "extracting" },
+    });
+
     const [org, products, personas, competitors, brandProfile, markets] = await Promise.all([
       db.organization.findUnique({ where: { id: decoded.orgId } }),
       db.product.findMany({ where: { organizationId: decoded.orgId }, select: { name: true } }),
@@ -332,6 +337,7 @@ IMPORTANT: Tag each learning with "contentType:${asset.contentType || "general"}
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error("Claude API call failed:", msg);
+      await db.contentAsset.update({ where: { id: assetId }, data: { intelligenceStatus: "failed" } }).catch(() => {});
       return NextResponse.json({ error: "AI analysis failed: " + msg }, { status: 500 });
     }
 
@@ -349,6 +355,7 @@ IMPORTANT: Tag each learning with "contentType:${asset.contentType || "general"}
       }
     } catch {
       console.error("Parse error:", combinedRaw.slice(0, 300));
+      await db.contentAsset.update({ where: { id: assetId }, data: { intelligenceStatus: "failed" } }).catch(() => {});
       return NextResponse.json({ error: "Failed to parse analysis" }, { status: 500 });
     }
 
@@ -453,6 +460,8 @@ IMPORTANT: Tag each learning with "contentType:${asset.contentType || "general"}
       where: { id: assetId },
       data: {
         scoreStatus: "analyzed",
+        intelligenceStatus: "done",
+        analyzedAt: new Date(),
         // Only write tone-based scores when no brand review scores exist yet
         ...(hasBrandReview ? {} : {
           brandScore,
@@ -478,6 +487,11 @@ IMPORTANT: Tag each learning with "contentType:${asset.contentType || "general"}
     }
     const msg = error instanceof Error ? error.message : String(error);
     console.error("Content analysis error:", msg);
+    // Best-effort mark as failed — assetId may not be available if error was early
+    try {
+      const body = await req.clone().json().catch(() => null);
+      if (body?.assetId) await db.contentAsset.update({ where: { id: body.assetId }, data: { intelligenceStatus: "failed" } });
+    } catch { /* ignore */ }
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

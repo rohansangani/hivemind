@@ -10,6 +10,7 @@ interface Asset {
   scoreMessaging: number | null; scorePersonality: number | null; scoreCompleteness: number | null;
   aiSummary: string | null; scoreSuggestions: string[];
   productTags: string[]; marketTags: string[]; uploadedBy: { name: string }; createdAt: string; scoreStatus: string;
+  intelligenceStatus: string; analyzedAt: string | null;
 }
 
 interface ReviewSection {
@@ -134,7 +135,7 @@ export default function ContentLibraryPage() {
 
   // Auto-poll every 5s while any visible asset is pending review
   useEffect(() => {
-    const hasPending = assets.some(a => a.scoreStatus === "pending");
+    const hasPending = assets.some(a => a.scoreStatus === "pending" || a.intelligenceStatus === "extracting");
     if (!hasPending) {
       if (isAutoReviewing) setIsAutoReviewing(false);
       return;
@@ -552,10 +553,16 @@ export default function ContentLibraryPage() {
                     <span className="text-[11px] text-[var(--hm-text-secondary)] truncate">{a.productTags[0] || "All"}</span>
                     <span className="text-[11px] text-[var(--hm-text-secondary)] truncate">{a.marketTags[0] || "Global"}</span>
                     <span className={"text-[11px] font-medium " + scoreText(a.brandScore)}>{a.brandScore !== null ? Math.round(a.brandScore) + "%" : "—"}</span>
-                    <span className={"text-[9px] px-1.5 py-0.5 rounded-md font-medium w-fit flex items-center gap-1 " + (a.scoreStatus === "analyzed" ? "bg-purple-50 text-purple-600" : a.brandScore !== null ? "bg-emerald-50 text-emerald-600" : isAutoReviewing ? "bg-blue-50 text-blue-600" : "bg-gray-100 text-gray-400")}>
-                      {isAutoReviewing && a.scoreStatus === "pending" && <span className="w-2 h-2 border border-blue-400/50 border-t-blue-600 rounded-full animate-spin inline-block shrink-0" />}
-                      {a.scoreStatus === "analyzed" ? "Reviewed" : a.brandScore !== null ? "Scored" : isAutoReviewing ? "Analyzing…" : "Pending"}
-                    </span>
+                    <div className="flex flex-col gap-1">
+                      <span className={"text-[9px] px-1.5 py-0.5 rounded-md font-medium w-fit flex items-center gap-1 " + (a.scoreStatus === "analyzed" ? "bg-purple-50 text-purple-600" : a.brandScore !== null ? "bg-emerald-50 text-emerald-600" : isAutoReviewing ? "bg-blue-50 text-blue-600" : "bg-gray-100 text-gray-400")}>
+                        {isAutoReviewing && a.scoreStatus === "pending" && <span className="w-2 h-2 border border-blue-400/50 border-t-blue-600 rounded-full animate-spin inline-block shrink-0" />}
+                        {a.scoreStatus === "analyzed" ? "Reviewed" : a.brandScore !== null ? "Scored" : isAutoReviewing ? "Analyzing…" : "Pending"}
+                      </span>
+                      <span className={"text-[9px] px-1.5 py-0.5 rounded-md font-medium w-fit flex items-center gap-1 " + (a.intelligenceStatus === "done" ? "bg-green-50 text-green-600" : a.intelligenceStatus === "extracting" ? "bg-blue-50 text-blue-600" : a.intelligenceStatus === "failed" ? "bg-red-50 text-red-500" : "bg-gray-100 text-gray-400")}>
+                        {a.intelligenceStatus === "extracting" && <span className="w-2 h-2 border border-blue-400/50 border-t-blue-600 rounded-full animate-spin inline-block shrink-0" />}
+                        {a.intelligenceStatus === "done" ? "Extracted" : a.intelligenceStatus === "extracting" ? "Extracting…" : a.intelligenceStatus === "failed" ? "Failed" : "Not extracted"}
+                      </span>
+                    </div>
                     <button
                       onClick={() => openPanel(a)}
                       className="text-[10px] text-[#4361ee] hover:underline whitespace-nowrap"
@@ -757,6 +764,32 @@ export default function ContentLibraryPage() {
                         )}
                       </div>
                     </div>
+                  </div>
+
+                  {/* Intelligence extraction status */}
+                  <div className="px-5 py-4 border-b border-[var(--hm-border)]">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <p className="text-[13px] font-medium">Intelligence extraction</p>
+                        <span className={"text-[9px] px-1.5 py-0.5 rounded-md font-medium " + (panelAsset.intelligenceStatus === "done" ? "bg-green-50 text-green-600" : panelAsset.intelligenceStatus === "extracting" ? "bg-blue-50 text-blue-600" : panelAsset.intelligenceStatus === "failed" ? "bg-red-50 text-red-500" : "bg-gray-100 text-gray-400")}>
+                          {panelAsset.intelligenceStatus === "done" ? "Complete" : panelAsset.intelligenceStatus === "extracting" ? "In progress…" : panelAsset.intelligenceStatus === "failed" ? "Failed" : "Not started"}
+                        </span>
+                      </div>
+                      {panelAsset.analyzedAt && (
+                        <span className="text-[10px] text-[var(--hm-text-tertiary)]">
+                          {new Date(panelAsset.analyzedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} at {new Date(panelAsset.analyzedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-1">
+                      {panelAsset.intelligenceStatus === "done"
+                        ? "Learnings, proof points, and metrics have been extracted into the knowledge base."
+                        : panelAsset.intelligenceStatus === "failed"
+                          ? "Extraction failed — click \"Extract intelligence\" to retry."
+                          : panelAsset.intelligenceStatus === "extracting"
+                            ? "AI is analyzing this asset and extracting learnings…"
+                            : "Click \"Extract intelligence\" to extract learnings, metrics, and proof points."}
+                    </p>
                   </div>
 
                   {/* Dimension bars */}

@@ -244,6 +244,8 @@ model ContentAsset {
   scoreCompleteness Float?
   scoreSuggestions  String[]
   scoreStatus      String   @default("pending")
+  intelligenceStatus String @default("pending") // "pending" | "extracting" | "done" | "failed"
+  analyzedAt       DateTime?
   aiSummary        String?
   uploadedById     String
   uploadedBy       User     @relation(fields: [uploadedById], references: [id])
