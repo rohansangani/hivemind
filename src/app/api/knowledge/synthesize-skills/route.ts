@@ -38,23 +38,34 @@ const KB_CATEGORY_ALIASES: Record<string, string> = {
   seo_analysis: "seo",        // SEO route sourceType label
 };
 
-async function callClaude(apiKey: string, prompt: string): Promise<{ text: string; usage: { inputTokens: number; outputTokens: number } | null }> {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-6",
-      max_tokens: 1024,
-      messages: [{ role: "user", content: prompt }],
-    }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error?.message || "Claude API error");
-  return { text: data.content?.[0]?.text || "", usage: extractAnthropicUsage(data) };
+async function callClaude(apiKey: string, prompt: string, retries = 2): Promise<{ text: string; usage: { inputTokens: number; outputTokens: number } | null }> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-6",
+        max_tokens: 1024,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+    const raw = await res.text();
+    let data;
+    try { data = JSON.parse(raw); } catch {
+      if (attempt < retries) { await new Promise(r => setTimeout(r, 1000 * (attempt + 1))); continue; }
+      throw new Error(`Claude API returned non-JSON (${res.status}): ${raw.slice(0, 120)}`);
+    }
+    if (!res.ok) {
+      if (res.status >= 500 && attempt < retries) { await new Promise(r => setTimeout(r, 1000 * (attempt + 1))); continue; }
+      throw new Error(data.error?.message || `Claude API error ${res.status}`);
+    }
+    return { text: data.content?.[0]?.text || "", usage: extractAnthropicUsage(data) };
+  }
+  throw new Error("Claude API failed after retries");
 }
 
 export async function POST(req: NextRequest) {
