@@ -181,7 +181,6 @@ export default function KnowledgeBasePage() {
     fetch("/api/knowledge").then(r => r.json()).then(d => { setOrg(d.org); setProducts(d.products || []); setMarkets(d.markets || []); setPersonas(d.personas || []); setCompetitors(d.competitors || []); setBrand(d.brandProfile); setLogs(d.learningLogs || []); });
     fetch("/api/skills").then(r => r.json()).then(d => setSkills(d.skills || []));
     fetch("/api/knowledge/documents").then(r => r.json()).then(d => setDocs(d.documents || []));
-    fetchCustomEntries();
   };
 
   const fetchStyleGuide = () => {
@@ -255,6 +254,15 @@ export default function KnowledgeBasePage() {
     fetch("/api/knowledge/deduplicate", { method: "POST" }).finally(() => fetchAll());
     fetchStyleGuide();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Lazy-load custom entries only when the custom tab is active
+  const customFetched = useRef(false);
+  useEffect(() => {
+    if (tab === "custom" && !customFetched.current) {
+      customFetched.current = true;
+      fetchCustomEntries();
+    }
+  }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const saveEdit = async (section: string, data: Record<string, unknown>) => { setSaving(true); await fetch("/api/knowledge/edit", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ section, ...data }) }); setSaving(false); setSaved("Saved!"); fetchAll(); setEditingItemId(null); setEditProd(null); setEditPersona(null); setEditComp(null); setTimeout(() => setSaved(""), 2000); };
   const deleteItem = async (section: string, id: string) => { await fetch("/api/knowledge/edit", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ section, id }) }); fetchAll(); setEditingItemId(null); };

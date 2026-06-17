@@ -23,7 +23,10 @@ export async function GET(req: NextRequest) {
     };
 
     const entries = await db.knowledgeEntry.findMany({
-      where: { organizationId: decoded.orgId },
+      where: {
+        organizationId: decoded.orgId,
+        category: { notIn: ["content_analysis", "proof_points", "messaging_patterns"] },
+      },
       orderBy: { createdAt: "desc" },
     });
 
