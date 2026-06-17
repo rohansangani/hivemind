@@ -98,7 +98,7 @@ export function canAssignRole(actorRole: Role | string, newRole: Role | string):
   if (!hasPermission(actorRole, "manage_team")) return false;
   const actorRank = ROLE_RANK[actorRole] ?? 0;
   const newRank = ROLE_RANK[newRole] ?? 0;
-  return actorRank > newRank;
+  return actorRank >= newRank;
 }
 
 export const ROLE_META: Record<string, { label: string; color: string; bg: string; description: string }> = {

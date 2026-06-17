@@ -49,7 +49,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   await db.user.update({
     where: { id },
-    data: { mustResetPassword: true },
+    data: { mustResetPassword: true, password: null },
   });
 
   return NextResponse.json({ success: true });

@@ -27,7 +27,24 @@ export async function POST(req: NextRequest) {
       include: { organization: true },
     });
 
-    if (!user || !user.password) {
+    if (!user) {
+      return NextResponse.json(
+        { error: "Invalid email or password" },
+        { status: 401 }
+      );
+    }
+
+    // Admin cleared this user's password — let them set a new one with just their email
+    if (user.mustResetPassword && !user.password) {
+      const resetToken = jwt.sign(
+        { userId: user.id, mustReset: true },
+        process.env.NEXTAUTH_SECRET || "fallback-secret",
+        { expiresIn: "10m" }
+      );
+      return NextResponse.json({ mustResetPassword: true, resetToken });
+    }
+
+    if (!user.password) {
       return NextResponse.json(
         { error: "Invalid email or password" },
         { status: 401 }
@@ -42,7 +59,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Admin requested a password reset — force user to set a new one before continuing.
+    // Admin requested a password reset but user still has old password — force new one
     if (user.mustResetPassword) {
       const resetToken = jwt.sign(
         { userId: user.id, mustReset: true },
