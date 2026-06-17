@@ -69,9 +69,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ mustResetPassword: true, resetToken });
     }
 
+    // Non-owner users joining an existing org should never see the setup wizard
+    const effectiveOnboarded = user.onboarded || (user.role !== "owner" && user.role !== "admin");
+
     await db.user.update({
       where: { id: user.id },
-      data: { lastActiveAt: new Date() },
+      data: { lastActiveAt: new Date(), ...(effectiveOnboarded && !user.onboarded ? { onboarded: true } : {}) },
     });
 
     const token = jwt.sign(
@@ -86,7 +89,7 @@ export async function POST(req: NextRequest) {
         email: user.email,
         name: user.name,
         role: user.role,
-        onboarded: user.onboarded,
+        onboarded: effectiveOnboarded,
         organizationId: user.organizationId,
         organization: user.organization,
       },

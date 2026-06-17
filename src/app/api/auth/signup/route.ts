@@ -44,9 +44,20 @@ export async function POST(req: NextRequest) {
 
     // Check if any org has claimed this email's domain
     const domain = email.split("@")[1].toLowerCase();
-    const matchingOrg = await db.organization.findFirst({
+    let matchingOrg = await db.organization.findFirst({
       where: { allowedDomains: { has: domain } },
     });
+
+    // Fallback: check if an existing user in any org shares this email domain
+    if (!matchingOrg) {
+      const peerUser = await db.user.findFirst({
+        where: { email: { endsWith: "@" + domain } },
+        select: { organizationId: true },
+      });
+      if (peerUser?.organizationId) {
+        matchingOrg = await db.organization.findUnique({ where: { id: peerUser.organizationId } });
+      }
+    }
 
     let org: { id: string; name: string };
     let user: { id: string; email: string; name: string | null; role: string; onboarded: boolean };

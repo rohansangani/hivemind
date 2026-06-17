@@ -174,6 +174,11 @@ export default function SetupWizardPage() {
 
     fetch("/api/auth/me").then((r) => r.json()).then((d) => {
       if (d.user) {
+        // Non-admin/owner users should never access the setup wizard
+        if (d.user.role !== "owner" && d.user.role !== "admin") {
+          router.push("/dashboard");
+          return;
+        }
         setOrgInfo({ name: d.user.organization?.name || "", website: d.user.organization?.website || "" });
       } else {
         router.push("/login");

@@ -20,9 +20,15 @@ export default function WelcomePage() {
         if (data.user) {
           if (data.user.onboarded) {
             router.push("/dashboard");
-          } else {
-            setUser(data.user);
+            return;
           }
+          // Non-admin/owner users should never see the setup wizard — redirect to dashboard
+          const role = data.user.role;
+          if (role !== "owner" && role !== "admin") {
+            router.push("/dashboard");
+            return;
+          }
+          setUser(data.user);
         } else {
           router.push("/login");
         }

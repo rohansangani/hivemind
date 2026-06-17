@@ -97,6 +97,7 @@ export async function POST(req: NextRequest) {
         organizationId: orgId,
         inviteStatus: "pending",
         inviteToken,
+        onboarded: true,
       },
     });
 

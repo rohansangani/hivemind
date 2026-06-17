@@ -79,15 +79,28 @@ export async function GET(req: NextRequest) {
     let role: string;
 
     if (user) {
-      // Existing user — just update lastActiveAt
-      await db.user.update({ where: { id: user.id }, data: { lastActiveAt: new Date() } });
+      // Existing user — fix onboarded for non-admin/owner users who were created before the fix
+      const shouldOnboard = !user.onboarded && user.role !== "owner" && user.role !== "admin";
+      await db.user.update({ where: { id: user.id }, data: { lastActiveAt: new Date(), ...(shouldOnboard ? { onboarded: true } : {}) } });
+      if (shouldOnboard) user = { ...user, onboarded: true };
       orgId = user.organizationId!;
       role = user.role;
     } else {
       // New user via Google — apply same domain-based org logic as signup
-      const matchingOrg = await db.organization.findFirst({
+      let matchingOrg = await db.organization.findFirst({
         where: { allowedDomains: { has: domain } },
       });
+
+      // Fallback: check if an existing user in any org shares this email domain
+      if (!matchingOrg) {
+        const peerUser = await db.user.findFirst({
+          where: { email: { endsWith: "@" + domain } },
+          select: { organizationId: true },
+        });
+        if (peerUser?.organizationId) {
+          matchingOrg = await db.organization.findUnique({ where: { id: peerUser.organizationId } });
+        }
+      }
 
       let resultUser;
       let resultOrg;
@@ -100,6 +113,7 @@ export async function GET(req: NextRequest) {
             image: googleUser.picture,
             role: "others",
             organizationId: matchingOrg.id,
+            onboarded: true,
             lastActiveAt: new Date(),
           },
         });

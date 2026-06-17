@@ -30,6 +30,11 @@ export default function ProfileSetupPage() {
       .then((res) => res.json())
       .then((data) => {
         if (data.user) {
+          // Non-admin/owner users should never see the setup wizard
+          if (data.user.role !== "owner" && data.user.role !== "admin") {
+            router.push("/dashboard");
+            return;
+          }
           setUser(data.user);
         } else {
           router.push("/login");
