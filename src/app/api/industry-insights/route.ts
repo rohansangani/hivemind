@@ -276,12 +276,20 @@ export async function POST(req: NextRequest) {
       return results;
     }
 
-    // Strict recency filter — reject any article with a parseable date older than 90 days
     const NINETY_DAYS_AGO = Date.now() - 90 * 24 * 60 * 60 * 1000;
     function isRecent(publishedDate?: string): boolean {
-      if (!publishedDate) return true; // can't determine — let it through
+      if (!publishedDate) return false;
+      // Handle relative dates like "3 hours ago", "2 days ago"
+      const relMatch = publishedDate.match(/^(\d+)\s+(hour|day|minute|week|month|second)s?\s+ago$/i);
+      if (relMatch) {
+        const n = parseInt(relMatch[1]);
+        const unit = relMatch[2].toLowerCase();
+        const msMap: Record<string, number> = { second: 1000, minute: 60000, hour: 3600000, day: 86400000, week: 604800000, month: 2592000000 };
+        const age = n * (msMap[unit] || 86400000);
+        return age < 90 * 86400000;
+      }
       const parsed = new Date(publishedDate).getTime();
-      if (isNaN(parsed)) return true; // unparseable format — let it through
+      if (isNaN(parsed)) return false;
       return parsed >= NINETY_DAYS_AGO;
     }
 
@@ -330,6 +338,8 @@ Company context:
 ${articleBlock}
 
 Using ONLY the articles above as your source material, extract as many specific, actionable intelligence insights as possible — aim for up to 50. Every insight MUST be grounded in one or more of the articles above — do not use your training data.
+
+CRITICAL: SKIP any article that describes events from before ${threeMonthsAgo}. If an article's content references funding rounds, launches, or events from 2023 or earlier, do NOT include it — even if the search API returned it. Only include genuinely recent developments.
 
 For each insight:
 - Reference the article by number in the sourceUrl field as "#N" (e.g. "#3") so we can map back to the real URL
