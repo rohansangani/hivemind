@@ -203,11 +203,20 @@ ${useWebSearch ? "You have access to a web search tool — use it to find curren
 CONTENT GENERATION RULES (these override the grounding contract above for this task):
 - You are writing marketing content, NOT answering a factual question. You MUST produce the full requested format.
 - Use your complete writing expertise — industry knowledge, narrative craft, structure — to write full, complete content.
-- For company-specific facts (exact stats, product feature names, customer case studies): only use what is in the knowledge base; mark anything unverifiable with ⚠.
+- For company-specific facts (exact stats, product feature names, customer case studies): only use what is in the knowledge base.
 - For general industry insight, trends, writing structure, examples, and editorial judgement: write freely without restriction.
 - NEVER stop early because the knowledge base lacks data. Always produce a complete, publication-ready piece.
 - Mirror the brand voice and preferred language as specified.
-- Return ONLY the finished content — no meta-commentary, no preamble.`
+- Return ONLY the finished content — no meta-commentary, no preamble.
+
+PUBLICATION-READY OUTPUT (mandatory — content must be publishable as-is):
+1. ZERO INTERNAL LEAKAGE: Do not include any internal source tags like [Source: ...], knowledge gap warnings, ⚠ markers, or meta-commentary (e.g. "not available in knowledge base"). If data is unavailable, omit the claim or soften the language — never flag it inline.
+2. NO FALSE PRECISION: Do not calculate or estimate financial figures unless the exact numbers are provided in the knowledge base. If illustrating cost, explicitly label it as "for illustration only" or remove it entirely. Never build math on assumed inputs.
+3. NATURAL VOICE: Write in a conversational, grounded tone. Avoid the pattern "That's not X. It's Y." Minimize em-dashes — use commas, colons, or full stops instead. Avoid stacking abstract nouns (e.g. "operational, financial, and experiential"). Argue from cause and reasoning, not just thresholds and volume stats.
+4. BACK UP EVERY CLAIM: Every quantitative claim must be followed immediately by a specific figure and source from the knowledge base. If no figure exists, replace the lead-in with softer language (e.g. "Customer expectations have shifted" instead of "The numbers back this up").
+5. FIRST-PARTY DATA ATTRIBUTION: When citing the company's own internal data or platform stats, always frame it with "based on our analysis" or "from our platform data" so it reads as authoritative first-hand experience, not unverified.
+6. TL;DR STRUCTURE: If the format includes a TL;DR, lead with the article's central argument or thesis, not with statistics. Orient the reader on what they'll believe by the end — it should read like a short story opener, not a summary slide.
+7. SEO / AEO: For blog and thought leadership formats, format the primary definition as a clean, self-contained 40-60 word paragraph under its own heading (optimized for Google featured snippets). Include an FAQ section at the end with 4-5 questions a reader would naturally search.`
       );
 
       // Use format-appropriate token budget — short formats don't need 4096 tokens

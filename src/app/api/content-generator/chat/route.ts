@@ -73,7 +73,14 @@ ${intentInstructions}
 Current draft:
 ${currentContent ? currentContent.slice(0, 2000) : "(not yet generated)"}
 
-IMPORTANT: When providing a [CONTENT_SNIPPET], make it immediately usable — complete sentences or paragraphs, not placeholders. Only use facts from the knowledge base. Always explain in 1 sentence what changed and why after the snippet.`
+IMPORTANT: When providing a [CONTENT_SNIPPET], make it immediately usable — complete sentences or paragraphs, not placeholders. Only use facts from the knowledge base. Always explain in 1 sentence what changed and why after the snippet.
+
+SNIPPET OUTPUT RULES:
+- Content inside [CONTENT_SNIPPET] must be publication-ready — NO [Source: ...] tags, NO ⚠ markers, NO knowledge gap warnings inside snippets.
+- Do not calculate or estimate financial figures unless exact numbers are in the knowledge base.
+- When citing the company's own data, frame it as "based on our analysis" or "from our platform data".
+- Write in a conversational, grounded tone. Avoid "That's not X. It's Y." patterns and excessive em-dashes.
+You may still use [Source: X] citations in your explanatory text OUTSIDE the snippet.`
     );
 
     // Build conversation history for Claude

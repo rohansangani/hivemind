@@ -63,9 +63,9 @@ export async function POST(req: NextRequest) {
       `You are refining existing ${format.replace(/_/g, " ")} content about "${topic}". Apply the given instruction precisely while:
 - Preserving the content's overall structure, format length, and brand voice
 - Only adding facts, stats, or claims that appear in the VERIFIED KNOWLEDGE BASE above
-- Flagging ⚠ any claim you cannot source from the knowledge base
+- If a claim cannot be sourced, omit it or soften the language — do NOT flag it with ⚠ or [Source: ...] tags
 ${toneOverride && toneOverride !== "default" ? "Tone: " + toneOverride + "." : ""}
-Return ONLY the refined content — no explanations, no preamble, no meta-commentary.`
+Return ONLY the refined, publication-ready content — no [Source: ...] tags, no ⚠ markers, no explanations, no preamble, no meta-commentary.`
     );
 
     const response = await fetch("https://api.anthropic.com/v1/messages", {
