@@ -50,6 +50,38 @@ export async function GET(req: NextRequest) {
   }
 }
 
+export async function DELETE(req: NextRequest) {
+  try {
+    const token = req.cookies.get("hm-token")?.value;
+    if (!token) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    const decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as {
+      orgId: string;
+      role?: string;
+    };
+
+    const role = decoded.role || "others";
+    if (role !== "admin" && role !== "owner") {
+      return NextResponse.json({ error: "Only admins can delete insights" }, { status: 403 });
+    }
+
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    if (!id) return NextResponse.json({ error: "Insight ID required" }, { status: 400 });
+
+    const existing = await db.industryInsight.findFirst({
+      where: { id, organizationId: decoded.orgId },
+    });
+    if (!existing) return NextResponse.json({ error: "Insight not found" }, { status: 404 });
+
+    await db.industryInsight.delete({ where: { id } });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Industry insight delete error:", error);
+    return NextResponse.json({ error: "Something went wrong" }, { status: 500 });
+  }
+}
+
 export async function POST(req: NextRequest) {
   // Auth and cooldown check synchronously before starting the stream
   const token = req.cookies.get("hm-token")?.value;

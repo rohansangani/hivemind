@@ -102,6 +102,20 @@ export default function IndustryInsightsPage() {
   const [autoRefreshBanner, setAutoRefreshBanner] = useState(false);
   // FIX #11 — expanded insight IDs
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const isAdmin = user?.role === "admin" || user?.role === "owner";
+
+  const deleteInsight = async (id: string) => {
+    setDeletingId(id);
+    try {
+      const res = await fetch(`/api/industry-insights?id=${id}`, { method: "DELETE" });
+      if (res.ok) {
+        setAllInsights(prev => prev.filter(i => i.id !== id));
+      }
+    } catch { /* ignore */ }
+    finally { setDeletingId(null); }
+  };
+
   // Bulletin download
   const [showBulletinModal, setShowBulletinModal] = useState(false);
   const [bulletinRange, setBulletinRange] = useState("today");
@@ -813,13 +827,29 @@ export default function IndustryInsightsPage() {
                       {insight.addedToKB && (
                         <span className="text-[10px] px-2 py-0.5 bg-emerald-50 text-emerald-600 rounded-md">Added to KB</span>
                       )}
-                      <div className="ml-auto flex-shrink-0">
+                      <div className="ml-auto flex-shrink-0 flex items-center gap-3">
                         <button
                           onClick={() => router.push("/content-generator?topic=" + encodeURIComponent(insight.title + ". " + insight.summary + (insight.takeaway ? " Takeaway: " + insight.takeaway : "")))}
                           className="text-[10px] text-[#4361ee] hover:underline"
                         >
                           Generate content →
                         </button>
+                        {isAdmin && (
+                          <button
+                            onClick={() => deleteInsight(insight.id)}
+                            disabled={deletingId === insight.id}
+                            className="text-[10px] text-[var(--hm-text-tertiary)] hover:text-red-500 transition-colors disabled:opacity-50"
+                            title="Delete this insight"
+                          >
+                            {deletingId === insight.id ? (
+                              <span className="w-3 h-3 border border-red-300 border-t-red-500 rounded-full animate-spin inline-block" />
+                            ) : (
+                              <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                                <path d="M2 4h12M6 4V2.5a.5.5 0 01.5-.5h3a.5.5 0 01.5.5V4M5 4l.5 9h5L11 4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                            )}
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
