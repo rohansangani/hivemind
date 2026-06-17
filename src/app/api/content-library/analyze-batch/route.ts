@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import jwt from "jsonwebtoken";
+import { analyzeAsset } from "@/lib/analyzeAsset";
 
 export const maxDuration = 300;
 
@@ -40,25 +41,13 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const baseUrl = req.nextUrl.origin;
-    const cookie = req.headers.get("cookie") || "";
     let analyzed = 0;
     const errors: string[] = [];
 
     for (const asset of needsAnalysis) {
       try {
-        const res = await fetch(`${baseUrl}/api/content-library/analyze`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", cookie },
-          body: JSON.stringify({ assetId: asset.id }),
-        });
-
-        if (res.ok) {
-          analyzed++;
-        } else {
-          const data = await res.json().catch(() => ({ error: "Unknown error" }));
-          errors.push(`${asset.name}: ${data.error || res.statusText}`);
-        }
+        await analyzeAsset(asset.id, decoded.orgId, decoded.userId);
+        analyzed++;
       } catch (e) {
         errors.push(`${asset.name}: ${e instanceof Error ? e.message : "Failed"}`);
       }

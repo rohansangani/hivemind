@@ -1,7 +1,10 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { db } from "@/lib/db";
 import jwt from "jsonwebtoken";
 import { getAnthropicKey } from "@/lib/aiProvider";
+import { analyzeAsset } from "@/lib/analyzeAsset";
+
+export const maxDuration = 120;
 
 export async function GET(req: NextRequest) {
   try {
@@ -90,7 +93,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Each file must have either a fileUrl or a linkedUrl" }, { status: 400 });
       }
     }
-    const created = [];
+    const created: Array<{ id: string; name: string }> = [];
     for (const file of files) {
       const asset = await db.contentAsset.create({
         data: {
@@ -113,26 +116,26 @@ export async function POST(req: NextRequest) {
       created.push(asset);
     }
 
-    // Fire-and-forget: auto-analyze + brand-review for each uploaded asset.
-    // Analyze extracts learnings, proof points, and metrics into the knowledge base.
-    // Brand-review scores brand compliance. Both run as independent serverless invocations.
+    // Run intelligence extraction + brand review after the response is sent.
+    // after() keeps the serverless function alive on Vercel so this work completes.
     let hasApiKey = false;
-    try { await getAnthropicKey(decoded.orgId); hasApiKey = true; } catch { /* no key — skip auto-review */ }
+    try { await getAnthropicKey(decoded.orgId); hasApiKey = true; } catch { /* no key — skip */ }
     if (created.length > 0 && hasApiKey) {
-      try {
-        const proto = req.headers.get("x-forwarded-proto") || "https";
-        const host = req.headers.get("host") || "";
-        const baseUrl = host ? `${proto}://${host}` : "";
-        const cookie = req.headers.get("cookie") || "";
-        if (baseUrl) {
-          for (const asset of created) {
-            // Content analysis — extracts learnings, proof points, messaging patterns
-            fetch(`${baseUrl}/api/content-library/analyze`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json", "Cookie": cookie },
-              body: JSON.stringify({ assetId: asset.id }),
-            }).catch(() => {});
-            // Brand review — scores brand compliance
+      const orgId = decoded.orgId;
+      const userId = decoded.userId;
+      const cookie = req.headers.get("cookie") || "";
+      const proto = req.headers.get("x-forwarded-proto") || "https";
+      const host = req.headers.get("host") || "";
+      const baseUrl = host ? `${proto}://${host}` : "";
+
+      after(async () => {
+        for (const asset of created) {
+          // Intelligence extraction — runs in-process, no HTTP round-trip
+          await analyzeAsset(asset.id, orgId, userId).catch((e) =>
+            console.error(`[auto-analyze] ${asset.name}:`, e instanceof Error ? e.message : e)
+          );
+          // Brand review — still separate route (lightweight, different logic)
+          if (baseUrl) {
             fetch(`${baseUrl}/api/content-library/brand-review`, {
               method: "POST",
               headers: { "Content-Type": "application/json", "Cookie": cookie },
@@ -140,7 +143,7 @@ export async function POST(req: NextRequest) {
             }).catch(() => {});
           }
         }
-      } catch { /* non-critical — user can still run review manually */ }
+      });
     }
 
     return NextResponse.json({ assets: created });
