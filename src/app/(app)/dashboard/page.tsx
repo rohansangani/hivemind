@@ -17,6 +17,8 @@ interface DashboardData {
   activity: Array<{ text: string; detail: string; time: string; type: string; actor: string }>;
   checklist: Array<{ label: string; done: boolean; href?: string }>;
   insights: Array<{ id: string; title: string; signalType: string; createdAt: string }>;
+  recentAssets: Array<{ id: string; name: string; createdAt: string; uploadedBy: string | null }>;
+  tokenUsage: { total: number; thisWeek: number; byFeature: Array<{ feature: string; tokens: number }> };
 }
 
 type RoleGroup = "admin" | "marketing" | "sales_others";
@@ -77,7 +79,7 @@ function getQuickActions(roleGroup: RoleGroup) {
   const halo = { label: "Ask Halo", desc: "Query your knowledge base", href: "/assistant", iconPath: <path d="M2 12V4a2 2 0 012-2h8a2 2 0 012 2v5a2 2 0 01-2 2H5l-3 3z" stroke="#10B981" strokeWidth="1.1" />, iconBg: "bg-emerald-50", accentColor: "#10B981" };
 
   if (roleGroup === "admin" || roleGroup === "marketing") return [upload, generate, halo];
-  return [browse, halo]; // sales & others — no generate
+  return [halo]; // sales & others — just Ask Halo
 }
 
 // ── Stat card definitions by role ───────────────────────
@@ -116,9 +118,8 @@ function getStatCards(s: DashboardData["stats"], roleGroup: RoleGroup) {
   };
 
   if (roleGroup === "admin") return [kbHealth, assets, generated, avgScore, team, learnings];
-  if (roleGroup === "marketing") return [kbHealth, assets, generated, avgScore, learnings];
-  // Sales & Others — asset-focused, no KB/generated
-  return [assets, avgScore];
+  if (roleGroup === "marketing") return [kbHealth, assets, generated];
+  return [];
 }
 
 // ═════════════════════════════════════════════════════════
@@ -205,7 +206,7 @@ export default function DashboardPage() {
         )}
 
         {/* ── Quick Actions ──────────────────────────────── */}
-        <div className={`grid grid-cols-1 ${quickActions.length >= 3 ? "sm:grid-cols-3" : "sm:grid-cols-2"} gap-3 mb-6`}>
+        <div className={`grid grid-cols-1 ${quickActions.length >= 3 ? "sm:grid-cols-3" : quickActions.length === 2 ? "sm:grid-cols-2" : "sm:grid-cols-1 max-w-md"} gap-3 mb-6`}>
           {quickActions.map((a) => {
             const isHovered = hoveredCard === a.label;
             return (
@@ -232,7 +233,7 @@ export default function DashboardPage() {
         </div>
 
         {/* ── Stat Cards ─────────────────────────────────── */}
-        <div className={`grid grid-cols-2 sm:grid-cols-3 ${statCards.length > 4 ? "lg:grid-cols-6" : statCards.length > 2 ? "lg:grid-cols-5" : "lg:grid-cols-2"} gap-3 mb-6`}>
+        {statCards.length > 0 && <div className={`grid grid-cols-2 sm:grid-cols-3 ${statCards.length > 4 ? "lg:grid-cols-6" : statCards.length > 2 ? "lg:grid-cols-5" : "lg:grid-cols-2"} gap-3 mb-6`}>
           {loading
             ? Array.from({ length: statCards.length || 4 }).map((_, i) => <StatCardSkeleton key={i} />)
             : statCards.map((card) => (
@@ -254,44 +255,18 @@ export default function DashboardPage() {
               </button>
             ))
           }
-        </div>
+        </div>}
 
         {/* ══════════════════════════════════════════════════
             ROLE-SPECIFIC SECTIONS
            ══════════════════════════════════════════════════ */}
 
         {/* ── ADMIN / OWNER ────────────────────────────────
-            Two-column: Recently Generated + Team Activity
-            Then: Low Score Alerts + Setup Checklist          */}
+            Two-column: Team Activity + Token Usage
+            Then: Latest Industry Insights                    */}
         {roleGroup === "admin" && data && (
           <>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-              {/* Recently Generated */}
-              <SectionCard title="Recently generated" actionLabel="View all" onAction={() => router.push("/content-generator")} accentLeft="#F59E0B">
-                {data.recentGenerated.length === 0 ? (
-                  <EmptyState icon="generate" text="No content generated yet" sub="Create your first blog post, social caption, or email." action={{ label: "Generate content", href: "/content-generator" }} />
-                ) : (
-                  <div className="space-y-2">
-                    {data.recentGenerated.slice(0, 4).map((g) => {
-                      const firstFormat = g.formats[0];
-                      const score = g.outputs && typeof g.outputs === "object" ? (g.outputs as Record<string, { score?: number }>)[firstFormat]?.score : null;
-                      return (
-                        <button key={g.id} onClick={() => router.push("/content-generator")} className="w-full flex items-center gap-2.5 p-2.5 bg-[var(--hm-bg-secondary)] rounded-lg text-left hover:bg-[var(--hm-bg-tertiary)] transition-colors">
-                          <div className="w-7 h-7 rounded-md bg-amber-50 flex items-center justify-center flex-shrink-0">
-                            <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M4 12l1.5-4L12 2l2 2-6.5 6.5L4 12z" stroke="#F59E0B" strokeWidth="1.1" /></svg>
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[13px] font-medium truncate">{g.topic}</p>
-                            <p className="text-[10px] text-[var(--hm-text-tertiary)] mt-0.5">{g.formats.length} format{g.formats.length > 1 ? "s" : ""} &middot; {g.generatedBy} &middot; {timeAgo(g.createdAt)}</p>
-                          </div>
-                          {score != null && <span className={"text-[10px] px-2 py-0.5 text-white rounded-md font-medium flex-shrink-0 " + scoreBg(score)}>{score}%</span>}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </SectionCard>
-
               {/* Team Activity */}
               <SectionCard title="Team activity" actionLabel="View all" onAction={() => router.push("/activity")} accentLeft="#8B5CF6">
                 {data.activity.length === 0 ? (
@@ -315,32 +290,21 @@ export default function DashboardPage() {
                   </div>
                 )}
               </SectionCard>
+
+              {/* Token Usage */}
+              <TokenUsageCard data={data} />
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-              {/* Low Score Alerts */}
-              <LowScoreAlerts data={data} router={router} />
-              {/* Setup Checklist */}
-              <SectionCard title="Setup checklist" accentLeft="#4361ee">
-                <div className="space-y-2">
-                  {data.checklist.map((item, i) => (
-                    <button key={i} onClick={() => item.href && router.push(item.href)} disabled={!item.href}
-                      className="w-full flex items-center gap-2.5 p-2.5 bg-[var(--hm-bg-secondary)] rounded-lg text-left hover:bg-[var(--hm-bg-tertiary)] transition-colors disabled:cursor-default"
-                    >
-                      <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${item.done ? "bg-emerald-100" : "border border-[var(--hm-border)]"}`}>
-                        {item.done && <svg width="10" height="10" viewBox="0 0 16 16" fill="none"><path d="M4 8l3 3 5-6" stroke="#10B981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>}
-                      </div>
-                      <span className={`text-[13px] ${item.done ? "line-through text-[var(--hm-text-tertiary)]" : "text-[var(--hm-text-secondary)]"}`}>{item.label}</span>
-                    </button>
-                  ))}
-                </div>
-              </SectionCard>
+            {/* Latest Industry Insights */}
+            <div className="grid grid-cols-1 gap-4 mb-6">
+              <IndustryInsights data={data} router={router} />
             </div>
           </>
         )}
 
         {/* ── MARKETING ────────────────────────────────────
-            Two-column: My Generations + Low Score Alerts    */}
+            Two-column: My Generations + Recent Uploads
+            Then: Latest Industry Insights                   */}
         {roleGroup === "marketing" && data && (
           <>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
@@ -370,103 +334,28 @@ export default function DashboardPage() {
                 )}
               </SectionCard>
 
-              {/* Low Score Alerts */}
-              <LowScoreAlerts data={data} router={router} />
+              {/* Recent Asset Uploads */}
+              <RecentAssetUploads data={data} router={router} />
             </div>
 
-            {/* Industry Signals */}
-            {data.insights.length > 0 && (
-              <div className="grid grid-cols-1 gap-4 mb-6">
-                <SectionCard title="Latest industry signals" actionLabel="View all" onAction={() => router.push("/industry-insights")} accentLeft="#6B82F5">
-                  <div className="space-y-2">
-                    {data.insights.slice(0, 3).map((ins) => {
-                      const colors = SIGNAL_COLORS[ins.signalType] || SIGNAL_COLORS.trend;
-                      return (
-                        <button key={ins.id} onClick={() => router.push("/industry-insights")} className="w-full flex items-center gap-2.5 p-2.5 bg-[var(--hm-bg-secondary)] rounded-lg text-left hover:bg-[var(--hm-bg-tertiary)] transition-colors">
-                          <span className={`text-[9px] px-2 py-0.5 rounded-md font-semibold uppercase flex-shrink-0 ${colors.bg} ${colors.text}`}>{ins.signalType}</span>
-                          <p className="text-[13px] font-medium truncate flex-1">{ins.title}</p>
-                          <span className="text-[10px] text-[var(--hm-text-tertiary)] flex-shrink-0">{timeAgo(ins.createdAt)}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </SectionCard>
-              </div>
-            )}
+            {/* Latest Industry Insights */}
+            <div className="grid grid-cols-1 gap-4 mb-6">
+              <IndustryInsights data={data} router={router} />
+            </div>
           </>
         )}
 
         {/* ── SALES & OTHERS ──────────────────────────────
-            Two-column: Top Assets + Industry Signals
-            Sales/others are consumers — show best content    */}
+            Two-column: Recent Uploads + Industry Insights   */}
         {roleGroup === "sales_others" && data && (
           <>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-              {/* Top-Performing Assets */}
-              <SectionCard title="Top-performing assets" actionLabel="Browse all" onAction={() => router.push("/content-library")} accentLeft="#10B981">
-                {data.topScoreAssets.length === 0 ? (
-                  <EmptyState icon="library" text="No scored assets yet" sub="Assets will appear here once they're analyzed." />
-                ) : (
-                  <div className="space-y-2">
-                    {data.topScoreAssets.map((a) => (
-                      <button key={a.id} onClick={() => router.push("/content-library")} className="w-full flex items-center gap-2.5 p-2.5 bg-[var(--hm-bg-secondary)] rounded-lg text-left hover:bg-[var(--hm-bg-tertiary)] transition-colors">
-                        <span className={"text-[10px] px-2 py-0.5 text-white rounded-md font-medium flex-shrink-0 " + scoreBg(a.brandScore)}>{Math.round(a.brandScore)}%</span>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[13px] font-medium truncate">{a.name}</p>
-                          {(a.productTags?.length > 0 || a.marketTags?.length > 0) && (
-                            <p className="text-[10px] text-[var(--hm-text-tertiary)] mt-0.5 truncate">
-                              {[...(a.productTags || []), ...(a.marketTags || [])].join(" · ")}
-                            </p>
-                          )}
-                        </div>
-                        <span className="text-[10px] text-[var(--hm-text-tertiary)] flex-shrink-0">{(a.fileType || "").toUpperCase()}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </SectionCard>
+              {/* Recent Asset Uploads */}
+              <RecentAssetUploads data={data} router={router} />
 
-              {/* Industry Signals */}
-              <SectionCard title="Industry signals" actionLabel="View all" onAction={() => router.push("/industry-insights")} accentLeft="#6B82F5">
-                {data.insights.length === 0 ? (
-                  <EmptyState icon="insights" text="No industry signals yet" sub="Market trends and competitive intel will appear here." />
-                ) : (
-                  <div className="space-y-2">
-                    {data.insights.slice(0, 4).map((ins) => {
-                      const colors = SIGNAL_COLORS[ins.signalType] || SIGNAL_COLORS.trend;
-                      return (
-                        <button key={ins.id} onClick={() => router.push("/industry-insights")} className="w-full flex items-center gap-2.5 p-2.5 bg-[var(--hm-bg-secondary)] rounded-lg text-left hover:bg-[var(--hm-bg-tertiary)] transition-colors">
-                          <span className={`text-[9px] px-2 py-0.5 rounded-md font-semibold uppercase flex-shrink-0 ${colors.bg} ${colors.text}`}>{ins.signalType}</span>
-                          <p className="text-[13px] font-medium truncate flex-1">{ins.title}</p>
-                          <span className="text-[10px] text-[var(--hm-text-tertiary)] flex-shrink-0">{timeAgo(ins.createdAt)}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </SectionCard>
+              {/* Industry Insights */}
+              <IndustryInsights data={data} router={router} />
             </div>
-
-            {/* Recently Added Assets */}
-            {data.activity.filter(a => a.type === "upload").length > 0 && (
-              <div className="grid grid-cols-1 gap-4 mb-6">
-                <SectionCard title="Recently added" actionLabel="Browse library" onAction={() => router.push("/content-library")} accentLeft="#4361ee">
-                  <div className="space-y-2">
-                    {data.activity.filter(a => a.type === "upload").slice(0, 4).map((a, i) => (
-                      <button key={i} onClick={() => router.push("/content-library")} className="w-full flex items-center gap-2.5 p-2.5 bg-[var(--hm-bg-secondary)] rounded-lg text-left hover:bg-[var(--hm-bg-tertiary)] transition-colors">
-                        <div className="w-7 h-7 rounded-md bg-blue-50 flex items-center justify-center flex-shrink-0">
-                          <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M12 5v9H4V2h5l3 3z" stroke="#4361ee" strokeWidth="1.1" /></svg>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[12px] text-[var(--hm-text-secondary)] leading-snug">{a.text}</p>
-                          <p className="text-[10px] text-[var(--hm-text-tertiary)] mt-0.5">{timeAgo(a.time)}</p>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </SectionCard>
-              </div>
-            )}
           </>
         )}
       </div>
@@ -523,6 +412,115 @@ function EmptyState({ icon, text, sub, action }: { icon: string; text: string; s
         </button>
       )}
     </div>
+  );
+}
+
+function RecentAssetUploads({ data, router }: { data: DashboardData; router: ReturnType<typeof useRouter> }) {
+  return (
+    <SectionCard title="Recent asset uploads" actionLabel="View all" onAction={() => router.push("/content-library")} accentLeft="#4361ee">
+      {data.recentAssets.length === 0 ? (
+        <EmptyState icon="library" text="No assets uploaded yet" sub="Upload your first content asset to get started." action={{ label: "Upload content", href: "/content-library" }} />
+      ) : (
+        <div className="space-y-2">
+          {data.recentAssets.slice(0, 4).map((a) => (
+            <button key={a.id} onClick={() => router.push("/content-library")} className="w-full flex items-center gap-2.5 p-2.5 bg-[var(--hm-bg-secondary)] rounded-lg text-left hover:bg-[var(--hm-bg-tertiary)] transition-colors">
+              <div className="w-7 h-7 rounded-md bg-blue-50 flex items-center justify-center flex-shrink-0">
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M12 5v9H4V2h5l3 3z" stroke="#4361ee" strokeWidth="1.1" /></svg>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[13px] font-medium truncate">{a.name}</p>
+                <p className="text-[10px] text-[var(--hm-text-tertiary)] mt-0.5">{a.uploadedBy ? `${a.uploadedBy} · ` : ""}{timeAgo(a.createdAt)}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </SectionCard>
+  );
+}
+
+function IndustryInsights({ data, router }: { data: DashboardData; router: ReturnType<typeof useRouter> }) {
+  return (
+    <SectionCard title="Latest industry insights" actionLabel="View all" onAction={() => router.push("/industry-insights")} accentLeft="#6B82F5">
+      {data.insights.length === 0 ? (
+        <EmptyState icon="insights" text="No industry insights yet" sub="Market trends and competitive intel will appear here." />
+      ) : (
+        <div className="space-y-2">
+          {data.insights.slice(0, 4).map((ins) => {
+            const colors = SIGNAL_COLORS[ins.signalType] || SIGNAL_COLORS.trend;
+            return (
+              <button key={ins.id} onClick={() => router.push("/industry-insights")} className="w-full flex items-center gap-2.5 p-2.5 bg-[var(--hm-bg-secondary)] rounded-lg text-left hover:bg-[var(--hm-bg-tertiary)] transition-colors">
+                <span className={`text-[9px] px-2 py-0.5 rounded-md font-semibold uppercase flex-shrink-0 ${colors.bg} ${colors.text}`}>{ins.signalType}</span>
+                <p className="text-[13px] font-medium truncate flex-1">{ins.title}</p>
+                <span className="text-[10px] text-[var(--hm-text-tertiary)] flex-shrink-0">{timeAgo(ins.createdAt)}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </SectionCard>
+  );
+}
+
+const FEATURE_LABELS: Record<string, string> = {
+  assistant: "Ask Halo",
+  content_generator: "Content Generator",
+  content_analysis: "Intelligence Extraction",
+  brand_review: "Brand Review",
+  industry_insights: "Industry Insights",
+  knowledge: "Knowledge Base",
+  design_brief: "Design Brief",
+  seo: "SEO",
+  setup_wizard: "Setup Wizard",
+};
+
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
+  if (n >= 1_000) return (n / 1_000).toFixed(1).replace(/\.0$/, "") + "K";
+  return n.toLocaleString();
+}
+
+function TokenUsageCard({ data }: { data: DashboardData }) {
+  const { total, thisWeek, byFeature } = data.tokenUsage;
+  const maxTokens = byFeature.length > 0 ? byFeature[0].tokens : 1;
+
+  const FEATURE_COLORS = ["#4361ee", "#F59E0B", "#10B981", "#8B5CF6", "#EF4444"];
+
+  return (
+    <SectionCard title="Token usage" accentLeft="#F59E0B">
+      <div className="flex items-center gap-4 mb-4">
+        <div>
+          <p className="text-[24px] font-bold leading-none">{formatTokens(total)}</p>
+          <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-1">Total tokens</p>
+        </div>
+        <div className="h-8 w-px bg-[var(--hm-border)]" />
+        <div>
+          <p className="text-[18px] font-semibold leading-none">{formatTokens(thisWeek)}</p>
+          <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-1">This week</p>
+        </div>
+      </div>
+      {byFeature.length === 0 ? (
+        <p className="text-[12px] text-[var(--hm-text-tertiary)] py-4 text-center">No usage recorded yet</p>
+      ) : (
+        <div className="space-y-2.5">
+          {byFeature.map((f, i) => {
+            const pct = Math.max(4, Math.round((f.tokens / maxTokens) * 100));
+            const color = FEATURE_COLORS[i % FEATURE_COLORS.length];
+            return (
+              <div key={f.feature}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[12px] text-[var(--hm-text-secondary)]">{FEATURE_LABELS[f.feature] || f.feature}</span>
+                  <span className="text-[11px] font-medium text-[var(--hm-text-tertiary)]">{formatTokens(f.tokens)}</span>
+                </div>
+                <div className="w-full h-1.5 rounded-full bg-[var(--hm-border)] overflow-hidden">
+                  <div className="h-full rounded-full" style={{ width: pct + "%", background: color }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </SectionCard>
   );
 }
 

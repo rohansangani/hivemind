@@ -39,6 +39,9 @@ export async function GET(req: NextRequest) {
       recentAssets,
       convCount,
       recentUsers,
+      tokenTotalAgg,
+      tokenWeekAgg,
+      tokenByFeature,
     ] = await Promise.all([
       db.organization.findUnique({ where: { id: decoded.orgId } }),
       db.contentAsset.count({ where: { organizationId: decoded.orgId } }),
@@ -86,6 +89,21 @@ export async function GET(req: NextRequest) {
         orderBy: { createdAt: "desc" },
         take: 3,
         select: { name: true, email: true, createdAt: true, role: true },
+      }),
+      db.tokenUsageLog.aggregate({
+        where: { organizationId: decoded.orgId },
+        _sum: { totalTokens: true },
+      }),
+      db.tokenUsageLog.aggregate({
+        where: { organizationId: decoded.orgId, createdAt: { gte: weekAgo } },
+        _sum: { totalTokens: true },
+      }),
+      db.tokenUsageLog.groupBy({
+        by: ["feature"],
+        where: { organizationId: decoded.orgId },
+        _sum: { totalTokens: true },
+        orderBy: { _sum: { totalTokens: "desc" } },
+        take: 5,
       }),
     ]);
 
@@ -176,6 +194,12 @@ export async function GET(req: NextRequest) {
       activity: activity.slice(0, 8),
       checklist,
       insights: insights.map((i) => ({ id: i.id, title: i.title, signalType: i.signalType, createdAt: i.createdAt })),
+      recentAssets: recentAssets.map((a) => ({ id: a.id, name: a.name, createdAt: a.createdAt, uploadedBy: a.uploadedBy?.name ?? null })),
+      tokenUsage: {
+        total: tokenTotalAgg._sum.totalTokens || 0,
+        thisWeek: tokenWeekAgg._sum.totalTokens || 0,
+        byFeature: tokenByFeature.map((f) => ({ feature: f.feature, tokens: f._sum.totalTokens || 0 })),
+      },
     });
   } catch (error) {
     console.error("Dashboard error:", error);
