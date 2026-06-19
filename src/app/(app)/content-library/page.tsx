@@ -56,6 +56,7 @@ export default function ContentLibraryPage() {
   const [pagination, setPagination] = useState<{ total: number; totalPages: number; limit: number } | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [uploadError, setUploadError] = useState("");
+  const [duplicateWarning, setDuplicateWarning] = useState<{ duplicates: Array<{ fileName: string; existingName: string; uploadedAt: string }>; payload: Record<string, unknown> } | null>(null);
 
   // Panel state (replaces inline edit panel)
   const [panelAsset, setPanelAsset] = useState<Asset | null>(null);
@@ -145,20 +146,49 @@ export default function ContentLibraryPage() {
   }, [assets, fetchData, isAutoReviewing]);
 
   const handleFileSelect = (file: File) => { fileRef.current = file; setUploadName(file.name.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ")); setUploadType(file.name.split(".").pop()?.toLowerCase() || "pdf"); };
-  const resetUpload = () => { setShowUpload(false); setUploadName(""); setUploadProgress(""); setUploadError(""); fileRef.current = null; };
+  const resetUpload = () => { setShowUpload(false); setUploadName(""); setUploadProgress(""); setUploadError(""); setDuplicateWarning(null); fileRef.current = null; };
+
+  const computeFileHash = async (file: File): Promise<string> => {
+    const buffer = await file.arrayBuffer();
+    const hash = await crypto.subtle.digest("SHA-256", buffer);
+    return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
+  };
+
+  const saveAsset = async (payload: Record<string, unknown>) => {
+    setUploadProgress("Saving...");
+    try {
+      const res = await fetch("/api/content-library", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const data = await res.json();
+      if (res.status === 409 && data.duplicates) {
+        setDuplicateWarning({ duplicates: data.duplicates, payload });
+        setUploading(false); setUploadProgress(""); return;
+      }
+      if (!res.ok) { setUploadError(data.error || "Failed to save asset."); }
+      else { resetUpload(); fetchData(); setIsAutoReviewing(true); }
+    } catch (e) { console.error(e); setUploadError("Failed to save asset. Please try again."); }
+    finally { setUploading(false); setUploadProgress(""); }
+  };
+
+  const forceSaveDuplicate = async () => {
+    if (!duplicateWarning) return;
+    setUploading(true); setDuplicateWarning(null);
+    await saveAsset({ ...duplicateWarning.payload, force: true });
+  };
 
   const handleUpload = async () => {
     if (!uploadName.trim()) return;
     setUploading(true);
     setUploadError("");
-    let fileUrl: string | null = null; let fileSize: number | null = null; let actualFileName: string | null = null;
+    setDuplicateWarning(null);
+    let fileUrl: string | null = null; let fileSize: number | null = null; let actualFileName: string | null = null; let fileHash: string | null = null;
     if (fileRef.current) {
-      setUploadProgress("Uploading file...");
+      setUploadProgress("Checking file...");
       const file = fileRef.current;
-      const SMALL_FILE_LIMIT = 4 * 1024 * 1024; // 4 MB — use server-side PUT below this
+      try { fileHash = await computeFileHash(file); } catch { /* hash optional */ }
+      setUploadProgress("Uploading file...");
+      const SMALL_FILE_LIMIT = 4 * 1024 * 1024;
       try {
         if (file.size <= SMALL_FILE_LIMIT) {
-          // ── Small file: stream through our API route ──────────────────────
           const res = await fetch(
             `/api/upload?filename=${encodeURIComponent(file.name)}`,
             { method: "PUT", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file }
@@ -168,10 +198,8 @@ export default function ContentLibraryPage() {
           if (!res.ok) { setUploadError((data.error as string) || `Upload failed (${res.status})`); setUploading(false); setUploadProgress(""); return; }
           fileUrl = data.fileUrl as string; fileSize = file.size; actualFileName = file.name;
         } else {
-          // ── Large file: browser uploads directly to Vercel Blob CDN ──────
-          // Bypasses the 4.5 MB serverless body limit entirely.
           const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), 120000); // 2-min safety timeout
+          const timeout = setTimeout(() => controller.abort(), 120000);
           try {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const blob = await upload(`assets/${Date.now()}-${file.name}`, file, { access: "public", handleUploadUrl: "/api/upload", ...(({ abortSignal: controller.signal }) as any) });
@@ -181,14 +209,8 @@ export default function ContentLibraryPage() {
         }
       } catch (e) { console.error(e); setUploadError((e as Error)?.message || "Upload failed. Please try again."); setUploading(false); setUploadProgress(""); return; }
     }
-    setUploadProgress("Saving...");
-    try {
-      const res = await fetch("/api/content-library", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ files: [{ name: uploadName, fileName: actualFileName || uploadName.toLowerCase().replace(/\s+/g, "-") + "." + uploadType, fileUrl, fileSize, fileType: uploadType, contentType: uploadContentType, productTags: uploadProduct ? [uploadProduct] : [], marketTags: uploadMarket ? [uploadMarket] : [] }] }) });
-      const data = await res.json();
-      if (!res.ok) { setUploadError(data.error || "Failed to save asset."); }
-      else { resetUpload(); fetchData(); setIsAutoReviewing(true); }
-    } catch (e) { console.error(e); setUploadError("Failed to save asset. Please try again."); }
-    finally { setUploading(false); setUploadProgress(""); }
+    const payload = { files: [{ name: uploadName, fileName: actualFileName || uploadName.toLowerCase().replace(/\s+/g, "-") + "." + uploadType, fileUrl, fileSize, fileHash, fileType: uploadType, contentType: uploadContentType, productTags: uploadProduct ? [uploadProduct] : [], marketTags: uploadMarket ? [uploadMarket] : [] }] };
+    await saveAsset(payload);
   };
 
   const openPanel = async (a: Asset) => {
@@ -402,10 +424,31 @@ export default function ContentLibraryPage() {
                       <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1 font-medium">Market</label><select value={uploadMarket} onChange={(e) => setUploadMarket(e.target.value)} style={{ fontSize: "12px" }}><option value="">Global</option>{markets.map((m) => <option key={m.name} value={m.name}>{m.name}</option>)}</select></div>
                     </div>
                     {uploadError && <p className="text-[12px] text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{uploadError}</p>}
+                    {duplicateWarning && (
+                      <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                        <div className="flex items-start gap-2 mb-2">
+                          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="mt-0.5 flex-shrink-0"><path d="M8 1.5l6.5 12H1.5L8 1.5z" stroke="#d97706" strokeWidth="1.2" fill="#fef3c7"/><path d="M8 6v3M8 11h.01" stroke="#d97706" strokeWidth="1.3" strokeLinecap="round"/></svg>
+                          <div>
+                            <p className="text-[12px] font-medium text-amber-800">Duplicate file detected</p>
+                            {duplicateWarning.duplicates.map((d, i) => (
+                              <p key={i} className="text-[11px] text-amber-700 mt-1">
+                                This file was already uploaded as &ldquo;<span className="font-medium">{d.existingName}</span>&rdquo; on {new Date(d.uploadedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}.
+                              </p>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="flex gap-2 justify-end mt-2">
+                          <button onClick={() => setDuplicateWarning(null)} className="h-7 px-3 border border-amber-300 rounded-md text-[11px] text-amber-800 hover:bg-amber-100 transition-colors">Cancel</button>
+                          <button onClick={forceSaveDuplicate} disabled={uploading} className="h-7 px-3 bg-amber-600 text-white rounded-md text-[11px] font-medium hover:bg-amber-700 transition-colors disabled:opacity-50">Upload anyway</button>
+                        </div>
+                      </div>
+                    )}
+                    {!duplicateWarning && (
                     <div className="flex justify-between items-center pt-2">
                       {uploadProgress && <p className="text-[11px] text-[#4361ee] flex items-center gap-1.5"><span className="w-3 h-3 border-2 border-[#4361ee]/30 border-t-[#4361ee] rounded-full animate-spin inline-block" />{uploadProgress}</p>}
                       <div className="flex gap-2 ml-auto"><button onClick={resetUpload} className="h-[34px] px-4 border border-[var(--hm-border)] rounded-lg text-[12px] hover:bg-[var(--hm-bg-secondary)] hover:border-[#4361ee]/40 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-1">Cancel</button><button onClick={handleUpload} disabled={uploading || !uploadName.trim()} className="h-[34px] px-5 bg-[#4361ee] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-2">{uploading ? "Uploading..." : "Upload"}</button></div>
                     </div>
+                    )}
                   </div>
                 )}
               </div>

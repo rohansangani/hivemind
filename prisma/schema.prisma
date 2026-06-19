@@ -230,6 +230,7 @@ model ContentAsset {
   fileUrl          String?
   fileType         String?
   fileSize         Int?
+  fileHash         String?
   contentType      String?
   linkedUrl        String?
   productTags      String[]

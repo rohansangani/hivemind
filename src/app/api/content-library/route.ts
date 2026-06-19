@@ -93,12 +93,34 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Each file must have either a fileUrl or a linkedUrl" }, { status: 400 });
       }
     }
+    // Check for duplicates by file hash
+    const duplicates: Array<{ fileName: string; existingName: string; uploadedAt: string }> = [];
+    for (const file of files) {
+      if (file.fileHash) {
+        const existing = await db.contentAsset.findFirst({
+          where: { organizationId: decoded.orgId, fileHash: file.fileHash },
+          select: { name: true, createdAt: true },
+        });
+        if (existing) {
+          duplicates.push({
+            fileName: file.name,
+            existingName: existing.name,
+            uploadedAt: existing.createdAt.toISOString(),
+          });
+        }
+      }
+    }
+    if (duplicates.length > 0 && !body.force) {
+      return NextResponse.json({ duplicates }, { status: 409 });
+    }
+
     const created: Array<{ id: string; name: string }> = [];
     for (const file of files) {
       const asset = await db.contentAsset.create({
         data: {
           name: file.name, fileName: file.fileName, fileUrl: file.fileUrl || null,
           fileType: file.fileType, fileSize: file.fileSize || null,
+          fileHash: file.fileHash || null,
           contentType: file.contentType, linkedUrl: file.linkedUrl || null,
           productTags: file.productTags || [], marketTags: file.marketTags || [],
           personaTags: file.personaTags || [], customTags: file.customTags || [],
