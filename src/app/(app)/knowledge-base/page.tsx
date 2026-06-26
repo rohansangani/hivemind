@@ -107,6 +107,90 @@ export default function KnowledgeBasePage() {
   const [fullAiSuggestions, setFullAiSuggestions] = useState<Record<string, unknown> | null>(null);
   const [fullAiSections, setFullAiSections] = useState<string[]>(["company", "products", "markets", "personas", "competitors", "brand"]);
 
+  // KB Refresh
+  interface RefreshChange {
+    id: string;
+    section: string;
+    type: "updated" | "new" | "removed";
+    title: string;
+    details: string;
+    entityId?: string;
+    entityName?: string;
+    current?: Record<string, unknown>;
+    suggested?: Record<string, unknown>;
+  }
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState("");
+  const [refreshChanges, setRefreshChanges] = useState<RefreshChange[]>([]);
+  const [refreshSummary, setRefreshSummary] = useState("");
+  const [showRefreshReview, setShowRefreshReview] = useState(false);
+  const [approvedChanges, setApprovedChanges] = useState<Set<string>>(new Set());
+  const [editedChanges, setEditedChanges] = useState<Record<string, Record<string, unknown>>>({});
+  const [applyingRefresh, setApplyingRefresh] = useState(false);
+  const [expandedChange, setExpandedChange] = useState<string | null>(null);
+
+  const refreshKnowledgeBase = async () => {
+    setRefreshing(true); setRefreshError(""); setRefreshChanges([]); setRefreshSummary("");
+    try {
+      const res = await fetch("/api/knowledge/refresh", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) { setRefreshError(data.error || "Refresh failed"); return; }
+      if (data.changes?.length === 0) {
+        setRefreshSummary("Your knowledge base is up to date — no changes detected.");
+        return;
+      }
+      setRefreshChanges(data.changes || []);
+      setRefreshSummary(data.summary || "");
+      setApprovedChanges(new Set((data.changes || []).map((c: RefreshChange) => c.id)));
+      setEditedChanges({});
+      setShowRefreshReview(true);
+    } catch { setRefreshError("Network error — please try again."); }
+    finally { setRefreshing(false); }
+  };
+
+  const applyRefreshChanges = async () => {
+    setApplyingRefresh(true);
+    try {
+      const changesToApply = refreshChanges
+        .filter(c => approvedChanges.has(c.id))
+        .map(c => ({
+          ...c,
+          suggested: editedChanges[c.id] ? { ...c.suggested, ...editedChanges[c.id] } : c.suggested,
+        }));
+      const res = await fetch("/api/knowledge/refresh/apply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ changes: changesToApply }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSaved(`${data.applied} change${data.applied !== 1 ? "s" : ""} applied!`);
+        setTimeout(() => setSaved(""), 3000);
+        setShowRefreshReview(false);
+        setRefreshChanges([]);
+        fetchAll();
+      } else {
+        setRefreshError(data.error || "Failed to apply changes");
+      }
+    } catch { setRefreshError("Network error — please try again."); }
+    finally { setApplyingRefresh(false); }
+  };
+
+  const toggleChangeApproval = (id: string) => {
+    setApprovedChanges(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const updateEditedField = (changeId: string, field: string, value: unknown) => {
+    setEditedChanges(prev => ({
+      ...prev,
+      [changeId]: { ...(prev[changeId] || {}), [field]: value },
+    }));
+  };
+
   // Custom knowledge entries state
   interface KnowledgeEntry { id: string; category: string; title: string; content: string; source: string; isAIGenerated: boolean; createdAt: string; updatedAt: string; }
   const ENTRY_CATEGORIES = [
@@ -445,14 +529,180 @@ export default function KnowledgeBasePage() {
                 </div>
               </div>
 
-              {/* Full AI Auto-populate banner */}
+              {/* Refresh Knowledge Base banner */}
               <div className="bg-gradient-to-r from-[#4361ee]/5 to-[#7c3aed]/5 border border-[#4361ee]/20 rounded-xl p-4 mb-5 flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#4361ee] to-[#7c3aed] flex items-center justify-center"><svg width="16" height="16" viewBox="0 0 32 32"><path d="M16 2L28 9v14l-12 7L4 23V9z" fill="none" stroke="#fff" strokeWidth="2" /></svg></div>
-                  <div><p className="text-[13px] font-semibold">AI Auto-populate</p><p className="text-[11px] text-[var(--hm-text-tertiary)] leading-relaxed">Analyze your website and fill entire knowledge base</p></div>
+                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#4361ee] to-[#7c3aed] flex items-center justify-center">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M1 4v6h6M23 20v-6h-6" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M20.49 9A9 9 0 005.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 013.51 15" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  </div>
+                  <div>
+                    <p className="text-[13px] font-semibold">Refresh Knowledge Base</p>
+                    <p className="text-[11px] text-[var(--hm-text-tertiary)] leading-relaxed">Scan your website for changes and review updates before applying</p>
+                  </div>
                 </div>
-                <AiBtn loading={aiLoading === "full"} onClick={() => aiSuggest("full", {}, (data) => { setFullAiSuggestions(data); setShowFullAI(true); })} label="Auto-populate all" />
+                <button onClick={refreshKnowledgeBase} disabled={refreshing} className="h-8 px-4 bg-gradient-to-r from-[#4361ee] to-[#7c3aed] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7c3aed] focus-visible:ring-offset-2">
+                  {refreshing ? <><span className="w-3.5 h-3.5 border-[1.5px] border-white/30 border-t-white rounded-full animate-spin" />Scanning website...</> : <>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M1 4v6h6M23 20v-6h-6" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/><path d="M20.49 9A9 9 0 005.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 013.51 15" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                    Refresh
+                  </>}
+                </button>
               </div>
+
+              {refreshError && <div className="p-3 bg-red-50 border border-red-200 rounded-lg mb-4 text-[12px] text-red-600 flex items-center justify-between">{refreshError}<button onClick={() => setRefreshError("")} className="opacity-50 hover:opacity-100 transition-opacity duration-150 w-6 h-6 flex items-center justify-center rounded-md hover:bg-red-100">&times;</button></div>}
+
+              {refreshSummary && !showRefreshReview && !refreshing && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg mb-4 text-[12px] text-emerald-700 flex items-center gap-2">
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5l3 3 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
+                  {refreshSummary}
+                </div>
+              )}
+
+              {/* Refresh Review UI */}
+              {showRefreshReview && refreshChanges.length > 0 && (
+                <div className="bg-white border-2 border-[#4361ee] rounded-xl p-5 mb-5 animate-fade-in">
+                  <div className="flex items-center justify-between mb-1">
+                    <h3 className="text-[14px] font-medium">Review Changes</h3>
+                    <button onClick={() => { setShowRefreshReview(false); setRefreshChanges([]); }} className="opacity-40 hover:opacity-100 transition-opacity duration-150 w-7 h-7 flex items-center justify-center rounded-md hover:bg-[var(--hm-bg-secondary)]">&times;</button>
+                  </div>
+                  {refreshSummary && <p className="text-[11px] text-[var(--hm-text-tertiary)] mb-4">{refreshSummary}</p>}
+
+                  <div className="flex items-center gap-3 mb-4">
+                    <button onClick={() => setApprovedChanges(new Set(refreshChanges.map(c => c.id)))} className="text-[11px] text-[#4361ee] hover:underline">Select all</button>
+                    <span className="text-[var(--hm-border)]">|</span>
+                    <button onClick={() => setApprovedChanges(new Set())} className="text-[11px] text-[#4361ee] hover:underline">Deselect all</button>
+                    <span className="text-[11px] text-[var(--hm-text-tertiary)] ml-auto">{approvedChanges.size} of {refreshChanges.length} selected</span>
+                  </div>
+
+                  <div className="space-y-2 mb-4 max-h-[480px] overflow-y-auto pr-1">
+                    {refreshChanges.map(change => {
+                      const approved = approvedChanges.has(change.id);
+                      const expanded = expandedChange === change.id;
+                      const edited = editedChanges[change.id] || {};
+                      const typeColor = change.type === "new" ? "bg-emerald-50 text-emerald-600 border-emerald-200" : change.type === "updated" ? "bg-blue-50 text-blue-600 border-blue-200" : "bg-red-50 text-red-600 border-red-200";
+                      const sectionLabel = { company: "Company", products: "Product", markets: "Market", personas: "Persona", competitors: "Competitor", brand: "Brand" }[change.section] || change.section;
+
+                      return (
+                        <div key={change.id} className={"border rounded-lg overflow-hidden transition-colors duration-150 " + (approved ? "border-[#4361ee]/40 bg-blue-50/20" : "border-[var(--hm-border)]")}>
+                          <div className="flex items-center gap-3 p-3 cursor-pointer" onClick={() => setExpandedChange(expanded ? null : change.id)}>
+                            <input type="checkbox" checked={approved} onChange={(e) => { e.stopPropagation(); toggleChangeApproval(change.id); }} className="w-4 h-4 rounded border-[var(--hm-border)] text-[#4361ee] focus:ring-[#4361ee] cursor-pointer" onClick={e => e.stopPropagation()} />
+                            <span className={"text-[9px] px-2 py-0.5 rounded-md border font-medium uppercase tracking-wide " + typeColor}>{change.type}</span>
+                            <span className="text-[10px] px-2 py-0.5 bg-[var(--hm-bg-secondary)] text-[var(--hm-text-tertiary)] rounded-md">{sectionLabel}</span>
+                            <span className="text-[12px] font-medium flex-1">{change.title}</span>
+                            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className={"transition-transform duration-150 " + (expanded ? "rotate-180" : "")}><path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+                          </div>
+
+                          {expanded && (
+                            <div className="px-3 pb-3 border-t border-[var(--hm-border)] pt-3 animate-fade-in-fast">
+                              <p className="text-[11px] text-[var(--hm-text-tertiary)] mb-3">{change.details}</p>
+
+                              {change.type === "updated" && change.current && change.suggested && (
+                                <div className="space-y-2">
+                                  {Object.keys(change.suggested).filter(k => k !== "id").map(field => {
+                                    const currentVal = change.current?.[field];
+                                    const suggestedVal = (edited[field] !== undefined ? edited[field] : change.suggested?.[field]) as string;
+                                    if (currentVal === undefined && suggestedVal === undefined) return null;
+                                    const isArray = Array.isArray(currentVal) || Array.isArray(suggestedVal);
+                                    return (
+                                      <div key={field} className="grid grid-cols-2 gap-2">
+                                        <div>
+                                          <p className="text-[9px] uppercase tracking-wide text-[var(--hm-text-tertiary)] font-medium mb-1">Current: {field}</p>
+                                          <div className="text-[11px] p-2 bg-red-50/50 border border-red-100 rounded-md text-[var(--hm-text-secondary)] min-h-[32px]">
+                                            {isArray ? (currentVal as string[])?.join(", ") || "—" : (currentVal as string) || "—"}
+                                          </div>
+                                        </div>
+                                        <div>
+                                          <p className="text-[9px] uppercase tracking-wide text-[var(--hm-text-tertiary)] font-medium mb-1">Suggested: {field}</p>
+                                          {isArray ? (
+                                            <input
+                                              type="text"
+                                              value={Array.isArray(suggestedVal) ? suggestedVal.join(", ") : (suggestedVal || "")}
+                                              onChange={e => updateEditedField(change.id, field, e.target.value.split(",").map((s: string) => s.trim()).filter(Boolean))}
+                                              className="w-full text-[11px] p-2 bg-emerald-50/50 border border-emerald-200 rounded-md min-h-[32px]"
+                                            />
+                                          ) : (
+                                            <textarea
+                                              value={(suggestedVal as string) || ""}
+                                              onChange={e => updateEditedField(change.id, field, e.target.value)}
+                                              className="w-full text-[11px] p-2 bg-emerald-50/50 border border-emerald-200 rounded-md min-h-[32px] resize-y"
+                                              rows={1}
+                                            />
+                                          )}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+
+                              {change.type === "new" && change.suggested && (
+                                <div className="space-y-2">
+                                  {Object.keys(change.suggested).filter(k => k !== "id").map(field => {
+                                    const val = (edited[field] !== undefined ? edited[field] : change.suggested?.[field]) as string;
+                                    const isArray = Array.isArray(change.suggested?.[field]);
+                                    return (
+                                      <div key={field}>
+                                        <p className="text-[9px] uppercase tracking-wide text-[var(--hm-text-tertiary)] font-medium mb-1">{field}</p>
+                                        {isArray ? (
+                                          <input
+                                            type="text"
+                                            value={Array.isArray(val) ? val.join(", ") : (val || "")}
+                                            onChange={e => updateEditedField(change.id, field, e.target.value.split(",").map((s: string) => s.trim()).filter(Boolean))}
+                                            className="w-full text-[11px] p-2 border border-emerald-200 bg-emerald-50/30 rounded-md"
+                                          />
+                                        ) : (
+                                          <textarea
+                                            value={(val as string) || ""}
+                                            onChange={e => updateEditedField(change.id, field, e.target.value)}
+                                            className="w-full text-[11px] p-2 border border-emerald-200 bg-emerald-50/30 rounded-md resize-y"
+                                            rows={1}
+                                          />
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+
+                              {change.type === "removed" && change.current && (
+                                <div className="p-3 bg-red-50/50 border border-red-100 rounded-md">
+                                  <p className="text-[10px] uppercase tracking-wide text-red-400 font-medium mb-1.5">Will be removed</p>
+                                  <div className="text-[11px] text-[var(--hm-text-secondary)] space-y-1">
+                                    {Object.entries(change.current).filter(([k]) => k !== "id").map(([k, v]) => (
+                                      <div key={k}><span className="font-medium capitalize">{k}:</span> {Array.isArray(v) ? v.join(", ") : String(v || "—")}</div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-2 border-t border-[var(--hm-border)]">
+                    <button onClick={() => { setShowRefreshReview(false); setRefreshChanges([]); }} className="h-8 px-3 border border-[var(--hm-border)] rounded-lg text-[12px] hover:bg-[var(--hm-bg-secondary)] transition-colors duration-150">Discard all</button>
+                    <button
+                      onClick={applyRefreshChanges}
+                      disabled={applyingRefresh || approvedChanges.size === 0}
+                      className="h-8 px-5 bg-emerald-500 text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    >
+                      {applyingRefresh ? <><span className="w-3 h-3 border-[1.5px] border-white/30 border-t-white rounded-full animate-spin" />Applying...</> : `Apply ${approvedChanges.size} change${approvedChanges.size !== 1 ? "s" : ""}`}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Auto-populate (initial setup) */}
+              {kbHealth < 50 && (
+                <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-4 mb-5 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-amber-400 to-orange-400 flex items-center justify-center"><svg width="16" height="16" viewBox="0 0 32 32"><path d="M16 2L28 9v14l-12 7L4 23V9z" fill="none" stroke="#fff" strokeWidth="2" /></svg></div>
+                    <div><p className="text-[13px] font-semibold text-amber-800">Need a head start?</p><p className="text-[11px] text-amber-600 leading-relaxed">Auto-populate your KB from your website to get started faster</p></div>
+                  </div>
+                  <AiBtn loading={aiLoading === "full"} onClick={() => aiSuggest("full", {}, (data) => { setFullAiSuggestions(data); setShowFullAI(true); })} label="Auto-populate" />
+                </div>
+              )}
 
               {showFullAI && fullAiSuggestions && (
                 <div className="bg-white border-2 border-[#4361ee] rounded-xl p-5 mb-5 animate-fade-in">
