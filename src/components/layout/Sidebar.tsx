@@ -20,6 +20,7 @@ const MODULE_ROUTES: Array<{ moduleId: string; href: string; label: string; icon
   { moduleId: "content_library",    href: "/content-library",   label: "Asset Library",      icon: "library" },
   { moduleId: "ai_assistant",       href: "/assistant",         label: "Ask Halo",           icon: "assistant" },
   { moduleId: "content_generator",  href: "/content-generator", label: "Content Generator",  icon: "generator" },
+  { moduleId: "content_review",     href: "/content-review",    label: "Content Review",     icon: "review" },
   { moduleId: "design_brief",       href: "/design-brief",      label: "Design Brief",       icon: "design" },
   { moduleId: "knowledge_base",     href: "/knowledge-base",    label: "Knowledge Base",     icon: "knowledge" },
 ];
@@ -81,6 +82,12 @@ function NavIcon({ icon, active }: { icon: string; active: boolean }) {
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
         <circle cx="8" cy="8" r="2.5" stroke={c} strokeWidth={w} />
         <path d="M8 2v2M8 12v2M2 8h2M12 8h2M3.75 3.75l1.5 1.5M10.75 10.75l1.5 1.5M12.25 3.75l-1.5 1.5M5.25 10.75l-1.5 1.5" stroke={c} strokeWidth="1.1" strokeLinecap="round" />
+      </svg>
+    );
+    case "review": return (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path d="M3 2h10a1 1 0 011 1v10a1 1 0 01-1 1H3a1 1 0 01-1-1V3a1 1 0 011-1z" stroke={c} strokeWidth={w} />
+        <path d="M5 7l2 2 4-4" stroke={c} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     );
     case "design": return (

@@ -25,6 +25,7 @@ export const MODULES: ModuleDef[] = [
   { id: "ai_assistant",       label: "Ask Halo",           description: "Conversational AI grounded in knowledge base", icon: "assistant", group: "core" },
   // Content — marketing and above
   { id: "content_generator",  label: "Content Generator",  description: "Generate on-brand marketing content",          icon: "generator", group: "content" },
+  { id: "content_review",     label: "Content Review",     description: "Review content for grammar, brand, facts & AI detection", icon: "review", group: "content" },
   { id: "design_brief",       label: "Design Brief",       description: "Generate brand-grounded visual design briefs", icon: "design",    group: "content" },
   // Knowledge — marketing and above (with sub-tab level control)
   { id: "knowledge_base",     label: "Knowledge Base",     description: "Products, personas, competitors, skills",      icon: "knowledge", group: "knowledge" },
@@ -39,60 +40,61 @@ export type ModulePermissions = Record<string, AccessLevel>;
  * Default permissions per role — used when no custom permission has been saved.
  *
  * Role matrix:
- * ┌──────────────┬───────────┬──────────┬───────────┬──────────┬────────┐
- * │ Module       │ Owner     │ Admin    │ Marketing │ Sales    │ Others │
- * ├──────────────┼───────────┼──────────┼───────────┼──────────┼────────┤
- * │ Dashboard    │ edit      │ edit     │ edit      │ edit     │ edit   │
- * │ Insights     │ edit      │ edit     │ edit      │ view     │ view   │
- * │ Asset Lib    │ edit      │ edit     │ edit      │ edit     │ edit   │
- * │ Ask Halo     │ edit      │ edit     │ edit      │ edit     │ edit   │
- * │ Content Gen  │ edit      │ edit     │ edit      │ none     │ none   │
- * │ Design Brief │ edit      │ edit     │ edit      │ none     │ none   │
- * │ Knowledge    │ edit      │ edit     │ edit      │ none     │ none   │
- * │ Team         │ edit      │ edit     │ none      │ none     │ none   │
- * │ Settings     │ edit      │ edit     │ none      │ none     │ none   │
- * └──────────────┴───────────┴──────────┴───────────┴──────────┴────────┘
+ * ┌────────────────┬───────────┬──────────┬───────────┬──────────┬────────┐
+ * │ Module         │ Owner     │ Admin    │ Marketing │ Sales    │ Others │
+ * ├────────────────┼───────────┼──────────┼───────────┼──────────┼────────┤
+ * │ Dashboard      │ edit      │ edit     │ edit      │ edit     │ edit   │
+ * │ Insights       │ edit      │ edit     │ edit      │ view     │ view   │
+ * │ Asset Lib      │ edit      │ edit     │ edit      │ edit     │ edit   │
+ * │ Ask Halo       │ edit      │ edit     │ edit      │ edit     │ edit   │
+ * │ Content Gen    │ edit      │ edit     │ edit      │ none     │ none   │
+ * │ Content Review │ edit      │ edit     │ edit      │ edit     │ edit   │
+ * │ Design Brief   │ edit      │ edit     │ edit      │ none     │ none   │
+ * │ Knowledge      │ edit      │ edit     │ edit      │ none     │ none   │
+ * │ Team           │ edit      │ edit     │ none      │ none     │ none   │
+ * │ Settings       │ edit      │ edit     │ none      │ none     │ none   │
+ * └────────────────┴───────────┴──────────┴───────────┴──────────┴────────┘
  */
 export const ROLE_DEFAULT_PERMISSIONS: Record<string, ModulePermissions> = {
   owner: {
     dashboard: "edit", industry_insights: "edit",
-    content_library: "edit", ai_assistant: "edit", content_generator: "edit", design_brief: "edit", knowledge_base: "edit",
+    content_library: "edit", ai_assistant: "edit", content_generator: "edit", content_review: "edit", design_brief: "edit", knowledge_base: "edit",
     team: "edit", settings: "edit",
   },
   admin: {
     dashboard: "edit", industry_insights: "edit",
-    content_library: "edit", ai_assistant: "edit", content_generator: "edit", design_brief: "edit", knowledge_base: "edit",
+    content_library: "edit", ai_assistant: "edit", content_generator: "edit", content_review: "edit", design_brief: "edit", knowledge_base: "edit",
     team: "edit", settings: "edit",
   },
   marketing: {
     dashboard: "edit", industry_insights: "edit",
-    content_library: "edit", ai_assistant: "edit", content_generator: "edit", design_brief: "edit", knowledge_base: "edit",
+    content_library: "edit", ai_assistant: "edit", content_generator: "edit", content_review: "edit", design_brief: "edit", knowledge_base: "edit",
     team: "none", settings: "none",
   },
   sales: {
     dashboard: "edit", industry_insights: "view",
-    content_library: "edit", ai_assistant: "edit", content_generator: "none", design_brief: "none", knowledge_base: "none",
+    content_library: "edit", ai_assistant: "edit", content_generator: "none", content_review: "edit", design_brief: "none", knowledge_base: "none",
     team: "none", settings: "none",
   },
   others: {
     dashboard: "edit", industry_insights: "view",
-    content_library: "edit", ai_assistant: "edit", content_generator: "none", design_brief: "none", knowledge_base: "none",
+    content_library: "edit", ai_assistant: "edit", content_generator: "none", content_review: "edit", design_brief: "none", knowledge_base: "none",
     team: "none", settings: "none",
   },
   // ── Legacy aliases ─────────────────────────────────────
   editor: {
     dashboard: "edit", industry_insights: "edit",
-    content_library: "edit", ai_assistant: "edit", content_generator: "edit", design_brief: "edit", knowledge_base: "edit",
+    content_library: "edit", ai_assistant: "edit", content_generator: "edit", content_review: "edit", design_brief: "edit", knowledge_base: "edit",
     team: "none", settings: "none",
   },
   member: {
     dashboard: "edit", industry_insights: "edit",
-    content_library: "edit", ai_assistant: "edit", content_generator: "edit", design_brief: "edit", knowledge_base: "edit",
+    content_library: "edit", ai_assistant: "edit", content_generator: "edit", content_review: "edit", design_brief: "edit", knowledge_base: "edit",
     team: "none", settings: "none",
   },
   viewer: {
     dashboard: "view", industry_insights: "view",
-    content_library: "view", ai_assistant: "view", content_generator: "none", design_brief: "none", knowledge_base: "none",
+    content_library: "view", ai_assistant: "view", content_generator: "none", content_review: "none", design_brief: "none", knowledge_base: "none",
     team: "none", settings: "none",
   },
 };
