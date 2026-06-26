@@ -245,7 +245,7 @@ PUBLICATION-READY OUTPUT (mandatory — content must be publishable as-is):
           ...(useWebSearch ? { "anthropic-beta": ANTHROPIC_WEB_SEARCH_BETA } : {}),
         },
         body: JSON.stringify({
-          model: (useWebSearch || longFormFormats.has(format)) ? "claude-sonnet-4-6" : "claude-haiku-4-5-20251001",
+          model: "claude-sonnet-4-6",
           max_tokens: maxTokens,
           system: systemPrompt,
           messages: [{ role: "user", content: `Write a ${format.replace(/_/g, " ")} about: ${topic}` }],

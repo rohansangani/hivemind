@@ -72,7 +72,7 @@ Return ONLY the refined, publication-ready content — no [Source: ...] tags, no
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
       body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
+        model: "claude-sonnet-4-6",
         max_tokens: 3000,
         system: systemPrompt,
         messages: [{ role: "user", content: `Original content:\n${content}\n\nInstruction to apply: ${instruction}` }],

@@ -100,7 +100,7 @@ You may still use [Source: X] citations in your explanatory text OUTSIDE the sni
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
+        model: "claude-sonnet-4-6",
         max_tokens: 1500,
         system: systemPrompt,
         messages,
