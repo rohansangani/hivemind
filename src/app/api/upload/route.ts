@@ -58,6 +58,7 @@ export async function POST(req: NextRequest) {
           tokenPayload: JSON.stringify({ userId: decoded.userId, orgId: decoded.orgId }),
         };
       },
+      onUploadCompleted: async () => {},
     });
     return NextResponse.json(jsonResponse);
   } catch (err) {
