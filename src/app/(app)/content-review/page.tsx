@@ -95,7 +95,12 @@ export default function ContentReviewPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content, contentType }),
       });
-      const data = await res.json();
+      const text = await res.text();
+      let data;
+      try { data = JSON.parse(text); } catch {
+        setError(`Server error (${res.status}) — please try again.`);
+        return;
+      }
       if (!res.ok) { setError(data.error || "Review failed"); return; }
       setReview(data.review);
       const dims = data.review?.dimensions;
@@ -103,7 +108,7 @@ export default function ContentReviewPage() {
         const first = DIM_ORDER.find(d => dims[d]?.issues?.length > 0);
         setActiveDim(first || DIM_ORDER[0]);
       }
-    } catch { setError("Network error — please try again."); }
+    } catch (e) { setError(e instanceof Error ? e.message : "Network error — please try again."); }
     finally { setReviewing(false); }
   };
 

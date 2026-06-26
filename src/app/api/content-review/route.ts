@@ -1,4 +1,4 @@
-export const maxDuration = 90;
+export const maxDuration = 60;
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
@@ -12,7 +12,15 @@ export async function POST(req: NextRequest) {
     if (!token) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     const decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as { userId: string; orgId: string };
 
-    const { content, contentType } = await req.json();
+    let content: string;
+    let contentType: string;
+    try {
+      const body = await req.json();
+      content = body.content;
+      contentType = body.contentType || "general";
+    } catch {
+      return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+    }
     if (!content || typeof content !== "string" || content.trim().length < 50) {
       return NextResponse.json({ error: "Content must be at least 50 characters" }, { status: 400 });
     }
