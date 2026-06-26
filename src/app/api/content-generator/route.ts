@@ -186,7 +186,9 @@ KEYWORD TARGETING:
 - Secondary keywords to weave in naturally: ${secondaryKeywords?.length ? secondaryKeywords.join(", ") : "none"}
 - Do NOT force keywords — placement must read naturally` : "";
 
-      const lengthInstruction = length && length !== "default" ? `Content length preference: ${length}.` : "";
+      const lengthInstruction = length && length !== "default"
+        ? `STRICT WORD COUNT: The content MUST be approximately ${length}. This is a hard constraint, not a suggestion. Count your words and stay within ±10% of the target. If the target is "1000 words", write 900–1100 words — no more. Prioritize depth over breadth if needed to stay within the limit.`
+        : "";
 
       const systemPrompt = buildGroundedSystemPrompt(
         "a world-class content marketing writer",
@@ -234,29 +236,52 @@ PUBLICATION-READY OUTPUT (mandatory — content must be publishable as-is):
         blog: 12000, thought_leadership: 16000, custom: 3000,
       };
       const longFormFormats = new Set(["blog", "thought_leadership"]);
-      const maxTokens = maxTokensForFormat[format] ?? 1500;
+      let maxTokens = maxTokensForFormat[format] ?? 1500;
 
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-          ...(useWebSearch ? { "anthropic-beta": ANTHROPIC_WEB_SEARCH_BETA } : {}),
-        },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-6",
-          max_tokens: maxTokens,
-          system: systemPrompt,
-          messages: [{ role: "user", content: `Write a ${format.replace(/_/g, " ")} about: ${topic}` }],
-          ...(useWebSearch ? { tools: [ANTHROPIC_WEB_SEARCH_TOOL] } : {}),
-        }),
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error?.message || `Claude API error ${response.status}`);
+      if (length && length !== "default" && longFormFormats.has(format)) {
+        const wordMatch = length.match(/(\d+)/);
+        if (wordMatch) {
+          const targetWords = parseInt(wordMatch[1], 10);
+          const tokenCap = Math.ceil(targetWords * 1.5) + 500;
+          maxTokens = Math.min(maxTokens, tokenCap);
+        }
       }
+
+      let data: Record<string, unknown> | undefined;
+      const maxRetries = 2;
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        const response = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+            ...(useWebSearch ? { "anthropic-beta": ANTHROPIC_WEB_SEARCH_BETA } : {}),
+          },
+          body: JSON.stringify({
+            model: "claude-sonnet-4-6",
+            max_tokens: maxTokens,
+            system: systemPrompt,
+            messages: [{ role: "user", content: `Write a ${format.replace(/_/g, " ")} about: ${topic}` }],
+            ...(useWebSearch ? { tools: [ANTHROPIC_WEB_SEARCH_TOOL] } : {}),
+          }),
+        });
+
+        const raw = await response.text();
+        try {
+          data = JSON.parse(raw);
+        } catch {
+          if (attempt < maxRetries) { await new Promise(r => setTimeout(r, 1000 * (attempt + 1))); continue; }
+          throw new Error(`Claude API returned non-JSON (${response.status}): ${raw.slice(0, 120)}`);
+        }
+
+        if (!response.ok) {
+          if (response.status >= 500 && attempt < maxRetries) { await new Promise(r => setTimeout(r, 1000 * (attempt + 1))); continue; }
+          throw new Error((data as Record<string, Record<string, string>>)?.error?.message || `Claude API error ${response.status}`);
+        }
+        break;
+      }
+      if (!data) throw new Error("Claude API failed after retries");
 
       const usage = extractAnthropicUsage(data);
       if (usage && orgId) {

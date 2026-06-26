@@ -255,6 +255,9 @@ export default function ContentGeneratorPage() {
   const [incorporatingIdx, setIncorporatingIdx] = useState<number | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
+  // Word count target
+  const [targetWordCount, setTargetWordCount] = useState("");
+
   // Web search toggle
   const [webSearch, setWebSearch] = useState(false);
 
@@ -455,7 +458,7 @@ export default function ContentGeneratorPage() {
       const res = await fetch("/api/content-generator", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic, formats: selectedFormats, customFormatLabel: customFormatLabel || null, targetProduct, targetMarket, targetPersona, positionAgainst, toneOverride, keyPoints, focusKeyword: focusKeyword || null, secondaryKeywords: secondaryKeywords || [], webSearch }),
+        body: JSON.stringify({ topic, formats: selectedFormats, customFormatLabel: customFormatLabel || null, targetProduct, targetMarket, targetPersona, positionAgainst, toneOverride, keyPoints, focusKeyword: focusKeyword || null, secondaryKeywords: secondaryKeywords || [], length: targetWordCount ? targetWordCount + " words" : null, webSearch }),
       });
       const text = await res.text();
       let data: Record<string, unknown>;
@@ -873,9 +876,16 @@ export default function ContentGeneratorPage() {
                           </div>
                           <p className="text-[10px] text-[var(--hm-text-tertiary)] mt-1.5">Hover a tone to see its description. Active: <span className="font-medium text-[var(--hm-text-secondary)]">{toneOverride === "default" ? "Brand default" : toneOverride}</span></p>
                         </div>
-                        <div>
-                          <label className="block text-xs text-[var(--hm-text-secondary)] mb-1 font-medium">Key points to include <span className="font-normal text-[var(--hm-text-tertiary)]">(optional)</span></label>
-                          <textarea value={keyPoints} onChange={e => setKeyPoints(e.target.value)} placeholder="Any specific stats, proof points, or themes…" className="w-full h-[56px] resize-y text-[12px]" />
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs text-[var(--hm-text-secondary)] mb-1 font-medium">Key points to include <span className="font-normal text-[var(--hm-text-tertiary)]">(optional)</span></label>
+                            <textarea value={keyPoints} onChange={e => setKeyPoints(e.target.value)} placeholder="Any specific stats, proof points, or themes…" className="w-full h-[56px] resize-y text-[12px]" />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-[var(--hm-text-secondary)] mb-1 font-medium">Word count <span className="font-normal text-[var(--hm-text-tertiary)]">(optional)</span></label>
+                            <input type="number" min={100} max={5000} step={100} value={targetWordCount} onChange={e => setTargetWordCount(e.target.value)} placeholder="e.g. 1000" className="w-full h-[56px] text-[12px]" />
+                            <p className="text-[10px] text-[var(--hm-text-tertiary)] mt-1">Leave empty for default range. AI will target ±10%.</p>
+                          </div>
                         </div>
                       </div>
                     </>
