@@ -202,12 +202,14 @@ ${useWebSearch ? "You have access to a web search tool — use it to find curren
 
 CONTENT GENERATION RULES (these override the grounding contract above for this task):
 - You are writing marketing content, NOT answering a factual question. You MUST produce the full requested format.
+- ALWAYS generate the COMPLETE article in a single response. Do NOT stop mid-sentence, mid-section, or mid-article. Continue generating until the last sentence of the conclusion or CTA is written. Never apologize for an incomplete response.
 - Use your complete writing expertise — industry knowledge, narrative craft, structure — to write full, complete content.
 - For company-specific facts (exact stats, product feature names, customer case studies): only use what is in the knowledge base.
 - For general industry insight, trends, writing structure, examples, and editorial judgement: write freely without restriction.
 - NEVER stop early because the knowledge base lacks data. Always produce a complete, publication-ready piece.
 - Mirror the brand voice and preferred language as specified.
 - Return ONLY the finished content — no meta-commentary, no preamble.
+- If the user asks a follow-up question (e.g. "how did you evaluate these examples?"), answer it directly. Do NOT restart or rewrite the article.
 
 PUBLICATION-READY OUTPUT (mandatory — content must be publishable as-is):
 1. ZERO INTERNAL LEAKAGE: Do not include any internal source tags like [Source: ...], knowledge gap warnings, ⚠ markers, or meta-commentary (e.g. "not available in knowledge base"). If data is unavailable, omit the claim or soften the language — never flag it inline.
@@ -216,7 +218,12 @@ PUBLICATION-READY OUTPUT (mandatory — content must be publishable as-is):
 4. BACK UP EVERY CLAIM: Every quantitative claim must be followed immediately by a specific figure and source from the knowledge base. If no figure exists, replace the lead-in with softer language (e.g. "Customer expectations have shifted" instead of "The numbers back this up").
 5. FIRST-PARTY DATA ATTRIBUTION: When citing the company's own internal data or platform stats, always frame it with "based on our analysis" or "from our platform data" so it reads as authoritative first-hand experience, not unverified.
 6. TL;DR STRUCTURE: If the format includes a TL;DR, lead with the article's central argument or thesis, not with statistics. Orient the reader on what they'll believe by the end — it should read like a short story opener, not a summary slide.
-7. SEO / AEO: For blog and thought leadership formats, format the primary definition as a clean, self-contained 40-60 word paragraph under its own heading (optimized for Google featured snippets). Include an FAQ section at the end with 4-5 questions a reader would naturally search.`
+7. SEO / AEO: For blog and thought leadership formats, format the primary definition as a clean, self-contained 40-60 word paragraph under its own heading (optimized for Google featured snippets). Include an FAQ section at the end with 4-5 questions a reader would naturally search. Where a comparison of multiple items is involved, include a summary table for skimmability.
+8. SECTION HEADINGS: Every section heading must include the primary or secondary keyword wherever naturally possible. Avoid curiosity-driven or media-style headings (e.g. "The Stack Is Broken. Here's Why.") for blog posts intended to rank. Each heading should clearly describe the content of its section.
+9. THEME CONSISTENCY: Maintain a consistent central theme throughout the article. Every section must stay tethered to the core topic. Do not drift into adjacent topics without explicitly bridging them to the central argument.
+10. STRUCTURAL VARIETY: Do not repeat the same paragraph structure across sections. Avoid the pattern: identify problem, explain why it matters, introduce solution. After using it once, vary the approach: lead with an insight, a counterpoint, a comparison, or a data point.
+11. ACTIONABLE ANALYSIS: After making a claim or observation about an example, go one step further and tell the reader what they should take away or do differently. Analysis should be instructional, not just observational.
+12. AVOID FILLER PHRASES: Never use "strategic lever," "loyalty engine," "frictionless post-purchase journey," or "strategic driver." Avoid abstract noun-stacking. Argue from cause and reasoning, not from volume thresholds.`
       );
 
       // Use format-appropriate token budget — short formats don't need 4096 tokens
@@ -224,8 +231,9 @@ PUBLICATION-READY OUTPUT (mandatory — content must be publishable as-is):
         twitter: 200, ad_copy: 400, email_outreach: 500,
         linkedin: 700, ceo_linkedin: 700, meta_post: 700, one_pager: 800,
         email_marketing: 900, press_release: 1200, landing_page: 1500,
-        blog: 6000, thought_leadership: 8000, custom: 3000,
+        blog: 12000, thought_leadership: 16000, custom: 3000,
       };
+      const longFormFormats = new Set(["blog", "thought_leadership"]);
       const maxTokens = maxTokensForFormat[format] ?? 1500;
 
       const response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -237,8 +245,7 @@ PUBLICATION-READY OUTPUT (mandatory — content must be publishable as-is):
           ...(useWebSearch ? { "anthropic-beta": ANTHROPIC_WEB_SEARCH_BETA } : {}),
         },
         body: JSON.stringify({
-          // Web search requires Sonnet or above; use Sonnet when enabled
-          model: useWebSearch ? "claude-sonnet-4-6" : "claude-haiku-4-5-20251001",
+          model: (useWebSearch || longFormFormats.has(format)) ? "claude-sonnet-4-6" : "claude-haiku-4-5-20251001",
           max_tokens: maxTokens,
           system: systemPrompt,
           messages: [{ role: "user", content: `Write a ${format.replace(/_/g, " ")} about: ${topic}` }],
