@@ -17,7 +17,8 @@ export type AIFeature =
   | "knowledge"
   | "industry_insights"
   | "setup_wizard"
-  | "skills";
+  | "skills"
+  | "email_sequences";
 
 export const FEATURE_LABELS: Record<AIFeature, string> = {
   assistant: "AI Assistant",
@@ -30,6 +31,7 @@ export const FEATURE_LABELS: Record<AIFeature, string> = {
   industry_insights: "Industry Insights",
   setup_wizard: "Setup Wizard",
   skills: "Skills Engine",
+  email_sequences: "Email Sequences",
 };
 
 export interface TokenUsageData {
