@@ -328,7 +328,7 @@ export default function EmailSequencesPage() {
   const cardCls = "rounded-xl border border-[var(--hm-border)] bg-[var(--hm-bg-primary)] p-5";
 
   return (
-    <div className="max-w-[1100px] mx-auto">
+    <div className="flex-1 overflow-y-auto p-6"><div className="max-w-[1100px] mx-auto">
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-[22px] font-semibold text-[var(--hm-text-primary)]">Email Sequences</h1>
@@ -741,6 +741,6 @@ export default function EmailSequencesPage() {
           </div>
         </div>
       )}
-    </div>
+    </div></div>
   );
 }
