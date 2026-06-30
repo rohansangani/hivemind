@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
     // may not be present on a cached/stale Prisma client).
     const [org, products, markets, personas, competitors, brandProfile, skills, rawLogs, knowledgeEntries] = await Promise.all([
       db.organization.findUnique({ where: { id: decoded.orgId } }),
-      db.product.findMany({ where: { organizationId: decoded.orgId }, include: { markets: { include: { market: true } } } }),
+      db.product.findMany({ where: { organizationId: decoded.orgId }, include: { markets: { include: { market: true } }, personas: { include: { persona: true } }, competitors: { include: { competitor: true } } } }),
       db.market.findMany({ where: { organizationId: decoded.orgId } }),
       db.persona.findMany({ where: { organizationId: decoded.orgId } }),
       db.competitor.findMany({ where: { organizationId: decoded.orgId } }),
@@ -127,6 +127,8 @@ export async function GET(req: NextRequest) {
     const productsWithMarkets = products.map(p => ({
       ...p,
       marketNames: p.markets.map((pm: { market: { name: string } }) => pm.market.name),
+      personaNames: p.personas.map((pp: { persona: { title: string } }) => pp.persona.title),
+      competitorNames: p.competitors.map((pc: { competitor: { name: string } }) => pc.competitor.name),
     }));
 
     return NextResponse.json({

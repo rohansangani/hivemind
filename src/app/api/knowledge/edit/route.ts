@@ -21,22 +21,34 @@ export async function PUT(req: NextRequest) {
     }
 
     if (section === "product_add") {
-      const { name, description, category, classification, scope, features, marketNames } = body;
-      const product = await db.product.create({ data: { name, description, category, classification, scope, features: features || [], organizationId: decoded.orgId } });
+      const { name, description, category, classification, scope, features, marketNames, personaNames, competitorNames, bundleParentId } = body;
+      const product = await db.product.create({ data: { name, description, category, classification, scope, features: features || [], bundleParentId: bundleParentId || null, organizationId: decoded.orgId } });
       if (marketNames?.length) {
         const mkts = await db.market.findMany({ where: { organizationId: decoded.orgId, name: { in: marketNames } } });
         for (const m of mkts) {
           await db.productMarket.create({ data: { productId: product.id, marketId: m.id } });
         }
       }
+      if (personaNames?.length) {
+        const personas = await db.persona.findMany({ where: { organizationId: decoded.orgId, title: { in: personaNames } } });
+        for (const p of personas) {
+          await db.productPersona.create({ data: { productId: product.id, personaId: p.id } });
+        }
+      }
+      if (competitorNames?.length) {
+        const comps = await db.competitor.findMany({ where: { organizationId: decoded.orgId, name: { in: competitorNames } } });
+        for (const c of comps) {
+          await db.productCompetitor.create({ data: { productId: product.id, competitorId: c.id } });
+        }
+      }
       return NextResponse.json({ success: true });
     }
 
     if (section === "product_update") {
-      const { id, name, description, category, classification, scope, features, marketNames } = body;
+      const { id, name, description, category, classification, scope, features, marketNames, personaNames, competitorNames, bundleParentId } = body;
       const existingProduct = await db.product.findFirst({ where: { id, organizationId: decoded.orgId } });
       if (!existingProduct) return NextResponse.json({ error: "Not found" }, { status: 404 });
-      await db.product.update({ where: { id }, data: { name, description, category, classification, scope, features: features || [] } });
+      await db.product.update({ where: { id }, data: { name, description, category, classification, scope, features: features || [], bundleParentId: bundleParentId !== undefined ? (bundleParentId || null) : undefined } });
       if (marketNames !== undefined) {
         await db.productMarket.deleteMany({ where: { productId: id } });
         if (marketNames.length) {
@@ -46,12 +58,33 @@ export async function PUT(req: NextRequest) {
           }
         }
       }
+      if (personaNames !== undefined) {
+        await db.productPersona.deleteMany({ where: { productId: id } });
+        if (personaNames.length) {
+          const personas = await db.persona.findMany({ where: { organizationId: decoded.orgId, title: { in: personaNames } } });
+          for (const p of personas) {
+            await db.productPersona.create({ data: { productId: id, personaId: p.id } });
+          }
+        }
+      }
+      if (competitorNames !== undefined) {
+        await db.productCompetitor.deleteMany({ where: { productId: id } });
+        if (competitorNames.length) {
+          const comps = await db.competitor.findMany({ where: { organizationId: decoded.orgId, name: { in: competitorNames } } });
+          for (const c of comps) {
+            await db.productCompetitor.create({ data: { productId: id, competitorId: c.id } });
+          }
+        }
+      }
       return NextResponse.json({ success: true });
     }
 
     if (section === "product_delete") {
       const { id } = body;
+      await db.productPersona.deleteMany({ where: { productId: id } });
+      await db.productCompetitor.deleteMany({ where: { productId: id } });
       await db.productMarket.deleteMany({ where: { productId: id } });
+      await db.product.updateMany({ where: { bundleParentId: id }, data: { bundleParentId: null } });
       await db.product.deleteMany({ where: { id, organizationId: decoded.orgId } });
       return NextResponse.json({ success: true });
     }

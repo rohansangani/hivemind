@@ -126,9 +126,14 @@ model Product {
   scope           String   @default("global")
   features        String[]
   useCases        String?
+  bundleParentId  String?
+  bundleParent    Product?  @relation("ProductBundle", fields: [bundleParentId], references: [id])
+  bundleChildren  Product[] @relation("ProductBundle")
   organizationId  String
   organization    Organization @relation(fields: [organizationId], references: [id])
   markets         ProductMarket[]
+  personas        ProductPersona[]
+  competitors     ProductCompetitor[]
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }
@@ -139,6 +144,22 @@ model ProductMarket {
   product   Product @relation(fields: [productId], references: [id])
   market    Market  @relation(fields: [marketId], references: [id])
   @@id([productId, marketId])
+}
+
+model ProductPersona {
+  productId String
+  personaId String
+  product   Product @relation(fields: [productId], references: [id])
+  persona   Persona @relation(fields: [personaId], references: [id])
+  @@id([productId, personaId])
+}
+
+model ProductCompetitor {
+  productId    String
+  competitorId String
+  product      Product    @relation(fields: [productId], references: [id])
+  competitor   Competitor @relation(fields: [competitorId], references: [id])
+  @@id([productId, competitorId])
 }
 
 model Persona {
@@ -153,6 +174,7 @@ model Persona {
   contentPrefs    String[]
   organizationId  String
   organization    Organization @relation(fields: [organizationId], references: [id])
+  products        ProductPersona[]
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }
@@ -166,6 +188,7 @@ model Competitor {
   differentiator  String?
   organizationId  String
   organization    Organization @relation(fields: [organizationId], references: [id])
+  products        ProductCompetitor[]
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }
@@ -237,6 +260,7 @@ model ContentAsset {
   productTags      String[]
   marketTags       String[]
   personaTags      String[]
+  competitorTags   String[]
   customTags       String[]
   brandScore       Float?
   scoreVoice       Float?

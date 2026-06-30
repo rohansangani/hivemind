@@ -9,7 +9,7 @@ interface Asset {
   contentType: string; brandScore: number | null; scoreVoice: number | null; scoreTerminology: number | null;
   scoreMessaging: number | null; scorePersonality: number | null; scoreCompleteness: number | null;
   aiSummary: string | null; scoreSuggestions: string[];
-  productTags: string[]; marketTags: string[]; uploadedBy: { name: string }; createdAt: string; scoreStatus: string;
+  productTags: string[]; marketTags: string[]; personaTags: string[]; competitorTags: string[]; uploadedBy: { name: string }; createdAt: string; scoreStatus: string;
   intelligenceStatus: string; analyzedAt: string | null;
 }
 
@@ -34,8 +34,10 @@ export default function ContentLibraryPage() {
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState(false);
   const [avgScore, setAvgScore] = useState<number | null>(null);
-  const [products, setProducts] = useState<{ name: string }[]>([]);
+  const [products, setProducts] = useState<{ name: string; marketNames?: string[]; personaNames?: string[]; competitorNames?: string[] }[]>([]);
   const [markets, setMarkets] = useState<{ name: string }[]>([]);
+  const [personas, setPersonas] = useState<{ title: string }[]>([]);
+  const [competitors, setCompetitors] = useState<{ name: string }[]>([]);
   const [view, setView] = useState<"tile" | "list" | "grouped">("tile");
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [showUpload, setShowUpload] = useState(false);
@@ -67,6 +69,8 @@ export default function ContentLibraryPage() {
   const [editContentType, setEditContentType] = useState("");
   const [editProductTags, setEditProductTags] = useState<string[]>([]);
   const [editMarketTags, setEditMarketTags] = useState<string[]>([]);
+  const [editPersonaTags, setEditPersonaTags] = useState<string[]>([]);
+  const [editCompetitorTags, setEditCompetitorTags] = useState<string[]>([]);
   const [savingEdit, setSavingEdit] = useState(false);
 
   // Auto-review polling state
@@ -121,6 +125,8 @@ export default function ContentLibraryPage() {
         setAvgScore(d.avgScore);
         setProducts(d.products || []);
         setMarkets(d.markets || []);
+        setPersonas(d.personas || []);
+        setCompetitors(d.competitors || []);
         setPagination(d.pagination || null);
       })
       .catch(() => setFetchError(true))
@@ -209,7 +215,11 @@ export default function ContentLibraryPage() {
         }
       } catch (e) { console.error(e); setUploadError((e as Error)?.message || "Upload failed. Please try again."); setUploading(false); setUploadProgress(""); return; }
     }
-    const payload = { files: [{ name: uploadName, fileName: actualFileName || uploadName.toLowerCase().replace(/\s+/g, "-") + "." + uploadType, fileUrl, fileSize, fileHash, fileType: uploadType, contentType: uploadContentType, productTags: uploadProduct ? [uploadProduct] : [], marketTags: uploadMarket ? [uploadMarket] : [] }] };
+    const selectedProd = uploadProduct ? products.find(p => p.name === uploadProduct) : null;
+    const autoPersonaTags = selectedProd?.personaNames || [];
+    const autoCompetitorTags = selectedProd?.competitorNames || [];
+    const autoMarketTags = uploadMarket ? [uploadMarket] : selectedProd?.marketNames || [];
+    const payload = { files: [{ name: uploadName, fileName: actualFileName || uploadName.toLowerCase().replace(/\s+/g, "-") + "." + uploadType, fileUrl, fileSize, fileHash, fileType: uploadType, contentType: uploadContentType, productTags: uploadProduct ? [uploadProduct] : [], marketTags: autoMarketTags, personaTags: autoPersonaTags, competitorTags: autoCompetitorTags }] };
     await saveAsset(payload);
   };
 
@@ -220,6 +230,8 @@ export default function ContentLibraryPage() {
     setEditContentType(a.contentType);
     setEditProductTags([...a.productTags]);
     setEditMarketTags([...a.marketTags]);
+    setEditPersonaTags([...(a.personaTags || [])]);
+    setEditCompetitorTags([...(a.competitorTags || [])]);
     setBrandReview(null);
     setExpandedSection(null);
 
@@ -274,7 +286,7 @@ export default function ContentLibraryPage() {
   const saveAssetEdit = async () => {
     if (!panelAsset) return;
     setSavingEdit(true);
-    try { await fetch("/api/content-library/manage", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: panelAsset.id, name: editName, contentType: editContentType, productTags: editProductTags, marketTags: editMarketTags }) }); fetchData(); setPanelTab("score"); } catch { alert("Failed to save"); }
+    try { await fetch("/api/content-library/manage", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: panelAsset.id, name: editName, contentType: editContentType, productTags: editProductTags, marketTags: editMarketTags, personaTags: editPersonaTags, competitorTags: editCompetitorTags }) }); fetchData(); setPanelTab("score"); } catch { alert("Failed to save"); }
     finally { setSavingEdit(false); }
   };
 
@@ -554,6 +566,8 @@ export default function ContentLibraryPage() {
                       <div className="flex flex-wrap gap-1 mt-2 mb-2">
                         {a.productTags.map((t) => <span key={t} className="text-[9px] px-1.5 py-0.5 bg-blue-50 text-[#4361ee] rounded-md">{t}</span>)}
                         {a.marketTags.map((t) => <span key={t} className="text-[9px] px-1.5 py-0.5 bg-[var(--hm-bg-secondary)] text-[var(--hm-text-tertiary)] rounded-md">{t}</span>)}
+                        {(a.personaTags || []).map((t) => <span key={t} className="text-[9px] px-1.5 py-0.5 bg-purple-50 text-purple-600 rounded-md">{t}</span>)}
+                        {(a.competitorTags || []).map((t) => <span key={t} className="text-[9px] px-1.5 py-0.5 bg-red-50 text-red-600 rounded-md">{t}</span>)}
                         {a.contentType && <span className="text-[9px] px-1.5 py-0.5 bg-[var(--hm-bg-secondary)] text-[var(--hm-text-tertiary)] rounded-md capitalize">{a.contentType.replace(/_/g, " ")}</span>}
                       </div>
                       <div className="flex items-center justify-between">
@@ -699,6 +713,8 @@ export default function ContentLibraryPage() {
                                   <div className="flex flex-wrap gap-1 mt-2 mb-2">
                                     {a.productTags.map((t) => <span key={t} className="text-[9px] px-1.5 py-0.5 bg-blue-50 text-[#4361ee] rounded-md">{t}</span>)}
                                     {a.marketTags.map((t) => <span key={t} className="text-[9px] px-1.5 py-0.5 bg-[var(--hm-bg-secondary)] text-[var(--hm-text-tertiary)] rounded-md">{t}</span>)}
+                                    {(a.personaTags || []).map((t) => <span key={t} className="text-[9px] px-1.5 py-0.5 bg-purple-50 text-purple-600 rounded-md">{t}</span>)}
+                                    {(a.competitorTags || []).map((t) => <span key={t} className="text-[9px] px-1.5 py-0.5 bg-red-50 text-red-600 rounded-md">{t}</span>)}
                                     {a.contentType && <span className="text-[9px] px-1.5 py-0.5 bg-[var(--hm-bg-secondary)] text-[var(--hm-text-tertiary)] rounded-md capitalize">{a.contentType.replace(/_/g, " ")}</span>}
                                   </div>
                                   <div className="flex items-center justify-between">
@@ -760,6 +776,8 @@ export default function ContentLibraryPage() {
                         {panelAsset.contentType && <span className="text-[9px] px-1.5 py-0.5 bg-[var(--hm-bg-secondary)] text-[var(--hm-text-tertiary)] rounded-md capitalize">{panelAsset.contentType.replace(/_/g, " ")}</span>}
                         {panelAsset.productTags.map(t => <span key={t} className="text-[9px] px-1.5 py-0.5 bg-blue-50 text-[#4361ee] rounded-md">{t}</span>)}
                         {panelAsset.marketTags.map(t => <span key={t} className="text-[9px] px-1.5 py-0.5 bg-[var(--hm-bg-secondary)] text-[var(--hm-text-tertiary)] rounded-md">{t}</span>)}
+                        {(panelAsset.personaTags || []).map(t => <span key={t} className="text-[9px] px-1.5 py-0.5 bg-purple-50 text-purple-600 rounded-md">{t}</span>)}
+                        {(panelAsset.competitorTags || []).map(t => <span key={t} className="text-[9px] px-1.5 py-0.5 bg-red-50 text-red-600 rounded-md">{t}</span>)}
                       </div>
                     )}
                   </div>
@@ -1020,6 +1038,19 @@ export default function ContentLibraryPage() {
                       {markets.map((m) => { const sel = editMarketTags.includes(m.name); return <button key={m.name} type="button" onClick={() => setEditMarketTags(sel ? editMarketTags.filter(x => x !== m.name) : [...editMarketTags, m.name])} className={"px-2.5 py-1 rounded-lg text-[11px] border transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] " + (sel ? "border-[#4361ee] bg-blue-50 text-[#4361ee] font-medium" : "border-[var(--hm-border)] text-[var(--hm-text-tertiary)] hover:border-[#4361ee]/50 hover:text-[#4361ee]")}>{m.name}</button>; })}
                     </div>
                   </div>
+                  {personas.length > 0 && <div>
+                    <label className="block text-xs text-[var(--hm-text-secondary)] mb-1 font-medium">Persona tags</label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {personas.map((p) => { const sel = editPersonaTags.includes(p.title); return <button key={p.title} type="button" onClick={() => setEditPersonaTags(sel ? editPersonaTags.filter(x => x !== p.title) : [...editPersonaTags, p.title])} className={"px-2.5 py-1 rounded-lg text-[11px] border transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7c3aed] " + (sel ? "border-[#7c3aed] bg-purple-50 text-[#7c3aed] font-medium" : "border-[var(--hm-border)] text-[var(--hm-text-tertiary)] hover:border-[#7c3aed]/50 hover:text-[#7c3aed]")}>{p.title}</button>; })}
+                    </div>
+                  </div>}
+                  {competitors.length > 0 && <div>
+                    <label className="block text-xs text-[var(--hm-text-secondary)] mb-1 font-medium">Competitor tags</label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {competitors.map((c) => { const sel = editCompetitorTags.includes(c.name); return <button key={c.name} type="button" onClick={() => setEditCompetitorTags(sel ? editCompetitorTags.filter(x => x !== c.name) : [...editCompetitorTags, c.name])} className={"px-2.5 py-1 rounded-lg text-[11px] border transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 " + (sel ? "border-red-400 bg-red-50 text-red-600 font-medium" : "border-[var(--hm-border)] text-[var(--hm-text-tertiary)] hover:border-red-400/50 hover:text-red-500")}>{c.name}</button>; })}
+                    </div>
+                  </div>}
+                  {editProductTags.length > 0 && (() => { const suggestedPersonas = [...new Set(editProductTags.flatMap(pt => products.find(p => p.name === pt)?.personaNames || []))].filter(n => !editPersonaTags.includes(n)); const suggestedCompetitors = [...new Set(editProductTags.flatMap(pt => products.find(p => p.name === pt)?.competitorNames || []))].filter(n => !editCompetitorTags.includes(n)); return (suggestedPersonas.length > 0 || suggestedCompetitors.length > 0) ? <div className="bg-blue-50 border border-blue-200 rounded-lg p-2.5"><p className="text-[10px] font-medium text-[#4361ee] mb-1.5">Suggested from product relationships</p><div className="flex flex-wrap gap-1">{suggestedPersonas.map(n => <button key={n} type="button" onClick={() => setEditPersonaTags([...editPersonaTags, n])} className="px-2 py-0.5 rounded text-[10px] border border-dashed border-purple-300 text-purple-600 hover:bg-purple-50">+ {n}</button>)}{suggestedCompetitors.map(n => <button key={n} type="button" onClick={() => setEditCompetitorTags([...editCompetitorTags, n])} className="px-2 py-0.5 rounded text-[10px] border border-dashed border-red-300 text-red-500 hover:bg-red-50">+ {n}</button>)}</div></div> : null; })()}
 
                   <div className="pt-3 border-t border-[var(--hm-border)] flex items-center justify-between">
                     <div className="flex gap-2">

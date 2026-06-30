@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
     else if (scoreRange === "below60") where.brandScore = { lt: 60, not: null };
     else if (scoreRange === "below50") where.brandScore = { lt: 50, not: null };
 
-    const [assets, total, avgResult, rawProducts, rawMarkets] = await Promise.all([
+    const [assets, total, avgResult, rawProducts, rawMarkets, rawPersonas, rawCompetitors] = await Promise.all([
       db.contentAsset.findMany({
         where,
         include: { uploadedBy: { select: { name: true } } },
@@ -52,14 +52,18 @@ export async function GET(req: NextRequest) {
         where: { organizationId: decoded.orgId, brandScore: { not: null } },
         _avg: { brandScore: true },
       }),
-      db.product.findMany({ where: { organizationId: decoded.orgId }, select: { name: true } }),
-      db.market.findMany({ where: { organizationId: decoded.orgId }, select: { name: true } }),
+      db.product.findMany({ where: { organizationId: decoded.orgId }, include: { markets: { include: { market: { select: { name: true } } } }, personas: { include: { persona: { select: { title: true } } } }, competitors: { include: { competitor: { select: { name: true } } } } } }),
+      db.market.findMany({ where: { organizationId: decoded.orgId }, select: { id: true, name: true } }),
+      db.persona.findMany({ where: { organizationId: decoded.orgId }, select: { id: true, title: true } }),
+      db.competitor.findMany({ where: { organizationId: decoded.orgId }, select: { id: true, name: true } }),
     ]);
-    const products = [...new Map(rawProducts.map((p) => [p.name, p])).values()];
+    const products = [...new Map(rawProducts.map((p) => [p.name, { name: p.name, marketNames: p.markets.map((pm: { market: { name: string } }) => pm.market.name), personaNames: p.personas.map((pp: { persona: { title: string } }) => pp.persona.title), competitorNames: p.competitors.map((pc: { competitor: { name: string } }) => pc.competitor.name) }])).values()];
     const markets = [...new Map(rawMarkets.map((m) => [m.name, m])).values()];
+    const personas = [...new Map(rawPersonas.map((p) => [p.title, p])).values()];
+    const competitors = [...new Map(rawCompetitors.map((c) => [c.name, c])).values()];
     const avgScore = avgResult._avg.brandScore !== null ? Math.round(avgResult._avg.brandScore ?? 0) : null;
 
-    return NextResponse.json({ assets, products, markets, avgScore, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } });
+    return NextResponse.json({ assets, products, markets, personas, competitors, avgScore, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } });
   } catch (error) {
     console.error("Content library error:", error);
     return NextResponse.json({ error: "Something went wrong" }, { status: 500 });
