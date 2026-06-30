@@ -149,8 +149,8 @@ export default function GuidedTour({ tour, onComplete, onDismiss }: GuidedTourPr
       {/* Tooltip */}
       <div
         ref={tooltipRef}
-        className={`absolute w-[360px] rounded-xl bg-[var(--hm-bg-primary)] border border-[var(--hm-border)] shadow-2xl transition-all duration-200 ${visible ? "opacity-100 scale-100" : "opacity-0 scale-95"}`}
-        style={{ top: pos.top, left: pos.left, pointerEvents: "auto" }}
+        className={`absolute w-[360px] rounded-xl border border-[#e2e4e9] shadow-2xl transition-all duration-200 ${visible ? "opacity-100 scale-100" : "opacity-0 scale-95"}`}
+        style={{ background: "#ffffff", top: pos.top, left: pos.left, pointerEvents: "auto" }}
       >
         {/* Header */}
         <div className="px-5 pt-4 pb-2">
