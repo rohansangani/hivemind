@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useUser } from "@/lib/UserContext";
-import { useTheme, type Theme } from "@/lib/useTheme";
 
 export default function SettingsPage() {
   const user = useUser();
@@ -28,7 +27,6 @@ export default function SettingsPage() {
     personality: 15,
     completeness: 15,
   });
-  const { theme, setTheme } = useTheme();
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState("");
   const [saveError, setSaveError] = useState("");
@@ -615,99 +613,6 @@ export default function SettingsPage() {
               </button>
               <FeedbackRow />
 
-              <hr className="my-6 border-[var(--hm-border)]" />
-
-              <h2 className="mb-1 text-[15px] font-semibold">Appearance</h2>
-              <p className="mb-4 text-[12px] text-[var(--hm-text-tertiary)]">
-                Choose your preferred colour theme. System follows your OS setting.
-              </p>
-              <div className="rounded-xl border border-[var(--hm-border)] bg-white p-5">
-                <div className="flex gap-2">
-                  {(
-                    [
-                      {
-                        id: "light",
-                        label: "Light",
-                        icon: (
-                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                            <circle
-                              cx="12"
-                              cy="12"
-                              r="4"
-                              stroke="currentColor"
-                              strokeWidth="1.5"
-                            />
-                            <path
-                              d="M12 2v2M12 20v2M2 12h2M20 12h2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"
-                              stroke="currentColor"
-                              strokeWidth="1.5"
-                              strokeLinecap="round"
-                            />
-                          </svg>
-                        ),
-                      },
-                      {
-                        id: "dark",
-                        label: "Dark",
-                        icon: (
-                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                            <path
-                              d="M21 12.79A9 9 0 1111.21 3a7 7 0 009.79 9.79z"
-                              stroke="currentColor"
-                              strokeWidth="1.5"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            />
-                          </svg>
-                        ),
-                      },
-                      {
-                        id: "system",
-                        label: "System",
-                        icon: (
-                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                            <rect
-                              x="2"
-                              y="3"
-                              width="20"
-                              height="14"
-                              rx="2"
-                              stroke="currentColor"
-                              strokeWidth="1.5"
-                            />
-                            <path
-                              d="M8 21h8M12 17v4"
-                              stroke="currentColor"
-                              strokeWidth="1.5"
-                              strokeLinecap="round"
-                            />
-                          </svg>
-                        ),
-                      },
-                    ] as { id: Theme; label: string; icon: React.ReactNode }[]
-                  ).map((opt) => (
-                    <button
-                      key={opt.id}
-                      onClick={() => setTheme(opt.id)}
-                      aria-pressed={theme === opt.id}
-                      className={
-                        "flex flex-1 flex-col items-center gap-2 rounded-xl border-2 py-4 transition-all " +
-                        (theme === opt.id
-                          ? "border-[#4361ee] bg-[var(--hm-accent-light)] text-[#4361ee]"
-                          : "border-[var(--hm-border)] text-[var(--hm-text-tertiary)] hover:border-[#4361ee]/40 hover:text-[var(--hm-text)]")
-                      }
-                    >
-                      {opt.icon}
-                      <span className="text-[12px] font-medium">{opt.label}</span>
-                      {theme === opt.id && (
-                        <span className="text-[10px] font-semibold uppercase tracking-wide text-[#4361ee]">
-                          Active
-                        </span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </div>
             </>
           )}
 
