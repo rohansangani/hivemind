@@ -21,11 +21,8 @@ export default function RootLayout({
         <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
         <script dangerouslySetInnerHTML={{ __html: `
           (function() {
-            try {
-              var t = localStorage.getItem('hm-theme');
-              if (t === 'dark') document.documentElement.classList.add('dark');
-              else if (t === 'light') document.documentElement.classList.add('light');
-            } catch(e) {}
+            document.documentElement.classList.remove('dark');
+            document.documentElement.classList.add('light');
           })();
         ` }} />
       </head>

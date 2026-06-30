@@ -11,6 +11,7 @@ interface SidebarProps {
   userRole: string;
   customPermissions?: Record<string, string> | null;
   onClose?: () => void;
+  onStartTour?: () => void;
 }
 
 // Module ID → route mapping
@@ -120,27 +121,9 @@ function NavIcon({ icon, active }: { icon: string; active: boolean }) {
   }
 }
 
-function SunIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="1.5" />
-      <path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M17.66 6.34l-1.41 1.41M4.93 19.07l1.41-1.41" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function MoonIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-export default function Sidebar({ userName, userRole, customPermissions, onClose }: SidebarProps) {
+export default function Sidebar({ userName, userRole, customPermissions, onClose, onStartTour }: SidebarProps) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
-  const [isDark, setIsDark] = useState(false);
 
   // Compute effective module permissions
   const effectivePerms = getEffectivePermissions(userRole, customPermissions ?? null);
@@ -164,28 +147,10 @@ export default function Sidebar({ userName, userRole, customPermissions, onClose
     return level === "view" || level === "edit";
   });
 
-  // Sync isDark with html class on mount
-  useEffect(() => {
-    const html = document.documentElement;
-    setIsDark(
-      html.classList.contains("dark") ||
-      (!html.classList.contains("light") && window.matchMedia("(prefers-color-scheme: dark)").matches)
-    );
-  }, []);
-
   // Close mobile drawer on route change
   useEffect(() => {
     onClose?.();
   }, [pathname]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  function toggleTheme() {
-    const html = document.documentElement;
-    const newIsDark = !isDark;
-    html.classList.remove("dark", "light");
-    html.classList.add(newIsDark ? "dark" : "light");
-    setIsDark(newIsDark);
-    try { localStorage.setItem("hm-theme", newIsDark ? "dark" : "light"); } catch {}
-  }
 
   const getInitials = (name: string) =>
     name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
@@ -277,6 +242,7 @@ export default function Sidebar({ userName, userRole, customPermissions, onClose
                 <Link
                   key={item.href}
                   href={item.href}
+                  data-tour={item.href.replace("/", "")}
                   title={!showLabels ? item.label : undefined}
                   aria-current={active ? "page" : undefined}
                   className={[
@@ -361,14 +327,6 @@ export default function Sidebar({ userName, userRole, customPermissions, onClose
                 {roleMeta.label}
               </span>
             </div>
-            <button
-              onClick={toggleTheme}
-              className="flex-shrink-0 p-1.5 rounded-md text-[var(--hm-text-tertiary)] hover:text-[var(--hm-text)] hover:bg-[var(--hm-surface-hover)] transition-colors"
-              aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
-              title={isDark ? "Switch to light mode" : "Switch to dark mode"}
-            >
-              {isDark ? <SunIcon /> : <MoonIcon />}
-            </button>
           </div>
         ) : (
           <div className="flex flex-col items-center gap-2 mb-2">
@@ -379,15 +337,28 @@ export default function Sidebar({ userName, userRole, customPermissions, onClose
             >
               {getInitials(userName)}
             </div>
-            <button
-              onClick={toggleTheme}
-              className="p-1.5 rounded-md text-[var(--hm-text-tertiary)] hover:text-[var(--hm-text)] hover:bg-[var(--hm-surface-hover)] transition-colors"
-              aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
-              title={isDark ? "Switch to light mode" : "Switch to dark mode"}
-            >
-              {isDark ? <SunIcon /> : <MoonIcon />}
-            </button>
           </div>
+        )}
+
+        {/* Platform Guide */}
+        {onStartTour && (
+          <button
+            onClick={onStartTour}
+            className={[
+              "w-full flex items-center gap-2 rounded-lg text-[12px] font-medium mb-1",
+              "text-[var(--hm-text-tertiary)] hover:text-[#4361ee] hover:bg-[#4361ee]/5 transition-colors duration-150",
+              showLabels ? "px-3 py-2" : "justify-center px-0 py-2",
+            ].join(" ")}
+            aria-label="Platform Guide"
+            title="Platform Guide"
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.3" />
+              <path d="M6.5 6.5a1.5 1.5 0 112.12 1.37c-.41.24-.62.63-.62 1.13" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+              <circle cx="8" cy="11.5" r="0.5" fill="currentColor" />
+            </svg>
+            {showLabels && <span>Platform Guide</span>}
+          </button>
         )}
 
         {/* Sign out */}

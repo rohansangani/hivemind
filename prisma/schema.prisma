@@ -75,6 +75,7 @@ model User {
   generatedContent GeneratedContent[]
   conversations    Conversation[]
   designBriefs     DesignBrief[]
+  tourProgress     TourProgress[]
 }
 
 model Account {
@@ -431,4 +432,20 @@ model DesignBrief {
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id])
   createdAt      DateTime @default(now())
+}
+
+// ═══════════════════════════════════════
+// GUIDED TOURS / ONBOARDING
+// ═══════════════════════════════════════
+
+model TourProgress {
+  id          String   @id @default(cuid())
+  tourId      String
+  status      String   @default("pending") // "pending" | "completed" | "dismissed"
+  completedAt DateTime?
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  createdAt   DateTime @default(now())
+
+  @@unique([userId, tourId])
 }

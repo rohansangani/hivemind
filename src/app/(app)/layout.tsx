@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Sidebar from "@/components/layout/Sidebar";
+import GuidedTour from "@/components/GuidedTour";
 import { UserContext, type AppUser } from "@/lib/UserContext";
+import { TOURS, getToursForRole, getPendingTours, type TourDef } from "@/lib/tours";
 
 // Map route segments to human-readable breadcrumb labels
 const ROUTE_LABELS: Record<string, string> = {
@@ -59,6 +61,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
 
+  // Tour state
+  const [activeTour, setActiveTour] = useState<TourDef | null>(null);
+  const [completedTourIds, setCompletedTourIds] = useState<string[]>([]);
+  const [tourLoaded, setTourLoaded] = useState(false);
+  const [newFeatureTour, setNewFeatureTour] = useState<TourDef | null>(null);
+
   // Close mobile sidebar on navigation
   useEffect(() => { setSidebarOpen(false); }, [pathname]);
 
@@ -70,6 +78,52 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         else router.push("/login");
       });
   }, [router]);
+
+  // Load tour progress once user is available
+  useEffect(() => {
+    if (!user || tourLoaded) return;
+    fetch("/api/onboarding")
+      .then(r => r.json())
+      .then(data => {
+        const done = (data.progress || [])
+          .filter((p: { status: string }) => p.status === "completed" || p.status === "dismissed")
+          .map((p: { tourId: string }) => p.tourId);
+        setCompletedTourIds(done);
+        setTourLoaded(true);
+
+        // Check for pending new-feature tours (single-step tours)
+        const roleTours = getToursForRole(user.role);
+        const pending = getPendingTours(roleTours, done);
+        const featureTour = pending.find(t => t.id.startsWith("feature-"));
+        if (featureTour) {
+          setNewFeatureTour(featureTour);
+        }
+      })
+      .catch(() => setTourLoaded(true));
+  }, [user, tourLoaded]);
+
+  const saveTourProgress = useCallback(async (tourId: string, status: "completed" | "dismissed") => {
+    setCompletedTourIds(prev => [...prev, tourId]);
+    setActiveTour(null);
+    setNewFeatureTour(null);
+    try {
+      await fetch("/api/onboarding", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tourId, status }),
+      });
+    } catch { /* ignore */ }
+  }, []);
+
+  const handleStartTour = useCallback(() => {
+    const platformTour = TOURS.find(t => t.id === "platform-welcome");
+    if (platformTour) setActiveTour(platformTour);
+  }, []);
+
+  const handleStartFeatureTour = useCallback((tour: TourDef) => {
+    setNewFeatureTour(null);
+    setActiveTour(tour);
+  }, []);
 
   if (!user) {
     return (
@@ -98,7 +152,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             sidebarOpen ? "translate-x-0" : "-translate-x-full"
           }`}
         >
-          <Sidebar userName={user.name || "User"} userRole={user.role} onClose={() => setSidebarOpen(false)} />
+          <Sidebar userName={user.name || "User"} userRole={user.role} onClose={() => setSidebarOpen(false)} onStartTour={handleStartTour} />
         </div>
 
         {/* ── Main content area ── */}
@@ -120,6 +174,31 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <span className="text-[15px] font-semibold text-[var(--hm-text)] tracking-wide">HiveMind</span>
           </div>
 
+          {/* New feature banner */}
+          {newFeatureTour && !activeTour && (
+            <div className="flex-shrink-0 flex items-center gap-3 px-5 py-2.5 bg-[#4361ee]/5 border-b border-[#4361ee]/15">
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-[#4361ee] text-white text-[9px] font-bold shrink-0">!</span>
+                <span className="text-[13px] text-[var(--hm-text-primary)]">
+                  <strong className="font-semibold">{newFeatureTour.name}</strong>
+                  <span className="text-[var(--hm-text-secondary)] ml-1.5">— {newFeatureTour.description}</span>
+                </span>
+              </div>
+              <button
+                onClick={() => handleStartFeatureTour(newFeatureTour)}
+                className="shrink-0 h-[28px] px-3 bg-[#4361ee] text-white rounded-md text-[11px] font-medium hover:opacity-90 transition-opacity"
+              >
+                Take a tour
+              </button>
+              <button
+                onClick={() => saveTourProgress(newFeatureTour.id, "dismissed")}
+                className="shrink-0 text-[11px] text-[var(--hm-text-tertiary)] hover:text-[var(--hm-text-secondary)] transition-colors"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+
           {/* Read-only notice for restricted roles */}
           {(user.role === "viewer") && (
             <div className="flex-shrink-0 flex items-center gap-2 px-4 py-2 bg-amber-50 border-b border-amber-200 text-[12px] text-amber-700 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-400">
@@ -139,6 +218,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             {children}
           </div>
         </div>
+
+        {/* Guided Tour overlay */}
+        {activeTour && (
+          <GuidedTour
+            tour={activeTour}
+            onComplete={(id) => saveTourProgress(id, "completed")}
+            onDismiss={(id) => saveTourProgress(id, "dismissed")}
+          />
+        )}
       </div>
     </UserContext.Provider>
   );
