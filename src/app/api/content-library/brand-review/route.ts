@@ -302,7 +302,11 @@ Rules:
           dims.personality.score * scoringWeights.personality +
           dims.completeness.score * scoringWeights.completeness) / 100
       );
+    } else if (dims && Object.keys(dims).length >= 3) {
+      const scores = Object.values(dims).map((d: { score: number }) => Math.min(100, Math.max(0, d.score)));
+      review.overallScore = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
     }
+    review.overallScore = Math.min(100, Math.max(0, review.overallScore));
 
     // Update ContentAsset with dimension scores + summary using Prisma
     const suggestions = review.priorityFixes || [];
