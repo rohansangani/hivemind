@@ -10,6 +10,7 @@ interface SidebarProps {
   userName: string;
   userRole: string;
   customPermissions?: Record<string, string> | null;
+  orgRolePerms?: Record<string, Record<string, string>>;
   onClose?: () => void;
   onStartTour?: () => void;
 }
@@ -121,12 +122,12 @@ function NavIcon({ icon, active }: { icon: string; active: boolean }) {
   }
 }
 
-export default function Sidebar({ userName, userRole, customPermissions, onClose, onStartTour }: SidebarProps) {
+export default function Sidebar({ userName, userRole, customPermissions, orgRolePerms, onClose, onStartTour }: SidebarProps) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
 
   // Compute effective module permissions
-  const effectivePerms = getEffectivePermissions(userRole, customPermissions ?? null);
+  const effectivePerms = getEffectivePermissions(userRole, customPermissions ?? null, orgRolePerms);
   const normalized = normalizeRole(userRole);
   const roleMeta = ROLE_META[userRole] ?? ROLE_META[normalized];
   const isAdmin = normalized === "owner" || normalized === "admin";

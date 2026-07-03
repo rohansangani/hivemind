@@ -157,3 +157,28 @@ export const ROLE_META: Record<string, { label: string; color: string; bg: strin
 
 export const ASSIGNABLE_ROLES: Role[] = ["admin", "marketing", "sales", "others"];
 export const ASSIGNABLE_ROLES_FOR_OWNER: Role[] = ["owner", "admin", "marketing", "sales", "others"];
+
+export function getCustomRoleMeta(customRoles: Array<{ slug: string; name: string; color: string; description?: string | null; rank: number }>): Record<string, { label: string; color: string; bg: string; description: string }> {
+  const meta: Record<string, { label: string; color: string; bg: string; description: string }> = {};
+  for (const r of customRoles) {
+    if (!ROLE_META[r.slug]) {
+      meta[r.slug] = {
+        label: r.name,
+        color: r.color,
+        bg: r.color + "15",
+        description: r.description || "",
+      };
+    }
+  }
+  return meta;
+}
+
+export function getCustomRoleRanks(customRoles: Array<{ slug: string; rank: number }>): Record<string, number> {
+  const ranks: Record<string, number> = {};
+  for (const r of customRoles) {
+    if (!(r.slug in ROLE_RANK)) {
+      ranks[r.slug] = r.rank;
+    }
+  }
+  return ranks;
+}

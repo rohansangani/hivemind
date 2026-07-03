@@ -124,10 +124,9 @@ export const KB_TAB_PERMISSIONS: Record<string, Record<string, AccessLevel>> = {
   },
 };
 
-export function getEffectivePermissions(role: string, custom: Record<string, string> | null): ModulePermissions {
-  const defaults = ROLE_DEFAULT_PERMISSIONS[role] ?? ROLE_DEFAULT_PERMISSIONS.others;
+export function getEffectivePermissions(role: string, custom: Record<string, string> | null, orgRolePerms?: Record<string, Record<string, string>>): ModulePermissions {
+  const defaults = (orgRolePerms?.[role] ?? ROLE_DEFAULT_PERMISSIONS[role] ?? ROLE_DEFAULT_PERMISSIONS.others) as ModulePermissions;
   if (!custom || Object.keys(custom).length === 0) return defaults;
-  // Custom overrides defaults for any module that has been explicitly set
   return { ...defaults, ...custom } as ModulePermissions;
 }
 
