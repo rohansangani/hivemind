@@ -61,9 +61,13 @@ export async function GET(req: NextRequest) {
     const markets = [...new Map(rawMarkets.map((m) => [m.name, m])).values()];
     const personas = [...new Map(rawPersonas.map((p) => [p.title, p])).values()];
     const competitors = [...new Map(rawCompetitors.map((c) => [c.name, c])).values()];
-    const avgScore = avgResult._avg.brandScore !== null ? Math.round(avgResult._avg.brandScore ?? 0) : null;
+    const clampedAssets = assets.map(a => ({
+      ...a,
+      brandScore: a.brandScore != null ? Math.min(100, Math.max(0, Math.round(a.brandScore))) : null,
+    }));
+    const avgScore = avgResult._avg.brandScore !== null ? Math.min(100, Math.max(0, Math.round(avgResult._avg.brandScore ?? 0))) : null;
 
-    return NextResponse.json({ assets, products, markets, personas, competitors, avgScore, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } });
+    return NextResponse.json({ assets: clampedAssets, products, markets, personas, competitors, avgScore, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } });
   } catch (error) {
     console.error("Content library error:", error);
     return NextResponse.json({ error: "Something went wrong" }, { status: 500 });

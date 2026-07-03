@@ -55,7 +55,10 @@ export default function ContentLibraryPage() {
   const [filterScore, setFilterScore] = useState("");
   const [filterScoreStatus, setFilterScoreStatus] = useState("");
   const [page, setPage] = useState(1);
-  const [pagination, setPagination] = useState<{ total: number; totalPages: number; limit: number } | null>(null);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [totalCount, setTotalCount] = useState(0);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [duplicateWarning, setDuplicateWarning] = useState<{ duplicates: Array<{ fileName: string; existingName: string; uploadedAt: string }>; payload: Record<string, unknown> } | null>(null);
@@ -105,9 +108,11 @@ export default function ContentLibraryPage() {
   const [expandedSection, setExpandedSection] = useState<number | null>(null);
 
   const fileRef = useRef<File | null>(null);
+  const loadingRef = useRef(false);
   const user = useUser();
 
-  const fetchData = useCallback(() => {
+  const fetchData = useCallback((pageNum?: number) => {
+    const p = pageNum ?? page;
     const params = new URLSearchParams();
     if (search) params.set("search", search);
     if (filterType) params.set("type", filterType);
@@ -115,41 +120,87 @@ export default function ContentLibraryPage() {
     if (filterMarket) params.set("market", filterMarket);
     if (filterScore) params.set("score", filterScore);
     if (filterScoreStatus) params.set("scoreStatus", filterScoreStatus);
-    params.set("page", String(page));
-    setLoading(true);
+    params.set("page", String(p));
+    if (p === 1) { setLoading(true); loadingRef.current = true; }
+    else { setLoadingMore(true); loadingRef.current = true; }
     setFetchError(false);
     fetch("/api/content-library?" + params.toString())
       .then((r) => r.json())
       .then((d) => {
-        setAssets(d.assets || []);
+        const incoming = d.assets || [];
+        if (p === 1) setAssets(incoming);
+        else setAssets((prev) => [...prev, ...incoming]);
         setAvgScore(d.avgScore);
         setProducts(d.products || []);
         setMarkets(d.markets || []);
         setPersonas(d.personas || []);
         setCompetitors(d.competitors || []);
-        setPagination(d.pagination || null);
+        const pag = d.pagination;
+        if (pag) {
+          setTotalCount(pag.total);
+          setHasMore(p < pag.totalPages);
+        } else {
+          setHasMore(false);
+        }
       })
       .catch(() => setFetchError(true))
-      .finally(() => setLoading(false));
+      .finally(() => { setLoading(false); setLoadingMore(false); loadingRef.current = false; });
   }, [search, filterType, filterProduct, filterMarket, filterScore, filterScoreStatus, page]);
 
   // Reset to page 1 whenever any filter changes
   useEffect(() => {
     setPage(1);
+    setHasMore(true);
   }, [search, filterType, filterProduct, filterMarket, filterScore, filterScoreStatus]);
+
+  // Infinite scroll — observe sentinel element
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || !hasMore) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !loadingRef.current) {
+          setPage((p) => p + 1);
+        }
+      },
+      { root: scrollContainerRef.current, rootMargin: "200px" }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasMore, assets.length]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // Auto-poll every 5s while any visible asset is pending review
+  // Auto-poll every 5s while any visible asset is pending review — merge updates in place
   useEffect(() => {
     const hasPending = assets.some(a => a.scoreStatus === "pending" || a.intelligenceStatus === "extracting");
     if (!hasPending) {
       if (isAutoReviewing) setIsAutoReviewing(false);
       return;
     }
-    const id = setInterval(fetchData, 5000);
+    const id = setInterval(() => {
+      const params = new URLSearchParams();
+      if (search) params.set("search", search);
+      if (filterType) params.set("type", filterType);
+      if (filterProduct) params.set("product", filterProduct);
+      if (filterMarket) params.set("market", filterMarket);
+      if (filterScore) params.set("score", filterScore);
+      if (filterScoreStatus) params.set("scoreStatus", filterScoreStatus);
+      params.set("page", "1");
+      params.set("limit", "100");
+      fetch("/api/content-library?" + params.toString())
+        .then(r => r.json())
+        .then(d => {
+          const fresh = d.assets || [];
+          const freshMap = new Map(fresh.map((a: Asset) => [a.id, a]));
+          setAssets(prev => prev.map(a => (freshMap.get(a.id) as Asset) || a));
+          if (d.avgScore != null) setAvgScore(d.avgScore);
+        })
+        .catch(() => {});
+    }, 5000);
     return () => clearInterval(id);
-  }, [assets, fetchData, isAutoReviewing]);
+  }, [assets, isAutoReviewing, search, filterType, filterProduct, filterMarket, filterScore, filterScoreStatus]);
 
   const handleFileSelect = (file: File) => { fileRef.current = file; setUploadName(file.name.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ")); setUploadType(file.name.split(".").pop()?.toLowerCase() || "pdf"); };
   const resetUpload = () => { setShowUpload(false); setUploadName(""); setUploadProgress(""); setUploadError(""); setDuplicateWarning(null); fileRef.current = null; };
@@ -318,7 +369,7 @@ export default function ContentLibraryPage() {
         <div className="px-4 md:px-7 py-4 bg-white border-b border-[var(--hm-border)] flex flex-wrap items-center justify-between gap-3" style={{ boxShadow: "var(--hm-shadow-xs)" }}>
           <div className="min-w-0">
             <h1 className="text-[18px] md:text-[22px] font-semibold leading-tight">Asset library</h1>
-            <p className="text-[12px] text-[var(--hm-text-tertiary)] mt-0.5">{pagination ? pagination.total : assets.length} asset{(pagination ? pagination.total : assets.length) !== 1 ? "s" : ""}{hasActiveFilters ? " (filtered)" : ""}{pagination && pagination.totalPages > 1 ? ` · Page ${page} of ${pagination.totalPages}` : ""}{avgScore !== null ? " · Avg. score: " + avgScore + "%" : ""}</p>
+            <p className="text-[12px] text-[var(--hm-text-tertiary)] mt-0.5">{totalCount || assets.length} asset{(totalCount || assets.length) !== 1 ? "s" : ""}{hasActiveFilters ? " (filtered)" : ""}{avgScore !== null ? " · Avg. score: " + avgScore + "%" : ""}</p>
           </div>
           <div className="flex items-center gap-2 w-full sm:w-auto">
             {assets.length > 0 && (
@@ -401,7 +452,7 @@ export default function ContentLibraryPage() {
         <div className="flex-1 flex min-h-0 overflow-hidden">
 
           {/* Main scrollable area */}
-          <div className="flex-1 overflow-y-auto p-4 md:p-7">
+          <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4 md:p-7">
 
             {/* Upload */}
             {showUpload && (
@@ -510,7 +561,7 @@ export default function ContentLibraryPage() {
             )}
 
             {/* Error state */}
-            {!loading && fetchError && (<div className="bg-white border border-[var(--hm-border)] rounded-xl p-14 text-center"><div className="w-14 h-14 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-4"><svg width="24" height="24" viewBox="0 0 16 16" fill="none"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zM8 5v3M8 10h.01" stroke="#ef4444" strokeWidth="1.3" strokeLinecap="round" /></svg></div><p className="text-[15px] font-medium mb-1.5">Failed to load assets</p><p className="text-[13px] text-[var(--hm-text-tertiary)] mb-5 max-w-[300px] mx-auto leading-relaxed">There was a problem fetching your content library. Please try again.</p><button onClick={fetchData} className="h-10 px-6 bg-[#4361ee] text-white rounded-lg text-[13px] font-medium hover:opacity-90">Retry</button></div>)}
+            {!loading && fetchError && (<div className="bg-white border border-[var(--hm-border)] rounded-xl p-14 text-center"><div className="w-14 h-14 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-4"><svg width="24" height="24" viewBox="0 0 16 16" fill="none"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zM8 5v3M8 10h.01" stroke="#ef4444" strokeWidth="1.3" strokeLinecap="round" /></svg></div><p className="text-[15px] font-medium mb-1.5">Failed to load assets</p><p className="text-[13px] text-[var(--hm-text-tertiary)] mb-5 max-w-[300px] mx-auto leading-relaxed">There was a problem fetching your content library. Please try again.</p><button onClick={() => fetchData()} className="h-10 px-6 bg-[#4361ee] text-white rounded-lg text-[13px] font-medium hover:opacity-90">Retry</button></div>)}
 
             {/* Empty state */}
             {!loading && !fetchError && assets.length === 0 && !showUpload && (
@@ -736,27 +787,16 @@ export default function ContentLibraryPage() {
               );
             })()}
 
-            {/* Pagination controls */}
-            {pagination && pagination.totalPages > 1 && (
-              <div className="mt-6 flex items-center justify-center gap-2">
-                <button
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={page <= 1}
-                  className="h-8 px-3 border border-[var(--hm-border)] rounded-lg text-[12px] text-[var(--hm-text-secondary)] disabled:opacity-40 hover:border-[#4361ee] hover:text-[#4361ee] transition-colors"
-                >
-                  &larr; Prev
-                </button>
-                <span className="text-[12px] text-[var(--hm-text-tertiary)] px-2">
-                  {page} / {pagination.totalPages}
-                </span>
-                <button
-                  onClick={() => setPage((p) => Math.min(pagination.totalPages, p + 1))}
-                  disabled={page >= pagination.totalPages}
-                  className="h-8 px-3 border border-[var(--hm-border)] rounded-lg text-[12px] text-[var(--hm-text-secondary)] disabled:opacity-40 hover:border-[#4361ee] hover:text-[#4361ee] transition-colors"
-                >
-                  Next &rarr;
-                </button>
+            {/* Infinite scroll sentinel */}
+            <div ref={sentinelRef} className="h-1" />
+            {loadingMore && (
+              <div className="mt-4 flex items-center justify-center gap-2 py-4">
+                <div className="w-4 h-4 border-2 border-[#4361ee]/30 border-t-[#4361ee] rounded-full animate-spin" />
+                <span className="text-[12px] text-[var(--hm-text-tertiary)]">Loading more...</span>
               </div>
+            )}
+            {!hasMore && assets.length > 0 && !loading && (
+              <p className="mt-4 text-center text-[12px] text-[var(--hm-text-tertiary)] py-2">All assets loaded</p>
             )}
           </div>
 

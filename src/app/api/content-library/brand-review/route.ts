@@ -292,8 +292,15 @@ Rules:
 
     if (!review) return NextResponse.json({ error: "No review returned" }, { status: 500 });
 
-    // Recompute overallScore server-side using the saved weights (don't trust Claude's math)
+    // Clamp all dimension scores to 0-100 before any computation
     const dims = review.dimensions;
+    if (dims) {
+      for (const key of Object.keys(dims)) {
+        dims[key].score = Math.min(100, Math.max(0, dims[key].score));
+      }
+    }
+
+    // Recompute overallScore server-side using the saved weights (don't trust Claude's math)
     if (dims?.voice && dims?.terminology && dims?.messaging && dims?.personality && dims?.completeness) {
       review.overallScore = Math.round(
         (dims.voice.score * scoringWeights.voice +
@@ -303,7 +310,7 @@ Rules:
           dims.completeness.score * scoringWeights.completeness) / 100
       );
     } else if (dims && Object.keys(dims).length >= 3) {
-      const scores = Object.values(dims).map((d: { score: number }) => Math.min(100, Math.max(0, d.score)));
+      const scores = Object.values(dims).map((d: { score: number }) => d.score);
       review.overallScore = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
     }
     review.overallScore = Math.min(100, Math.max(0, review.overallScore));
