@@ -81,6 +81,17 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    if (review?.dimensions) {
+      for (const key of Object.keys(review.dimensions)) {
+        if (review.dimensions[key]?.score != null) {
+          review.dimensions[key].score = Math.min(100, Math.max(0, review.dimensions[key].score));
+        }
+      }
+    }
+    if (review?.overallScore != null) {
+      review.overallScore = Math.min(100, Math.max(0, review.overallScore));
+    }
+
     return NextResponse.json({ review, asset });
   } catch (error) {
     console.error("Brand review GET error:", error);

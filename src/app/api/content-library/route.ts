@@ -61,9 +61,15 @@ export async function GET(req: NextRequest) {
     const markets = [...new Map(rawMarkets.map((m) => [m.name, m])).values()];
     const personas = [...new Map(rawPersonas.map((p) => [p.title, p])).values()];
     const competitors = [...new Map(rawCompetitors.map((c) => [c.name, c])).values()];
+    const clamp = (v: number | null) => v != null ? Math.min(100, Math.max(0, Math.round(v))) : null;
     const clampedAssets = assets.map(a => ({
       ...a,
-      brandScore: a.brandScore != null ? Math.min(100, Math.max(0, Math.round(a.brandScore))) : null,
+      brandScore: clamp(a.brandScore),
+      scoreVoice: clamp(a.scoreVoice),
+      scoreTerminology: clamp(a.scoreTerminology),
+      scoreMessaging: clamp(a.scoreMessaging),
+      scorePersonality: clamp(a.scorePersonality),
+      scoreCompleteness: clamp(a.scoreCompleteness),
     }));
     const avgScore = avgResult._avg.brandScore !== null ? Math.min(100, Math.max(0, Math.round(avgResult._avg.brandScore ?? 0))) : null;
 
