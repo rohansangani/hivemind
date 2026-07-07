@@ -18,6 +18,7 @@ const ROUTE_LABELS: Record<string, string> = {
   "email-sequences":    "Email Sequences",
   "design-brief":       "Design Brief",
   "knowledge-base":     "Knowledge Base",
+  "radar":              "Radar",
   "team":               "Team",
   "activity":           "Activity",
   "usage":              "Usage",
