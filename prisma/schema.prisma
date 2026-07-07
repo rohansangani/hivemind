@@ -258,6 +258,7 @@ model ContentAsset {
   fileHash         String?
   contentType      String?
   linkedUrl        String?
+  sourceUrl        String?
   productTags      String[]
   marketTags       String[]
   personaTags      String[]

@@ -9,6 +9,7 @@ interface Asset {
   contentType: string; brandScore: number | null; scoreVoice: number | null; scoreTerminology: number | null;
   scoreMessaging: number | null; scorePersonality: number | null; scoreCompleteness: number | null;
   aiSummary: string | null; scoreSuggestions: string[];
+  sourceUrl: string | null;
   productTags: string[]; marketTags: string[]; personaTags: string[]; competitorTags: string[]; uploadedBy: { name: string }; createdAt: string; scoreStatus: string;
   intelligenceStatus: string; analyzedAt: string | null;
 }
@@ -46,6 +47,7 @@ export default function ContentLibraryPage() {
   const [uploadContentType, setUploadContentType] = useState("deck");
   const [uploadProduct, setUploadProduct] = useState("");
   const [uploadMarket, setUploadMarket] = useState("");
+  const [uploadSourceUrl, setUploadSourceUrl] = useState("");
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState("");
   const [search, setSearch] = useState("");
@@ -74,6 +76,7 @@ export default function ContentLibraryPage() {
   const [editMarketTags, setEditMarketTags] = useState<string[]>([]);
   const [editPersonaTags, setEditPersonaTags] = useState<string[]>([]);
   const [editCompetitorTags, setEditCompetitorTags] = useState<string[]>([]);
+  const [editSourceUrl, setEditSourceUrl] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
 
   // Auto-review polling state
@@ -203,7 +206,7 @@ export default function ContentLibraryPage() {
   }, [assets, isAutoReviewing, search, filterType, filterProduct, filterMarket, filterScore, filterScoreStatus]);
 
   const handleFileSelect = (file: File) => { fileRef.current = file; setUploadName(file.name.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ")); setUploadType(file.name.split(".").pop()?.toLowerCase() || "pdf"); };
-  const resetUpload = () => { setShowUpload(false); setUploadName(""); setUploadProgress(""); setUploadError(""); setDuplicateWarning(null); fileRef.current = null; };
+  const resetUpload = () => { setShowUpload(false); setUploadName(""); setUploadSourceUrl(""); setUploadProgress(""); setUploadError(""); setDuplicateWarning(null); fileRef.current = null; };
 
   const computeFileHash = async (file: File): Promise<string> => {
     const buffer = await file.arrayBuffer();
@@ -270,7 +273,7 @@ export default function ContentLibraryPage() {
     const autoPersonaTags = selectedProd?.personaNames || [];
     const autoCompetitorTags = selectedProd?.competitorNames || [];
     const autoMarketTags = uploadMarket ? [uploadMarket] : selectedProd?.marketNames || [];
-    const payload = { files: [{ name: uploadName, fileName: actualFileName || uploadName.toLowerCase().replace(/\s+/g, "-") + "." + uploadType, fileUrl, fileSize, fileHash, fileType: uploadType, contentType: uploadContentType, productTags: uploadProduct ? [uploadProduct] : [], marketTags: autoMarketTags, personaTags: autoPersonaTags, competitorTags: autoCompetitorTags }] };
+    const payload = { files: [{ name: uploadName, fileName: actualFileName || uploadName.toLowerCase().replace(/\s+/g, "-") + "." + uploadType, fileUrl, fileSize, fileHash, fileType: uploadType, contentType: uploadContentType, sourceUrl: uploadSourceUrl.trim() || null, productTags: uploadProduct ? [uploadProduct] : [], marketTags: autoMarketTags, personaTags: autoPersonaTags, competitorTags: autoCompetitorTags }] };
     await saveAsset(payload);
   };
 
@@ -283,6 +286,7 @@ export default function ContentLibraryPage() {
     setEditMarketTags([...a.marketTags]);
     setEditPersonaTags([...(a.personaTags || [])]);
     setEditCompetitorTags([...(a.competitorTags || [])]);
+    setEditSourceUrl(a.sourceUrl || "");
     setBrandReview(null);
     setExpandedSection(null);
 
@@ -337,7 +341,7 @@ export default function ContentLibraryPage() {
   const saveAssetEdit = async () => {
     if (!panelAsset) return;
     setSavingEdit(true);
-    try { await fetch("/api/content-library/manage", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: panelAsset.id, name: editName, contentType: editContentType, productTags: editProductTags, marketTags: editMarketTags, personaTags: editPersonaTags, competitorTags: editCompetitorTags }) }); fetchData(); setPanelTab("score"); } catch { alert("Failed to save"); }
+    try { await fetch("/api/content-library/manage", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: panelAsset.id, name: editName, contentType: editContentType, productTags: editProductTags, marketTags: editMarketTags, personaTags: editPersonaTags, competitorTags: editCompetitorTags, sourceUrl: editSourceUrl.trim() || null }) }); fetchData(); setPanelTab("score"); } catch { alert("Failed to save"); }
     finally { setSavingEdit(false); }
   };
 
@@ -486,6 +490,7 @@ export default function ContentLibraryPage() {
                       <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1 font-medium">Product</label><select value={uploadProduct} onChange={(e) => setUploadProduct(e.target.value)} style={{ fontSize: "12px" }}><option value="">All</option>{products.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}</select></div>
                       <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1 font-medium">Market</label><select value={uploadMarket} onChange={(e) => setUploadMarket(e.target.value)} style={{ fontSize: "12px" }}><option value="">Global</option>{markets.map((m) => <option key={m.name} value={m.name}>{m.name}</option>)}</select></div>
                     </div>
+                    <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1 font-medium">Source file URL <span className="font-normal text-[var(--hm-text-tertiary)]">(optional)</span></label><input type="url" value={uploadSourceUrl} onChange={(e) => setUploadSourceUrl(e.target.value)} placeholder="Canva, Google Drive, Figma link..." className="text-[13px]" /></div>
                     {uploadError && <p className="text-[12px] text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{uploadError}</p>}
                     {duplicateWarning && (
                       <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
@@ -820,6 +825,12 @@ export default function ContentLibraryPage() {
                         {(panelAsset.competitorTags || []).map(t => <span key={t} className="text-[9px] px-1.5 py-0.5 bg-red-50 text-red-600 rounded-md">{t}</span>)}
                       </div>
                     )}
+                    {panelAsset.sourceUrl && (
+                      <a href={panelAsset.sourceUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 mt-1.5 text-[10px] text-[#4361ee] hover:underline">
+                        <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M6.5 3.5H3.5a1 1 0 00-1 1v8a1 1 0 001 1h8a1 1 0 001-1v-3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/><path d="M9.5 2.5h4v4M14 2l-6.5 6.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                        Open source file
+                      </a>
+                    )}
                   </div>
                 </div>
                 <button onClick={closePanel} className="text-[var(--hm-text-tertiary)] hover:text-[var(--hm-text)] hover:bg-[var(--hm-bg-secondary)] flex-shrink-0 ml-2 w-7 h-7 flex items-center justify-center rounded-md transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee]">&times;</button>
@@ -1092,6 +1103,10 @@ export default function ContentLibraryPage() {
                   </div>}
                   {editProductTags.length > 0 && (() => { const suggestedPersonas = [...new Set(editProductTags.flatMap(pt => products.find(p => p.name === pt)?.personaNames || []))].filter(n => !editPersonaTags.includes(n)); const suggestedCompetitors = [...new Set(editProductTags.flatMap(pt => products.find(p => p.name === pt)?.competitorNames || []))].filter(n => !editCompetitorTags.includes(n)); return (suggestedPersonas.length > 0 || suggestedCompetitors.length > 0) ? <div className="bg-blue-50 border border-blue-200 rounded-lg p-2.5"><p className="text-[10px] font-medium text-[#4361ee] mb-1.5">Suggested from product relationships</p><div className="flex flex-wrap gap-1">{suggestedPersonas.map(n => <button key={n} type="button" onClick={() => setEditPersonaTags([...editPersonaTags, n])} className="px-2 py-0.5 rounded text-[10px] border border-dashed border-purple-300 text-purple-600 hover:bg-purple-50">+ {n}</button>)}{suggestedCompetitors.map(n => <button key={n} type="button" onClick={() => setEditCompetitorTags([...editCompetitorTags, n])} className="px-2 py-0.5 rounded text-[10px] border border-dashed border-red-300 text-red-500 hover:bg-red-50">+ {n}</button>)}</div></div> : null; })()}
 
+                  <div>
+                    <label className="block text-xs text-[var(--hm-text-secondary)] mb-1 font-medium">Source file URL <span className="font-normal text-[var(--hm-text-tertiary)]">(Canva, Drive, Figma...)</span></label>
+                    <input type="url" value={editSourceUrl} onChange={(e) => setEditSourceUrl(e.target.value)} placeholder="https://..." className="text-[13px]" />
+                  </div>
                   <div className="pt-3 border-t border-[var(--hm-border)] flex items-center justify-between">
                     <div className="flex gap-2">
                       <button onClick={() => setDeleteConfirm(true)} className="h-8 px-3 text-red-500 text-[12px] hover:bg-red-50 active:bg-red-100 rounded-lg border border-red-200 hover:border-red-300 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:ring-offset-1">Delete</button>

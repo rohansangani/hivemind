@@ -12,7 +12,7 @@ export async function PUT(req: NextRequest) {
     const decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as { orgId: string; role?: string };
     if (decoded.role === "viewer") return NextResponse.json({ error: "Read-only access" }, { status: 403 });
 
-    const { id, name, contentType, productTags, marketTags, personaTags, competitorTags } = await req.json();
+    const { id, name, contentType, productTags, marketTags, personaTags, competitorTags, sourceUrl } = await req.json();
     if (!id) return NextResponse.json({ error: "Asset ID required" }, { status: 400 });
 
     const asset = await db.contentAsset.findUnique({ where: { id } });
@@ -20,7 +20,12 @@ export async function PUT(req: NextRequest) {
 
     await db.contentAsset.update({
       where: { id },
-      data: { name, contentType, productTags: productTags || asset.productTags, marketTags: marketTags || asset.marketTags, personaTags: personaTags || asset.personaTags, competitorTags: competitorTags || asset.competitorTags },
+      data: {
+        name, contentType,
+        productTags: productTags || asset.productTags, marketTags: marketTags || asset.marketTags,
+        personaTags: personaTags || asset.personaTags, competitorTags: competitorTags || asset.competitorTags,
+        ...(sourceUrl !== undefined ? { sourceUrl: sourceUrl || null } : {}),
+      },
     });
 
     return NextResponse.json({ success: true });

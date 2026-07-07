@@ -135,7 +135,7 @@ export async function POST(req: NextRequest) {
           name: file.name, fileName: file.fileName, fileUrl: file.fileUrl || null,
           fileType: file.fileType, fileSize: file.fileSize || null,
           fileHash: file.fileHash || null,
-          contentType: file.contentType, linkedUrl: file.linkedUrl || null,
+          contentType: file.contentType, linkedUrl: file.linkedUrl || null, sourceUrl: file.sourceUrl || null,
           productTags: file.productTags || [], marketTags: file.marketTags || [],
           personaTags: file.personaTags || [], customTags: file.customTags || [],
           brandScore: null,
