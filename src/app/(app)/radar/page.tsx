@@ -1204,6 +1204,11 @@ function UploadSection() {
             if (v === "" || v == null) continue;
             if (dbKey.startsWith("a:")) acc[dbKey.slice(2)] = v;
             else if (dbKey.startsWith("c:")) con[dbKey.slice(2)] = v;
+            // Shared fields — radar copies these from the account side onto the
+            // contact too, since contacts.vertical/country are independent columns
+            // (not derived from the linked account) and would otherwise stay blank.
+            if (dbKey === "a:vertical") con.vertical = v;
+            if (dbKey === "a:country") con.country = v;
           }
           if (Object.keys(con).length && !con.company_name && acc.name) con.company_name = acc.name;
           if (Object.keys(acc).length) accountRows.push(acc);
