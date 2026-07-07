@@ -1,0 +1,35 @@
+import { NextRequest, NextResponse } from "next/server";
+import { selectFrom, requireRadarAccess } from "@/lib/radar/supabase";
+
+/**
+ * Radar accounts list — paginated, searchable, filterable by vertical.
+ * Mirrors radar's /api/accounts-list, gated behind hivemind owner/admin auth.
+ */
+const ACCOUNT_COLS =
+  "id,name,domain,vertical,industry,sub_industry,account_size,employee_range,revenue_range,company_location,country,linkedin_url,sdr_owner,parent_company,created_at,updated_at";
+
+export async function POST(req: NextRequest) {
+  const access = await requireRadarAccess(req);
+  if (access instanceof NextResponse) return access;
+
+  try {
+    const body = await req.json().catch(() => ({}));
+    const { vertical, industry, country, search, page = 0, limit = 50 } = body;
+
+    let query = `select=${ACCOUNT_COLS}&order=name.asc`;
+    if (vertical) query += `&vertical=eq.${encodeURIComponent(vertical)}`;
+    if (industry) query += `&industry=eq.${encodeURIComponent(industry)}`;
+    if (country) query += `&country=eq.${encodeURIComponent(country)}`;
+    if (search) {
+      const q = encodeURIComponent(search);
+      query += `&or=(name.ilike.*${q}*,domain.ilike.*${q}*)`;
+    }
+
+    const offset = page * limit;
+    const { rows, total } = await selectFrom("accounts", query, { from: offset, to: offset + limit - 1 });
+    return NextResponse.json({ data: rows, total });
+  } catch (err) {
+    console.error("Radar accounts error:", err);
+    return NextResponse.json({ error: "Failed to load accounts" }, { status: 502 });
+  }
+}
