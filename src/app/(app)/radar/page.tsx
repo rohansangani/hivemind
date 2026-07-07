@@ -94,6 +94,8 @@ export default function RadarPage() {
           <AccountsSection />
         ) : active === "contacts" ? (
           <ContactsSection />
+        ) : active === "export" ? (
+          <ExportSection />
         ) : (
           <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
             <div className="px-5 py-4 border-b border-[var(--hm-border)]">
@@ -510,5 +512,96 @@ function ContactsSection() {
       searchPlaceholder="Search name or email…"
       emptyLabel="No contacts match your filters."
     />
+  );
+}
+
+/* ── Export ────────────────────────────────────────────────────────────── */
+
+function ExportSection() {
+  const [vertical, setVertical] = useState("");
+  const [search, setSearch] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  const download = async () => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/radar/export", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filters: { vertical: vertical || undefined, search: search || undefined } }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Export failed");
+      const data = (await res.json()) as { csv: string; matched: number; exported: number; truncated: boolean };
+      if (data.exported === 0) {
+        setMsg({ kind: "err", text: "No validated contacts matched — nothing to export." });
+        return;
+      }
+      const blob = new Blob([data.csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `radar_validated_contacts_${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setMsg({
+        kind: "ok",
+        text: `Exported ${data.exported.toLocaleString()} validated contacts${data.truncated ? " (capped at 60k — narrow filters for the rest)" : ""}.`,
+      });
+    } catch (e) {
+      setMsg({ kind: "err", text: (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
+      <div className="px-5 py-4 border-b border-[var(--hm-border)]">
+        <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Export validated contacts</h2>
+        <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">
+          Downloads a CSV of contacts with a verified / safe-to-send email, excluding HubSpot-suppressed records.
+        </p>
+      </div>
+      <div className="px-5 py-5 space-y-4">
+        <div className="flex items-end gap-3 flex-wrap">
+          <div>
+            <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Vertical</label>
+            <select value={vertical} onChange={(e) => setVertical(e.target.value)} style={{ width: 160 }}>
+              {VERTICALS.map((v) => (
+                <option key={v} value={v}>{v === "" ? "All verticals" : v}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex-1 min-w-[200px]">
+            <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Search (optional)</label>
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="name, email…" />
+          </div>
+          <button
+            onClick={download}
+            disabled={busy}
+            className="hm-btn hm-btn-primary"
+            style={{ height: 38, padding: "0 18px", fontSize: 13 }}
+          >
+            {busy ? "Preparing…" : "Download CSV"}
+          </button>
+        </div>
+
+        {msg && (
+          <div
+            className={`rounded-lg p-3 text-[12.5px] ${
+              msg.kind === "ok"
+                ? "bg-[#DCFCE7] text-[#059669]"
+                : "bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400"
+            }`}
+          >
+            {msg.text}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
