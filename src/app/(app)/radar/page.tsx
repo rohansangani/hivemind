@@ -98,6 +98,8 @@ export default function RadarPage() {
           <ExportSection />
         ) : active === "upload" ? (
           <UploadSection />
+        ) : active === "enrich" ? (
+          <EnrichSection />
         ) : (
           <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
             <div className="px-5 py-4 border-b border-[var(--hm-border)]">
@@ -898,4 +900,232 @@ function UploadStatusPill({ status }: { status: string }) {
   else if (s === "running") cls = "bg-[#FEF3C7] text-[#B45309]";
   else if (s === "stopped") cls = "bg-red-50 text-red-600";
   return <span className={`text-[11px] px-2 py-0.5 rounded-md font-medium ${cls}`}>{status}</span>;
+}
+
+/* ── Enrich ────────────────────────────────────────────────────────────── */
+
+interface EnrichLead {
+  first_name: string | null;
+  last_name: string | null;
+  full_name: string | null;
+  email: string | null;
+  title: string | null;
+  company_name: string | null;
+  linkedin_url: string | null;
+  phone: string | null;
+  country: string | null;
+  location: string | null;
+}
+
+type EnrichPhase = "form" | "running" | "results" | "saved";
+
+function EnrichSection() {
+  const [domain, setDomain] = useState("");
+  const [titles, setTitles] = useState("");
+  const [seniority, setSeniority] = useState("");
+  const [fetchCount, setFetchCount] = useState(25);
+
+  const [phase, setPhase] = useState<EnrichPhase>("form");
+  const [existingCount, setExistingCount] = useState<number | null>(null);
+  const [runId, setRunId] = useState<string | null>(null);
+  const [datasetId, setDatasetId] = useState<string | null>(null);
+  const [leads, setLeads] = useState<EnrichLead[]>([]);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [error, setError] = useState("");
+  const [savedCount, setSavedCount] = useState(0);
+  const [pollTick, setPollTick] = useState(0);
+
+  const call = async (body: Record<string, unknown>) => {
+    const r = await fetch("/api/radar/enrich", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || "Request failed");
+    return d;
+  };
+
+  const startSearch = async () => {
+    setError("");
+    if (!domain.trim()) { setError("Enter at least one domain to search."); return; }
+    const domains = domain.split(",").map((d) => d.trim()).filter(Boolean);
+    try {
+      const chk = await call({ action: "check_existing", params: { company_domain: domains } });
+      setExistingCount((chk.existing || []).length);
+
+      const params: Record<string, unknown> = { company_domain: domains, fetch_count: fetchCount };
+      if (titles.trim()) params.contact_job_title = titles.split(",").map((t) => t.trim()).filter(Boolean);
+      if (seniority.trim()) params.seniority_level = seniority.split(",").map((t) => t.trim()).filter(Boolean);
+
+      const started = await call({ action: "start", params });
+      setRunId(started.runId);
+      setDatasetId(started.datasetId);
+      setPhase("running");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
+  // Poll while running
+  useEffect(() => {
+    if (phase !== "running" || !runId) return;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const s = await call({ action: "poll", runId });
+        if (cancelled) return;
+        if (s.status === "SUCCEEDED") {
+          const f = await call({ action: "fetch", datasetId });
+          if (cancelled) return;
+          setLeads(f.items || []);
+          setSelected(new Set((f.items || []).map((_: unknown, i: number) => i)));
+          setPhase("results");
+        } else if (s.status === "FAILED" || s.status === "ABORTED" || s.status === "TIMED-OUT") {
+          setError(`Search ${s.status.toLowerCase()}.`);
+          setPhase("form");
+        } else {
+          setTimeout(() => { if (!cancelled) setPollTick((t) => t + 1); }, 2500);
+        }
+      } catch (e) {
+        if (!cancelled) { setError((e as Error).message); setPhase("form"); }
+      }
+    };
+    tick();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, runId, pollTick]);
+
+  const toggle = (i: number) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i); else next.add(i);
+      return next;
+    });
+  };
+
+  const saveSelected = async () => {
+    setError("");
+    try {
+      const d = await call({ action: "save", datasetId });
+      setSavedCount(d.saved || 0);
+      setPhase("saved");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
+  const reset = () => {
+    setPhase("form"); setRunId(null); setDatasetId(null); setLeads([]); setSelected(new Set());
+    setExistingCount(null); setError(""); setSavedCount(0);
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
+        <div className="px-5 py-4 border-b border-[var(--hm-border)]">
+          <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Find new contacts</h2>
+          <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">
+            Search LinkedIn for people at a target company via Apify, then save selected leads to the database.
+          </p>
+        </div>
+
+        {phase === "form" && (
+          <div className="px-5 py-5 space-y-4">
+            <div>
+              <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Company domain(s)</label>
+              <input value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="shopflow.com, nexlogix.io" />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Job titles (optional)</label>
+                <input value={titles} onChange={(e) => setTitles(e.target.value)} placeholder="VP Operations, Director" />
+              </div>
+              <div>
+                <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Seniority (optional)</label>
+                <input value={seniority} onChange={(e) => setSeniority(e.target.value)} placeholder="Director, VP, C-Level" />
+              </div>
+            </div>
+            <div>
+              <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Max results</label>
+              <input type="number" value={fetchCount} min={1} max={200} onChange={(e) => setFetchCount(Number(e.target.value) || 25)} style={{ width: 120 }} />
+            </div>
+
+            {error && <div className="rounded-lg p-3 text-[12.5px] bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</div>}
+
+            <button onClick={startSearch} className="hm-btn hm-btn-primary" style={{ height: 38, padding: "0 18px", fontSize: 13 }}>
+              Search LinkedIn
+            </button>
+          </div>
+        )}
+
+        {phase === "running" && (
+          <div className="px-5 py-14 flex flex-col items-center justify-center text-center gap-3">
+            <div className="w-5 h-5 border-2 border-[var(--hm-accent)]/30 border-t-[var(--hm-accent)] rounded-full animate-spin" />
+            <p className="text-[13px] text-[var(--hm-text)]">Searching LinkedIn…</p>
+            {existingCount !== null && (
+              <p className="text-[12px] text-[var(--hm-text-tertiary)]">{existingCount} contact(s) already in the database for these domains.</p>
+            )}
+          </div>
+        )}
+
+        {(phase === "results" || phase === "saved") && (
+          <div>
+            <div className="px-5 py-3 border-b border-[var(--hm-border)] flex items-center justify-between flex-wrap gap-2">
+              <span className="text-[12.5px] text-[var(--hm-text-secondary)]">
+                {leads.length} profile(s) found{existingCount !== null ? ` · ${existingCount} already in DB` : ""}
+              </span>
+              {phase === "results" && (
+                <div className="flex items-center gap-2">
+                  <button onClick={reset} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 12px", fontSize: 12 }}>New search</button>
+                  <button onClick={saveSelected} disabled={!selected.size} className="hm-btn hm-btn-primary" style={{ height: 32, padding: "0 14px", fontSize: 12 }}>
+                    Save {selected.size} to database
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {phase === "saved" ? (
+              <div className="px-5 py-10 text-center">
+                <div className="w-11 h-11 rounded-xl bg-[#DCFCE7] flex items-center justify-center mx-auto mb-3">
+                  <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 5" stroke="#059669" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                </div>
+                <p className="text-[13px] font-medium text-[var(--hm-text)]">{savedCount} contact(s) saved and linked to accounts.</p>
+                <button onClick={reset} className="hm-btn hm-btn-secondary mt-4" style={{ height: 34, padding: "0 14px", fontSize: 12.5 }}>Search again</button>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-[13px]">
+                  <thead>
+                    <tr>
+                      <th className="px-4 py-2.5 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)]"></th>
+                      {["Name", "Title", "Company", "Email", "LinkedIn"].map((h) => (
+                        <th key={h} className="text-left text-[11px] font-semibold uppercase tracking-wide text-[var(--hm-text-tertiary)] px-4 py-2.5 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] whitespace-nowrap">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {leads.map((l, i) => (
+                      <tr key={i} className="hover:bg-[var(--hm-surface-hover)]">
+                        <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">
+                          <input type="checkbox" checked={selected.has(i)} onChange={() => toggle(i)} />
+                        </td>
+                        <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)] font-medium">{l.full_name || [l.first_name, l.last_name].filter(Boolean).join(" ") || "—"}</td>
+                        <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">{l.title || "—"}</td>
+                        <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">{l.company_name || "—"}</td>
+                        <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text-secondary)]">{l.email || "—"}</td>
+                        <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">
+                          {l.linkedin_url ? <a href={l.linkedin_url} target="_blank" rel="noreferrer" className="text-[var(--hm-accent)]">Profile</a> : "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
