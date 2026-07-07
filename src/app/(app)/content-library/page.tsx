@@ -599,11 +599,15 @@ export default function ContentLibraryPage() {
                         <span className="absolute top-2 text-[10px] px-2 py-0.5 bg-black/50 text-white rounded-md font-medium uppercase backdrop-blur-sm" style={{ left: "30px" }}>{a.fileType || "FILE"}</span>
                         {a.brandScore !== null ? <span className={"absolute top-2 right-2 text-[10px] px-2 py-0.5 text-white rounded-md font-medium " + scoreBg(a.brandScore)}>{Math.round(a.brandScore)}%</span> : isAutoReviewing ? <span className="absolute top-2 right-2 flex items-center gap-1 text-[10px] px-2 py-0.5 bg-blue-500/80 text-white rounded-md font-medium backdrop-blur-sm"><span className="w-2 h-2 border border-white/50 border-t-white rounded-full animate-spin inline-block shrink-0" />Analyzing</span> : <span className="absolute top-2 right-2 text-[10px] px-2 py-0.5 bg-black/40 text-white/70 rounded-md font-medium backdrop-blur-sm">Pending</span>}
                         {a.scoreStatus === "analyzed" && <span className="absolute bottom-2 left-2 text-[9px] px-1.5 py-0.5 bg-purple-500/80 text-white rounded-md backdrop-blur-sm">AI Reviewed</span>}
-                        <span className="absolute inset-0 transition-all flex items-center justify-center" style={{ background: "rgba(0,0,0,0)" }} onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "rgba(0,0,0,0.45)"} onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "rgba(0,0,0,0)"}>
+                        <span className="absolute inset-0 transition-all flex items-center justify-center gap-2" style={{ background: "rgba(0,0,0,0)" }} onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "rgba(0,0,0,0.45)"} onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "rgba(0,0,0,0)"}>
                           <span className="opacity-0 group-hover:opacity-100 transition-opacity rounded-lg shadow-md flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5" style={{ background: "#ffffff", color: "#111827" }}>
                             <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M7 2H3a1 1 0 00-1 1v10a1 1 0 001 1h10a1 1 0 001-1V9" stroke="#111827" strokeWidth="1.5" strokeLinecap="round" /><path d="M10 2h4v4M14 2L8 8" stroke="#111827" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
                             Open file
                           </span>
+                          {a.sourceUrl && <a href={a.sourceUrl} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="opacity-0 group-hover:opacity-100 transition-opacity rounded-lg shadow-md flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5" style={{ background: "#4361ee", color: "#ffffff" }}>
+                            <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M6.5 3.5H3.5a1 1 0 00-1 1v8a1 1 0 001 1h8a1 1 0 001-1v-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><path d="M9.5 2.5h4v4M14 2l-6.5 6.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                            Source file
+                          </a>}
                         </span>
                       </a>
                     ) : (
@@ -825,12 +829,6 @@ export default function ContentLibraryPage() {
                         {(panelAsset.competitorTags || []).map(t => <span key={t} className="text-[9px] px-1.5 py-0.5 bg-red-50 text-red-600 rounded-md">{t}</span>)}
                       </div>
                     )}
-                    {panelAsset.sourceUrl && (
-                      <a href={panelAsset.sourceUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 mt-1.5 text-[10px] text-[#4361ee] hover:underline">
-                        <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M6.5 3.5H3.5a1 1 0 00-1 1v8a1 1 0 001 1h8a1 1 0 001-1v-3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/><path d="M9.5 2.5h4v4M14 2l-6.5 6.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                        Open source file
-                      </a>
-                    )}
                   </div>
                 </div>
                 <button onClick={closePanel} className="text-[var(--hm-text-tertiary)] hover:text-[var(--hm-text)] hover:bg-[var(--hm-bg-secondary)] flex-shrink-0 ml-2 w-7 h-7 flex items-center justify-center rounded-md transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee]">&times;</button>
@@ -841,6 +839,17 @@ export default function ContentLibraryPage() {
                 <button onClick={() => setPanelTab("score")} className={"flex-1 py-2.5 text-[12px] border-b-2 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-inset focus-visible:ring-2 focus-visible:ring-[#4361ee] " + (panelTab === "score" ? "font-medium text-[#4361ee] border-[#4361ee]" : "text-[var(--hm-text-tertiary)] border-transparent hover:text-[var(--hm-text)] hover:bg-[var(--hm-bg-secondary)]")}>Brand score</button>
                 <button onClick={() => setPanelTab("edit")} className={"flex-1 py-2.5 text-[12px] border-b-2 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-inset focus-visible:ring-2 focus-visible:ring-[#4361ee] " + (panelTab === "edit" ? "font-medium text-[#4361ee] border-[#4361ee]" : "text-[var(--hm-text-tertiary)] border-transparent hover:text-[var(--hm-text)] hover:bg-[var(--hm-bg-secondary)]")}>Edit details</button>
               </div>
+
+              {/* Source file banner (visible in both tabs) */}
+              {panelAsset.sourceUrl && (
+                <div className="px-5 py-2.5 border-b border-[var(--hm-border)] bg-blue-50/50 flex-shrink-0">
+                  <a href={panelAsset.sourceUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-[12px] text-[#4361ee] hover:underline font-medium">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className="flex-shrink-0"><path d="M6.5 3.5H3.5a1 1 0 00-1 1v8a1 1 0 001 1h8a1 1 0 001-1v-3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/><path d="M9.5 2.5h4v4M14 2l-6.5 6.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                    Open source file
+                    <span className="text-[10px] font-normal text-[var(--hm-text-tertiary)] truncate ml-auto max-w-[160px]">{panelAsset.sourceUrl.replace(/^https?:\/\//, '').split('/')[0]}</span>
+                  </a>
+                </div>
+              )}
 
               {/* Score tab */}
               {panelTab === "score" && (
