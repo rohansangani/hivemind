@@ -20,6 +20,7 @@ type SectionId =
   | "dashboard"
   | "accounts"
   | "contacts"
+  | "check-db"
   | "upload"
   | "enrich"
   | "validate"
@@ -29,6 +30,7 @@ const SECTIONS: Array<{ id: SectionId; label: string; blurb: string }> = [
   { id: "dashboard", label: "Dashboard", blurb: "TAM overview, validation health and enrichment activity." },
   { id: "accounts",  label: "Accounts",  blurb: "Browse and filter the accounts database." },
   { id: "contacts",  label: "Contacts",  blurb: "Query validated contacts across the database." },
+  { id: "check-db",  label: "Check DB",  blurb: "Look up a list of emails against the contacts database." },
   { id: "upload",    label: "Upload",    blurb: "Bulk import accounts and contacts from CSV." },
   { id: "enrich",    label: "Enrich",    blurb: "Find new contacts from LinkedIn for a target account." },
   { id: "validate",  label: "Validate",  blurb: "Generate email patterns, test deliverability, save confirmed emails." },
@@ -94,6 +96,8 @@ export default function RadarPage() {
           <AccountsSection />
         ) : active === "contacts" ? (
           <ContactsSection />
+        ) : active === "check-db" ? (
+          <CheckDbSection />
         ) : active === "export" ? (
           <ExportSection />
         ) : active === "upload" ? (
@@ -1483,6 +1487,148 @@ function ValidateSection() {
                           : phase === "sent" ? <span className="text-[var(--hm-text-tertiary)]">… pending</span>
                           : <span className="text-[var(--hm-text-tertiary)]">—</span>}
                       </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Check DB ──────────────────────────────────────────────────────────── */
+
+interface CheckDbResult {
+  data: Record<string, unknown>[];
+  checked: number;
+  found: number;
+  notFound: string[];
+}
+
+function CheckDbSection() {
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [result, setResult] = useState<CheckDbResult | null>(null);
+
+  const emails = [
+    ...new Set(
+      text.split(/[\s,;]+/).map((e) => e.toLowerCase().trim()).filter((e) => e.includes("@")),
+    ),
+  ];
+
+  const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      // Grab anything that looks like an email from the CSV/text.
+      const found = String(reader.result || "").match(/[^\s,;"']+@[^\s,;"']+/g) || [];
+      setText((prev) => (prev ? prev + "\n" : "") + found.join("\n"));
+    };
+    reader.readAsText(f);
+  };
+
+  const run = async () => {
+    if (!emails.length) return;
+    setBusy(true);
+    setError("");
+    setResult(null);
+    try {
+      const r = await fetch("/api/radar/check-db", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emails }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "Check failed");
+      setResult(d);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const exportFound = () => {
+    if (!result?.data.length) return;
+    const cols = Object.keys(result.data[0]);
+    const esc = (v: unknown) => `"${(v ?? "").toString().replace(/"/g, '""')}"`;
+    const lines = [cols.join(",")];
+    result.data.forEach((r) => lines.push(cols.map((c) => esc(r[c])).join(",")));
+    const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `check-db-results-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const cols = result?.data.length ? Object.keys(result.data[0]) : [];
+
+  return (
+    <div className="space-y-5">
+      <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
+        <div className="px-5 py-4 border-b border-[var(--hm-border)]">
+          <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Check emails against the database</h2>
+          <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">Paste emails (one per line) or upload a CSV — we&apos;ll show which already exist.</p>
+        </div>
+        <div className="px-5 py-5 space-y-3">
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder={"jane@company.com\njohn@company.com"}
+            style={{ minHeight: 120 }}
+          />
+          <div className="flex items-center gap-3 flex-wrap">
+            <label className="hm-btn hm-btn-secondary cursor-pointer" style={{ height: 34, padding: "0 12px", fontSize: 12 }}>
+              Upload CSV
+              <input type="file" accept=".csv,text/csv,.txt" onChange={onFile} style={{ display: "none" }} />
+            </label>
+            <span className="text-[12px] text-[var(--hm-text-tertiary)]">{emails.length} valid email(s) detected</span>
+            <button onClick={run} disabled={busy || !emails.length} className="hm-btn hm-btn-primary ml-auto" style={{ height: 34, padding: "0 16px", fontSize: 12.5 }}>
+              {busy ? "Checking…" : "Check DB"}
+            </button>
+          </div>
+          {error && <div className="rounded-lg p-3 text-[12.5px] bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</div>}
+        </div>
+      </div>
+
+      {result && (
+        <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
+          <div className="px-5 py-3 border-b border-[var(--hm-border)] flex items-center justify-between flex-wrap gap-2">
+            <span className="text-[12.5px] text-[var(--hm-text-secondary)]">
+              Found <strong className="text-[var(--hm-text)]">{result.found}</strong> of <strong className="text-[var(--hm-text)]">{result.checked}</strong>
+              {result.notFound.length > 0 && ` · ${result.notFound.length} not found`}
+            </span>
+            {result.data.length > 0 && (
+              <button onClick={exportFound} className="hm-btn hm-btn-secondary" style={{ height: 30, padding: "0 12px", fontSize: 12 }}>Export found</button>
+            )}
+          </div>
+          {result.data.length === 0 ? (
+            <div className="py-12 text-center text-[13px] text-[var(--hm-text-tertiary)]">None of the {result.checked} emails were found in the database.</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-[13px]">
+                <thead>
+                  <tr>
+                    {cols.map((c) => (
+                      <th key={c} className="text-left text-[11px] font-semibold uppercase tracking-wide text-[var(--hm-text-tertiary)] px-4 py-2.5 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] whitespace-nowrap">{c.replace(/_/g, " ")}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.data.map((row, i) => (
+                    <tr key={i} className="hover:bg-[var(--hm-surface-hover)]">
+                      {cols.map((c) => (
+                        <td key={c} className="px-4 py-2.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text)] whitespace-nowrap">
+                          {row[c] == null || row[c] === "" ? <span className="text-[var(--hm-text-tertiary)]">—</span> : String(row[c])}
+                        </td>
+                      ))}
                     </tr>
                   ))}
                 </tbody>
