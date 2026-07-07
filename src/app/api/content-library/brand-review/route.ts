@@ -3,8 +3,33 @@ import { db } from "@/lib/db";
 import jwt from "jsonwebtoken";
 import { readFile } from "fs/promises";
 import path from "path";
+import { z } from "zod";
 import { getAnthropicKey, AIKeyNotConfiguredError } from "@/lib/aiProvider";
 import { logTokenUsage, extractAnthropicUsage } from "@/lib/tokenTracking";
+
+const score0to100 = z.number().transform(v => Math.min(100, Math.max(0, Math.round(v))));
+
+const DimensionSchema = z.object({
+  score: score0to100,
+  label: z.string(),
+  assessment: z.string(),
+});
+
+const BrandReviewSchema = z.object({
+  summary: z.string(),
+  overallScore: score0to100,
+  dimensions: z.record(z.string(), DimensionSchema),
+  sections: z.array(z.object({
+    excerpt: z.string(),
+    issue: z.string(),
+    dimension: z.string(),
+    severity: z.string(),
+    suggestion: z.string(),
+  })).default([]),
+  priorityFixes: z.array(z.string()).default([]),
+});
+
+type ReviewResult = z.infer<typeof BrandReviewSchema>;
 
 export const maxDuration = 60;
 
@@ -79,6 +104,17 @@ export async function GET(req: NextRequest) {
       } catch {
         console.error("Failed to parse stored brand review JSON for asset", assetId);
       }
+    }
+
+    if (review?.dimensions) {
+      for (const key of Object.keys(review.dimensions)) {
+        if (review.dimensions[key]?.score != null) {
+          review.dimensions[key].score = Math.min(100, Math.max(0, review.dimensions[key].score));
+        }
+      }
+    }
+    if (review?.overallScore != null) {
+      review.overallScore = Math.min(100, Math.max(0, review.overallScore));
     }
 
     return NextResponse.json({ review, asset });
@@ -272,28 +308,25 @@ Rules:
       return NextResponse.json({ error: "AI analysis failed: " + msg }, { status: 500 });
     }
 
-    type ReviewResult = {
-      summary: string;
-      overallScore: number;
-      dimensions: Record<string, { score: number; label: string; assessment: string }>;
-      sections: Array<{ excerpt: string; issue: string; dimension: string; severity: string; suggestion: string }>;
-      priorityFixes: string[];
-    };
-
-    let review: ReviewResult | null = null;
+    let review: ReviewResult;
     try {
       const clean = raw.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
       const match = clean.match(/\{[\s\S]*\}/);
-      if (match) review = JSON.parse(match[0]);
-    } catch {
+      if (!match) return NextResponse.json({ error: "No review returned" }, { status: 500 });
+      const parsed = JSON.parse(match[0]);
+      review = BrandReviewSchema.parse(parsed);
+    } catch (e) {
+      if (e instanceof z.ZodError) {
+        console.error("Brand review validation failed:", e.issues);
+        return NextResponse.json({ error: "AI returned invalid review structure" }, { status: 500 });
+      }
       console.error("Parse error:", raw.slice(0, 300));
       return NextResponse.json({ error: "Failed to parse review" }, { status: 500 });
     }
 
-    if (!review) return NextResponse.json({ error: "No review returned" }, { status: 500 });
+    const dims = review.dimensions;
 
     // Recompute overallScore server-side using the saved weights (don't trust Claude's math)
-    const dims = review.dimensions;
     if (dims?.voice && dims?.terminology && dims?.messaging && dims?.personality && dims?.completeness) {
       review.overallScore = Math.round(
         (dims.voice.score * scoringWeights.voice +
@@ -302,7 +335,11 @@ Rules:
           dims.personality.score * scoringWeights.personality +
           dims.completeness.score * scoringWeights.completeness) / 100
       );
+    } else if (dims && Object.keys(dims).length >= 3) {
+      const scores = Object.values(dims).map((d: { score: number }) => d.score);
+      review.overallScore = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
     }
+    review.overallScore = Math.min(100, Math.max(0, review.overallScore));
 
     // Update ContentAsset with dimension scores + summary using Prisma
     const suggestions = review.priorityFixes || [];

@@ -2,10 +2,12 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useUser } from "@/lib/UserContext";
-import { ROLE_META, hasPermission, canManageUser } from "@/lib/permissions";
+import { ROLE_META, hasPermission, canManageUser, getCustomRoleMeta } from "@/lib/permissions";
 import { MODULES, ROLE_DEFAULT_PERMISSIONS, getEffectivePermissions } from "@/lib/modules";
 import type { Role } from "@/lib/permissions";
 import type { AccessLevel, ModulePermissions } from "@/lib/modules";
+
+type CustomRoleDef = { slug: string; name: string; color: string; description?: string | null; rank: number; permissions: Record<string, string> };
 
 interface Member {
   id: string;
@@ -24,8 +26,8 @@ interface Member {
 interface CurrentUser { id: string; name: string; role: string; }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-function RoleBadge({ role }: { role: string }) {
-  const meta = ROLE_META[role as Role] ?? ROLE_META.viewer;
+function RoleBadge({ role, customMeta }: { role: string; customMeta?: Record<string, { label: string; color: string; bg: string; description: string }> }) {
+  const meta = ROLE_META[role as Role] ?? customMeta?.[role] ?? { label: role, color: "#6B7280", bg: "#F3F4F6", description: "" };
   return (
     <span className="text-[11px] px-2 py-0.5 rounded-md font-medium"
       style={{ background: meta.bg, color: meta.color }}>
@@ -142,12 +144,13 @@ function PermissionEditor({
 
 // ── User modal (tabs: Profile / Permissions) ──────────────────────────────────
 function UserModal({
-  member, actorRole, onClose, onSaved,
+  member, actorRole, onClose, onSaved, customRoles,
 }: {
   member: Member | null;
   actorRole: string;
   onClose: () => void;
   onSaved: () => void;
+  customRoles: CustomRoleDef[];
 }) {
   const isNew = !member;
   const [tab, setTab] = useState<"profile" | "permissions">("profile");
@@ -168,11 +171,14 @@ function UserModal({
     setPermissions({});
   };
 
+  const customRoleSlugs = customRoles.filter(r => !["owner", "admin", "marketing", "sales", "others"].includes(r.slug)).map(r => r.slug);
+  const allRoleMeta = { ...ROLE_META, ...getCustomRoleMeta(customRoles) };
   const roleOptions = actorRole === "owner"
-    ? (["owner", "admin", "marketing", "sales", "others"] as Role[])
-    : (["marketing", "sales", "others"] as Role[]);
+    ? (["owner", "admin", "marketing", "sales", "others", ...customRoleSlugs] as Role[])
+    : (["marketing", "sales", "others", ...customRoleSlugs] as Role[]);
 
-  const effectivePerms = getEffectivePermissions(role, permissions);
+  const orgRolePerms = Object.fromEntries(customRoles.map(r => [r.slug, r.permissions as ModulePermissions]));
+  const effectivePerms = getEffectivePermissions(role, permissions, orgRolePerms);
 
   const handleSave = async () => {
     if (isNew && !email.trim()) { setError("Email is required"); return; }
@@ -279,11 +285,11 @@ function UserModal({
                 <label className="text-[11px] font-medium mb-1 block" style={{ color: "var(--hm-text-secondary)" }}>Role</label>
                 <select value={role} onChange={e => handleRoleChange(e.target.value as Role)}>
                   {roleOptions.map(r => (
-                    <option key={r} value={r}>{ROLE_META[r].label}</option>
+                    <option key={r} value={r}>{(allRoleMeta[r] || ROLE_META[r])?.label || r}</option>
                   ))}
                 </select>
                 <p className="text-[11px] mt-1.5" style={{ color: "var(--hm-text-tertiary)" }}>
-                  {ROLE_META[role]?.description} · You can further customize module access in the Permissions tab.
+                  {(allRoleMeta[role] || ROLE_META[role])?.description} · You can further customize module access in the Permissions tab.
                 </p>
               </div>
 
@@ -668,6 +674,7 @@ export default function TeamPage() {
   const [resetDoneFor, setResetDoneFor] = useState<string | null>(null);
   const [leaveOpen, setLeaveOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [customRoles, setCustomRoles] = useState<CustomRoleDef[]>([]);
 
   const fetchMembers = useCallback(() => {
     setLoading(true);
@@ -683,6 +690,7 @@ export default function TeamPage() {
 
   useEffect(() => {
     fetchMembers();
+    fetch("/api/roles").then(r => r.json()).then(d => setCustomRoles(d.roles || [])).catch(() => {});
   }, [fetchMembers]);
 
   const timeAgo = (date: string | null) => {
@@ -855,6 +863,7 @@ export default function TeamPage() {
           actorRole={user!.role}
           onClose={() => setEditTarget(null)}
           onSaved={fetchMembers}
+          customRoles={customRoles}
         />
       )}
       {deleteTarget && (

@@ -48,6 +48,7 @@ model Organization {
   integrations       Integration[]
   aiProviders        AIProviderConfig[]
   tokenUsageLogs     TokenUsageLog[]
+  customRoles        CustomRole[]
 }
 
 model User {
@@ -456,6 +457,28 @@ model DesignBrief {
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id])
   createdAt      DateTime @default(now())
+}
+
+// ═══════════════════════════════════════
+// CUSTOM ROLES
+// ═══════════════════════════════════════
+
+model CustomRole {
+  id              String   @id @default(cuid())
+  name            String
+  slug            String
+  description     String?
+  color           String   @default("#6B7280")
+  rank            Int      @default(1)
+  permissions     Json     @default("{}")
+  kbPermissions   Json     @default("{}")
+  isBuiltIn       Boolean  @default(false)
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([organizationId, slug])
 }
 
 // ═══════════════════════════════════════

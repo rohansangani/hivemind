@@ -61,6 +61,81 @@ export default function SettingsPage() {
   const [aiMessage, setAiMessage] = useState("");
   const [aiDisconnecting, setAiDisconnecting] = useState<string | null>(null);
 
+  // Roles & Access state
+  type RoleDef = { id: string; slug: string; name: string; description: string | null; color: string; rank: number; isBuiltIn: boolean; permissions: Record<string, string>; kbPermissions: Record<string, string> };
+  type ModuleDef = { id: string; label: string; description: string; group: string };
+  const [roles, setRoles] = useState<RoleDef[]>([]);
+  const [roleModules, setRoleModules] = useState<ModuleDef[]>([]);
+  const [editingRole, setEditingRole] = useState<RoleDef | null>(null);
+  const [newRoleName, setNewRoleName] = useState("");
+  const [newRoleDesc, setNewRoleDesc] = useState("");
+  const [newRoleColor, setNewRoleColor] = useState("#6B7280");
+  const [showNewRole, setShowNewRole] = useState(false);
+  const [roleSaving, setRoleSaving] = useState(false);
+  const [roleMessage, setRoleMessage] = useState("");
+  const [roleDeleteConfirm, setRoleDeleteConfirm] = useState<string | null>(null);
+
+  const loadRoles = async () => {
+    try {
+      const res = await fetch("/api/roles");
+      const data = await res.json();
+      setRoles(data.roles || []);
+      setRoleModules(data.modules || []);
+    } catch { /* ignore */ }
+  };
+
+  const saveRolePermissions = async (slug: string, permissions: Record<string, string>, kbPermissions?: Record<string, string>) => {
+    setRoleSaving(true);
+    setRoleMessage("");
+    try {
+      const res = await fetch("/api/roles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "update", slug, permissions, ...(kbPermissions !== undefined ? { kbPermissions } : {}) }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setRoleMessage(data.error || "Failed to save"); }
+      else { setRoleMessage("Saved"); await loadRoles(); setTimeout(() => setRoleMessage(""), 2000); }
+    } catch { setRoleMessage("Failed to save"); }
+    finally { setRoleSaving(false); }
+  };
+
+  const createRole = async () => {
+    if (!newRoleName.trim()) return;
+    setRoleSaving(true);
+    setRoleMessage("");
+    try {
+      const res = await fetch("/api/roles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "create", name: newRoleName.trim(), description: newRoleDesc.trim() || null, color: newRoleColor, permissions: {
+          dashboard: "edit", industry_insights: "view", content_library: "edit", ai_assistant: "edit",
+          content_generator: "none", content_review: "edit", email_sequences: "none", design_brief: "none",
+          knowledge_base: "none", team: "none", settings: "none",
+        } }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setRoleMessage(data.error || "Failed to create"); }
+      else { setRoleMessage("Role created"); setShowNewRole(false); setNewRoleName(""); setNewRoleDesc(""); setNewRoleColor("#6B7280"); await loadRoles(); setTimeout(() => setRoleMessage(""), 2000); }
+    } catch { setRoleMessage("Failed to create"); }
+    finally { setRoleSaving(false); }
+  };
+
+  const deleteRole = async (slug: string) => {
+    setRoleSaving(true);
+    try {
+      const res = await fetch("/api/roles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete", slug }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setRoleMessage(data.error || "Failed to delete"); }
+      else { setRoleDeleteConfirm(null); if (editingRole?.slug === slug) setEditingRole(null); await loadRoles(); }
+    } catch { setRoleMessage("Failed to delete"); }
+    finally { setRoleSaving(false); }
+  };
+
   const loadAiProviders = async () => {
     try {
       const res = await fetch("/api/integrations/ai-providers");
@@ -180,6 +255,9 @@ export default function SettingsPage() {
 
     // Load AI provider configs
     loadAiProviders();
+
+    // Load roles
+    loadRoles();
 
   }, []);
 
@@ -463,6 +541,7 @@ export default function SettingsPage() {
         {(
           [
             { id: "general", label: "General" },
+            { id: "roles", label: "Roles & Access" },
             { id: "notifications", label: "Notifications" },
             { id: "scoring", label: "Brand scoring" },
             { id: "intelligence", label: "Web intelligence" },
@@ -613,6 +692,132 @@ export default function SettingsPage() {
               </button>
               <FeedbackRow />
 
+            </>
+          )}
+
+          {tab === "roles" && (
+            <>
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-[15px] font-semibold">Roles & Access</h2>
+                  <p className="text-[12px] text-[var(--hm-text-tertiary)] mt-0.5">Define what each role can access. Changes apply to all users with that role.</p>
+                </div>
+                <button onClick={() => setShowNewRole(true)} className="h-8 px-4 bg-[#4361ee] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150">+ New role</button>
+              </div>
+
+              {roleMessage && <div className={"mb-3 px-3 py-2 rounded-lg text-[12px] " + (roleMessage.includes("Failed") || roleMessage.includes("Cannot") || roleMessage.includes("reserved") || roleMessage.includes("exists") ? "bg-red-50 text-red-600" : "bg-emerald-50 text-emerald-600")}>{roleMessage}</div>}
+
+              {showNewRole && (
+                <div className="mb-4 border border-[#4361ee] rounded-xl p-4 space-y-3 bg-blue-50/30">
+                  <h3 className="text-[13px] font-semibold">Create new role</h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><label className="block text-[11px] text-[var(--hm-text-secondary)] mb-1">Role name *</label><input type="text" value={newRoleName} onChange={e => setNewRoleName(e.target.value)} placeholder="e.g., Content Writer" className="w-full text-[13px]" /></div>
+                    <div><label className="block text-[11px] text-[var(--hm-text-secondary)] mb-1">Color</label><div className="flex items-center gap-2"><input type="color" value={newRoleColor} onChange={e => setNewRoleColor(e.target.value)} className="w-8 h-8 rounded cursor-pointer border-0 p-0" /><span className="text-[11px] text-[var(--hm-text-tertiary)]">{newRoleColor}</span></div></div>
+                  </div>
+                  <div><label className="block text-[11px] text-[var(--hm-text-secondary)] mb-1">Description</label><input type="text" value={newRoleDesc} onChange={e => setNewRoleDesc(e.target.value)} placeholder="Brief description of this role" className="w-full text-[13px]" /></div>
+                  <div className="flex justify-end gap-2">
+                    <button onClick={() => { setShowNewRole(false); setNewRoleName(""); setNewRoleDesc(""); }} className="h-8 px-3 border border-[var(--hm-border)] rounded-lg text-[12px] hover:bg-[var(--hm-bg-secondary)]">Cancel</button>
+                    <button onClick={createRole} disabled={!newRoleName.trim() || roleSaving} className="h-8 px-4 bg-[#4361ee] text-white rounded-lg text-[12px] font-medium hover:opacity-90 disabled:opacity-50">{roleSaving ? "Creating..." : "Create role"}</button>
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                {roles.map(role => (
+                  <div key={role.slug} className={"border rounded-xl transition-all duration-150 " + (editingRole?.slug === role.slug ? "border-[#4361ee] bg-white" : "border-[var(--hm-border)] bg-white hover:border-[#4361ee]/40")}>
+                    <div className="flex items-center justify-between px-4 py-3 cursor-pointer" onClick={() => setEditingRole(editingRole?.slug === role.slug ? null : { ...role })}>
+                      <div className="flex items-center gap-3">
+                        <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: role.color }} />
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[13px] font-medium">{role.name}</span>
+                            {role.isBuiltIn && <span className="text-[9px] px-1.5 py-0.5 bg-[var(--hm-bg-secondary)] text-[var(--hm-text-tertiary)] rounded">Built-in</span>}
+                            {role.slug === "owner" && <span className="text-[9px] px-1.5 py-0.5 bg-purple-50 text-purple-600 rounded">Protected</span>}
+                          </div>
+                          <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-0.5">{role.description || "No description"}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-[var(--hm-text-tertiary)]">
+                          {Object.values(role.permissions as Record<string, string>).filter(v => v === "edit").length} edit, {Object.values(role.permissions as Record<string, string>).filter(v => v === "view").length} view
+                        </span>
+                        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{ transform: editingRole?.slug === role.slug ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}><path d="M4 6l4 4 4-4" stroke="var(--hm-text-tertiary)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                      </div>
+                    </div>
+
+                    {editingRole?.slug === role.slug && (
+                      <div className="px-4 pb-4 border-t border-[var(--hm-border)]">
+                        {role.slug === "owner" ? (
+                          <p className="text-[12px] text-[var(--hm-text-tertiary)] py-3">The Owner role has full access to all modules and cannot be modified.</p>
+                        ) : (
+                          <>
+                            <div className="py-3">
+                              <table className="w-full">
+                                <thead>
+                                  <tr className="border-b border-[var(--hm-border)]">
+                                    <th className="text-left text-[11px] text-[var(--hm-text-tertiary)] font-medium pb-2 w-[40%]">Module</th>
+                                    <th className="text-center text-[11px] text-[var(--hm-text-tertiary)] font-medium pb-2 w-[20%]">None</th>
+                                    <th className="text-center text-[11px] text-[var(--hm-text-tertiary)] font-medium pb-2 w-[20%]">View</th>
+                                    <th className="text-center text-[11px] text-[var(--hm-text-tertiary)] font-medium pb-2 w-[20%]">Edit</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {roleModules.map(mod => {
+                                    const currentLevel = (editingRole.permissions as Record<string, string>)[mod.id] || "none";
+                                    return (
+                                      <tr key={mod.id} className="border-b border-[var(--hm-border)] last:border-b-0">
+                                        <td className="py-2">
+                                          <span className="text-[12px] font-medium">{mod.label}</span>
+                                          <span className="text-[10px] text-[var(--hm-text-tertiary)] ml-1.5 hidden sm:inline">{mod.description}</span>
+                                        </td>
+                                        {(["none", "view", "edit"] as const).map(level => (
+                                          <td key={level} className="text-center py-2">
+                                            <button
+                                              onClick={() => setEditingRole({ ...editingRole, permissions: { ...editingRole.permissions, [mod.id]: level } })}
+                                              className={"w-7 h-7 rounded-full border-2 transition-all duration-150 " + (currentLevel === level
+                                                ? level === "edit" ? "border-emerald-500 bg-emerald-500" : level === "view" ? "border-blue-500 bg-blue-500" : "border-gray-400 bg-gray-400"
+                                                : "border-[var(--hm-border)] hover:border-gray-400")}
+                                            >
+                                              {currentLevel === level && <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className="mx-auto"><path d="M4 8l3 3 5-5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>}
+                                            </button>
+                                          </td>
+                                        ))}
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+
+                            <div className="flex items-center justify-between pt-2">
+                              <div>
+                                {!role.isBuiltIn && (
+                                  roleDeleteConfirm === role.slug ? (
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[11px] text-red-500">Delete this role?</span>
+                                      <button onClick={() => deleteRole(role.slug)} className="text-[11px] text-red-600 font-medium hover:underline">Yes, delete</button>
+                                      <button onClick={() => setRoleDeleteConfirm(null)} className="text-[11px] text-[var(--hm-text-tertiary)] hover:underline">Cancel</button>
+                                    </div>
+                                  ) : (
+                                    <button onClick={() => setRoleDeleteConfirm(role.slug)} className="text-[11px] text-red-500 hover:underline">Delete role</button>
+                                  )
+                                )}
+                              </div>
+                              <button
+                                onClick={() => saveRolePermissions(editingRole.slug, editingRole.permissions, editingRole.kbPermissions)}
+                                disabled={roleSaving}
+                                className="h-8 px-4 bg-[#4361ee] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150 disabled:opacity-50"
+                              >
+                                {roleSaving ? "Saving..." : "Save permissions"}
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
             </>
           )}
 

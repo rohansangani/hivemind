@@ -62,6 +62,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
 
+  // Custom role permissions for sidebar
+  const [orgRolePerms, setOrgRolePerms] = useState<Record<string, Record<string, string>>>({});
+
   // Tour state
   const [activeTour, setActiveTour] = useState<TourDef | null>(null);
   const [completedTourIds, setCompletedTourIds] = useState<string[]>([]);
@@ -78,6 +81,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         if (d.user) setUser(d.user);
         else router.push("/login");
       });
+    fetch("/api/roles").then(r => r.json()).then(d => {
+      if (d.roles) {
+        const perms: Record<string, Record<string, string>> = {};
+        for (const role of d.roles) perms[role.slug] = role.permissions as Record<string, string>;
+        setOrgRolePerms(perms);
+      }
+    }).catch(() => {});
   }, [router]);
 
   // Load tour progress once user is available
@@ -153,7 +163,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             sidebarOpen ? "translate-x-0" : "-translate-x-full"
           }`}
         >
-          <Sidebar userName={user.name || "User"} userRole={user.role} onClose={() => setSidebarOpen(false)} onStartTour={handleStartTour} />
+          <Sidebar userName={user.name || "User"} userRole={user.role} orgRolePerms={orgRolePerms} onClose={() => setSidebarOpen(false)} onStartTour={handleStartTour} />
         </div>
 
         {/* ── Main content area ── */}
