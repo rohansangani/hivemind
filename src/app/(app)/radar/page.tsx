@@ -606,6 +606,60 @@ function ExportSection() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
+  const [staleInfo, setStaleInfo] = useState<{ total: number; sampledStalePct: number } | null>(null);
+  const [checkingStale, setCheckingStale] = useState(false);
+  const [revalidating, setRevalidating] = useState(false);
+  const [revalidateProgress, setRevalidateProgress] = useState<{ processed: number; validated: number } | null>(null);
+
+  const filters = () => ({ vertical: vertical || undefined, search: search || undefined });
+
+  const callExportValidate = async (body: Record<string, unknown>) => {
+    const r = await fetch("/api/radar/export-validate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || "Request failed");
+    return d;
+  };
+
+  const checkStale = async () => {
+    setCheckingStale(true);
+    setMsg(null);
+    try {
+      const d = await callExportValidate({ action: "count_stale", filters: filters() });
+      setStaleInfo({ total: d.total ?? 0, sampledStalePct: d.stalePct ?? d.sampledStalePct ?? 0 });
+    } catch (e) {
+      setMsg({ kind: "err", text: (e as Error).message });
+    } finally {
+      setCheckingStale(false);
+    }
+  };
+
+  const revalidate = async () => {
+    setRevalidating(true);
+    setMsg(null);
+    let processed = 0, validated = 0, offset = 0, done = false;
+    setRevalidateProgress({ processed: 0, validated: 0 });
+    try {
+      for (let guard = 0; guard < 500 && !done; guard++) {
+        const d = await callExportValidate({ action: "validate_chunk", filters: filters(), offset });
+        processed += d.processed || 0;
+        validated += d.validated || 0;
+        offset = d.next_offset ?? offset + (d.processed || 0);
+        done = d.done || d.processed === 0;
+        setRevalidateProgress({ processed, validated });
+      }
+      setMsg({ kind: "ok", text: `Re-validated ${validated.toLocaleString()} of ${processed.toLocaleString()} contacts checked. Ready to export.` });
+      setStaleInfo(null);
+    } catch (e) {
+      setMsg({ kind: "err", text: (e as Error).message });
+    } finally {
+      setRevalidating(false);
+    }
+  };
+
   const download = async () => {
     setBusy(true);
     setMsg(null);
@@ -663,15 +717,42 @@ function ExportSection() {
             <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Search (optional)</label>
             <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="name, email…" />
           </div>
-          <button
-            onClick={download}
-            disabled={busy}
-            className="hm-btn hm-btn-primary"
-            style={{ height: 38, padding: "0 18px", fontSize: 13 }}
-          >
-            {busy ? "Preparing…" : "Download CSV"}
-          </button>
         </div>
+
+        {/* Debounce re-validation */}
+        <div className="rounded-lg border border-[var(--hm-border)] p-3 space-y-2.5">
+          <p className="text-[12px] font-medium text-[var(--hm-text-secondary)]">Re-validate stale emails before exporting (via Debounce)</p>
+          {!revalidateProgress ? (
+            <div className="flex items-center gap-3 flex-wrap">
+              <button onClick={checkStale} disabled={checkingStale} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 12px", fontSize: 12 }}>
+                {checkingStale ? "Checking…" : "Check staleness"}
+              </button>
+              {staleInfo && (
+                <>
+                  <span className="text-[12px] text-[var(--hm-text-tertiary)]">
+                    {staleInfo.total.toLocaleString()} contact(s) match filters — ~{staleInfo.sampledStalePct}% look stale
+                  </span>
+                  <button onClick={revalidate} className="hm-btn hm-btn-primary" style={{ height: 32, padding: "0 12px", fontSize: 12 }}>
+                    Re-validate now
+                  </button>
+                </>
+              )}
+            </div>
+          ) : (
+            <div className="text-[12px] text-[var(--hm-text-secondary)]">
+              {revalidating ? "Re-validating…" : "Done."} {revalidateProgress.processed.toLocaleString()} checked, {revalidateProgress.validated.toLocaleString()} updated.
+            </div>
+          )}
+        </div>
+
+        <button
+          onClick={download}
+          disabled={busy}
+          className="hm-btn hm-btn-primary"
+          style={{ height: 38, padding: "0 18px", fontSize: 13 }}
+        >
+          {busy ? "Preparing…" : "Download CSV"}
+        </button>
 
         {msg && (
           <div
@@ -691,17 +772,115 @@ function ExportSection() {
 
 /* ── Upload ────────────────────────────────────────────────────────────── */
 
-const ACCOUNT_FIELDS = [
-  "name", "domain", "vertical", "industry", "sub_industry", "account_size",
-  "employee_range", "revenue_range", "company_location", "country",
-  "linkedin_url", "sdr_owner", "parent_company", "track_order_page", "edd",
-  "no_of_stores", "ebo", "mbo", "shopify", "alt_names", "brand_details",
-];
-const CONTACT_FIELDS = [
-  "first_name", "last_name", "email", "title", "seniority", "department",
-  "linkedin_url", "phone", "phone2", "country", "company_name", "domain",
-  "vertical", "email_status", "location",
-];
+type UploadTable = "accounts" | "contacts" | "smart";
+
+/** CSV field → DB column labels, per upload mode. Smart mode prefixes a:/c: to disambiguate. */
+const DB_COLS: Record<UploadTable, Record<string, string>> = {
+  accounts: {
+    name: "Company Name", domain: "Website", linkedin_url: "Company LinkedIn",
+    industry: "Industry", sub_industry: "Sub-Industry",
+    company_location: "Company Location", country: "Country",
+    revenue_range: "Annual Revenue", employee_range: "Employee Size",
+    account_size: "Account Size", vertical: "Vertical",
+    track_order_page: "Track Order Page", edd: "EDD", no_of_stores: "No. of Stores",
+    ebo: "EBO", mbo: "MBO", shopify: "Shopify",
+    parent_company: "Parent Company", sdr_owner: "SDR Owner",
+  },
+  contacts: {
+    company_name: "Company Name",
+    first_name: "First Name", last_name: "Last Name", full_name: "Full Name",
+    linkedin_url: "Contact's LinkedIn", title: "Job Title", location: "Contact Location",
+    email: "Email", email_status: "Email Status", phone: "Phone Number 1",
+    phone2: "Phone Number 2", domain: "Domain",
+    country: "Country", vertical: "Vertical",
+    parent_company: "Parent Company", sdr_owner: "SDR Owner",
+  },
+  smart: {
+    "a:name": "Company Name", "a:domain": "Company Website / Domain",
+    "a:linkedin_url": "Company LinkedIn", "a:industry": "Industry",
+    "a:sub_industry": "Sub-Industry", "a:company_location": "Company Location",
+    "a:country": "Company Country", "a:revenue_range": "Annual Revenue",
+    "a:employee_range": "Employee Size", "a:account_size": "Account Size",
+    "a:vertical": "Vertical", "a:track_order_page": "Track Order Page",
+    "a:edd": "EDD", "a:no_of_stores": "No. of Stores",
+    "a:ebo": "EBO", "a:mbo": "MBO", "a:shopify": "Shopify",
+    "a:parent_company": "Parent Company", "a:sdr_owner": "SDR Owner",
+    "c:company_name": "Contact's Company Name",
+    "c:first_name": "First Name", "c:last_name": "Last Name", "c:full_name": "Full Name",
+    "c:email": "Email", "c:email_status": "Email Status",
+    "c:title": "Job Title", "c:linkedin_url": "Contact LinkedIn",
+    "c:phone": "Phone 1", "c:phone2": "Phone 2",
+    "c:country": "Contact Country", "c:location": "Contact Location",
+    "c:vertical": "Contact Vertical",
+    "c:parent_company": "Contact Parent Company", "c:sdr_owner": "Contact SDR Owner",
+  },
+};
+
+/** Lowercased CSV header → DB field, used to pre-select the mapping dropdown. */
+const AUTO_MAP: Record<UploadTable, Record<string, string>> = {
+  accounts: {
+    company: "name", "company name": "name", name: "name",
+    website: "domain", domain: "domain", "company website": "domain",
+    "company linkedin": "linkedin_url", linkedin: "linkedin_url", "linkedin url": "linkedin_url",
+    industry: "industry",
+    "sub-industry": "sub_industry", "sub industry": "sub_industry",
+    "company location": "company_location",
+    country: "country",
+    "annual revenue": "revenue_range", revenue: "revenue_range",
+    "employee size": "employee_range", employees: "employee_range", "number of employees": "employee_range", "employee count": "employee_range",
+    "account size": "account_size",
+    vertical: "vertical",
+    "track order page": "track_order_page", "track order": "track_order_page",
+    edd: "edd",
+    "no of stores": "no_of_stores", "number of stores": "no_of_stores", "no. of stores": "no_of_stores",
+    ebo: "ebo", mbo: "mbo", shopify: "shopify",
+    "parent company": "parent_company",
+    "sdr owner": "sdr_owner", owner: "sdr_owner",
+  },
+  contacts: {
+    "company name": "company_name", company: "company_name",
+    "company website": "domain", "company domain": "domain",
+    "first name": "first_name", "last name": "last_name", "full name": "full_name",
+    "contact's linkedin": "linkedin_url", "contacts linkedin": "linkedin_url", linkedin: "linkedin_url",
+    "job title": "title", title: "title",
+    "contact location": "location", location: "location",
+    email: "email",
+    "email status": "email_status",
+    "phone number1": "phone", "phone number 1": "phone", phone: "phone", phone1: "phone",
+    "phone number2": "phone2", "phone number 2": "phone2", phone2: "phone2",
+    domain: "domain", website: "domain",
+    country: "country", vertical: "vertical",
+    "parent company": "parent_company",
+    "sdr owner": "sdr_owner", owner: "sdr_owner",
+  },
+  smart: {
+    "company name": "a:name", company: "a:name", "account name": "a:name",
+    website: "a:domain", domain: "a:domain", "company website": "a:domain", "company domain": "a:domain",
+    "company linkedin": "a:linkedin_url", "company linkedin url": "a:linkedin_url",
+    industry: "a:industry", "sub-industry": "a:sub_industry", "sub industry": "a:sub_industry",
+    "company location": "a:company_location",
+    "company country": "a:country", "account country": "a:country",
+    "annual revenue": "a:revenue_range", revenue: "a:revenue_range",
+    "employee size": "a:employee_range", employees: "a:employee_range", "employee count": "a:employee_range", "number of employees": "a:employee_range",
+    "account size": "a:account_size",
+    vertical: "a:vertical",
+    "track order page": "a:track_order_page", "track order": "a:track_order_page",
+    edd: "a:edd",
+    "no of stores": "a:no_of_stores", "no. of stores": "a:no_of_stores", "number of stores": "a:no_of_stores",
+    ebo: "a:ebo", mbo: "a:mbo", shopify: "a:shopify",
+    "parent company": "a:parent_company", "sdr owner": "a:sdr_owner",
+    "first name": "c:first_name", "last name": "c:last_name", "full name": "c:full_name",
+    email: "c:email", "email status": "c:email_status",
+    "job title": "c:title", title: "c:title",
+    "contact linkedin": "c:linkedin_url", "contact's linkedin": "c:linkedin_url", "contacts linkedin": "c:linkedin_url",
+    phone: "c:phone", phone1: "c:phone", "phone number 1": "c:phone", "phone number1": "c:phone",
+    phone2: "c:phone2", "phone number 2": "c:phone2", "phone number2": "c:phone2",
+    country: "c:country", "contact country": "c:country",
+    location: "c:location", "contact location": "c:location",
+    "contact vertical": "c:vertical",
+    "contact parent company": "c:parent_company", "contact sdr owner": "c:sdr_owner",
+  },
+};
 
 /** Minimal CSV parser handling quoted fields and embedded commas/newlines. */
 function parseCSV(text: string): { headers: string[]; rows: Record<string, string>[] } {
@@ -735,16 +914,22 @@ function parseCSV(text: string): { headers: string[]; rows: Record<string, strin
 }
 
 function UploadSection() {
-  const [table, setTable] = useState<"accounts" | "contacts">("accounts");
+  const [table, setTable] = useState<UploadTable>("accounts");
   const [fileName, setFileName] = useState("");
   const [parsed, setParsed] = useState<{ headers: string[]; rows: Record<string, string>[] } | null>(null);
+  const [mapping, setMapping] = useState<Record<string, string>>({}); // csv header -> db field ("" = skip)
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [msg, setMsg] = useState<{ kind: "ok" | "err" | "info"; text: string } | null>(null);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [stopping, setStopping] = useState(false);
 
-  const known = table === "accounts" ? ACCOUNT_FIELDS : CONTACT_FIELDS;
-  const matched = parsed ? parsed.headers.filter((h) => known.includes(h)) : [];
-  const ignored = parsed ? parsed.headers.filter((h) => !known.includes(h)) : [];
+  const dbCols = DB_COLS[table];
+  const autoMap = AUTO_MAP[table];
+
+  const resetAll = () => {
+    setParsed(null); setFileName(""); setMapping({}); setMsg(null); setProgress(null); setJobId(null);
+  };
 
   const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -752,51 +937,122 @@ function UploadSection() {
     setFileName(f.name);
     setMsg(null);
     const reader = new FileReader();
-    reader.onload = () => setParsed(parseCSV(String(reader.result || "")));
+    reader.onload = () => {
+      const p = parseCSV(String(reader.result || ""));
+      setParsed(p);
+      const initial: Record<string, string> = {};
+      for (const h of p.headers) initial[h] = autoMap[h.toLowerCase().trim()] || "";
+      setMapping(initial);
+    };
     reader.readAsText(f);
+  };
+
+  const mappedCount = Object.values(mapping).filter(Boolean).length;
+
+  const stop = async () => {
+    if (!jobId) return;
+    setStopping(true);
+    try {
+      const r = await fetch("/api/radar/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "stop", jobId }),
+      });
+      const d = await r.json().catch(() => ({}));
+      setMsg({ kind: "info", text: `Stopped — rolled back ${d.contactsDeleted || 0} contacts, ${d.accountsDeleted || 0} accounts already committed by this job.` });
+    } catch { /* ignore */ }
+    setBusy(false);
+    setProgress(null);
+    setStopping(false);
+  };
+
+  const uploadChunks = async (uploadTable: "accounts" | "contacts", rows: Record<string, string>[], jid: string, isLastGroup: boolean, offsetDone: number, totalAll: number) => {
+    const CHUNK = 500;
+    let inserted = 0;
+    for (let i = 0; i < rows.length; i += CHUNK) {
+      const chunk = rows.slice(i, i + CHUNK);
+      const isLast = isLastGroup && i + CHUNK >= rows.length;
+      const res = await fetch("/api/radar/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ table: uploadTable, rows: chunk, jobId: jid, filename: fileName, isLast }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error || `Upload failed at row ${i}`);
+      if (d.stopped) return { inserted, stopped: true };
+      inserted += d.inserted ?? chunk.length;
+      setProgress({ done: Math.min(offsetDone + i + CHUNK, totalAll), total: totalAll });
+    }
+    return { inserted, stopped: false };
   };
 
   const doUpload = async () => {
     if (!parsed || !parsed.rows.length) return;
-    if (!matched.length) { setMsg({ kind: "err", text: "No CSV columns match the target fields — check your headers." }); return; }
+    if (!mappedCount) { setMsg({ kind: "err", text: "Map at least one column first." }); return; }
 
     setBusy(true);
     setMsg(null);
-    // Keep only recognised columns; drop blanks per row.
-    const rows = parsed.rows.map((r) => {
-      const o: Record<string, string> = {};
-      for (const k of matched) if (r[k] !== "") o[k] = r[k];
-      return o;
-    }).filter((r) => Object.keys(r).length);
 
-    const jobId = (crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`);
-    const CHUNK = 500;
-    let inserted = 0;
-    setProgress({ done: 0, total: rows.length });
+    const jid = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    setJobId(jid);
 
     try {
-      for (let i = 0; i < rows.length; i += CHUNK) {
-        const chunk = rows.slice(i, i + CHUNK);
-        const isLast = i + CHUNK >= rows.length;
-        const res = await fetch("/api/radar/upload", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ table, rows: chunk, jobId, filename: fileName, isLast }),
-        });
-        const d = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(d.error || `Upload failed at row ${i}`);
-        if (d.stopped) { setMsg({ kind: "info", text: "Upload stopped." }); setBusy(false); setProgress(null); return; }
-        inserted += d.inserted ?? chunk.length;
-        setProgress({ done: Math.min(i + CHUNK, rows.length), total: rows.length });
+      if (table === "smart") {
+        // Build combined rows keyed by "a:field" / "c:field", then split.
+        const accountRows: Record<string, string>[] = [];
+        const contactRows: Record<string, string>[] = [];
+        for (const r of parsed.rows) {
+          const acc: Record<string, string> = {}, con: Record<string, string> = {};
+          for (const [csvCol, dbKey] of Object.entries(mapping)) {
+            if (!dbKey) continue;
+            const v = r[csvCol];
+            if (v === "" || v == null) continue;
+            if (dbKey.startsWith("a:")) acc[dbKey.slice(2)] = v;
+            else if (dbKey.startsWith("c:")) con[dbKey.slice(2)] = v;
+          }
+          if (Object.keys(con).length && !con.company_name && acc.name) con.company_name = acc.name;
+          if (Object.keys(acc).length) accountRows.push(acc);
+          if (Object.keys(con).length) contactRows.push(con);
+        }
+        const total = accountRows.length + contactRows.length;
+        setProgress({ done: 0, total });
+
+        if (accountRows.length) {
+          const r1 = await uploadChunks("accounts", accountRows, jid, !contactRows.length, 0, total);
+          if (r1.stopped) { setMsg({ kind: "info", text: "Upload stopped." }); return; }
+        }
+        let contactsInserted = 0;
+        if (contactRows.length) {
+          const r2 = await uploadChunks("contacts", contactRows, jid, true, accountRows.length, total);
+          if (r2.stopped) { setMsg({ kind: "info", text: "Upload stopped." }); return; }
+          contactsInserted = r2.inserted;
+        }
+        setMsg({ kind: "ok", text: `Imported ${accountRows.length.toLocaleString()} accounts + ${contactsInserted.toLocaleString()} contacts (auto-linked by domain).` });
+      } else {
+        const rows = parsed.rows.map((r) => {
+          const o: Record<string, string> = {};
+          for (const [csvCol, dbKey] of Object.entries(mapping)) {
+            if (!dbKey) continue;
+            const v = r[csvCol];
+            if (v !== "" && v != null) o[dbKey] = v;
+          }
+          return o;
+        }).filter((r) => Object.keys(r).length);
+
+        setProgress({ done: 0, total: rows.length });
+        const { inserted, stopped } = await uploadChunks(table, rows, jid, true, 0, rows.length);
+        if (stopped) { setMsg({ kind: "info", text: "Upload stopped." }); return; }
+        setMsg({ kind: "ok", text: `Imported ${rows.length.toLocaleString()} ${table} (${inserted.toLocaleString()} new/updated${table === "contacts" ? ", auto-linked to accounts by domain" : ""}).` });
       }
-      setMsg({ kind: "ok", text: `Imported ${rows.length.toLocaleString()} ${table} (${inserted.toLocaleString()} new/updated${table === "contacts" ? ", auto-linked to accounts by domain" : ""}).` });
       setParsed(null);
       setFileName("");
+      setMapping({});
     } catch (e) {
       setMsg({ kind: "err", text: (e as Error).message });
     } finally {
       setBusy(false);
       setProgress(null);
+      setJobId(null);
     }
   };
 
@@ -806,72 +1062,115 @@ function UploadSection() {
         <div className="px-5 py-4 border-b border-[var(--hm-border)]">
           <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Bulk import from CSV</h2>
           <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">
-            CSV column headers should match field names. Contacts auto-link to accounts by domain.
+            Map your CSV columns to database fields. Smart mode splits one file into linked accounts + contacts.
           </p>
         </div>
         <div className="px-5 py-5 space-y-4">
-          {/* Target */}
+          {/* Mode */}
           <div className="flex items-center gap-2">
             <span className="text-[12px] font-medium text-[var(--hm-text-secondary)]">Import into:</span>
-            {(["accounts", "contacts"] as const).map((t) => (
+            {(["accounts", "contacts", "smart"] as UploadTable[]).map((t) => (
               <button
                 key={t}
-                onClick={() => { setTable(t); setParsed(null); setFileName(""); setMsg(null); }}
+                onClick={() => { setTable(t); resetAll(); }}
                 className={`px-3 py-1 rounded-lg text-[12.5px] border transition-colors ${
                   table === t
                     ? "border-[var(--hm-accent)] text-[var(--hm-accent)] bg-[var(--hm-accent-light)] font-medium"
                     : "border-[var(--hm-border)] text-[var(--hm-text-secondary)]"
                 }`}
               >
-                {t.charAt(0).toUpperCase() + t.slice(1)}
+                {t === "smart" ? "Smart (Accounts + Contacts)" : t.charAt(0).toUpperCase() + t.slice(1)}
               </button>
             ))}
           </div>
 
           {/* File picker */}
-          <label className="block cursor-pointer">
-            <div className="border border-dashed border-[var(--hm-border)] rounded-xl px-4 py-8 text-center bg-[var(--hm-bg-secondary)] hover:border-[var(--hm-accent)] transition-colors">
-              <div className="w-10 h-10 rounded-xl bg-[var(--hm-accent-light)] flex items-center justify-center mx-auto mb-3">
-                <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                  <path d="M8 11V3M8 3L5 6M8 3l3 3" stroke="var(--hm-accent)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-                  <path d="M2 11v1a2 2 0 002 2h8a2 2 0 002-2v-1" stroke="var(--hm-accent)" strokeWidth="1.4" strokeLinecap="round" />
-                </svg>
-              </div>
-              <p className="text-[13px] font-medium text-[var(--hm-text)]">{fileName || "Click to choose a CSV file"}</p>
-              <p className="text-[11.5px] text-[var(--hm-text-tertiary)] mt-0.5">
-                {parsed ? `${parsed.rows.length.toLocaleString()} rows detected` : "Headers matched against radar fields"}
-              </p>
-            </div>
-            <input type="file" accept=".csv,text/csv" onChange={onFile} style={{ display: "none" }} />
-          </label>
-
-          {/* Column preview */}
-          {parsed && (
-            <div className="rounded-lg border border-[var(--hm-border)] p-3 space-y-2 text-[12px]">
-              <div>
-                <span className="text-[var(--hm-text-tertiary)]">Matched ({matched.length}): </span>
-                {matched.length
-                  ? matched.map((h) => <span key={h} className="inline-block mr-1 mb-1 px-1.5 py-0.5 rounded bg-[#DCFCE7] text-[#059669]">{h}</span>)
-                  : <span className="text-red-500">none</span>}
-              </div>
-              {ignored.length > 0 && (
-                <div>
-                  <span className="text-[var(--hm-text-tertiary)]">Ignored ({ignored.length}): </span>
-                  {ignored.map((h) => <span key={h} className="inline-block mr-1 mb-1 px-1.5 py-0.5 rounded bg-[var(--hm-bg-tertiary)] text-[var(--hm-text-tertiary)]">{h}</span>)}
+          {!parsed && (
+            <label className="block cursor-pointer">
+              <div className="border border-dashed border-[var(--hm-border)] rounded-xl px-4 py-8 text-center bg-[var(--hm-bg-secondary)] hover:border-[var(--hm-accent)] transition-colors">
+                <div className="w-10 h-10 rounded-xl bg-[var(--hm-accent-light)] flex items-center justify-center mx-auto mb-3">
+                  <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <path d="M8 11V3M8 3L5 6M8 3l3 3" stroke="var(--hm-accent)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M2 11v1a2 2 0 002 2h8a2 2 0 002-2v-1" stroke="var(--hm-accent)" strokeWidth="1.4" strokeLinecap="round" />
+                  </svg>
                 </div>
-              )}
+                <p className="text-[13px] font-medium text-[var(--hm-text)]">Click to choose a CSV file</p>
+                <p className="text-[11.5px] text-[var(--hm-text-tertiary)] mt-0.5">Next step lets you map each column</p>
+              </div>
+              <input type="file" accept=".csv,text/csv" onChange={onFile} style={{ display: "none" }} />
+            </label>
+          )}
+
+          {/* Column mapping */}
+          {parsed && !busy && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[12.5px] text-[var(--hm-text-secondary)]">
+                  <strong className="text-[var(--hm-text)]">{fileName}</strong> · {parsed.rows.length.toLocaleString()} rows · {mappedCount} column(s) mapped
+                </span>
+                <button onClick={resetAll} className="text-[12px] text-[var(--hm-text-tertiary)] hover:text-[var(--hm-accent)]">Choose different file</button>
+              </div>
+              <div className="rounded-lg border border-[var(--hm-border)] overflow-hidden">
+                <div className="max-h-80 overflow-y-auto">
+                  <table className="w-full border-collapse text-[12.5px]">
+                    <thead>
+                      <tr>
+                        {["CSV column", "Maps to", "Sample value"].map((h) => (
+                          <th key={h} className="text-left text-[10.5px] font-semibold uppercase tracking-wide text-[var(--hm-text-tertiary)] px-3 py-2 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] sticky top-0">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {parsed.headers.map((h) => (
+                        <tr key={h}>
+                          <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)] font-medium text-[var(--hm-text)] whitespace-nowrap">{h}</td>
+                          <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)]">
+                            <select
+                              value={mapping[h] || ""}
+                              onChange={(e) => setMapping((m) => ({ ...m, [h]: e.target.value }))}
+                              style={{ height: 30, fontSize: 12 }}
+                            >
+                              <option value="">— Skip —</option>
+                              {table === "smart" ? (
+                                <>
+                                  <optgroup label="Account fields">
+                                    {Object.entries(dbCols).filter(([k]) => k.startsWith("a:")).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                                  </optgroup>
+                                  <optgroup label="Contact fields">
+                                    {Object.entries(dbCols).filter(([k]) => k.startsWith("c:")).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                                  </optgroup>
+                                </>
+                              ) : (
+                                Object.entries(dbCols).map(([k, l]) => <option key={k} value={k}>{l}</option>)
+                              )}
+                            </select>
+                          </td>
+                          <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text-tertiary)] truncate max-w-[220px]">
+                            {String(parsed.rows[0]?.[h] ?? "—").slice(0, 50) || "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           )}
 
           {/* Progress */}
           {progress && (
             <div>
-              <div className="flex justify-between text-[11.5px] text-[var(--hm-text-tertiary)] mb-1">
+              <div className="flex justify-between items-center text-[11.5px] text-[var(--hm-text-tertiary)] mb-1">
                 <span>Uploading…</span>
-                <span className="tabular-nums">{progress.done.toLocaleString()} / {progress.total.toLocaleString()}</span>
+                <div className="flex items-center gap-3">
+                  <span className="tabular-nums">{progress.done.toLocaleString()} / {progress.total.toLocaleString()}</span>
+                  <button onClick={stop} disabled={stopping} className="text-red-500 hover:underline">
+                    {stopping ? "Stopping…" : "■ Stop"}
+                  </button>
+                </div>
               </div>
               <div className="h-2 rounded-full bg-[var(--hm-bg-tertiary)] overflow-hidden">
-                <div className="h-full rounded-full bg-[var(--hm-accent)] transition-all" style={{ width: `${(progress.done / progress.total) * 100}%` }} />
+                <div className="h-full rounded-full bg-[var(--hm-accent)] transition-all" style={{ width: `${(progress.done / Math.max(progress.total, 1)) * 100}%` }} />
               </div>
             </div>
           )}
@@ -884,17 +1183,19 @@ function UploadSection() {
             }`}>{msg.text}</div>
           )}
 
-          <div className="flex items-center gap-3">
-            <button
-              onClick={doUpload}
-              disabled={busy || !parsed || !parsed.rows.length}
-              className="hm-btn hm-btn-primary"
-              style={{ height: 38, padding: "0 18px", fontSize: 13 }}
-            >
-              {busy ? "Importing…" : "Start import"}
-            </button>
-            <span className="text-[11.5px] text-[var(--hm-text-tertiary)]">Writes to the live radar database.</span>
-          </div>
+          {parsed && (
+            <div className="flex items-center gap-3">
+              <button
+                onClick={doUpload}
+                disabled={busy || !parsed.rows.length || !mappedCount}
+                className="hm-btn hm-btn-primary"
+                style={{ height: 38, padding: "0 18px", fontSize: 13 }}
+              >
+                {busy ? "Importing…" : "Import →"}
+              </button>
+              <span className="text-[11.5px] text-[var(--hm-text-tertiary)]">Writes to the live radar database.</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -998,11 +1299,25 @@ interface EnrichLead {
 
 type EnrichPhase = "form" | "running" | "results" | "saved";
 
+interface EnrichScore { email: string; score: number; reason: string; }
+
 function EnrichSection() {
   const [domain, setDomain] = useState("");
   const [titles, setTitles] = useState("");
+  const [notTitles, setNotTitles] = useState("");
   const [seniority, setSeniority] = useState("");
+  const [functionalLevel, setFunctionalLevel] = useState("");
+  const [location, setLocation] = useState("");
+  const [notLocation, setNotLocation] = useState("");
+  const [industry, setIndustry] = useState("");
+  const [notIndustry, setNotIndustry] = useState("");
+  const [keywords, setKeywords] = useState("");
+  const [notKeywords, setNotKeywords] = useState("");
+  const [minRevenue, setMinRevenue] = useState("");
+  const [maxRevenue, setMaxRevenue] = useState("");
   const [fetchCount, setFetchCount] = useState(25);
+  const [icpVertical, setIcpVertical] = useState("");
+  const [savedIcps, setSavedIcps] = useState<Record<string, IcpProfile>>({});
 
   const [phase, setPhase] = useState<EnrichPhase>("form");
   const [existingCount, setExistingCount] = useState<number | null>(null);
@@ -1013,6 +1328,14 @@ function EnrichSection() {
   const [error, setError] = useState("");
   const [savedCount, setSavedCount] = useState(0);
   const [pollTick, setPollTick] = useState(0);
+
+  const [scores, setScores] = useState<Record<string, EnrichScore>>({});
+  const [scoring, setScoring] = useState(false);
+
+  const [validateBusy, setValidateBusy] = useState(false);
+  const [validateResult, setValidateResult] = useState<{ validated: number; linkedin_checked: number } | null>(null);
+
+  useEffect(() => { setSavedIcps(loadIcps()); }, []);
 
   const call = async (body: Record<string, unknown>) => {
     const r = await fetch("/api/radar/enrich", {
@@ -1025,17 +1348,47 @@ function EnrichSection() {
     return d;
   };
 
+  const applyIcp = (vertical: string) => {
+    setIcpVertical(vertical);
+    const icp = savedIcps[vertical];
+    if (!icp) return;
+    setTitles(icp.titles || "");
+    setNotTitles(icp.notTitles || "");
+    setSeniority(icp.seniority.map((s) => ICP_SENIORITY_LABELS[s] || s).join(", "));
+    setFunctionalLevel(icp.function.map((f) => ICP_FUNCTION_LABELS[f] || f).join(", "));
+    setLocation(icp.location || "");
+    setNotLocation(icp.notLocation || "");
+    setIndustry(icp.industry || "");
+    setNotIndustry(icp.notIndustry || "");
+    setKeywords(icp.keywords || "");
+    setNotKeywords(icp.notKeywords || "");
+    setMinRevenue(icp.minRevenue || "");
+    setMaxRevenue(icp.maxRevenue || "");
+  };
+
+  const csv = (s: string) => s.split(",").map((t) => t.trim()).filter(Boolean);
+
   const startSearch = async () => {
     setError("");
     if (!domain.trim()) { setError("Enter at least one domain to search."); return; }
-    const domains = domain.split(",").map((d) => d.trim()).filter(Boolean);
+    const domains = csv(domain);
     try {
       const chk = await call({ action: "check_existing", params: { company_domain: domains } });
       setExistingCount((chk.existing || []).length);
 
       const params: Record<string, unknown> = { company_domain: domains, fetch_count: fetchCount };
-      if (titles.trim()) params.contact_job_title = titles.split(",").map((t) => t.trim()).filter(Boolean);
-      if (seniority.trim()) params.seniority_level = seniority.split(",").map((t) => t.trim()).filter(Boolean);
+      if (titles.trim()) params.contact_job_title = csv(titles);
+      if (notTitles.trim()) params.contact_not_job_title = csv(notTitles);
+      if (seniority.trim()) params.seniority_level = csv(seniority);
+      if (functionalLevel.trim()) params.functional_level = csv(functionalLevel);
+      if (location.trim()) params.contact_location = csv(location);
+      if (notLocation.trim()) params.contact_not_location = csv(notLocation);
+      if (industry.trim()) params.company_industry = industry.trim();
+      if (notIndustry.trim()) params.company_not_industry = notIndustry.trim();
+      if (keywords.trim()) params.company_keywords = keywords.trim();
+      if (notKeywords.trim()) params.company_not_keywords = notKeywords.trim();
+      if (minRevenue) params.min_revenue = minRevenue;
+      if (maxRevenue) params.max_revenue = maxRevenue;
 
       const started = await call({ action: "start", params });
       setRunId(started.runId);
@@ -1083,6 +1436,23 @@ function EnrichSection() {
     });
   };
 
+  const scoreAgainstIcp = async () => {
+    const icp = savedIcps[icpVertical];
+    if (!icp || !leads.length) return;
+    setScoring(true);
+    setError("");
+    try {
+      const d = await call({ action: "score_contacts", contacts: leads, icp });
+      const map: Record<string, EnrichScore> = {};
+      for (const s of d.scores || []) map[(s.email || "").toLowerCase()] = s;
+      setScores(map);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setScoring(false);
+    }
+  };
+
   const saveSelected = async () => {
     setError("");
     try {
@@ -1094,10 +1464,34 @@ function EnrichSection() {
     }
   };
 
+  const validateSaved = async () => {
+    setValidateBusy(true);
+    setError("");
+    try {
+      const savedLeads = leads.filter((l) => l.email);
+      const domains = csv(domain);
+      const d = await call({
+        action: "validate_and_save",
+        params: { apifyEmails: savedLeads.map((l) => ({ email: l.email })), domains },
+      });
+      setValidateResult({ validated: d.validated || 0, linkedin_checked: d.linkedin_checked || 0 });
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setValidateBusy(false);
+    }
+  };
+
   const reset = () => {
     setPhase("form"); setRunId(null); setDatasetId(null); setLeads([]); setSelected(new Set());
-    setExistingCount(null); setError(""); setSavedCount(0);
+    setExistingCount(null); setError(""); setSavedCount(0); setScores({}); setValidateResult(null);
   };
+
+  const sortedLeads = [...leads].map((l, i) => ({ l, i })).sort((a, b) => {
+    const sa = scores[(a.l.email || "").toLowerCase()]?.score ?? -1;
+    const sb = scores[(b.l.email || "").toLowerCase()]?.score ?? -1;
+    return sb - sa;
+  });
 
   return (
     <div className="space-y-5">
@@ -1112,19 +1506,77 @@ function EnrichSection() {
         {phase === "form" && (
           <div className="px-5 py-5 space-y-4">
             <div>
+              <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Start from a saved ICP (optional)</label>
+              <select value={icpVertical} onChange={(e) => applyIcp(e.target.value)} style={{ maxWidth: 220 }}>
+                <option value="">— None —</option>
+                {ICP_VERTICALS.filter((v) => savedIcps[v]).map((v) => (
+                  <option key={v} value={v}>{v} ICP</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
               <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Company domain(s)</label>
               <input value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="shopflow.com, nexlogix.io" />
             </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Job titles (optional)</label>
+                <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Job titles include</label>
                 <input value={titles} onChange={(e) => setTitles(e.target.value)} placeholder="VP Operations, Director" />
               </div>
               <div>
-                <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Seniority (optional)</label>
+                <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Job titles exclude</label>
+                <input value={notTitles} onChange={(e) => setNotTitles(e.target.value)} placeholder="Intern, Assistant" />
+              </div>
+              <div>
+                <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Seniority</label>
                 <input value={seniority} onChange={(e) => setSeniority(e.target.value)} placeholder="Director, VP, C-Level" />
               </div>
+              <div>
+                <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Function</label>
+                <input value={functionalLevel} onChange={(e) => setFunctionalLevel(e.target.value)} placeholder="Sales, Operations" />
+              </div>
+              <div>
+                <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Location</label>
+                <input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="India, US" />
+              </div>
+              <div>
+                <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Exclude location</label>
+                <input value={notLocation} onChange={(e) => setNotLocation(e.target.value)} placeholder="Pakistan" />
+              </div>
+              <div>
+                <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Industry include</label>
+                <input value={industry} onChange={(e) => setIndustry(e.target.value)} placeholder="computer software" />
+              </div>
+              <div>
+                <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Industry exclude</label>
+                <input value={notIndustry} onChange={(e) => setNotIndustry(e.target.value)} placeholder="real estate" />
+              </div>
+              <div>
+                <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Keywords include</label>
+                <input value={keywords} onChange={(e) => setKeywords(e.target.value)} placeholder="B2B, supply chain" />
+              </div>
+              <div>
+                <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Keywords exclude</label>
+                <input value={notKeywords} onChange={(e) => setNotKeywords(e.target.value)} placeholder="staffing" />
+              </div>
+              <div>
+                <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Min revenue</label>
+                <select value={minRevenue} onChange={(e) => setMinRevenue(e.target.value)}>
+                  <option value="">Any</option>
+                  {ICP_REVENUE.map((r) => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Max revenue</label>
+                <select value={maxRevenue} onChange={(e) => setMaxRevenue(e.target.value)}>
+                  <option value="">Any</option>
+                  {ICP_REVENUE.map((r) => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </div>
             </div>
+
             <div>
               <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Max results</label>
               <input type="number" value={fetchCount} min={1} max={200} onChange={(e) => setFetchCount(Number(e.target.value) || 25)} style={{ width: 120 }} />
@@ -1155,7 +1607,12 @@ function EnrichSection() {
                 {leads.length} profile(s) found{existingCount !== null ? ` · ${existingCount} already in DB` : ""}
               </span>
               {phase === "results" && (
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {icpVertical && savedIcps[icpVertical] && (
+                    <button onClick={scoreAgainstIcp} disabled={scoring} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 12px", fontSize: 12 }}>
+                      {scoring ? "Scoring…" : `✨ Score vs ${icpVertical} ICP`}
+                    </button>
+                  )}
                   <button onClick={reset} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 12px", fontSize: 12 }}>New search</button>
                   <button onClick={saveSelected} disabled={!selected.size} className="hm-btn hm-btn-primary" style={{ height: 32, padding: "0 14px", fontSize: 12 }}>
                     Save {selected.size} to database
@@ -1170,7 +1627,20 @@ function EnrichSection() {
                   <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 5" stroke="#059669" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
                 </div>
                 <p className="text-[13px] font-medium text-[var(--hm-text)]">{savedCount} contact(s) saved and linked to accounts.</p>
-                <button onClick={reset} className="hm-btn hm-btn-secondary mt-4" style={{ height: 34, padding: "0 14px", fontSize: 12.5 }}>Search again</button>
+
+                {!validateResult ? (
+                  <button onClick={validateSaved} disabled={validateBusy} className="hm-btn hm-btn-primary mt-4" style={{ height: 34, padding: "0 16px", fontSize: 12.5 }}>
+                    {validateBusy ? "Validating…" : "Validate emails via Debounce"}
+                  </button>
+                ) : (
+                  <p className="text-[12.5px] text-[var(--hm-text-secondary)] mt-3">
+                    {validateResult.validated} email(s) validated{validateResult.linkedin_checked ? `, ${validateResult.linkedin_checked} LinkedIn-checked` : ""}.
+                  </p>
+                )}
+
+                <div>
+                  <button onClick={reset} className="hm-btn hm-btn-secondary mt-3" style={{ height: 34, padding: "0 14px", fontSize: 12.5 }}>Search again</button>
+                </div>
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -1178,26 +1648,45 @@ function EnrichSection() {
                   <thead>
                     <tr>
                       <th className="px-4 py-2.5 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)]"></th>
-                      {["Name", "Title", "Company", "Email", "LinkedIn"].map((h) => (
+                      {["Name", "Title", "Company", "Email", "LinkedIn", ...(Object.keys(scores).length ? ["ICP Fit"] : [])].map((h) => (
                         <th key={h} className="text-left text-[11px] font-semibold uppercase tracking-wide text-[var(--hm-text-tertiary)] px-4 py-2.5 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] whitespace-nowrap">{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {leads.map((l, i) => (
-                      <tr key={i} className="hover:bg-[var(--hm-surface-hover)]">
-                        <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">
-                          <input type="checkbox" checked={selected.has(i)} onChange={() => toggle(i)} />
-                        </td>
-                        <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)] font-medium">{l.full_name || [l.first_name, l.last_name].filter(Boolean).join(" ") || "—"}</td>
-                        <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">{l.title || "—"}</td>
-                        <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">{l.company_name || "—"}</td>
-                        <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text-secondary)]">{l.email || "—"}</td>
-                        <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">
-                          {l.linkedin_url ? <a href={l.linkedin_url} target="_blank" rel="noreferrer" className="text-[var(--hm-accent)]">Profile</a> : "—"}
-                        </td>
-                      </tr>
-                    ))}
+                    {sortedLeads.map(({ l, i }) => {
+                      const sc = scores[(l.email || "").toLowerCase()];
+                      return (
+                        <tr key={i} className="hover:bg-[var(--hm-surface-hover)]">
+                          <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">
+                            <input type="checkbox" checked={selected.has(i)} onChange={() => toggle(i)} />
+                          </td>
+                          <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)] font-medium">{l.full_name || [l.first_name, l.last_name].filter(Boolean).join(" ") || "—"}</td>
+                          <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">{l.title || "—"}</td>
+                          <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">{l.company_name || "—"}</td>
+                          <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text-secondary)]">{l.email || "—"}</td>
+                          <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">
+                            {l.linkedin_url ? <a href={l.linkedin_url} target="_blank" rel="noreferrer" className="text-[var(--hm-accent)]">Profile</a> : "—"}
+                          </td>
+                          {Object.keys(scores).length > 0 && (
+                            <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">
+                              {sc ? (
+                                <span
+                                  title={sc.reason}
+                                  className="text-[11px] px-2 py-0.5 rounded-md font-medium"
+                                  style={{
+                                    background: sc.score >= 70 ? "#DCFCE7" : sc.score >= 40 ? "#FEF3C7" : "#FEE2E2",
+                                    color: sc.score >= 70 ? "#059669" : sc.score >= 40 ? "#B45309" : "#DC2626",
+                                  }}
+                                >
+                                  {sc.score}
+                                </span>
+                              ) : "—"}
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1232,7 +1721,17 @@ interface PersonInput {
 
 type ValidatePhase = "input" | "candidates" | "sent" | "done";
 
+interface ValidateJob {
+  id: number;
+  label: string | null;
+  status: string;
+  campaign_id: string | null;
+  created_at: string;
+}
+interface InstantlyTag { id: string; label: string; }
+
 function ValidateSection() {
+  const [view, setView] = useState<"current" | "history">("current");
   const [peopleText, setPeopleText] = useState("");
   const [useAI, setUseAI] = useState(true);
   const [phase, setPhase] = useState<ValidatePhase>("input");
@@ -1244,13 +1743,23 @@ function ValidateSection() {
   const [checkResult, setCheckResult] = useState<{ bounced: number; valid: number; pending: number; allResolved: boolean } | null>(null);
   const [savedCount, setSavedCount] = useState(0);
 
-  // "First,Last,domain.com" one per line
-  const parsePeople = (): PersonInput[] =>
-    peopleText
-      .split("\n")
-      .map((line) => line.split(",").map((s) => s.trim()))
-      .filter((parts) => parts.length >= 3 && parts[0] && parts[2])
-      .map(([first_name, last_name, domain]) => ({ first_name, last_name, domain }));
+  // Retest / blank-email sourcing
+  const [showRetest, setShowRetest] = useState(false);
+  const [retestStatuses, setRetestStatuses] = useState<string[]>(["unknown", "risky", "invalid"]);
+  const [retestVertical, setRetestVertical] = useState("");
+
+  // Send controls
+  const [tags, setTags] = useState<InstantlyTag[]>([]);
+  const [mailboxTag, setMailboxTag] = useState("");
+  const [subject, setSubject] = useState("Quick question");
+  const [emailBody, setEmailBody] = useState("Hi — following up, let me know if this reaches you.");
+
+  // Auto-refresh
+  const [autoRefresh, setAutoRefresh] = useState(false);
+
+  // Job history
+  const [jobs, setJobs] = useState<ValidateJob[]>([]);
+  const [jobsLoading, setJobsLoading] = useState(false);
 
   const call = async (body: Record<string, unknown>) => {
     const r = await fetch("/api/radar/validate", {
@@ -1263,6 +1772,14 @@ function ValidateSection() {
     return d;
   };
 
+  // "First,Last,domain.com" one per line
+  const parsePeople = (): PersonInput[] =>
+    peopleText
+      .split("\n")
+      .map((line) => line.split(",").map((s) => s.trim()))
+      .filter((parts) => parts.length >= 3 && parts[0] && parts[2])
+      .map(([first_name, last_name, domain]) => ({ first_name, last_name, domain }));
+
   const generate = async () => {
     setError("");
     const people = parsePeople();
@@ -1271,7 +1788,6 @@ function ValidateSection() {
     try {
       let jid: number | null = null;
       let offset = 0;
-      // Radar paginates generation internally for large batches; loop until done.
       for (let guard = 0; guard < 20; guard++) {
         const d = await call({ action: "generate", rows: people, useAI, jobId: jid, offset });
         jid = d.jobId;
@@ -1292,13 +1808,53 @@ function ValidateSection() {
     }
   };
 
+  const loadForRetest = async () => {
+    setError("");
+    setBusy(true);
+    try {
+      const d = await call({ action: "load_contacts", statuses: retestStatuses, vertical: retestVertical || undefined, label: "Re-test contacts" });
+      if (!d.count) { setError("No contacts match those filters."); return; }
+      setJobId(d.jobId);
+      setCandidates((d.candidates || []).map((c: ValidateCandidate) => ({ ...c, selected: true })));
+      setPhase("candidates");
+      setShowRetest(false);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const loadBlankEmailContacts = async () => {
+    setError("");
+    setBusy(true);
+    try {
+      const d = await call({ action: "fetch_blank_emails", limit: 200 });
+      if (!d.count) { setError("No contacts with a domain but no email were found."); return; }
+      const lines = (d.people || []).map((p: { first_name: string; last_name: string; domain: string }) => `${p.first_name || ""}, ${p.last_name || ""}, ${p.domain}`);
+      setPeopleText(lines.join("\n"));
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const toggle = (id: number) => {
     setCandidates((prev) => prev.map((c) => (c.id === id ? { ...c, selected: !c.selected } : c)));
+  };
+
+  const loadTags = async () => {
+    try {
+      const d = await call({ action: "list_tags" });
+      setTags(d.tags || []);
+    } catch { /* non-critical */ }
   };
 
   const send = async () => {
     const selectedCount = candidates.filter((c) => c.selected).length;
     if (!selectedCount || !jobId) return;
+    if (!mailboxTag) { setError("Choose a mailbox tag to send from."); return; }
     if (!confirm(`Send ${selectedCount} test emails via Instantly? Guessed addresses hit real inboxes.`)) return;
     setBusy(true);
     setError("");
@@ -1306,11 +1862,13 @@ function ValidateSection() {
       const d = await call({
         action: "send",
         jobId,
-        subject: "Quick question",
-        body: "Hi — following up, let me know if this reaches you.",
+        mailboxTag,
+        subject,
+        body: emailBody,
+        selectedIds: candidates.filter((c) => c.selected).map((c) => c.id),
       });
       setPhase("sent");
-      setProgressLabel(`Campaign live — ${d.added ?? selectedCount} leads sending.`);
+      setProgressLabel(`Campaign live — ${d.added ?? selectedCount} leads sending via ${d.senders ?? "?"} mailboxes.`);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -1325,17 +1883,25 @@ function ValidateSection() {
     try {
       const d = await call({ action: "check", jobId });
       setCheckResult(d);
-      setCandidates((prev) => {
-        // We don't get per-row status back from check; a full refresh isn't
-        // exposed as a simple action, so just reflect aggregate resolution.
-        return prev;
-      });
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setBusy(false);
     }
   };
+
+  // Auto-refresh: poll check() every 20s while sent and unresolved.
+  useEffect(() => {
+    if (!autoRefresh || phase !== "sent" || checkResult?.allResolved) return;
+    const t = setInterval(() => { check(); }, 20000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoRefresh, phase, checkResult?.allResolved, jobId]);
+
+  useEffect(() => {
+    if (phase === "candidates" && !tags.length) loadTags();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
 
   const save = async () => {
     if (!jobId) return;
@@ -1354,148 +1920,100 @@ function ValidateSection() {
 
   const reset = () => {
     setPeopleText(""); setPhase("input"); setJobId(null); setCandidates([]);
-    setCheckResult(null); setSavedCount(0); setError("");
+    setCheckResult(null); setSavedCount(0); setError(""); setMailboxTag(""); setAutoRefresh(false);
+    setShowRetest(false);
+  };
+
+  const loadJobs = async () => {
+    setJobsLoading(true);
+    try {
+      const d = await call({ action: "list_jobs" });
+      setJobs(d.jobs || []);
+    } catch { /* ignore */ }
+    setJobsLoading(false);
+  };
+
+  useEffect(() => { if (view === "history") loadJobs(); }, [view]);
+
+  const openJob = async (jid: number) => {
+    setError("");
+    setBusy(true);
+    try {
+      const d = await call({ action: "get_job", jobId: jid });
+      setJobId(jid);
+      setCandidates((d.candidates || []).map((c: ValidateCandidate) => ({ ...c, selected: !!c.selected })));
+      const status = d.job?.status;
+      setPhase(status === "sent" || status === "checked" ? "sent" : "candidates");
+      setCheckResult(null);
+      setView("current");
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const deleteJob = async (jid: number) => {
+    if (!confirm("Remove this job from history? Any contacts it already saved are unaffected.")) return;
+    try {
+      await call({ action: "delete_job", jobId: jid });
+      setJobs((prev) => prev.filter((j) => j.id !== jid));
+    } catch (e) {
+      setError((e as Error).message);
+    }
   };
 
   const selectedCount = candidates.filter((c) => c.selected).length;
+  const RETEST_STATUSES = ["unknown", "risky", "invalid", "bounced"];
 
   return (
     <div className="space-y-5">
-      {/* Step indicator */}
-      <div className="flex items-center gap-2 flex-wrap">
-        {(["input", "candidates", "sent", "done"] as ValidatePhase[]).map((p, i, arr) => {
-          const stepIndex = arr.indexOf(phase);
-          const state = i < stepIndex ? "done" : i === stepIndex ? "current" : "todo";
-          const labels: Record<ValidatePhase, string> = { input: "Generate patterns", candidates: "Send test", sent: "Check bounces", done: "Save to contacts" };
-          return (
-            <div key={p} className="flex items-center gap-2">
-              <div className="flex items-center gap-1.5">
-                <span
-                  className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold border ${
-                    state === "done" ? "bg-[var(--hm-success)] border-[var(--hm-success)] text-white"
-                    : state === "current" ? "bg-[var(--hm-accent)] border-[var(--hm-accent)] text-white"
-                    : "border-[var(--hm-border)] text-[var(--hm-text-tertiary)]"
-                  }`}
-                >
-                  {state === "done" ? "✓" : i + 1}
-                </span>
-                <span className={`text-[12.5px] ${state === "current" ? "font-semibold text-[var(--hm-accent)]" : "text-[var(--hm-text-tertiary)]"}`}>{labels[p]}</span>
-              </div>
-              {i < arr.length - 1 && <span className="w-6 h-px bg-[var(--hm-border)]" />}
-            </div>
-          );
-        })}
+      {/* View toggle */}
+      <div className="flex gap-0.5 p-1 rounded-xl bg-[var(--hm-bg-tertiary)] w-fit">
+        {(["current", "history"] as const).map((v) => (
+          <button
+            key={v}
+            onClick={() => setView(v)}
+            className={`px-3.5 py-1.5 text-[13px] rounded-lg transition-colors ${
+              view === v ? "bg-[var(--hm-surface)] text-[var(--hm-text)] font-medium shadow-[var(--hm-shadow-sm)]" : "text-[var(--hm-text-secondary)]"
+            }`}
+          >
+            {v === "current" ? "Current" : "Job History"}
+          </button>
+        ))}
       </div>
 
-      {error && <div className="rounded-lg p-3 text-[12.5px] bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</div>}
-
-      {phase === "input" && (
+      {view === "history" ? (
         <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
-          <div className="px-5 py-4 border-b border-[var(--hm-border)]">
-            <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Generate email patterns</h2>
-            <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">One person per line: First, Last, domain.com</p>
+          <div className="px-5 py-3 border-b border-[var(--hm-border)] flex items-center justify-between">
+            <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Validation jobs</h2>
+            <button onClick={loadJobs} className="text-[12px] text-[var(--hm-text-secondary)] hover:text-[var(--hm-accent)]">Refresh</button>
           </div>
-          <div className="px-5 py-5 space-y-4">
-            <textarea
-              value={peopleText}
-              onChange={(e) => setPeopleText(e.target.value)}
-              placeholder={"Marcus, Reyes, shopflow.com\nLena, Farouk, nexlogix.io"}
-              style={{ minHeight: 140 }}
-            />
-            <label className="flex items-center gap-2 text-[12.5px] text-[var(--hm-text-secondary)]">
-              <input type="checkbox" checked={useAI} onChange={(e) => setUseAI(e.target.checked)} />
-              Use AI ranking (Claude scores patterns using domain web evidence)
-            </label>
-            <button onClick={generate} disabled={busy} className="hm-btn hm-btn-primary" style={{ height: 38, padding: "0 18px", fontSize: 13 }}>
-              {busy ? (progressLabel || "Generating…") : "Generate patterns"}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {(phase === "candidates" || phase === "sent" || phase === "done") && (
-        <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
-          <div className="px-5 py-3 border-b border-[var(--hm-border)] flex items-center justify-between flex-wrap gap-2">
-            <span className="text-[12.5px] text-[var(--hm-text-secondary)]">
-              {candidates.length} pattern(s) · {selectedCount} selected
-            </span>
-            <div className="flex items-center gap-2">
-              <button onClick={reset} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 12px", fontSize: 12 }}>Start over</button>
-              {phase === "candidates" && (
-                <button onClick={send} disabled={busy || !selectedCount} className="hm-btn hm-btn-primary" style={{ height: 32, padding: "0 14px", fontSize: 12 }}>
-                  {busy ? "Sending…" : `Send ${selectedCount} via Instantly`}
-                </button>
-              )}
-              {phase === "sent" && (
-                <>
-                  <button onClick={check} disabled={busy} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 14px", fontSize: 12 }}>
-                    {busy ? "Checking…" : "Check bounces"}
-                  </button>
-                  {checkResult?.allResolved && checkResult.valid > 0 && (
-                    <button onClick={save} disabled={busy} className="hm-btn hm-btn-primary" style={{ height: 32, padding: "0 14px", fontSize: 12 }}>
-                      Save {checkResult.valid} verified
-                    </button>
-                  )}
-                </>
-              )}
+          {jobsLoading ? (
+            <div className="flex items-center justify-center py-10">
+              <div className="w-4 h-4 border-2 border-[var(--hm-accent)]/30 border-t-[var(--hm-accent)] rounded-full animate-spin" />
             </div>
-          </div>
-
-          {phase === "sent" && checkResult && (
-            <div className="px-5 py-3 border-b border-[var(--hm-border)] flex gap-4 text-[12.5px]">
-              <span className="text-[#059669]">✓ {checkResult.valid} valid</span>
-              <span className="text-red-500">✗ {checkResult.bounced} bounced</span>
-              <span className="text-[var(--hm-text-tertiary)]">… {checkResult.pending} pending</span>
-              {!checkResult.allResolved && <span className="text-[var(--hm-text-tertiary)]">— check again in a minute</span>}
-            </div>
-          )}
-
-          {phase === "done" ? (
-            <div className="px-5 py-10 text-center">
-              <div className="w-11 h-11 rounded-xl bg-[#DCFCE7] flex items-center justify-center mx-auto mb-3">
-                <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 5" stroke="#059669" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
-              </div>
-              <p className="text-[13px] font-medium text-[var(--hm-text)]">{savedCount} verified email(s) saved to contacts.</p>
-              <button onClick={reset} className="hm-btn hm-btn-secondary mt-4" style={{ height: 34, padding: "0 14px", fontSize: 12.5 }}>Validate more people</button>
-            </div>
+          ) : jobs.length === 0 ? (
+            <div className="py-10 text-center text-[12.5px] text-[var(--hm-text-tertiary)]">No validation jobs yet.</div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-[13px]">
                 <thead>
                   <tr>
-                    {phase === "candidates" && <th className="px-4 py-2.5 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)]"></th>}
-                    {["Person", "Email", "Type", "Confidence", "Source", "Status"].map((h) => (
+                    {["Label", "Status", "Created", ""].map((h) => (
                       <th key={h} className="text-left text-[11px] font-semibold uppercase tracking-wide text-[var(--hm-text-tertiary)] px-4 py-2.5 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {candidates.map((c) => (
-                    <tr key={c.id} className="hover:bg-[var(--hm-surface-hover)]">
-                      {phase === "candidates" && (
-                        <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">
-                          <input type="checkbox" checked={c.selected} onChange={() => toggle(c.id)} />
-                        </td>
-                      )}
-                      <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">{c.first_name} {c.last_name}</td>
-                      <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)] font-mono text-[12px]">{c.pattern_email}</td>
-                      <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text-tertiary)]">{c.pattern_type}</td>
-                      <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">
-                        {c.confidence != null ? (
-                          <span className="inline-flex items-center gap-1.5">
-                            <span className="inline-block w-10 h-1.5 rounded-full overflow-hidden bg-[var(--hm-bg-tertiary)]">
-                              <span className="block h-full rounded-full" style={{ width: `${c.confidence}%`, background: c.confidence >= 70 ? "#10B981" : c.confidence >= 40 ? "#F59E0B" : "#EF4444" }} />
-                            </span>
-                            {c.confidence}
-                          </span>
-                        ) : "—"}
-                      </td>
-                      <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">{c.source === "ai" ? "AI" : "Mechanical"}</td>
-                      <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">
-                        {c.bounce_status === "valid" ? <span className="text-[#059669]">✓ valid</span>
-                          : c.bounce_status === "bounced" ? <span className="text-red-500">✗ bounced</span>
-                          : phase === "sent" ? <span className="text-[var(--hm-text-tertiary)]">… pending</span>
-                          : <span className="text-[var(--hm-text-tertiary)]">—</span>}
+                  {jobs.map((j) => (
+                    <tr key={j.id} className="hover:bg-[var(--hm-surface-hover)]">
+                      <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">{j.label || `Job #${j.id}`}</td>
+                      <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]"><UploadStatusPill status={j.status} /></td>
+                      <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text-tertiary)]">{j.created_at ? new Date(j.created_at).toLocaleDateString() : "—"}</td>
+                      <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)] text-right whitespace-nowrap">
+                        <button onClick={() => openJob(j.id)} className="text-[12px] text-[var(--hm-accent)] mr-3">Open</button>
+                        <button onClick={() => deleteJob(j.id)} className="text-[12px] text-red-500">Delete</button>
                       </td>
                     </tr>
                   ))}
@@ -1504,6 +2022,226 @@ function ValidateSection() {
             </div>
           )}
         </div>
+      ) : (
+        <>
+          {/* Step indicator */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {(["input", "candidates", "sent", "done"] as ValidatePhase[]).map((p, i, arr) => {
+              const stepIndex = arr.indexOf(phase);
+              const state = i < stepIndex ? "done" : i === stepIndex ? "current" : "todo";
+              const labels: Record<ValidatePhase, string> = { input: "Generate patterns", candidates: "Send test", sent: "Check bounces", done: "Save to contacts" };
+              return (
+                <div key={p} className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <span
+                      className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold border ${
+                        state === "done" ? "bg-[var(--hm-success)] border-[var(--hm-success)] text-white"
+                        : state === "current" ? "bg-[var(--hm-accent)] border-[var(--hm-accent)] text-white"
+                        : "border-[var(--hm-border)] text-[var(--hm-text-tertiary)]"
+                      }`}
+                    >
+                      {state === "done" ? "✓" : i + 1}
+                    </span>
+                    <span className={`text-[12.5px] ${state === "current" ? "font-semibold text-[var(--hm-accent)]" : "text-[var(--hm-text-tertiary)]"}`}>{labels[p]}</span>
+                  </div>
+                  {i < arr.length - 1 && <span className="w-6 h-px bg-[var(--hm-border)]" />}
+                </div>
+              );
+            })}
+          </div>
+
+          {error && <div className="rounded-lg p-3 text-[12.5px] bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</div>}
+
+          {phase === "input" && (
+            <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
+              <div className="px-5 py-4 border-b border-[var(--hm-border)]">
+                <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Generate email patterns</h2>
+                <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">One person per line: First, Last, domain.com</p>
+              </div>
+              <div className="px-5 py-5 space-y-4">
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={loadBlankEmailContacts} disabled={busy} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 12px", fontSize: 12 }}>
+                    Fill blank-email contacts
+                  </button>
+                  <button onClick={() => setShowRetest((v) => !v)} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 12px", fontSize: 12 }}>
+                    Retest existing contacts
+                  </button>
+                </div>
+
+                {showRetest && (
+                  <div className="rounded-lg border border-[var(--hm-border)] p-3 space-y-3">
+                    <div>
+                      <p className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5">Statuses to include</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {RETEST_STATUSES.map((s) => {
+                          const active = retestStatuses.includes(s);
+                          return (
+                            <button
+                              key={s}
+                              onClick={() => setRetestStatuses((prev) => active ? prev.filter((x) => x !== s) : [...prev, s])}
+                              className={`text-[11.5px] px-2.5 py-1 rounded-md border capitalize ${active ? "border-[var(--hm-accent)] bg-[var(--hm-accent-light)] text-[var(--hm-accent)] font-medium" : "border-[var(--hm-border)] text-[var(--hm-text-secondary)]"}`}
+                            >
+                              {s}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div className="flex items-end gap-3">
+                      <div>
+                        <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Vertical (optional)</label>
+                        <select value={retestVertical} onChange={(e) => setRetestVertical(e.target.value)} style={{ width: 140 }}>
+                          <option value="">All</option>
+                          <option value="B2B">B2B</option>
+                          <option value="US">US</option>
+                          <option value="D2C">D2C</option>
+                        </select>
+                      </div>
+                      <button onClick={loadForRetest} disabled={busy || !retestStatuses.length} className="hm-btn hm-btn-primary" style={{ height: 34, padding: "0 14px", fontSize: 12.5 }}>
+                        Load contacts
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <textarea
+                  value={peopleText}
+                  onChange={(e) => setPeopleText(e.target.value)}
+                  placeholder={"Marcus, Reyes, shopflow.com\nLena, Farouk, nexlogix.io"}
+                  style={{ minHeight: 140 }}
+                />
+                <label className="flex items-center gap-2 text-[12.5px] text-[var(--hm-text-secondary)]">
+                  <input type="checkbox" checked={useAI} onChange={(e) => setUseAI(e.target.checked)} />
+                  Use AI ranking (Claude scores patterns using domain web evidence)
+                </label>
+                <button onClick={generate} disabled={busy} className="hm-btn hm-btn-primary" style={{ height: 38, padding: "0 18px", fontSize: 13 }}>
+                  {busy ? (progressLabel || "Generating…") : "Generate patterns"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {(phase === "candidates" || phase === "sent" || phase === "done") && (
+            <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
+              <div className="px-5 py-3 border-b border-[var(--hm-border)] flex items-center justify-between flex-wrap gap-2">
+                <span className="text-[12.5px] text-[var(--hm-text-secondary)]">
+                  {candidates.length} pattern(s) · {selectedCount} selected
+                </span>
+                <div className="flex items-center gap-2">
+                  <button onClick={reset} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 12px", fontSize: 12 }}>Start over</button>
+                  {phase === "sent" && (
+                    <>
+                      <label className="flex items-center gap-1.5 text-[11.5px] text-[var(--hm-text-secondary)]">
+                        <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />
+                        Auto-refresh
+                      </label>
+                      <button onClick={check} disabled={busy} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 14px", fontSize: 12 }}>
+                        {busy ? "Checking…" : "Check bounces"}
+                      </button>
+                      {checkResult?.allResolved && checkResult.valid > 0 && (
+                        <button onClick={save} disabled={busy} className="hm-btn hm-btn-primary" style={{ height: 32, padding: "0 14px", fontSize: 12 }}>
+                          Save {checkResult.valid} verified
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {phase === "candidates" && (
+                <div className="px-5 py-4 border-b border-[var(--hm-border)] grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Send from mailbox tag</label>
+                    <select value={mailboxTag} onChange={(e) => setMailboxTag(e.target.value)}>
+                      <option value="">— Choose a tag —</option>
+                      {tags.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Subject</label>
+                    <input value={subject} onChange={(e) => setSubject(e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Body</label>
+                    <input value={emailBody} onChange={(e) => setEmailBody(e.target.value)} />
+                  </div>
+                  <div className="sm:col-span-3">
+                    <button onClick={send} disabled={busy || !selectedCount || !mailboxTag} className="hm-btn hm-btn-primary" style={{ height: 34, padding: "0 16px", fontSize: 12.5 }}>
+                      {busy ? "Sending…" : `Send ${selectedCount} via Instantly`}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {progressLabel && phase === "sent" && (
+                <div className="px-5 py-2 border-b border-[var(--hm-border)] text-[12px] text-[var(--hm-text-tertiary)]">{progressLabel}</div>
+              )}
+
+              {phase === "sent" && checkResult && (
+                <div className="px-5 py-3 border-b border-[var(--hm-border)] flex gap-4 text-[12.5px]">
+                  <span className="text-[#059669]">✓ {checkResult.valid} valid</span>
+                  <span className="text-red-500">✗ {checkResult.bounced} bounced</span>
+                  <span className="text-[var(--hm-text-tertiary)]">… {checkResult.pending} pending</span>
+                  {!checkResult.allResolved && <span className="text-[var(--hm-text-tertiary)]">— {autoRefresh ? "refreshing automatically" : "check again in a minute"}</span>}
+                </div>
+              )}
+
+              {phase === "done" ? (
+                <div className="px-5 py-10 text-center">
+                  <div className="w-11 h-11 rounded-xl bg-[#DCFCE7] flex items-center justify-center mx-auto mb-3">
+                    <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 5" stroke="#059669" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                  </div>
+                  <p className="text-[13px] font-medium text-[var(--hm-text)]">{savedCount} verified email(s) saved to contacts.</p>
+                  <button onClick={reset} className="hm-btn hm-btn-secondary mt-4" style={{ height: 34, padding: "0 14px", fontSize: 12.5 }}>Validate more people</button>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse text-[13px]">
+                    <thead>
+                      <tr>
+                        {phase === "candidates" && <th className="px-4 py-2.5 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)]"></th>}
+                        {["Person", "Email", "Type", "Confidence", "Source", "Status"].map((h) => (
+                          <th key={h} className="text-left text-[11px] font-semibold uppercase tracking-wide text-[var(--hm-text-tertiary)] px-4 py-2.5 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] whitespace-nowrap">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {candidates.map((c) => (
+                        <tr key={c.id} className="hover:bg-[var(--hm-surface-hover)]">
+                          {phase === "candidates" && (
+                            <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">
+                              <input type="checkbox" checked={c.selected} onChange={() => toggle(c.id)} />
+                            </td>
+                          )}
+                          <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">{c.first_name} {c.last_name}</td>
+                          <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)] font-mono text-[12px]">{c.pattern_email}</td>
+                          <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text-tertiary)]">{c.pattern_type}</td>
+                          <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">
+                            {c.confidence != null ? (
+                              <span className="inline-flex items-center gap-1.5">
+                                <span className="inline-block w-10 h-1.5 rounded-full overflow-hidden bg-[var(--hm-bg-tertiary)]">
+                                  <span className="block h-full rounded-full" style={{ width: `${c.confidence}%`, background: c.confidence >= 70 ? "#10B981" : c.confidence >= 40 ? "#F59E0B" : "#EF4444" }} />
+                                </span>
+                                {c.confidence}
+                              </span>
+                            ) : "—"}
+                          </td>
+                          <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">{c.source === "ai" ? "AI" : "Mechanical"}</td>
+                          <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">
+                            {c.bounce_status === "valid" ? <span className="text-[#059669]">✓ valid</span>
+                              : c.bounce_status === "bounced" ? <span className="text-red-500">✗ bounced</span>
+                              : phase === "sent" ? <span className="text-[var(--hm-text-tertiary)]">… pending</span>
+                              : <span className="text-[var(--hm-text-tertiary)]">—</span>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+        </>
       )}
     </div>
   );
