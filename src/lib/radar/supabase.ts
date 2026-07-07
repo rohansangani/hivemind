@@ -16,6 +16,7 @@ import { normalizeRole } from "@/lib/permissions";
 
 const RADAR_SUPABASE_URL = process.env.RADAR_SUPABASE_URL;
 const RADAR_SUPABASE_ANON_KEY = process.env.RADAR_SUPABASE_ANON_KEY;
+const RADAR_SUPABASE_SERVICE_KEY = process.env.RADAR_SUPABASE_SERVICE_KEY;
 
 /** Standard headers for anon (read-only) Supabase REST calls. */
 function anonHeaders(extra: Record<string, string> = {}): Record<string, string> {
@@ -24,6 +25,43 @@ function anonHeaders(extra: Record<string, string> = {}): Record<string, string>
     Authorization: `Bearer ${RADAR_SUPABASE_ANON_KEY ?? ""}`,
     ...extra,
   };
+}
+
+/** Headers for the service-role key — used only for read aggregations (dashboard RPCs, counts on
+ * columns anon can't filter) that radar itself computes with this key. Never used for writes here. */
+function serviceHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  return {
+    apikey: RADAR_SUPABASE_SERVICE_KEY ?? "",
+    Authorization: `Bearer ${RADAR_SUPABASE_SERVICE_KEY ?? ""}`,
+    "Content-Type": "application/json",
+    ...extra,
+  };
+}
+
+/** Exact row count via the service key, for filters anon can't express safely. */
+export async function countOfService(table: string, col = "id", filter = ""): Promise<number> {
+  if (!RADAR_SUPABASE_URL || !RADAR_SUPABASE_SERVICE_KEY) {
+    throw new Error("Radar Supabase service key is not configured");
+  }
+  const url = `${RADAR_SUPABASE_URL}/rest/v1/${table}?select=${col}${filter}`;
+  const r = await fetch(url, { headers: serviceHeaders({ Prefer: "count=exact", Range: "0-0" }) });
+  if (!r.ok) throw new Error(`Radar Supabase count failed (${r.status}) for ${table}`);
+  const cr = r.headers.get("content-range") || "";
+  return parseInt(cr.split("/")[1] || "0", 10);
+}
+
+/** Call a Postgres RPC function (SECURITY DEFINER aggregation) via PostgREST. */
+export async function rpc<T = Record<string, unknown>>(fn: string): Promise<T[]> {
+  if (!RADAR_SUPABASE_URL || !RADAR_SUPABASE_SERVICE_KEY) {
+    throw new Error("Radar Supabase service key is not configured");
+  }
+  const r = await fetch(`${RADAR_SUPABASE_URL}/rest/v1/rpc/${fn}`, {
+    method: "POST",
+    headers: serviceHeaders(),
+    body: "{}",
+  });
+  const d = await r.json();
+  return Array.isArray(d) ? (d as T[]) : [];
 }
 
 /**

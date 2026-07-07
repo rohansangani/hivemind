@@ -144,22 +144,41 @@ export default function RadarPage() {
 
 /* ── Dashboard ─────────────────────────────────────────────────────────── */
 
+interface StatusMatrixRow { vertical: string; status: string; n: number; }
+interface DomainStatsRow { vertical: string; contacts: number; domains: number; avg_per_domain: number; }
+interface AccountCoverageRow { vertical: string; total: number; with_contacts: number; }
+
 interface RadarStats {
   total_accounts: number;
   total_contacts: number;
+  blank_email_contacts: number;
+  blank_email_verticals: { B2B: number; D2C: number; US: number; unassigned: number };
   verticals: { B2B: number; D2C: number; US: number };
   contact_verticals: { B2B: number; D2C: number; US: number };
+  contact_status_matrix: StatusMatrixRow[];
+  contact_domain_stats: DomainStatsRow[];
+  account_coverage: AccountCoverageRow[];
 }
 
 function fmt(n: number): string {
-  return n.toLocaleString();
+  return (n == null || isNaN(n)) ? "0" : n.toLocaleString();
 }
 
 const VERTICAL_COLORS: Record<string, string> = {
   B2B: "#4361EE",
-  D2C: "#7C3AED",
-  US: "#059669",
+  D2C: "#00b4b2",
+  US: "#F59E0B",
+  unassigned: "#94a3b8",
 };
+
+const STATUS_META: Array<{ key: string; label: string; color: string }> = [
+  { key: "safe to send", label: "Safe", color: "#059669" },
+  { key: "verified", label: "Verified", color: "#4361EE" },
+  { key: "risky", label: "Risky", color: "#d97706" },
+  { key: "invalid", label: "Invalid", color: "#dc2626" },
+  { key: "unknown", label: "Unknown", color: "#6b7280" },
+  { key: "unvalidated", label: "Unvalidated", color: "#94a3b8" },
+];
 
 function RadarDashboard() {
   const [stats, setStats] = useState<RadarStats | null>(null);
@@ -199,49 +218,225 @@ function RadarDashboard() {
 
   if (!stats) return null;
 
-  const acctMax = Math.max(stats.verticals.B2B, stats.verticals.D2C, stats.verticals.US, 1);
+  const v = stats.verticals;
+  const acctAssigned = v.B2B + v.D2C + v.US;
+  const acctUnassigned = Math.max(0, stats.total_accounts - acctAssigned);
+  const acctMax = Math.max(v.B2B, v.D2C, v.US, acctUnassigned, 1);
+
+  const cv = stats.contact_verticals;
+  const cvAssigned = cv.B2B + cv.D2C + cv.US;
+  const cvUnassigned = Math.max(0, stats.total_contacts - cvAssigned);
+  const cvMax = Math.max(cv.B2B, cv.D2C, cv.US, cvUnassigned, 1);
+  const blankV = stats.blank_email_verticals;
 
   return (
     <div className="space-y-5">
-      {/* KPI cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
-        <StatCard label="Total Accounts" value={fmt(stats.total_accounts)} />
-        <StatCard label="Total Contacts" value={fmt(stats.total_contacts)} />
-        <StatCard label="B2B Accounts" value={fmt(stats.verticals.B2B)} />
-        <StatCard label="D2C Accounts" value={fmt(stats.verticals.D2C)} />
+      {/* Hero cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+        <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)] px-5 py-4 flex items-center gap-4">
+          <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "linear-gradient(135deg,#1A1A2E,#4361EE)" }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>
+          </div>
+          <div>
+            <p className="text-[24px] font-semibold text-[var(--hm-text)] tabular-nums leading-tight">{fmt(stats.total_accounts)}</p>
+            <p className="text-[12px] text-[var(--hm-text-tertiary)]">Total Accounts</p>
+          </div>
+        </div>
+        <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)] px-5 py-4 flex items-center gap-4">
+          <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "linear-gradient(135deg,#0d7a6e,#00b4b2)" }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
+          </div>
+          <div>
+            <p className="text-[24px] font-semibold text-[var(--hm-text)] tabular-nums leading-tight">{fmt(stats.total_contacts)}</p>
+            <p className="text-[12px] text-[var(--hm-text-tertiary)]">Total Contacts</p>
+          </div>
+        </div>
       </div>
 
-      {/* Vertical breakdown */}
-      <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
-        <div className="px-5 py-4 border-b border-[var(--hm-border)]">
-          <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Accounts by vertical</h2>
-        </div>
-        <div className="px-5 py-4 space-y-3">
-          {(["B2B", "D2C", "US"] as const).map((v) => (
-            <div key={v} className="flex items-center gap-3">
-              <span className="text-[12px] text-[var(--hm-text-secondary)] w-10 flex-shrink-0">{v}</span>
-              <div className="flex-1 h-2 rounded-full bg-[var(--hm-bg-tertiary)] overflow-hidden">
-                <div
-                  className="h-full rounded-full"
-                  style={{ width: `${(stats.verticals[v] / acctMax) * 100}%`, background: VERTICAL_COLORS[v] }}
-                />
+      {/* Vertical breakdowns */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
+        <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
+          <div className="px-5 py-3.5 border-b border-[var(--hm-border)] flex items-center justify-between">
+            <h2 className="text-[13px] font-semibold text-[var(--hm-text)]">Accounts by Vertical</h2>
+            <span className="text-[11px] text-[var(--hm-text-tertiary)]">{fmt(acctAssigned)} assigned</span>
+          </div>
+          <div className="px-5 py-4 space-y-2.5">
+            {([["B2B", v.B2B], ["D2C", v.D2C], ["US", v.US], ["unassigned", acctUnassigned]] as [string, number][]).map(([key, n]) => (
+              <div key={key} className="flex items-center gap-3">
+                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: VERTICAL_COLORS[key] }} />
+                <span className="text-[12px] text-[var(--hm-text-secondary)] w-20 flex-shrink-0 capitalize">{key}</span>
+                <div className="flex-1 h-2 rounded-full bg-[var(--hm-bg-tertiary)] overflow-hidden">
+                  <div className="h-full rounded-full transition-all" style={{ width: `${(n / acctMax) * 100}%`, background: VERTICAL_COLORS[key] }} />
+                </div>
+                <span className="text-[12px] text-[var(--hm-text-secondary)] w-14 text-right tabular-nums">{fmt(n)}</span>
               </div>
-              <span className="text-[12px] text-[var(--hm-text-secondary)] w-14 text-right tabular-nums">
-                {fmt(stats.verticals[v])}
-              </span>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
+
+        <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
+          <div className="px-5 py-3.5 border-b border-[var(--hm-border)] flex items-center justify-between">
+            <h2 className="text-[13px] font-semibold text-[var(--hm-text)]">Contacts</h2>
+            <span className="text-[11px] text-[var(--hm-text-tertiary)]">{fmt(cvAssigned)} assigned</span>
+          </div>
+          <div className="px-5 py-4 space-y-2.5">
+            {([["B2B", cv.B2B, blankV.B2B], ["D2C", cv.D2C, blankV.D2C], ["US", cv.US, blankV.US], ["unassigned", cvUnassigned, blankV.unassigned]] as [string, number, number][]).map(([key, n, blank]) => (
+              <div key={key} className="flex items-center gap-3">
+                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: VERTICAL_COLORS[key] }} />
+                <span className="text-[12px] text-[var(--hm-text-secondary)] w-20 flex-shrink-0 capitalize">{key}</span>
+                <div className="flex-1 h-2 rounded-full bg-[var(--hm-bg-tertiary)] overflow-hidden">
+                  <div className="h-full rounded-full transition-all" style={{ width: `${(n / cvMax) * 100}%`, background: VERTICAL_COLORS[key] }} />
+                </div>
+                <span className="text-[12px] text-[var(--hm-text-secondary)] w-14 text-right tabular-nums">{fmt(n)}</span>
+                <span className="text-[10.5px] text-red-500 w-16 text-right flex-shrink-0">{blank ? `${fmt(blank)} blank` : ""}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <ContactStatusMatrix stats={stats} />
+      <AccountCoverageTable coverage={stats.account_coverage} />
+    </div>
+  );
+}
+
+function ContactStatusMatrix({ stats }: { stats: RadarStats }) {
+  const verticals = ["B2B", "D2C", "US"];
+  const matrix = stats.contact_status_matrix.filter((r) => r.vertical !== "Unassigned");
+  const domainStats = stats.contact_domain_stats.filter((r) => r.vertical !== "Unassigned");
+
+  const m: Record<string, Record<string, number>> = {};
+  const colTotals: Record<string, number> = {};
+  for (const v of verticals) m[v] = {};
+  for (const r of matrix) {
+    m[r.vertical] = m[r.vertical] || {};
+    m[r.vertical][r.status] = r.n;
+    colTotals[r.status] = (colTotals[r.status] || 0) + r.n;
+  }
+  const rowTotal = (v: string) => STATUS_META.reduce((s, st) => s + (m[v]?.[st.key] || 0), 0);
+  const grand = Object.values(colTotals).reduce((a, b) => a + b, 0);
+
+  const ds: Record<string, DomainStatsRow> = {};
+  for (const r of domainStats) ds[r.vertical] = r;
+  const totDomains = domainStats.reduce((s, r) => s + (r.domains || 0), 0);
+  const totContactsWithDomain = domainStats.reduce((s, r) => s + (r.contacts || 0), 0);
+  const grandAvg = totDomains ? (totContactsWithDomain / totDomains).toFixed(1) : "—";
+
+  return (
+    <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
+      <div className="px-5 py-3.5 border-b border-[var(--hm-border)]">
+        <h2 className="text-[13px] font-semibold text-[var(--hm-text)]">Contacts by Vertical &amp; Email Status</h2>
+        <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-0.5">
+          <span className="font-semibold" style={{ color: "#4361EE" }}>Verified</span> = rescued from Risky/Unknown via a real Instantly test send that delivered.
+        </p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-[12.5px]">
+          <thead>
+            <tr>
+              <th className="text-left px-3 py-2 text-[11px] font-semibold text-[var(--hm-text-tertiary)] border-b-2 border-[var(--hm-border)]">Vertical</th>
+              {STATUS_META.map((s) => (
+                <th key={s.key} className="text-right px-3 py-2 text-[11px] font-semibold border-b-2 border-[var(--hm-border)]" style={{ color: s.color }}>{s.label}</th>
+              ))}
+              <th className="text-right px-3 py-2 text-[11px] font-semibold text-[var(--hm-text-tertiary)] border-b-2 border-[var(--hm-border)]">Total</th>
+              <th className="text-right px-3 py-2 text-[11px] font-semibold text-[var(--hm-text-tertiary)] border-b-2 border-l border-[var(--hm-border)]">Domains</th>
+              <th className="text-right px-3 py-2 text-[11px] font-semibold text-[var(--hm-text-tertiary)] border-b-2 border-[var(--hm-border)]">Avg/Domain</th>
+            </tr>
+          </thead>
+          <tbody>
+            {verticals.map((v) => {
+              const dv = ds[v];
+              return (
+                <tr key={v} className="border-b border-[var(--hm-border-light)]">
+                  <td className="px-3 py-2 font-medium"><VerticalBadge v={v} /></td>
+                  {STATUS_META.map((s) => {
+                    const n = m[v]?.[s.key] || 0;
+                    return <td key={s.key} className={`text-right px-3 py-2 tabular-nums ${n ? "text-[var(--hm-text)]" : "text-[var(--hm-text-tertiary)]"}`}>{fmt(n)}</td>;
+                  })}
+                  <td className="text-right px-3 py-2 font-semibold tabular-nums">{fmt(rowTotal(v))}</td>
+                  <td className="text-right px-3 py-2 text-[var(--hm-text-tertiary)] tabular-nums border-l border-[var(--hm-border)]">{dv?.domains ? fmt(dv.domains) : "—"}</td>
+                  <td className="text-right px-3 py-2 font-semibold tabular-nums" style={{ color: "#4361EE" }}>{dv?.avg_per_domain ?? "—"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+          <tfoot>
+            <tr className="border-t-2 border-[var(--hm-border)]">
+              <td className="px-3 py-2 font-semibold text-[var(--hm-text-tertiary)]">Total</td>
+              {STATUS_META.map((s) => (
+                <td key={s.key} className="text-right px-3 py-2 font-semibold tabular-nums">{fmt(colTotals[s.key] || 0)}</td>
+              ))}
+              <td className="text-right px-3 py-2 font-bold tabular-nums">{fmt(grand)}</td>
+              <td className="text-right px-3 py-2 font-semibold text-[var(--hm-text-tertiary)] tabular-nums border-l border-[var(--hm-border)]">{fmt(totDomains)}</td>
+              <td className="text-right px-3 py-2 font-bold tabular-nums" style={{ color: "#4361EE" }}>{grandAvg}</td>
+            </tr>
+          </tfoot>
+        </table>
       </div>
     </div>
   );
 }
 
-function StatCard({ label, value }: { label: string; value: string }) {
+function AccountCoverageTable({ coverage }: { coverage: AccountCoverageRow[] }) {
+  const order = ["B2B", "D2C", "US", "Unassigned"];
+  const by: Record<string, AccountCoverageRow> = {};
+  for (const r of coverage) by[r.vertical] = r;
+  const rows = order.filter((v) => by[v]);
+  const tt = coverage.reduce((s, r) => s + (r.total || 0), 0);
+  const tw = coverage.reduce((s, r) => s + (r.with_contacts || 0), 0);
+
   return (
-    <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)] px-4 py-4">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--hm-text-tertiary)]">{label}</p>
-      <p className="text-[26px] font-semibold text-[var(--hm-text)] mt-1 tabular-nums">{value}</p>
+    <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
+      <div className="px-5 py-3.5 border-b border-[var(--hm-border)]">
+        <h2 className="text-[13px] font-semibold text-[var(--hm-text)]">Account Coverage by Vertical</h2>
+        <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-0.5">accounts with contacts vs empty</p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-[12.5px]">
+          <thead>
+            <tr>
+              <th className="text-left px-3 py-2 text-[11px] font-semibold text-[var(--hm-text-tertiary)] border-b-2 border-[var(--hm-border)]">Vertical</th>
+              <th className="text-right px-3 py-2 text-[11px] font-semibold text-[var(--hm-text-tertiary)] border-b-2 border-[var(--hm-border)]">Accounts</th>
+              <th className="text-right px-3 py-2 text-[11px] font-semibold text-[var(--hm-text-tertiary)] border-b-2 border-[var(--hm-border)]">With Contacts</th>
+              <th className="text-right px-3 py-2 text-[11px] font-semibold text-[var(--hm-text-tertiary)] border-b-2 border-[var(--hm-border)]">Empty</th>
+              <th className="text-left px-3 py-2 text-[11px] font-semibold text-[var(--hm-text-tertiary)] border-b-2 border-[var(--hm-border)] w-32">Coverage</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((v) => {
+              const r = by[v];
+              const total = r.total || 0, withC = r.with_contacts || 0, empty = total - withC;
+              const pct = total ? Math.round((withC / total) * 100) : 0;
+              return (
+                <tr key={v} className="border-b border-[var(--hm-border-light)]">
+                  <td className="px-3 py-2 font-medium">{v === "Unassigned" ? <span className="text-[11px] px-2 py-0.5 rounded-md font-medium bg-[var(--hm-bg-tertiary)] text-[var(--hm-text-tertiary)]">Unassigned</span> : <VerticalBadge v={v} />}</td>
+                  <td className="text-right px-3 py-2 font-semibold tabular-nums">{fmt(total)}</td>
+                  <td className="text-right px-3 py-2 tabular-nums" style={{ color: "#059669" }}>{fmt(withC)}</td>
+                  <td className="text-right px-3 py-2 text-[var(--hm-text-tertiary)] tabular-nums">{fmt(empty)}</td>
+                  <td className="px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 h-1.5 rounded-full bg-[var(--hm-bg-tertiary)] overflow-hidden">
+                        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: "#059669" }} />
+                      </div>
+                      <span className="text-[11px] text-[var(--hm-text-tertiary)] w-8 text-right">{pct}%</span>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+          <tfoot>
+            <tr className="border-t-2 border-[var(--hm-border)]">
+              <td className="px-3 py-2 font-semibold text-[var(--hm-text-tertiary)]">Total</td>
+              <td className="text-right px-3 py-2 font-bold tabular-nums">{fmt(tt)}</td>
+              <td className="text-right px-3 py-2 font-semibold tabular-nums" style={{ color: "#059669" }}>{fmt(tw)}</td>
+              <td className="text-right px-3 py-2 font-semibold text-[var(--hm-text-tertiary)] tabular-nums">{fmt(tt - tw)}</td>
+              <td className="px-3 py-2 text-[11px] text-[var(--hm-text-tertiary)]">{tt ? Math.round((tw / tt) * 100) : 0}% covered</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
     </div>
   );
 }
