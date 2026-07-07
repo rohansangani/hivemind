@@ -1743,10 +1743,13 @@ function ValidateSection() {
   const [checkResult, setCheckResult] = useState<{ bounced: number; valid: number; pending: number; allResolved: boolean } | null>(null);
   const [savedCount, setSavedCount] = useState(0);
 
-  // Retest / blank-email sourcing
-  const [showRetest, setShowRetest] = useState(false);
-  const [retestStatuses, setRetestStatuses] = useState<string[]>(["unknown", "risky", "invalid"]);
+  // Patterns vs Retest — top-level mode, mirrors radar's own toggle
+  const [inputMode, setInputMode] = useState<"patterns" | "retest">("patterns");
+  const [retestStatuses, setRetestStatuses] = useState<string[]>(["unknown", "risky"]);
   const [retestVertical, setRetestVertical] = useState("");
+  const [retestDomain, setRetestDomain] = useState("");
+  const [retestCount, setRetestCount] = useState<number | null>(null);
+  const [retestCounting, setRetestCounting] = useState(false);
 
   // Send controls
   const [tags, setTags] = useState<InstantlyTag[]>([]);
@@ -1808,18 +1811,64 @@ function ValidateSection() {
     }
   };
 
+  const countRetest = async () => {
+    setRetestCounting(true);
+    try {
+      const d = await call({ action: "count_retest", statuses: retestStatuses, vertical: retestVertical || undefined, domain: retestDomain.trim() || undefined });
+      setRetestCount(d.count ?? 0);
+    } catch {
+      setRetestCount(null);
+    } finally {
+      setRetestCounting(false);
+    }
+  };
+
+  // Debounce the live count as filters change.
+  useEffect(() => {
+    if (inputMode !== "retest") return;
+    const t = setTimeout(() => countRetest(), 350);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inputMode, retestStatuses, retestVertical, retestDomain]);
+
   const loadForRetest = async () => {
     setError("");
     setBusy(true);
     try {
-      const d = await call({ action: "load_contacts", statuses: retestStatuses, vertical: retestVertical || undefined, label: "Re-test contacts" });
+      const d = await call({ action: "load_contacts", statuses: retestStatuses, vertical: retestVertical || undefined, domain: retestDomain.trim() || undefined, label: "Re-test contacts" });
       if (!d.count) { setError("No contacts match those filters."); return; }
       setJobId(d.jobId);
       setCandidates((d.candidates || []).map((c: ValidateCandidate) => ({ ...c, selected: true })));
       setPhase("candidates");
-      setShowRetest(false);
     } catch (e) {
       setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const loadRetestCsv = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setError("");
+    setBusy(true);
+    try {
+      const text = await f.text();
+      const { rows } = parseCSV(text);
+      const emails = rows
+        .map((r) => {
+          const emailKey = Object.keys(r).find((k) => k.toLowerCase().includes("email"));
+          return emailKey ? { email: r[emailKey] } : null;
+        })
+        .filter((r): r is { email: string } => !!r && r.email.includes("@"));
+      if (!emails.length) { setError("No email column found in that CSV."); return; }
+      const d = await call({ action: "load_contacts", emails, label: `CSV re-test — ${f.name}` });
+      if (!d.count) { setError("None of those emails could be loaded."); return; }
+      setJobId(d.jobId);
+      setCandidates((d.candidates || []).map((c: ValidateCandidate) => ({ ...c, selected: true })));
+      setPhase("candidates");
+    } catch (e2) {
+      setError((e2 as Error).message);
     } finally {
       setBusy(false);
     }
@@ -1921,7 +1970,7 @@ function ValidateSection() {
   const reset = () => {
     setPeopleText(""); setPhase("input"); setJobId(null); setCandidates([]);
     setCheckResult(null); setSavedCount(0); setError(""); setMailboxTag(""); setAutoRefresh(false);
-    setShowRetest(false);
+    setInputMode("patterns"); setRetestCount(null);
   };
 
   const loadJobs = async () => {
@@ -2054,22 +2103,60 @@ function ValidateSection() {
 
           {phase === "input" && (
             <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
-              <div className="px-5 py-4 border-b border-[var(--hm-border)]">
-                <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Generate email patterns</h2>
-                <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">One person per line: First, Last, domain.com</p>
+              {/* Prominent mode toggle — matches radar's own Patterns / Retest split */}
+              <div className="flex border-b border-[var(--hm-border)]">
+                <button
+                  onClick={() => setInputMode("patterns")}
+                  className={`flex-1 py-2.5 text-[12.5px] font-semibold transition-colors ${
+                    inputMode === "patterns" ? "text-[var(--hm-accent)] bg-[var(--hm-accent-light)]" : "text-[var(--hm-text-tertiary)]"
+                  }`}
+                >
+                  New patterns
+                </button>
+                <button
+                  onClick={() => setInputMode("retest")}
+                  className={`flex-1 py-2.5 text-[12.5px] font-semibold transition-colors ${
+                    inputMode === "retest" ? "text-[var(--hm-accent)] bg-[var(--hm-accent-light)]" : "text-[var(--hm-text-tertiary)]"
+                  }`}
+                >
+                  Re-test DB contacts
+                </button>
               </div>
-              <div className="px-5 py-5 space-y-4">
-                <div className="flex flex-wrap gap-2">
-                  <button onClick={loadBlankEmailContacts} disabled={busy} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 12px", fontSize: 12 }}>
-                    Fill blank-email contacts
-                  </button>
-                  <button onClick={() => setShowRetest((v) => !v)} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 12px", fontSize: 12 }}>
-                    Retest existing contacts
-                  </button>
-                </div>
 
-                {showRetest && (
-                  <div className="rounded-lg border border-[var(--hm-border)] p-3 space-y-3">
+              {inputMode === "patterns" ? (
+                <>
+                  <div className="px-5 py-4 border-b border-[var(--hm-border)]">
+                    <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Generate email patterns</h2>
+                    <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">One person per line: First, Last, domain.com</p>
+                  </div>
+                  <div className="px-5 py-5 space-y-4">
+                    <button onClick={loadBlankEmailContacts} disabled={busy} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 12px", fontSize: 12 }}>
+                      Fill blank-email contacts
+                    </button>
+                    <textarea
+                      value={peopleText}
+                      onChange={(e) => setPeopleText(e.target.value)}
+                      placeholder={"Marcus, Reyes, shopflow.com\nLena, Farouk, nexlogix.io"}
+                      style={{ minHeight: 140 }}
+                    />
+                    <label className="flex items-center gap-2 text-[12.5px] text-[var(--hm-text-secondary)]">
+                      <input type="checkbox" checked={useAI} onChange={(e) => setUseAI(e.target.checked)} />
+                      Use AI ranking (Claude scores patterns using domain web evidence)
+                    </label>
+                    <button onClick={generate} disabled={busy} className="hm-btn hm-btn-primary" style={{ height: 38, padding: "0 18px", fontSize: 13 }}>
+                      {busy ? (progressLabel || "Generating…") : "Generate patterns"}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="px-5 py-4 border-b border-[var(--hm-border)]">
+                    <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Re-test existing contacts</h2>
+                    <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">
+                      Sends real test emails. Delivered → <strong>verified</strong> (never re-checked). Bounced → <strong>invalid</strong>.
+                    </p>
+                  </div>
+                  <div className="px-5 py-5 space-y-4">
                     <div>
                       <p className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5">Statuses to include</p>
                       <div className="flex flex-wrap gap-1.5">
@@ -2087,37 +2174,43 @@ function ValidateSection() {
                         })}
                       </div>
                     </div>
-                    <div className="flex items-end gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Vertical (optional)</label>
-                        <select value={retestVertical} onChange={(e) => setRetestVertical(e.target.value)} style={{ width: 140 }}>
+                        <select value={retestVertical} onChange={(e) => setRetestVertical(e.target.value)}>
                           <option value="">All</option>
                           <option value="B2B">B2B</option>
                           <option value="US">US</option>
                           <option value="D2C">D2C</option>
                         </select>
                       </div>
-                      <button onClick={loadForRetest} disabled={busy || !retestStatuses.length} className="hm-btn hm-btn-primary" style={{ height: 34, padding: "0 14px", fontSize: 12.5 }}>
-                        Load contacts
-                      </button>
+                      <div>
+                        <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Domain (optional)</label>
+                        <input value={retestDomain} onChange={(e) => setRetestDomain(e.target.value)} placeholder="e.g. acme.com" />
+                      </div>
                     </div>
-                  </div>
-                )}
 
-                <textarea
-                  value={peopleText}
-                  onChange={(e) => setPeopleText(e.target.value)}
-                  placeholder={"Marcus, Reyes, shopflow.com\nLena, Farouk, nexlogix.io"}
-                  style={{ minHeight: 140 }}
-                />
-                <label className="flex items-center gap-2 text-[12.5px] text-[var(--hm-text-secondary)]">
-                  <input type="checkbox" checked={useAI} onChange={(e) => setUseAI(e.target.checked)} />
-                  Use AI ranking (Claude scores patterns using domain web evidence)
-                </label>
-                <button onClick={generate} disabled={busy} className="hm-btn hm-btn-primary" style={{ height: 38, padding: "0 18px", fontSize: 13 }}>
-                  {busy ? (progressLabel || "Generating…") : "Generate patterns"}
-                </button>
-              </div>
+                    <div className="text-[13px] font-semibold text-[var(--hm-accent)]">
+                      {retestCounting ? "Counting…" : retestCount != null ? `${retestCount.toLocaleString()} contact(s) match` : "—"}
+                    </div>
+
+                    <button onClick={loadForRetest} disabled={busy || !retestStatuses.length || !retestCount} className="hm-btn hm-btn-primary w-full" style={{ height: 38, fontSize: 13 }}>
+                      Load contacts
+                    </button>
+
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1 h-px bg-[var(--hm-border)]" />
+                      <span className="text-[11px] text-[var(--hm-text-tertiary)]">or</span>
+                      <div className="flex-1 h-px bg-[var(--hm-border)]" />
+                    </div>
+
+                    <label className="hm-btn hm-btn-secondary w-full cursor-pointer" style={{ height: 36, fontSize: 12.5 }}>
+                      ⬆ Upload CSV of emails
+                      <input type="file" accept=".csv,text/csv" onChange={loadRetestCsv} style={{ display: "none" }} />
+                    </label>
+                  </div>
+                </>
+              )}
             </div>
           )}
 
