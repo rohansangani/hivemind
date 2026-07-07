@@ -361,7 +361,139 @@ export default function UsagePage() {
             </p>
           </>
         )}
+
+        {/* ── Radar / Prospecting usage ────────────────────────────── */}
+        <RadarUsageSection />
       </div>
+    </div>
+  );
+}
+
+/* ── Radar prospecting usage (folded into the Usage page) ─────────────── */
+
+interface RadarMember {
+  email: string;
+  name: string | null;
+  debounce: number;
+  leads_finder: number;
+  linkedin: number;
+  cost: number;
+}
+interface RadarUsage {
+  supabase?: {
+    db_size_pretty: string;
+    db_pct: number;
+    tables: { accounts: number; contacts: number; email_validations: number };
+    row_pct: number;
+  };
+  debounce?: { credits_remaining: number; credits_used: number; configured: boolean };
+  members?: RadarMember[];
+  error?: string;
+}
+
+function RadarUsageSection() {
+  const [data, setData] = useState<RadarUsage | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [denied, setDenied] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/radar/usage")
+      .then(async (r) => {
+        if (r.status === 401 || r.status === 403) { setDenied(true); return null; }
+        return r.json();
+      })
+      .then((d) => { if (d) setData(d); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  // Radar is owner/admin only — silently hide for anyone else.
+  if (denied) return null;
+
+  return (
+    <div className="pt-2">
+      <div className="flex items-center gap-2 mb-3">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <circle cx="7" cy="7" r="4.5" stroke="var(--hm-accent)" strokeWidth="1.4" />
+          <path d="M10.4 10.4L14 14" stroke="var(--hm-accent)" strokeWidth="1.4" strokeLinecap="round" />
+        </svg>
+        <h2 className="text-[16px] font-semibold text-[var(--hm-text)]">Radar — Prospecting</h2>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-10">
+          <div className="w-5 h-5 border-2 border-[var(--hm-accent)]/30 border-t-[var(--hm-accent)] rounded-full animate-spin" />
+        </div>
+      ) : !data || data.error ? (
+        <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-bg)] p-4 text-[12.5px] text-[var(--hm-text-tertiary)]">
+          Radar usage is unavailable right now.
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {/* Cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-bg)] p-4">
+              <p className="text-[11px] uppercase tracking-wider text-[var(--hm-text-tertiary)] font-medium">Database size</p>
+              <p className="text-[24px] font-semibold text-[var(--hm-text)] mt-1 leading-tight">{data.supabase?.db_size_pretty ?? "—"}</p>
+              <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-1">{data.supabase?.db_pct ?? 0}% of 500 MB</p>
+            </div>
+            <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-bg)] p-4">
+              <p className="text-[11px] uppercase tracking-wider text-[var(--hm-text-tertiary)] font-medium">Accounts</p>
+              <p className="text-[24px] font-semibold text-[var(--hm-text)] mt-1 leading-tight tabular-nums">{(data.supabase?.tables.accounts ?? 0).toLocaleString()}</p>
+              <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-1">{(data.supabase?.tables.contacts ?? 0).toLocaleString()} contacts</p>
+            </div>
+            <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-bg)] p-4">
+              <p className="text-[11px] uppercase tracking-wider text-[var(--hm-text-tertiary)] font-medium">Debounce credits</p>
+              <p className="text-[24px] font-semibold text-[var(--hm-text)] mt-1 leading-tight tabular-nums">
+                {data.debounce?.credits_remaining != null && data.debounce.credits_remaining >= 0 ? data.debounce.credits_remaining.toLocaleString() : "—"}
+              </p>
+              <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-1">{(data.debounce?.credits_used ?? 0).toLocaleString()} used via Radar</p>
+            </div>
+            <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-bg)] p-4">
+              <p className="text-[11px] uppercase tracking-wider text-[var(--hm-text-tertiary)] font-medium">Est. API cost</p>
+              <p className="text-[24px] font-semibold text-[var(--hm-text)] mt-1 leading-tight">
+                ${(data.members ?? []).reduce((s, m) => s + (m.cost || 0), 0).toFixed(2)}
+              </p>
+              <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-1">across {(data.members ?? []).length} member(s)</p>
+            </div>
+          </div>
+
+          {/* Per-member activity */}
+          {(data.members ?? []).length > 0 && (
+            <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-bg)] overflow-hidden">
+              <div className="px-5 py-3 border-b border-[var(--hm-border)]">
+                <h3 className="text-[13px] font-semibold text-[var(--hm-text)]">Activity by member</h3>
+                <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-0.5">Enrichment, email validation and LinkedIn checks run through Radar.</p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-[13px]">
+                  <thead>
+                    <tr>
+                      {["Member", "Leads finder", "Debounce", "LinkedIn", "Est. cost"].map((hd, i) => (
+                        <th key={hd} className={`text-[11px] font-semibold uppercase tracking-wide text-[var(--hm-text-tertiary)] px-4 py-2.5 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] whitespace-nowrap ${i === 0 ? "text-left" : "text-right"}`}>{hd}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(data.members ?? []).map((m) => (
+                      <tr key={m.email} className="hover:bg-[var(--hm-surface-hover)]">
+                        <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">
+                          <div className="font-medium text-[var(--hm-text)]">{m.name || m.email}</div>
+                          {m.name && <div className="text-[11.5px] text-[var(--hm-text-tertiary)]">{m.email}</div>}
+                        </td>
+                        <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)] text-right tabular-nums">{m.leads_finder.toLocaleString()}</td>
+                        <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)] text-right tabular-nums">{m.debounce.toLocaleString()}</td>
+                        <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)] text-right tabular-nums">{m.linkedin.toLocaleString()}</td>
+                        <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)] text-right tabular-nums">${m.cost.toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
