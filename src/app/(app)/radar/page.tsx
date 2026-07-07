@@ -100,6 +100,8 @@ export default function RadarPage() {
           <UploadSection />
         ) : active === "enrich" ? (
           <EnrichSection />
+        ) : active === "validate" ? (
+          <ValidateSection />
         ) : (
           <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
             <div className="px-5 py-4 border-b border-[var(--hm-border)]">
@@ -1126,6 +1128,306 @@ function EnrichSection() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/* ── Validate ──────────────────────────────────────────────────────────── */
+
+interface ValidateCandidate {
+  id: number;
+  first_name: string;
+  last_name: string;
+  domain: string;
+  pattern_email: string;
+  pattern_type: string;
+  confidence: number | null;
+  source: string;
+  selected: boolean;
+  bounce_status: "pending" | "valid" | "bounced" | null;
+}
+
+interface PersonInput {
+  first_name: string;
+  last_name: string;
+  domain: string;
+}
+
+type ValidatePhase = "input" | "candidates" | "sent" | "done";
+
+function ValidateSection() {
+  const [peopleText, setPeopleText] = useState("");
+  const [useAI, setUseAI] = useState(true);
+  const [phase, setPhase] = useState<ValidatePhase>("input");
+  const [jobId, setJobId] = useState<number | null>(null);
+  const [candidates, setCandidates] = useState<ValidateCandidate[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [progressLabel, setProgressLabel] = useState("");
+  const [checkResult, setCheckResult] = useState<{ bounced: number; valid: number; pending: number; allResolved: boolean } | null>(null);
+  const [savedCount, setSavedCount] = useState(0);
+
+  // "First,Last,domain.com" one per line
+  const parsePeople = (): PersonInput[] =>
+    peopleText
+      .split("\n")
+      .map((line) => line.split(",").map((s) => s.trim()))
+      .filter((parts) => parts.length >= 3 && parts[0] && parts[2])
+      .map(([first_name, last_name, domain]) => ({ first_name, last_name, domain }));
+
+  const call = async (body: Record<string, unknown>) => {
+    const r = await fetch("/api/radar/validate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || "Request failed");
+    return d;
+  };
+
+  const generate = async () => {
+    setError("");
+    const people = parsePeople();
+    if (!people.length) { setError("Add at least one person as: First, Last, domain.com — one per line."); return; }
+    setBusy(true);
+    try {
+      let jid: number | null = null;
+      let offset = 0;
+      // Radar paginates generation internally for large batches; loop until done.
+      for (let guard = 0; guard < 20; guard++) {
+        const d = await call({ action: "generate", rows: people, useAI, jobId: jid, offset });
+        jid = d.jobId;
+        if (d.done) {
+          setJobId(jid);
+          setCandidates((d.candidates || []).map((c: ValidateCandidate) => ({ ...c, selected: true })));
+          setPhase("candidates");
+          break;
+        }
+        offset = d.nextOffset;
+        setProgressLabel(`Generating… ${offset}/${d.totalPeople} people`);
+      }
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+      setProgressLabel("");
+    }
+  };
+
+  const toggle = (id: number) => {
+    setCandidates((prev) => prev.map((c) => (c.id === id ? { ...c, selected: !c.selected } : c)));
+  };
+
+  const send = async () => {
+    const selectedCount = candidates.filter((c) => c.selected).length;
+    if (!selectedCount || !jobId) return;
+    if (!confirm(`Send ${selectedCount} test emails via Instantly? Guessed addresses hit real inboxes.`)) return;
+    setBusy(true);
+    setError("");
+    try {
+      const d = await call({
+        action: "send",
+        jobId,
+        subject: "Quick question",
+        body: "Hi — following up, let me know if this reaches you.",
+      });
+      setPhase("sent");
+      setProgressLabel(`Campaign live — ${d.added ?? selectedCount} leads sending.`);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const check = async () => {
+    if (!jobId) return;
+    setBusy(true);
+    setError("");
+    try {
+      const d = await call({ action: "check", jobId });
+      setCheckResult(d);
+      setCandidates((prev) => {
+        // We don't get per-row status back from check; a full refresh isn't
+        // exposed as a simple action, so just reflect aggregate resolution.
+        return prev;
+      });
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const save = async () => {
+    if (!jobId) return;
+    setBusy(true);
+    setError("");
+    try {
+      const d = await call({ action: "save", jobId });
+      setSavedCount(d.saved ?? 0);
+      setPhase("done");
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const reset = () => {
+    setPeopleText(""); setPhase("input"); setJobId(null); setCandidates([]);
+    setCheckResult(null); setSavedCount(0); setError("");
+  };
+
+  const selectedCount = candidates.filter((c) => c.selected).length;
+
+  return (
+    <div className="space-y-5">
+      {/* Step indicator */}
+      <div className="flex items-center gap-2 flex-wrap">
+        {(["input", "candidates", "sent", "done"] as ValidatePhase[]).map((p, i, arr) => {
+          const stepIndex = arr.indexOf(phase);
+          const state = i < stepIndex ? "done" : i === stepIndex ? "current" : "todo";
+          const labels: Record<ValidatePhase, string> = { input: "Generate patterns", candidates: "Send test", sent: "Check bounces", done: "Save to contacts" };
+          return (
+            <div key={p} className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
+                <span
+                  className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold border ${
+                    state === "done" ? "bg-[var(--hm-success)] border-[var(--hm-success)] text-white"
+                    : state === "current" ? "bg-[var(--hm-accent)] border-[var(--hm-accent)] text-white"
+                    : "border-[var(--hm-border)] text-[var(--hm-text-tertiary)]"
+                  }`}
+                >
+                  {state === "done" ? "✓" : i + 1}
+                </span>
+                <span className={`text-[12.5px] ${state === "current" ? "font-semibold text-[var(--hm-accent)]" : "text-[var(--hm-text-tertiary)]"}`}>{labels[p]}</span>
+              </div>
+              {i < arr.length - 1 && <span className="w-6 h-px bg-[var(--hm-border)]" />}
+            </div>
+          );
+        })}
+      </div>
+
+      {error && <div className="rounded-lg p-3 text-[12.5px] bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</div>}
+
+      {phase === "input" && (
+        <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
+          <div className="px-5 py-4 border-b border-[var(--hm-border)]">
+            <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Generate email patterns</h2>
+            <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">One person per line: First, Last, domain.com</p>
+          </div>
+          <div className="px-5 py-5 space-y-4">
+            <textarea
+              value={peopleText}
+              onChange={(e) => setPeopleText(e.target.value)}
+              placeholder={"Marcus, Reyes, shopflow.com\nLena, Farouk, nexlogix.io"}
+              style={{ minHeight: 140 }}
+            />
+            <label className="flex items-center gap-2 text-[12.5px] text-[var(--hm-text-secondary)]">
+              <input type="checkbox" checked={useAI} onChange={(e) => setUseAI(e.target.checked)} />
+              Use AI ranking (Claude scores patterns using domain web evidence)
+            </label>
+            <button onClick={generate} disabled={busy} className="hm-btn hm-btn-primary" style={{ height: 38, padding: "0 18px", fontSize: 13 }}>
+              {busy ? (progressLabel || "Generating…") : "Generate patterns"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {(phase === "candidates" || phase === "sent" || phase === "done") && (
+        <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
+          <div className="px-5 py-3 border-b border-[var(--hm-border)] flex items-center justify-between flex-wrap gap-2">
+            <span className="text-[12.5px] text-[var(--hm-text-secondary)]">
+              {candidates.length} pattern(s) · {selectedCount} selected
+            </span>
+            <div className="flex items-center gap-2">
+              <button onClick={reset} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 12px", fontSize: 12 }}>Start over</button>
+              {phase === "candidates" && (
+                <button onClick={send} disabled={busy || !selectedCount} className="hm-btn hm-btn-primary" style={{ height: 32, padding: "0 14px", fontSize: 12 }}>
+                  {busy ? "Sending…" : `Send ${selectedCount} via Instantly`}
+                </button>
+              )}
+              {phase === "sent" && (
+                <>
+                  <button onClick={check} disabled={busy} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 14px", fontSize: 12 }}>
+                    {busy ? "Checking…" : "Check bounces"}
+                  </button>
+                  {checkResult?.allResolved && checkResult.valid > 0 && (
+                    <button onClick={save} disabled={busy} className="hm-btn hm-btn-primary" style={{ height: 32, padding: "0 14px", fontSize: 12 }}>
+                      Save {checkResult.valid} verified
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+
+          {phase === "sent" && checkResult && (
+            <div className="px-5 py-3 border-b border-[var(--hm-border)] flex gap-4 text-[12.5px]">
+              <span className="text-[#059669]">✓ {checkResult.valid} valid</span>
+              <span className="text-red-500">✗ {checkResult.bounced} bounced</span>
+              <span className="text-[var(--hm-text-tertiary)]">… {checkResult.pending} pending</span>
+              {!checkResult.allResolved && <span className="text-[var(--hm-text-tertiary)]">— check again in a minute</span>}
+            </div>
+          )}
+
+          {phase === "done" ? (
+            <div className="px-5 py-10 text-center">
+              <div className="w-11 h-11 rounded-xl bg-[#DCFCE7] flex items-center justify-center mx-auto mb-3">
+                <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 5" stroke="#059669" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+              </div>
+              <p className="text-[13px] font-medium text-[var(--hm-text)]">{savedCount} verified email(s) saved to contacts.</p>
+              <button onClick={reset} className="hm-btn hm-btn-secondary mt-4" style={{ height: 34, padding: "0 14px", fontSize: 12.5 }}>Validate more people</button>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-[13px]">
+                <thead>
+                  <tr>
+                    {phase === "candidates" && <th className="px-4 py-2.5 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)]"></th>}
+                    {["Person", "Email", "Type", "Confidence", "Source", "Status"].map((h) => (
+                      <th key={h} className="text-left text-[11px] font-semibold uppercase tracking-wide text-[var(--hm-text-tertiary)] px-4 py-2.5 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {candidates.map((c) => (
+                    <tr key={c.id} className="hover:bg-[var(--hm-surface-hover)]">
+                      {phase === "candidates" && (
+                        <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">
+                          <input type="checkbox" checked={c.selected} onChange={() => toggle(c.id)} />
+                        </td>
+                      )}
+                      <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">{c.first_name} {c.last_name}</td>
+                      <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)] font-mono text-[12px]">{c.pattern_email}</td>
+                      <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text-tertiary)]">{c.pattern_type}</td>
+                      <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">
+                        {c.confidence != null ? (
+                          <span className="inline-flex items-center gap-1.5">
+                            <span className="inline-block w-10 h-1.5 rounded-full overflow-hidden bg-[var(--hm-bg-tertiary)]">
+                              <span className="block h-full rounded-full" style={{ width: `${c.confidence}%`, background: c.confidence >= 70 ? "#10B981" : c.confidence >= 40 ? "#F59E0B" : "#EF4444" }} />
+                            </span>
+                            {c.confidence}
+                          </span>
+                        ) : "—"}
+                      </td>
+                      <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">{c.source === "ai" ? "AI" : "Mechanical"}</td>
+                      <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">
+                        {c.bounce_status === "valid" ? <span className="text-[#059669]">✓ valid</span>
+                          : c.bounce_status === "bounced" ? <span className="text-red-500">✗ bounced</span>
+                          : phase === "sent" ? <span className="text-[var(--hm-text-tertiary)]">… pending</span>
+                          : <span className="text-[var(--hm-text-tertiary)]">—</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
