@@ -21,6 +21,7 @@ type SectionId =
   | "accounts"
   | "contacts"
   | "check-db"
+  | "icp"
   | "upload"
   | "enrich"
   | "validate"
@@ -31,6 +32,7 @@ const SECTIONS: Array<{ id: SectionId; label: string; blurb: string }> = [
   { id: "accounts",  label: "Accounts",  blurb: "Browse and filter the accounts database." },
   { id: "contacts",  label: "Contacts",  blurb: "Query validated contacts across the database." },
   { id: "check-db",  label: "Check DB",  blurb: "Look up a list of emails against the contacts database." },
+  { id: "icp",       label: "ICP Base",  blurb: "Define Ideal Customer Profiles to auto-fill Enrich searches." },
   { id: "upload",    label: "Upload",    blurb: "Bulk import accounts and contacts from CSV." },
   { id: "enrich",    label: "Enrich",    blurb: "Find new contacts from LinkedIn for a target account." },
   { id: "validate",  label: "Validate",  blurb: "Generate email patterns, test deliverability, save confirmed emails." },
@@ -104,6 +106,8 @@ export default function RadarPage() {
           <ContactsSection />
         ) : active === "check-db" ? (
           <CheckDbSection />
+        ) : active === "icp" ? (
+          <IcpBaseSection />
         ) : active === "export" ? (
           <ExportSection />
         ) : active === "upload" ? (
@@ -1645,4 +1649,282 @@ function CheckDbSection() {
       )}
     </div>
   );
+}
+
+/* ── ICP Base ──────────────────────────────────────────────────────────── */
+
+const ICP_VERTICALS = ["B2B", "D2C", "US"] as const;
+type IcpVertical = (typeof ICP_VERTICALS)[number];
+
+const ICP_SENIORITY = ["founder", "owner", "c_suite", "partner", "director", "vp", "head", "manager", "senior", "entry", "trainee"];
+const ICP_SENIORITY_LABELS: Record<string, string> = { founder: "Founder", owner: "Owner", c_suite: "C-Suite", partner: "Partner", director: "Director", vp: "VP", head: "Head", manager: "Manager", senior: "Senior", entry: "Entry", trainee: "Trainee" };
+const ICP_FUNCTION = ["c_suite", "sales", "marketing", "operations", "engineering", "finance", "human_resources", "information_technology", "legal", "product_management", "design", "education", "support"];
+const ICP_FUNCTION_LABELS: Record<string, string> = { c_suite: "C-Suite", sales: "Sales", marketing: "Marketing", operations: "Operations", engineering: "Engineering", finance: "Finance", human_resources: "HR", information_technology: "IT", legal: "Legal", product_management: "Product", design: "Design", education: "Education", support: "Support" };
+const ICP_SIZE = ["1-10", "11-20", "21-50", "51-100", "101-200", "201-500", "501-1000", "1001-2000", "2001-5000", "5001-10000", "10001-20000", "20001-50000", "50000+"];
+const ICP_REVENUE = ["100K", "500K", "1M", "5M", "10M", "25M", "50M", "100M", "500M", "1B", "5B", "10B"];
+
+interface IcpProfile {
+  titles: string;
+  notTitles: string;
+  seniority: string[];
+  function: string[];
+  location: string;
+  notLocation: string;
+  industry: string;
+  notIndustry: string;
+  keywords: string;
+  notKeywords: string;
+  size: string[];
+  minRevenue: string;
+  maxRevenue: string;
+  reasoning?: string;
+}
+
+const EMPTY_ICP: IcpProfile = {
+  titles: "", notTitles: "", seniority: [], function: [], location: "", notLocation: "",
+  industry: "", notIndustry: "", keywords: "", notKeywords: "", size: [], minRevenue: "", maxRevenue: "",
+};
+
+const ICP_STORAGE_KEY = "hivemind_radar_icps";
+
+function loadIcps(): Record<string, IcpProfile> {
+  try { return JSON.parse(localStorage.getItem(ICP_STORAGE_KEY) || "{}"); } catch { return {}; }
+}
+function saveIcps(icps: Record<string, IcpProfile>) {
+  localStorage.setItem(ICP_STORAGE_KEY, JSON.stringify(icps));
+}
+
+function ChipToggle({ options, labels, selected, onChange }: {
+  options: string[];
+  labels?: Record<string, string>;
+  selected: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const toggle = (v: string) => {
+    onChange(selected.includes(v) ? selected.filter((s) => s !== v) : [...selected, v]);
+  };
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {options.map((o) => {
+        const active = selected.includes(o);
+        return (
+          <button
+            key={o}
+            type="button"
+            onClick={() => toggle(o)}
+            className={`text-[11.5px] px-2.5 py-1 rounded-md border transition-colors ${
+              active
+                ? "border-[var(--hm-accent)] bg-[var(--hm-accent-light)] text-[var(--hm-accent)] font-medium"
+                : "border-[var(--hm-border)] text-[var(--hm-text-secondary)]"
+            }`}
+          >
+            {labels?.[o] ?? o}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function IcpBaseSection() {
+  const [vertical, setVertical] = useState<IcpVertical>("B2B");
+  const [icps, setIcps] = useState<Record<string, IcpProfile>>({});
+  const [draft, setDraft] = useState<IcpProfile>(EMPTY_ICP);
+  const [aiDesc, setAiDesc] = useState("");
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiError, setAiError] = useState("");
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    const all = loadIcps();
+    setIcps(all);
+    setDraft(all[vertical] || EMPTY_ICP);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const switchVertical = (v: IcpVertical) => {
+    setVertical(v);
+    setDraft(icps[v] || EMPTY_ICP);
+    setSaved(false);
+  };
+
+  const update = (patch: Partial<IcpProfile>) => { setDraft((d) => ({ ...d, ...patch })); setSaved(false); };
+
+  const save = () => {
+    const next = { ...icps, [vertical]: draft };
+    saveIcps(next);
+    setIcps(next);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2500);
+  };
+
+  const autoFill = async () => {
+    if (!aiDesc.trim()) return;
+    setAiBusy(true);
+    setAiError("");
+    try {
+      const r = await fetch("/api/radar/enrich", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "parse_icp", description: aiDesc, vertical }),
+      });
+      const d = await r.json();
+      if (!r.ok || d.error) throw new Error(d.error || "Could not parse ICP");
+      const icp = d.icp || {};
+      update({
+        titles: icp.titles || "",
+        notTitles: icp.notTitles || "",
+        seniority: mapSeniority(icp.seniority || []),
+        function: mapFunction(icp.function || []),
+        location: icp.location || "",
+        notLocation: icp.notLocation || "",
+        industry: icp.industry || "",
+        minRevenue: icp.minRevenue || "",
+        maxRevenue: icp.maxRevenue || "",
+        reasoning: icp.reasoning || "",
+      });
+    } catch (e) {
+      setAiError((e as Error).message);
+    } finally {
+      setAiBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-5">
+      {/* AI auto-fill */}
+      <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)] p-5">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--hm-text-tertiary)] mb-2">✨ Describe your ICP in plain English</p>
+        <div className="grid grid-cols-1 md:grid-cols-[1fr_180px] gap-3 items-end">
+          <textarea
+            value={aiDesc}
+            onChange={(e) => setAiDesc(e.target.value)}
+            placeholder="e.g. Mid-market ecommerce brands in India with 50-500 employees, targeting VP or Head of Supply Chain and Operations leaders…"
+            style={{ minHeight: 64 }}
+          />
+          <button onClick={autoFill} disabled={aiBusy || !aiDesc.trim()} className="hm-btn hm-btn-primary" style={{ height: 38, fontSize: 13 }}>
+            {aiBusy ? "Parsing…" : "✨ Auto-fill ICP"}
+          </button>
+        </div>
+        {aiError && <p className="text-[12px] text-red-500 mt-2">{aiError}</p>}
+        {draft.reasoning && <p className="text-[12px] text-[var(--hm-text-tertiary)] mt-2">{draft.reasoning}</p>}
+      </div>
+
+      {/* Vertical tabs */}
+      <div className="flex gap-0.5 p-1 rounded-xl bg-[var(--hm-bg-tertiary)] w-fit">
+        {ICP_VERTICALS.map((v) => (
+          <button
+            key={v}
+            onClick={() => switchVertical(v)}
+            className={`px-3.5 py-1.5 text-[13px] rounded-lg transition-colors ${
+              vertical === v ? "bg-[var(--hm-surface)] text-[var(--hm-text)] font-medium shadow-[var(--hm-shadow-sm)]" : "text-[var(--hm-text-secondary)]"
+            }`}
+          >
+            {v}
+          </button>
+        ))}
+      </div>
+
+      {/* Form */}
+      <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)] p-5 space-y-4 max-w-3xl">
+        <p className="text-[12px] font-semibold uppercase tracking-wide text-[var(--hm-text-tertiary)]">{vertical} ICP</p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Titles include</label>
+            <input value={draft.titles} onChange={(e) => update({ titles: e.target.value })} placeholder="VP Sales, Head of Logistics" />
+          </div>
+          <div>
+            <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Titles exclude</label>
+            <input value={draft.notTitles} onChange={(e) => update({ notTitles: e.target.value })} placeholder="Intern, Trainee" />
+          </div>
+        </div>
+
+        <div>
+          <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Seniority</label>
+          <ChipToggle options={ICP_SENIORITY} labels={ICP_SENIORITY_LABELS} selected={draft.seniority} onChange={(v) => update({ seniority: v })} />
+        </div>
+
+        <div>
+          <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Function</label>
+          <ChipToggle options={ICP_FUNCTION} labels={ICP_FUNCTION_LABELS} selected={draft.function} onChange={(v) => update({ function: v })} />
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Location</label>
+            <input value={draft.location} onChange={(e) => update({ location: e.target.value })} placeholder="India, US" />
+          </div>
+          <div>
+            <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Exclude location</label>
+            <input value={draft.notLocation} onChange={(e) => update({ notLocation: e.target.value })} placeholder="Pakistan" />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Industry include</label>
+            <input value={draft.industry} onChange={(e) => update({ industry: e.target.value })} placeholder="computer software" />
+          </div>
+          <div>
+            <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Industry exclude</label>
+            <input value={draft.notIndustry} onChange={(e) => update({ notIndustry: e.target.value })} placeholder="real estate" />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Keywords include</label>
+            <input value={draft.keywords} onChange={(e) => update({ keywords: e.target.value })} placeholder="B2B, supply chain" />
+          </div>
+          <div>
+            <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Keywords exclude</label>
+            <input value={draft.notKeywords} onChange={(e) => update({ notKeywords: e.target.value })} placeholder="staffing" />
+          </div>
+        </div>
+
+        <div>
+          <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Company size</label>
+          <ChipToggle options={ICP_SIZE} selected={draft.size} onChange={(v) => update({ size: v })} />
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Min revenue</label>
+            <select value={draft.minRevenue} onChange={(e) => update({ minRevenue: e.target.value })}>
+              <option value="">Any</option>
+              {ICP_REVENUE.map((r) => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Max revenue</label>
+            <select value={draft.maxRevenue} onChange={(e) => update({ maxRevenue: e.target.value })}>
+              <option value="">Any</option>
+              {ICP_REVENUE.map((r) => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 pt-1">
+          <button onClick={save} className="hm-btn hm-btn-primary" style={{ height: 38, padding: "0 18px", fontSize: 13 }}>
+            💾 Save {vertical} ICP
+          </button>
+          {saved && <span className="text-[12.5px] text-[#059669]">Saved.</span>}
+        </div>
+      </div>
+
+      <p className="text-[11.5px] text-[var(--hm-text-tertiary)] max-w-3xl">
+        Saved ICPs are stored in this browser. Selecting a vertical in Enrich will use its matching ICP as a starting point once wired there.
+      </p>
+    </div>
+  );
+}
+
+function mapSeniority(vals: string[]): string[] {
+  const map: Record<string, string> = { Founder: "founder", Owner: "owner", "C-Level": "c_suite", Partner: "partner", Director: "director", VP: "vp", Head: "head", Manager: "manager", Senior: "senior", Entry: "entry" };
+  return vals.map((v) => map[v] || v.toLowerCase()).filter((v) => ICP_SENIORITY.includes(v));
+}
+function mapFunction(vals: string[]): string[] {
+  const map: Record<string, string> = { Sales: "sales", Marketing: "marketing", Operations: "operations", Engineering: "engineering", Finance: "finance", HR: "human_resources", IT: "information_technology", Legal: "legal", Product: "product_management", Support: "support" };
+  return vals.map((v) => map[v] || v.toLowerCase()).filter((v) => ICP_FUNCTION.includes(v));
 }
