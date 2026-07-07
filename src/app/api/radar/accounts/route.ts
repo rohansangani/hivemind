@@ -14,11 +14,15 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const { vertical, industry, country, search, page = 0, limit = 50 } = body;
+    const { vertical, industry, subIndustry, accountSize, employeeRange, revenueRange, country, search, page = 0, limit = 50 } = body;
 
     let query = `select=${ACCOUNT_COLS}&order=name.asc`;
     if (vertical) query += `&vertical=eq.${encodeURIComponent(vertical)}`;
     if (industry) query += `&industry=eq.${encodeURIComponent(industry)}`;
+    if (subIndustry) query += `&sub_industry=eq.${encodeURIComponent(subIndustry)}`;
+    if (accountSize) query += `&account_size=eq.${encodeURIComponent(accountSize)}`;
+    if (employeeRange) query += `&employee_range=eq.${encodeURIComponent(employeeRange)}`;
+    if (revenueRange) query += `&revenue_range=eq.${encodeURIComponent(revenueRange)}`;
     if (country) query += `&country=eq.${encodeURIComponent(country)}`;
     if (search) {
       const q = encodeURIComponent(search);

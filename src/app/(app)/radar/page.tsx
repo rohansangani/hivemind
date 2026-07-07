@@ -237,6 +237,41 @@ function StatCard({ label, value }: { label: string; value: string }) {
 const VERTICALS = ["", "B2B", "US", "D2C"];
 const PAGE_SIZE = 50;
 
+interface RadarOptions {
+  industries: string[];
+  subIndustries: string[];
+  accountSizes: string[];
+  employeeRanges: string[];
+  revenueRanges: string[];
+  countries: string[];
+}
+
+/** A compact labelled filter dropdown; hidden when it has no options. */
+function FilterSelect({
+  label, value, onChange, options,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: string[];
+}) {
+  if (!options.length) return null;
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      style={{ width: "auto", minWidth: 130, maxWidth: 200 }}
+      className={value ? "border-[var(--hm-accent)]! text-[var(--hm-accent)]" : ""}
+      aria-label={label}
+    >
+      <option value="">{label}: All</option>
+      {options.map((o) => (
+        <option key={o} value={o}>{o.length > 40 ? o.slice(0, 40) + "…" : o}</option>
+      ))}
+    </select>
+  );
+}
+
 interface Column<T> {
   key: string;
   header: string;
@@ -259,9 +294,29 @@ function DataTable<T>({
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
   const [search, setSearch] = useState("");
-  const [vertical, setVertical] = useState("");
+  const [filters, setFilters] = useState<Record<string, string>>({});
+  const [options, setOptions] = useState<RadarOptions | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  // Load filter dropdown options once.
+  useEffect(() => {
+    fetch("/api/radar/options")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d) setOptions(d); })
+      .catch(() => {});
+  }, []);
+
+  const setFilter = (key: string, value: string) => {
+    setFilters((prev) => {
+      const next = { ...prev };
+      if (value) next[key] = value; else delete next[key];
+      return next;
+    });
+    setPage(0);
+  };
+  const clearFilters = () => { setFilters({}); setSearch(""); setPage(0); };
+  const activeFilterCount = Object.keys(filters).length + (search ? 1 : 0);
 
   // Debounce search input into the actual query term
   const [term, setTerm] = useState("");
@@ -270,6 +325,7 @@ function DataTable<T>({
     return () => clearTimeout(t);
   }, [search]);
 
+  const filtersKey = JSON.stringify(filters);
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -277,7 +333,7 @@ function DataTable<T>({
     fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ search: term, vertical: vertical || undefined, page, limit: PAGE_SIZE }),
+      body: JSON.stringify({ search: term, ...filters, page, limit: PAGE_SIZE }),
     })
       .then(async (r) => {
         if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Request failed");
@@ -289,7 +345,7 @@ function DataTable<T>({
       .catch((e) => { if (!cancelled) setError(e.message); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [endpoint, term, vertical, page]);
+  }, [endpoint, term, filtersKey, page]);
 
   const from = total === 0 ? 0 : page * PAGE_SIZE + 1;
   const to = Math.min((page + 1) * PAGE_SIZE, total);
@@ -298,31 +354,38 @@ function DataTable<T>({
   return (
     <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
       {/* Toolbar */}
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-[var(--hm-border)] flex-wrap">
-        <div className="relative flex-1 min-w-[180px]">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <circle cx="7" cy="7" r="4.5" stroke="var(--hm-text-tertiary)" strokeWidth="1.3" />
-              <path d="M10.5 10.5L14 14" stroke="var(--hm-text-tertiary)" strokeWidth="1.3" strokeLinecap="round" />
-            </svg>
-          </span>
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder={searchPlaceholder}
-            className="search-input"
-            style={{ width: "100%" }}
-          />
+      <div className="px-4 py-3 border-b border-[var(--hm-border)] space-y-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="relative flex-1 min-w-[180px]">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <circle cx="7" cy="7" r="4.5" stroke="var(--hm-text-tertiary)" strokeWidth="1.3" />
+                <path d="M10.5 10.5L14 14" stroke="var(--hm-text-tertiary)" strokeWidth="1.3" strokeLinecap="round" />
+              </svg>
+            </span>
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={searchPlaceholder}
+              className="search-input"
+              style={{ width: "100%" }}
+            />
+          </div>
+          {activeFilterCount > 0 && (
+            <button
+              onClick={clearFilters}
+              className="text-[12px] text-[var(--hm-text-secondary)] hover:text-[var(--hm-accent)] px-2 py-1 rounded-md border border-[var(--hm-border)] whitespace-nowrap"
+            >
+              Clear {activeFilterCount}
+            </button>
+          )}
         </div>
-        <select
-          value={vertical}
-          onChange={(e) => { setVertical(e.target.value); setPage(0); }}
-          style={{ width: 140 }}
-        >
-          {VERTICALS.map((v) => (
-            <option key={v} value={v}>{v === "" ? "All verticals" : v}</option>
-          ))}
-        </select>
+        <div className="flex items-center gap-2 flex-wrap">
+          <FilterSelect label="Vertical" value={filters.vertical || ""} onChange={(v) => setFilter("vertical", v)} options={["B2B", "US", "D2C"]} />
+          <FilterSelect label="Industry" value={filters.industry || ""} onChange={(v) => setFilter("industry", v)} options={options?.industries || []} />
+          <FilterSelect label="Employees" value={filters.employeeRange || ""} onChange={(v) => setFilter("employeeRange", v)} options={options?.employeeRanges || []} />
+          <FilterSelect label="Country" value={filters.country || ""} onChange={(v) => setFilter("country", v)} options={options?.countries || []} />
+        </div>
       </div>
 
       {/* Body */}

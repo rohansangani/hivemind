@@ -65,6 +65,46 @@ export async function selectFrom(
   return { rows, total };
 }
 
+const RADAR_SUPABASE_REF = process.env.RADAR_SUPABASE_PROJECT_REF;
+const RADAR_SUPABASE_ACCESS_TOKEN = process.env.RADAR_SUPABASE_ACCESS_TOKEN;
+
+/**
+ * Run read SQL via Supabase's Management API. Used for things PostgREST can't
+ * express (DISTINCT, aggregates). Retries the transient Redis "OOM" error the
+ * Management API occasionally throws (same behaviour as radar's own helper).
+ */
+export async function radarSql<T = Record<string, unknown>>(query: string, attempt = 0): Promise<T[]> {
+  if (!RADAR_SUPABASE_REF || !RADAR_SUPABASE_ACCESS_TOKEN) {
+    throw new Error("Radar Supabase Management API env vars are not configured");
+  }
+  const r = await fetch(`https://api.supabase.com/v1/projects/${RADAR_SUPABASE_REF}/database/query`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${RADAR_SUPABASE_ACCESS_TOKEN}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ query }),
+  });
+  const d = await r.json();
+  if (!Array.isArray(d)) {
+    if (d?.message && attempt < 3) {
+      await new Promise((res) => setTimeout(res, 500 * (attempt + 1)));
+      return radarSql<T>(query, attempt + 1);
+    }
+    throw new Error(d?.message || "Radar SQL query failed");
+  }
+  return d as T[];
+}
+
+/**
+ * Complete sorted distinct values of a column, via SELECT DISTINCT. Correct
+ * across the whole table (PostgREST caps REST reads at 1000 rows, so a REST
+ * scan would silently miss values).
+ */
+export async function distinctValues(table: string, column: string): Promise<string[]> {
+  const rows = await radarSql<Record<string, string>>(
+    `SELECT DISTINCT ${column} AS v FROM ${table} WHERE ${column} IS NOT NULL AND ${column} <> '' ORDER BY 1`,
+  );
+  return rows.map((r) => r.v).filter(Boolean);
+}
+
 /**
  * Guard for radar API routes. Verifies the hivemind JWT and confirms the user
  * is a current owner/admin (fresh role from DB, not the JWT claim). Returns the
