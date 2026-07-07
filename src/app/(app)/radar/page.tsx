@@ -61,15 +61,17 @@ export default function RadarPage() {
   const current = SECTIONS.find((s) => s.id === active)!;
 
   return (
-    <div className="flex-1 overflow-auto">
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+    <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
-        {/* ── Header ─────────────────────────────────────────────── */}
-        <div>
-          <h1 className="text-[20px] font-semibold text-[var(--hm-text)]">Radar</h1>
-          <p className="text-[13px] text-[var(--hm-text-secondary)] mt-0.5">
-            Accounts, contacts &amp; email validation — one prospecting workspace.
-          </p>
+      {/* ── Header bar ─────────────────────────────────────────────── */}
+      <div className="px-4 md:px-7 py-4 bg-white border-b border-[var(--hm-border)]" style={{ boxShadow: "var(--hm-shadow-xs)" }}>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <div className="min-w-0">
+            <h1 className="text-[18px] md:text-[22px] font-semibold leading-tight text-[var(--hm-text)]">Radar</h1>
+            <p className="text-[12px] text-[var(--hm-text-tertiary)] mt-0.5">
+              Accounts, contacts &amp; email validation — one prospecting workspace.
+            </p>
+          </div>
         </div>
 
         {/* ── Section tabs ───────────────────────────────────────── */}
@@ -88,6 +90,10 @@ export default function RadarPage() {
             </button>
           ))}
         </div>
+      </div>
+
+      {/* ── Section body (scrollable, full width) ─────────────────── */}
+      <div className="flex-1 overflow-auto px-4 md:px-7 py-6">
 
         {/* ── Section body ───────────────────────────────────────── */}
         {active === "dashboard" ? (
