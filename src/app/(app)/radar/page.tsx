@@ -913,6 +913,15 @@ function EmailStatusPill({ status }: { status: string | null }) {
   return <span className={`text-[11px] px-2 py-0.5 rounded-md font-medium whitespace-nowrap ${cls}`}>{label}</span>;
 }
 
+/** "2 safe to send, 1 risky, 1 invalid" — order matters most-to-least useful. */
+function formatStatusBreakdown(byStatus: Record<string, number>): string {
+  const order = ["safe to send", "verified", "risky", "invalid", "unknown"];
+  return order
+    .filter((s) => byStatus[s])
+    .map((s) => `${byStatus[s]} ${s}`)
+    .join(", ");
+}
+
 function ContactsSection() {
   const cols: Column<ContactRow>[] = [
     { key: "vertical", header: "Vertical", render: (r) => <VerticalBadge v={r.vertical} /> },
@@ -1869,7 +1878,7 @@ function EnrichSection() {
 
   const [saveBusy, setSaveBusy] = useState(false);
   const [searchBusy, setSearchBusy] = useState(false);
-  const [validateResult, setValidateResult] = useState<{ validated: number } | null>(null);
+  const [validateResult, setValidateResult] = useState<{ validated: number; byStatus: Record<string, number> } | null>(null);
 
   useEffect(() => { setSavedIcps(loadIcps()); }, []);
 
@@ -2038,7 +2047,13 @@ function EnrichSection() {
       const domains = csv(domain);
       if (savedEmails.length) {
         const v = await call({ action: "validate_and_save", params: { apifyEmails: savedEmails, domains } });
-        setValidateResult({ validated: v.validated || 0 });
+        const contacts = (v.contacts || []) as Array<{ email_status?: string }>;
+        const byStatus: Record<string, number> = {};
+        for (const c of contacts) {
+          const s = c.email_status || "unknown";
+          byStatus[s] = (byStatus[s] || 0) + 1;
+        }
+        setValidateResult({ validated: v.validated || 0, byStatus });
       }
 
       // Refresh the full picture for these domains — the newly saved+validated leads are now
@@ -2071,42 +2086,82 @@ function EnrichSection() {
     setExistingSelected((prev) => (prev.size === existingLeads.length ? new Set() : new Set(existingLeads.map((_, i) => i))));
   };
 
-  // Runs the selected existing-DB contacts through the same Debounce + 14/30-day staleness
-  // pipeline as the Export tab (export-validate.js's validate_chunk, targeted to this exact
-  // set of emails), then re-fetches them so the exported CSV reflects the freshest status.
-  const exportExisting = async () => {
+  // Combined export: selected existing-DB contacts (re-validated via the same Debounce +
+  // 14/30-day staleness pipeline the Export tab uses, targeted to this exact set of emails)
+  // PLUS whichever new Apify leads are checked but not yet saved (Debounce-validated fresh,
+  // since they've never been checked before). Deduped by email — an Apify pick that happens
+  // to already be an existing DB contact only counts once, using the DB's own data for it.
+  const exportAll = async () => {
     setError("");
-    const selectedEmails = existingLeads.filter((_, i) => existingSelected.has(i)).map((c) => c.email).filter(Boolean) as string[];
-    if (!selectedEmails.length) { setError("Select at least one existing contact to export."); return; }
+    const existingEmails = existingLeads.filter((_, i) => existingSelected.has(i)).map((c) => c.email).filter(Boolean) as string[];
+    const existingEmailSet = new Set(existingEmails.map((e) => e.toLowerCase()));
+    const newEmails = leads
+      .filter((_, i) => selected.has(i))
+      .map((l) => l.email)
+      .filter((e): e is string => !!e && !existingEmailSet.has(e.toLowerCase()));
+
+    if (!existingEmails.length && !newEmails.length) { setError("Select at least one lead to export."); return; }
+
     setExportBusy(true);
-    let offset = 0, done = false, processed = 0, validated = 0;
-    setExportProgress({ processed: 0, validated: 0, total: selectedEmails.length });
+    const total = existingEmails.length + newEmails.length;
+    let processed = 0, validated = 0;
+    setExportProgress({ processed: 0, validated: 0, total });
     try {
-      for (let guard = 0; guard < 200 && !done; guard++) {
-        const r = await fetch("/api/radar/export-validate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "validate_chunk", filters: { emails: selectedEmails }, offset }),
-        });
-        const d = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(d.error || "Debounce validation failed");
-        processed += d.processed || 0;
-        validated += d.validated || 0;
-        offset = d.next_offset ?? offset + (d.processed || 0);
-        done = d.done || d.processed === 0;
-        setExportProgress({ processed, validated, total: selectedEmails.length });
+      if (existingEmails.length) {
+        let offset = 0, done = false;
+        for (let guard = 0; guard < 200 && !done; guard++) {
+          const r = await fetch("/api/radar/export-validate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "validate_chunk", filters: { emails: existingEmails }, offset }),
+          });
+          const d = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(d.error || "Debounce validation failed");
+          processed += d.processed || 0;
+          validated += d.validated || 0;
+          offset = d.next_offset ?? offset + (d.processed || 0);
+          done = d.done || d.processed === 0;
+          setExportProgress({ processed, validated, total });
+        }
+      }
+
+      const newRows: Record<string, unknown>[] = [];
+      if (newEmails.length && datasetId) {
+        let offset = 0, done = false;
+        for (let guard = 0; guard < 200 && !done; guard++) {
+          const d = await call({ action: "export_leads", datasetId, selectedEmails: newEmails, offset });
+          newRows.push(...(d.rows || []));
+          offset = d.next_offset ?? offset + (d.rows?.length || 0);
+          done = d.done || !d.rows?.length;
+          processed += d.rows?.length || 0;
+          setExportProgress({ processed, validated, total });
+        }
       }
 
       const domains = csv(domain);
       const chk = await call({ action: "check_existing", params: { company_domain: domains } });
       const refreshed = (chk.existing || []) as ExistingContact[];
-      const emailSet = new Set(selectedEmails.map((e) => e.toLowerCase()));
       setExistingLeads(refreshed);
-      setExistingSelected(new Set(refreshed.map((c, i) => i).filter((i) => refreshed[i].email && emailSet.has(refreshed[i].email!.toLowerCase()))));
 
-      const toExport = refreshed.filter((c) => c.email && emailSet.has(c.email.toLowerCase()));
-      if (!toExport.length) { setError("No matching contacts to export."); return; }
-      downloadCSV(toExport, `radar_enrich_existing_${today()}.csv`);
+      const merged = new Map<string, Record<string, unknown>>();
+      for (const c of refreshed) {
+        if (!c.email || !existingEmailSet.has(c.email.toLowerCase())) continue;
+        merged.set(c.email.toLowerCase(), {
+          first_name: c.first_name, last_name: c.last_name, email: c.email, email_status: c.email_status,
+          title: c.title, company_name: c.company_name || c.account_name, domain: c.domain,
+          linkedin_url: c.linkedin_url, phone: null, location: null, country: null,
+          validated_at: c.validated_at, source: "existing",
+        });
+      }
+      for (const r of newRows) {
+        const email = String((r as Record<string, unknown>).email || "").toLowerCase();
+        if (!email || merged.has(email)) continue;
+        merged.set(email, { ...r, validated_at: null, source: "new" });
+      }
+
+      const toExport = [...merged.values()];
+      if (!toExport.length) { setError("No matching leads to export."); return; }
+      downloadCSV(toExport, `radar_enrich_all_${today()}.csv`);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -2125,6 +2180,12 @@ function EnrichSection() {
     const sb = scores[(b.l.email || "").toLowerCase()]?.score ?? -1;
     return sb - sa;
   });
+
+  const existingSelectedEmails = new Set(
+    existingLeads.filter((_, i) => existingSelected.has(i)).map((c) => (c.email || "").toLowerCase()).filter(Boolean)
+  );
+  const newSelectedCount = leads.filter((_, i) => selected.has(i)).filter((l) => l.email && !existingSelectedEmails.has(l.email.toLowerCase())).length;
+  const combinedExportCount = existingSelected.size + newSelectedCount;
 
   return (
     <div className="space-y-5">
@@ -2245,14 +2306,15 @@ function EnrichSection() {
                   : `${existingLeads.length} contact(s) already in the database for these domains`}
               </span>
               <button
-                onClick={exportExisting}
-                disabled={!existingSelected.size || exportBusy}
+                onClick={exportAll}
+                disabled={!combinedExportCount || exportBusy}
                 className="hm-btn hm-btn-secondary"
                 style={{ height: 30, padding: "0 12px", fontSize: 12 }}
+                title="Exports selected existing contacts + selected new Apify leads, deduped by email"
               >
                 {exportBusy
                   ? `Validating… ${exportProgress?.processed ?? 0}/${exportProgress?.total ?? 0}`
-                  : `Export ${existingSelected.size}`}
+                  : `Export ${combinedExportCount}`}
               </button>
             </div>
             <div className="overflow-x-auto max-h-56 overflow-y-auto">
@@ -2301,7 +2363,7 @@ function EnrichSection() {
             <div className="px-5 py-3 border-b border-[var(--hm-border)] flex items-center justify-between flex-wrap gap-2">
               <span className="text-[12.5px] text-[var(--hm-text-secondary)]">
                 {phase === "saved"
-                  ? `${savedCount} contact(s) saved, ${savedAccountsCount} account(s) created/updated${validateResult ? `, ${validateResult.validated} validated via Debounce` : ""}`
+                  ? `${savedCount} contact(s) saved, ${savedAccountsCount} account(s) created/updated${validateResult ? ` — Debounce: ${formatStatusBreakdown(validateResult.byStatus)}` : ""}`
                   : `${leads.length} new profile(s) found from Apify`}
               </span>
               {phase === "results" && (
@@ -2330,7 +2392,15 @@ function EnrichSection() {
                 <div className="w-9 h-9 rounded-xl bg-[#DCFCE7] flex items-center justify-center mx-auto mb-2">
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 5" stroke="#059669" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
                 </div>
-                <p className="text-[12.5px] text-[var(--hm-text-secondary)] mb-3">Saved and validated — export the full list above, or start a new search.</p>
+                <p className="text-[13px] font-medium text-[var(--hm-text)]">
+                  {savedCount} contact(s) saved and validated
+                </p>
+                {validateResult && (
+                  <p className="text-[12.5px] text-[var(--hm-text-secondary)] mt-1">
+                    Debounce: {formatStatusBreakdown(validateResult.byStatus) || "no results"}
+                  </p>
+                )}
+                <p className="text-[12px] text-[var(--hm-text-tertiary)] mt-2 mb-3">Export the full list above, or start a new search.</p>
                 <button onClick={reset} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 12px", fontSize: 12 }}>New search</button>
               </div>
             ) : (
