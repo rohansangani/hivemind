@@ -1008,6 +1008,9 @@ function ExportSection() {
   const [revalidating, setRevalidating] = useState(false);
   const [revalidateProgress, setRevalidateProgress] = useState<{ processed: number; validated: number } | null>(null);
 
+  const [matchCount, setMatchCount] = useState<number | null>(null);
+  const [counting, setCounting] = useState(false);
+
   useEffect(() => {
     fetch("/api/radar/options")
       .then((r) => (r.ok ? r.json() : null))
@@ -1026,6 +1029,34 @@ function ExportSection() {
   const toggleStatus = (key: string) => {
     setEmailStatuses((prev) => (prev.includes(key) ? prev.filter((s) => s !== key) : [...prev, key]));
   };
+
+  // Live count preview as filters/type/email-statuses change — mirrors Retest's live count.
+  useEffect(() => {
+    let cancelled = false;
+    setCounting(true);
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch("/api/radar/export", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            mode: "count",
+            type: exportType,
+            filters: filters(),
+            ...(exportType === "contacts" ? { emailStatuses } : {}),
+          }),
+        });
+        const d = await res.json().catch(() => ({}));
+        if (!cancelled) setMatchCount(res.ok ? d.count ?? 0 : null);
+      } catch {
+        if (!cancelled) setMatchCount(null);
+      } finally {
+        if (!cancelled) setCounting(false);
+      }
+    }, 300);
+    return () => { cancelled = true; clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exportType, vertical, industry, employeeRange, country, search, emailStatuses]);
 
   const callExportValidate = async (body: Record<string, unknown>) => {
     const r = await fetch("/api/radar/export-validate", {
@@ -1211,9 +1242,13 @@ function ExportSection() {
           </div>
         )}
 
+        <div className="text-[13px] font-semibold text-[var(--hm-accent)]">
+          {counting ? "Counting…" : matchCount != null ? `${matchCount.toLocaleString()} ${exportType} match` : "—"}
+        </div>
+
         <button
           onClick={download}
-          disabled={busy}
+          disabled={busy || !matchCount}
           className="hm-btn hm-btn-primary"
           style={{ height: 38, padding: "0 18px", fontSize: 13 }}
         >

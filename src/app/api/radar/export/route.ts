@@ -67,6 +67,16 @@ function buildAccountQuery(filters: Record<string, unknown>): string {
   return q;
 }
 
+// Same "unvalidated means email_status IS NULL" convention used everywhere else in radar.
+function contactStatusFilter(rawStatuses: string[]): string {
+  const wantsUnvalidated = rawStatuses.includes("unvalidated");
+  const rest = rawStatuses.filter((s) => s !== "unvalidated").map((s) => s.toLowerCase().trim());
+  if (wantsUnvalidated && rest.length) return `&or=(email_status.is.null,email_status.in.(${rest.map(encodeURIComponent).join(",")}))`;
+  if (wantsUnvalidated) return `&email_status=is.null`;
+  if (rest.length) return `&email_status=in.(${rest.map(encodeURIComponent).join(",")})`;
+  return "";
+}
+
 function csvCell(v: unknown): string {
   return `"${(v ?? "").toString().replace(/"/g, '""')}"`;
 }
@@ -95,6 +105,20 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const type = body.type === "accounts" ? "accounts" : "contacts";
     const filters = (body.filters ?? {}) as Record<string, unknown>;
+
+    // Live count preview — no CSV built, just an exact row count for the current filters.
+    if (body.mode === "count") {
+      if (type === "accounts") {
+        const { total } = await selectFrom("accounts", buildAccountQuery(filters), { from: 0, to: 0 });
+        return NextResponse.json({ count: total });
+      }
+      const rawStatuses = Array.isArray(body.emailStatuses) && body.emailStatuses.length
+        ? (body.emailStatuses as string[])
+        : DEFAULT_EMAIL_STATUSES;
+      const query = buildContactQuery(filters) + contactStatusFilter(rawStatuses) + "&hubspot_excluded=not.is.true";
+      const { total } = await selectFrom("contacts_view", query, { from: 0, to: 0 });
+      return NextResponse.json({ count: total });
+    }
 
     if (type === "accounts") {
       const query = buildAccountQuery(filters);
