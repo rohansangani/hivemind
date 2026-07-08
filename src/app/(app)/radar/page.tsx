@@ -904,13 +904,14 @@ function ContactsSection() {
   const cols: Column<ContactRow>[] = [
     { key: "vertical", header: "Vertical", render: (r) => <VerticalBadge v={r.vertical} /> },
     {
-      key: "name",
-      header: "Name",
+      key: "first_name",
+      header: "First Name",
       render: (r) => {
-        const nm = r.full_name || [r.first_name, r.last_name].filter(Boolean).join(" ") || "—";
-        return <span className="font-medium">{nm}</span>;
+        const v = r.first_name || (!r.last_name ? r.full_name : null);
+        return <span className="font-medium"><Cell value={v} /></span>;
       },
     },
+    { key: "last_name", header: "Last Name", render: (r) => <Cell value={r.last_name} /> },
     { key: "company", header: "Company", render: (r) => <Cell value={r.company_name || r.account_name} /> },
     { key: "parent", header: "Parent Company", render: (r) => <Cell value={r.parent_company} /> },
     { key: "domain", header: "Domain", render: (r) => <Cell value={r.domain || r.account_domain} /> },
