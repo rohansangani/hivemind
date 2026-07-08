@@ -1834,6 +1834,8 @@ function EnrichSection() {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [error, setError] = useState("");
   const [savedCount, setSavedCount] = useState(0);
+  const [savedAccountsCount, setSavedAccountsCount] = useState(0);
+  const [saveVertical, setSaveVertical] = useState("");
   const [pollTick, setPollTick] = useState(0);
 
   const [scores, setScores] = useState<Record<string, EnrichScore>>({});
@@ -1993,8 +1995,9 @@ function EnrichSection() {
   const saveSelected = async () => {
     setError("");
     try {
-      const d = await call({ action: "save", datasetId });
+      const d = await call({ action: "save", datasetId, vertical: saveVertical || undefined });
       setSavedCount(d.saved || 0);
+      setSavedAccountsCount(d.savedAccounts || 0);
       setPhase("saved");
     } catch (e) {
       setError((e as Error).message);
@@ -2021,7 +2024,7 @@ function EnrichSection() {
 
   const reset = () => {
     setPhase("form"); setRunId(null); setDatasetId(null); setLeads([]); setSelected(new Set());
-    setExistingCount(null); setError(""); setSavedCount(0); setScores({}); setValidateResult(null);
+    setExistingCount(null); setError(""); setSavedCount(0); setSavedAccountsCount(0); setSaveVertical(""); setScores({}); setValidateResult(null);
   };
 
   const sortedLeads = [...leads].map((l, i) => ({ l, i })).sort((a, b) => {
@@ -2164,6 +2167,12 @@ function EnrichSection() {
                     </button>
                   )}
                   <button onClick={reset} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 12px", fontSize: 12 }}>New search</button>
+                  <select value={saveVertical} onChange={(e) => setSaveVertical(e.target.value)} style={{ width: 140, height: 32, fontSize: 12 }} title="Accounts are only created/linked when a vertical is set">
+                    <option value="">No vertical</option>
+                    <option value="B2B">B2B</option>
+                    <option value="US">US</option>
+                    <option value="D2C">D2C</option>
+                  </select>
                   <button onClick={saveSelected} disabled={!selected.size} className="hm-btn hm-btn-primary" style={{ height: 32, padding: "0 14px", fontSize: 12 }}>
                     Save {selected.size} to database
                   </button>
@@ -2176,7 +2185,9 @@ function EnrichSection() {
                 <div className="w-11 h-11 rounded-xl bg-[#DCFCE7] flex items-center justify-center mx-auto mb-3">
                   <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 5" stroke="#059669" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
                 </div>
-                <p className="text-[13px] font-medium text-[var(--hm-text)]">{savedCount} contact(s) saved and linked to accounts.</p>
+                <p className="text-[13px] font-medium text-[var(--hm-text)]">
+                  {savedCount} contact(s) saved{saveVertical ? `, ${savedAccountsCount} account(s) created/updated and linked` : " (pick a vertical next time to create/link accounts)"}.
+                </p>
 
                 {!validateResult ? (
                   <button onClick={validateSaved} disabled={validateBusy} className="hm-btn hm-btn-primary mt-4" style={{ height: 34, padding: "0 16px", fontSize: 12.5 }}>
