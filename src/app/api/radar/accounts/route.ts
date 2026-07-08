@@ -5,9 +5,6 @@ import { selectFrom, requireRadarAccess } from "@/lib/radar/supabase";
  * Radar accounts list — paginated, searchable, filterable by vertical.
  * Mirrors radar's /api/accounts-list, gated behind hivemind owner/admin auth.
  */
-const ACCOUNT_COLS =
-  "id,name,domain,vertical,industry,sub_industry,account_size,employee_range,revenue_range,company_location,country,linkedin_url,sdr_owner,parent_company,created_at,updated_at";
-
 export async function POST(req: NextRequest) {
   const access = await requireRadarAccess(req);
   if (access instanceof NextResponse) return access;
@@ -16,7 +13,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const { vertical, industry, subIndustry, accountSize, employeeRange, revenueRange, country, search, page = 0, limit = 50 } = body;
 
-    let query = `select=${ACCOUNT_COLS}&order=name.asc`;
+    let query = `select=*&order=name.asc`;
     if (vertical) query += `&vertical=eq.${encodeURIComponent(vertical)}`;
     if (industry) query += `&industry=eq.${encodeURIComponent(industry)}`;
     if (subIndustry) query += `&sub_industry=eq.${encodeURIComponent(subIndustry)}`;

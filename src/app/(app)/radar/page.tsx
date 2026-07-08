@@ -678,9 +678,24 @@ interface AccountRow {
   domain: string | null;
   vertical: string | null;
   industry: string | null;
+  sub_industry: string | null;
+  account_size: string | null;
   employee_range: string | null;
+  revenue_range: string | null;
+  company_location: string | null;
   country: string | null;
+  linkedin_url: string | null;
   sdr_owner: string | null;
+  parent_company: string | null;
+  track_order_page: string | null;
+  edd: string | null;
+  no_of_stores: string | null;
+  ebo: string | null;
+  mbo: string | null;
+  shopify: boolean | null;
+  alt_names: string[] | null;
+  created_at: string | null;
+  updated_at: string | null;
 }
 
 const LOGO_COLORS = ["#4361EE", "#7C3AED", "#059669", "#F59E0B", "#EF4444", "#0EA5E9"];
@@ -700,6 +715,22 @@ function VerticalBadge({ v }: { v: string | null }) {
       {v}
     </span>
   );
+}
+
+/** Renders a value or a muted dash when blank. */
+function Cell({ value }: { value: string | number | null | undefined }) {
+  return value != null && value !== "" ? <>{value}</> : <span className="text-[var(--hm-text-tertiary)]">—</span>;
+}
+
+function fmtDate(v: string | null): React.ReactNode {
+  if (!v) return <span className="text-[var(--hm-text-tertiary)]">—</span>;
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? <span className="text-[var(--hm-text-tertiary)]">—</span> : d.toLocaleDateString();
+}
+
+function YesNo({ v }: { v: boolean | null }) {
+  if (v == null) return <span className="text-[var(--hm-text-tertiary)]">—</span>;
+  return v ? <span style={{ color: "#059669" }}>Yes</span> : <span className="text-[var(--hm-text-tertiary)]">No</span>;
 }
 
 function AccountsSection() {
@@ -726,10 +757,25 @@ function AccountsSection() {
       },
     },
     { key: "vertical", header: "Vertical", render: (r) => <VerticalBadge v={r.vertical} /> },
-    { key: "industry", header: "Industry", render: (r) => r.industry || <span className="text-[var(--hm-text-tertiary)]">—</span> },
-    { key: "employees", header: "Employees", className: "tabular-nums", render: (r) => r.employee_range || <span className="text-[var(--hm-text-tertiary)]">—</span> },
-    { key: "country", header: "Country", render: (r) => r.country || <span className="text-[var(--hm-text-tertiary)]">—</span> },
-    { key: "sdr", header: "SDR Owner", render: (r) => r.sdr_owner || <span className="text-[var(--hm-text-tertiary)]">—</span> },
+    { key: "industry", header: "Industry", render: (r) => <Cell value={r.industry} /> },
+    { key: "sub_industry", header: "Sub-Industry", render: (r) => <Cell value={r.sub_industry} /> },
+    { key: "account_size", header: "Account Size", render: (r) => <Cell value={r.account_size} /> },
+    { key: "employees", header: "Employees", className: "tabular-nums", render: (r) => <Cell value={r.employee_range} /> },
+    { key: "revenue", header: "Revenue", className: "tabular-nums", render: (r) => <Cell value={r.revenue_range} /> },
+    { key: "location", header: "Company Location", render: (r) => <Cell value={r.company_location} /> },
+    { key: "country", header: "Country", render: (r) => <Cell value={r.country} /> },
+    { key: "linkedin", header: "LinkedIn", render: (r) => r.linkedin_url ? <a href={r.linkedin_url} target="_blank" rel="noreferrer" className="text-[var(--hm-accent)]">Profile</a> : <span className="text-[var(--hm-text-tertiary)]">—</span> },
+    { key: "sdr", header: "SDR Owner", render: (r) => <Cell value={r.sdr_owner} /> },
+    { key: "parent", header: "Parent Company", render: (r) => <Cell value={r.parent_company} /> },
+    { key: "track_order", header: "Track Order Page", render: (r) => <Cell value={r.track_order_page} /> },
+    { key: "edd", header: "EDD", render: (r) => <Cell value={r.edd} /> },
+    { key: "stores", header: "No. of Stores", className: "tabular-nums", render: (r) => <Cell value={r.no_of_stores} /> },
+    { key: "ebo", header: "EBO", render: (r) => <Cell value={r.ebo} /> },
+    { key: "mbo", header: "MBO", render: (r) => <Cell value={r.mbo} /> },
+    { key: "shopify", header: "Shopify", render: (r) => <YesNo v={r.shopify} /> },
+    { key: "alt_names", header: "Alt Names", render: (r) => <Cell value={r.alt_names?.length ? r.alt_names.join(", ") : null} /> },
+    { key: "created", header: "Created", render: (r) => fmtDate(r.created_at) },
+    { key: "updated", header: "Updated", render: (r) => fmtDate(r.updated_at) },
   ];
   return (
     <DataTable<AccountRow>
@@ -751,20 +797,40 @@ interface ContactRow {
   title: string | null;
   company_name: string | null;
   account_name: string | null;
+  account_domain: string | null;
+  domain: string | null;
   email: string | null;
   email_status: string | null;
+  validated_at: string | null;
+  hubspot_excluded: boolean | null;
   vertical: string | null;
+  industry: string | null;
+  sub_industry: string | null;
+  employee_range: string | null;
+  revenue_range: string | null;
+  phone: string | null;
+  phone2: string | null;
+  location: string | null;
   country: string | null;
+  linkedin_url: string | null;
+  sdr_owner: string | null;
+  parent_company: string | null;
+  created_at: string | null;
+  updated_at: string | null;
 }
 
 function EmailStatusPill({ status }: { status: string | null }) {
-  const s = (status || "").toLowerCase();
+  const s = (status || "").toLowerCase().trim();
+  // Radar's real vocabulary (from Debounce/Instantly validation): safe to send, verified,
+  // risky, invalid, unknown. Anything blank means never validated.
   let cls = "bg-[var(--hm-bg-tertiary)] text-[var(--hm-text-tertiary)]";
   let label = status || "Unvalidated";
-  if (s === "valid" || s === "verified") { cls = "bg-[#DCFCE7] text-[#059669]"; label = "Verified"; }
+  if (s === "safe to send") { cls = "bg-[#DCFCE7] text-[#059669]"; label = "Safe to send"; }
+  else if (s === "verified") { cls = "bg-[var(--hm-accent-light)] text-[var(--hm-accent)]"; label = "Verified"; }
+  else if (s === "risky") { cls = "bg-[#FEF3C7] text-[#B45309]"; label = "Risky"; }
   else if (s === "invalid" || s === "bounced") { cls = "bg-[#FEE2E2] text-[#DC2626]"; label = s === "bounced" ? "Bounced" : "Invalid"; }
-  else if (s === "catch-all" || s === "unknown" || s === "accept-all") { cls = "bg-[#FEF3C7] text-[#B45309]"; }
-  return <span className={`text-[11px] px-2 py-0.5 rounded-md font-medium ${cls}`}>{label}</span>;
+  else if (s === "unknown") { cls = "bg-[var(--hm-bg-tertiary)] text-[var(--hm-text-tertiary)]"; label = "Unknown"; }
+  return <span className={`text-[11px] px-2 py-0.5 rounded-md font-medium whitespace-nowrap ${cls}`}>{label}</span>;
 }
 
 function ContactsSection() {
@@ -777,11 +843,27 @@ function ContactsSection() {
         return <span className="font-medium">{nm}</span>;
       },
     },
-    { key: "title", header: "Title", render: (r) => r.title || <span className="text-[var(--hm-text-tertiary)]">—</span> },
-    { key: "company", header: "Company", render: (r) => r.company_name || r.account_name || <span className="text-[var(--hm-text-tertiary)]">—</span> },
+    { key: "title", header: "Title", render: (r) => <Cell value={r.title} /> },
+    { key: "company", header: "Company", render: (r) => <Cell value={r.company_name || r.account_name} /> },
+    { key: "domain", header: "Domain", render: (r) => <Cell value={r.domain || r.account_domain} /> },
     { key: "email", header: "Email", render: (r) => r.email ? <span className="text-[var(--hm-text-secondary)]">{r.email}</span> : <span className="text-[var(--hm-text-tertiary)]">—</span> },
     { key: "status", header: "Email Status", render: (r) => <EmailStatusPill status={r.email_status} /> },
+    { key: "validated_at", header: "Validated", render: (r) => fmtDate(r.validated_at) },
+    { key: "hubspot", header: "HubSpot Excluded", render: (r) => <YesNo v={r.hubspot_excluded} /> },
     { key: "vertical", header: "Vertical", render: (r) => <VerticalBadge v={r.vertical} /> },
+    { key: "industry", header: "Industry", render: (r) => <Cell value={r.industry} /> },
+    { key: "sub_industry", header: "Sub-Industry", render: (r) => <Cell value={r.sub_industry} /> },
+    { key: "employees", header: "Employees", className: "tabular-nums", render: (r) => <Cell value={r.employee_range} /> },
+    { key: "revenue", header: "Revenue", className: "tabular-nums", render: (r) => <Cell value={r.revenue_range} /> },
+    { key: "phone", header: "Phone", render: (r) => <Cell value={r.phone} /> },
+    { key: "phone2", header: "Phone 2", render: (r) => <Cell value={r.phone2} /> },
+    { key: "location", header: "Location", render: (r) => <Cell value={r.location} /> },
+    { key: "country", header: "Country", render: (r) => <Cell value={r.country} /> },
+    { key: "linkedin", header: "LinkedIn", render: (r) => r.linkedin_url ? <a href={r.linkedin_url} target="_blank" rel="noreferrer" className="text-[var(--hm-accent)]">Profile</a> : <span className="text-[var(--hm-text-tertiary)]">—</span> },
+    { key: "sdr", header: "SDR Owner", render: (r) => <Cell value={r.sdr_owner} /> },
+    { key: "parent", header: "Parent Company", render: (r) => <Cell value={r.parent_company} /> },
+    { key: "created", header: "Created", render: (r) => fmtDate(r.created_at) },
+    { key: "updated", header: "Updated", render: (r) => fmtDate(r.updated_at) },
   ];
   return (
     <DataTable<ContactRow>
