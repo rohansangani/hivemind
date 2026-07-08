@@ -735,6 +735,7 @@ function YesNo({ v }: { v: boolean | null }) {
 
 function AccountsSection() {
   const cols: Column<AccountRow>[] = [
+    { key: "vertical", header: "Vertical", render: (r) => <VerticalBadge v={r.vertical} /> },
     {
       key: "company",
       header: "Company",
@@ -748,15 +749,13 @@ function AccountsSection() {
             >
               {initials(nm)}
             </div>
-            <div className="min-w-0">
-              <div className="font-medium truncate">{nm}</div>
-              {r.domain && <div className="text-[11.5px] text-[var(--hm-text-tertiary)] truncate">{r.domain}</div>}
-            </div>
+            <div className="min-w-0 font-medium truncate">{nm}</div>
           </div>
         );
       },
     },
-    { key: "vertical", header: "Vertical", render: (r) => <VerticalBadge v={r.vertical} /> },
+    { key: "parent", header: "Parent Company", render: (r) => <Cell value={r.parent_company} /> },
+    { key: "domain", header: "Domain", render: (r) => <Cell value={r.domain} /> },
     { key: "industry", header: "Industry", render: (r) => <Cell value={r.industry} /> },
     { key: "sub_industry", header: "Sub-Industry", render: (r) => <Cell value={r.sub_industry} /> },
     { key: "account_size", header: "Account Size", render: (r) => <Cell value={r.account_size} /> },
@@ -766,7 +765,6 @@ function AccountsSection() {
     { key: "country", header: "Country", render: (r) => <Cell value={r.country} /> },
     { key: "linkedin", header: "LinkedIn", render: (r) => r.linkedin_url ? <a href={r.linkedin_url} target="_blank" rel="noreferrer" className="text-[var(--hm-accent)]">Profile</a> : <span className="text-[var(--hm-text-tertiary)]">—</span> },
     { key: "sdr", header: "SDR Owner", render: (r) => <Cell value={r.sdr_owner} /> },
-    { key: "parent", header: "Parent Company", render: (r) => <Cell value={r.parent_company} /> },
     { key: "track_order", header: "Track Order Page", render: (r) => <Cell value={r.track_order_page} /> },
     { key: "edd", header: "EDD", render: (r) => <Cell value={r.edd} /> },
     { key: "stores", header: "No. of Stores", className: "tabular-nums", render: (r) => <Cell value={r.no_of_stores} /> },
