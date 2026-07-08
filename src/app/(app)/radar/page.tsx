@@ -815,7 +815,15 @@ function AccountsSection() {
       },
     },
     { key: "parent", header: "Parent Company", render: (r) => <Cell value={r.parent_company} /> },
-    { key: "domain", header: "Domain", render: (r) => <Cell value={r.domain} /> },
+    {
+      key: "domain",
+      header: "Domain",
+      render: (r) => r.domain ? (
+        <a href={`https://${r.domain}`} target="_blank" rel="noreferrer" className="text-[var(--hm-accent)] hover:underline">
+          {r.domain}
+        </a>
+      ) : <span className="text-[var(--hm-text-tertiary)]">—</span>,
+    },
     { key: "industry", header: "Industry", render: (r) => <Cell value={r.industry} /> },
     { key: "sub_industry", header: "Sub-Industry", render: (r) => <Cell value={r.sub_industry} /> },
     { key: "account_size", header: "Account Size", render: (r) => <Cell value={r.account_size} /> },
