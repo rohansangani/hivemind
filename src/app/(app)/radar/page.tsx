@@ -2,18 +2,18 @@
 
 import { useState, useEffect } from "react";
 import { useUser } from "@/lib/UserContext";
-import { normalizeRole } from "@/lib/permissions";
+import { getEffectivePermissions, hasModuleAccess } from "@/lib/modules";
 
 /**
  * Radar — prospecting module (accounts, contacts, enrichment, email validation).
  *
- * Phase 0 scaffold: navigation shell + section placeholders styled with the
- * hivemind design system. No data is wired yet — Supabase + the per-section
- * logic land in later phases.
- *
- * Access is restricted to owner/admin. The sidebar hides the entry for other
- * roles (radar defaults to "none" in ROLE_DEFAULT_PERMISSIONS), and this page
- * enforces the same rule directly so the route can't be reached by URL.
+ * Access defaults to "none" for every role except owner/admin (see
+ * ROLE_DEFAULT_PERMISSIONS in lib/modules.ts), but an owner/admin can grant
+ * any individual user "view" or "edit" on the radar module from their Team
+ * profile — same per-user override mechanism every other module uses. This
+ * page checks the user's EFFECTIVE permission (role default + any personal
+ * override), not a hardcoded role check, so a granted user gets in without
+ * needing to be promoted to admin.
  */
 
 type SectionId =
@@ -43,8 +43,8 @@ export default function RadarPage() {
   const user = useUser();
   const [active, setActive] = useState<SectionId>("dashboard");
 
-  const role = normalizeRole(user?.role ?? "");
-  const canAccess = role === "owner" || role === "admin";
+  const effectivePerms = getEffectivePermissions(user?.role ?? "others", user?.customPermissions ?? null);
+  const canAccess = hasModuleAccess(effectivePerms, "radar", "view");
 
   if (!canAccess) {
     return (
@@ -52,7 +52,7 @@ export default function RadarPage() {
         <div className="max-w-4xl mx-auto">
           <div className="rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 p-6 text-center">
             <p className="text-[14px] text-amber-700 dark:text-amber-400">
-              Radar is available to workspace owners and admins only.
+              You don&apos;t have access to Radar. Ask a workspace owner or admin to grant it from your Team profile.
             </p>
           </div>
         </div>

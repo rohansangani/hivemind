@@ -11,8 +11,9 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import jwt from "jsonwebtoken";
+import pg from "pg";
 import { db } from "@/lib/db";
-import { normalizeRole } from "@/lib/permissions";
+import { getEffectivePermissions, hasModuleAccess } from "@/lib/modules";
 
 const RADAR_SUPABASE_URL = process.env.RADAR_SUPABASE_URL;
 const RADAR_SUPABASE_ANON_KEY = process.env.RADAR_SUPABASE_ANON_KEY;
@@ -143,10 +144,27 @@ export async function distinctValues(table: string, column: string): Promise<str
   return rows.map((r) => r.v).filter(Boolean);
 }
 
+/** Look up a user's per-module permission overrides (same table the Team page edits). */
+async function getCustomPermissions(userId: string): Promise<Record<string, string> | null> {
+  try {
+    const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+    try {
+      const res = await pool.query(`SELECT permissions FROM "UserPermission" WHERE "userId" = $1`, [userId]);
+      return res.rows[0]?.permissions ?? null;
+    } finally {
+      await pool.end();
+    }
+  } catch {
+    return null; // table may not exist yet — no custom overrides for anyone
+  }
+}
+
 /**
- * Guard for radar API routes. Verifies the hivemind JWT and confirms the user
- * is a current owner/admin (fresh role from DB, not the JWT claim). Returns the
- * actor on success, or a NextResponse to return immediately on failure.
+ * Guard for radar API routes. Verifies the hivemind JWT, then checks the
+ * user's EFFECTIVE radar permission — their role's default (owner/admin get
+ * it automatically; everyone else defaults to none) merged with any personal
+ * override an owner/admin granted from their Team profile. Returns the actor
+ * on success, or a NextResponse to return immediately on failure.
  */
 export async function requireRadarAccess(
   req: NextRequest,
@@ -170,10 +188,11 @@ export async function requireRadarAccess(
   });
   if (!actor) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
-  const role = normalizeRole(actor.role);
-  if (role !== "owner" && role !== "admin") {
-    return NextResponse.json({ error: "Radar is restricted to owners and admins" }, { status: 403 });
+  const customPermissions = await getCustomPermissions(decoded.userId);
+  const effective = getEffectivePermissions(actor.role, customPermissions);
+  if (!hasModuleAccess(effective, "radar", "view")) {
+    return NextResponse.json({ error: "You don't have access to Radar" }, { status: 403 });
   }
 
-  return { userId: decoded.userId, orgId: actor.organizationId ?? decoded.orgId, role };
+  return { userId: decoded.userId, orgId: actor.organizationId ?? decoded.orgId, role: actor.role };
 }

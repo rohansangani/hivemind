@@ -7,6 +7,7 @@ export interface AppUser {
   name: string;
   role: string;
   organization?: { name: string; website?: string };
+  customPermissions?: Record<string, string> | null;
 }
 
 export const UserContext = createContext<AppUser | null>(null);

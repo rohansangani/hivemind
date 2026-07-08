@@ -163,7 +163,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             sidebarOpen ? "translate-x-0" : "-translate-x-full"
           }`}
         >
-          <Sidebar userName={user.name || "User"} userRole={user.role} orgRolePerms={orgRolePerms} onClose={() => setSidebarOpen(false)} onStartTour={handleStartTour} />
+          <Sidebar userName={user.name || "User"} userRole={user.role} customPermissions={user.customPermissions} orgRolePerms={orgRolePerms} onClose={() => setSidebarOpen(false)} onStartTour={handleStartTour} />
         </div>
 
         {/* ── Main content area ── */}
