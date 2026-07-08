@@ -2297,7 +2297,9 @@ function ValidateSection() {
         jid = d.jobId;
         if (d.done) {
           setJobId(jid);
-          setCandidates((d.candidates || []).map((c: ValidateCandidate) => ({ ...c, selected: true })));
+          // Respect the backend's confidence-based auto-select (>50, or unscored in mechanical-only
+          // mode) instead of forcing everything on — matches radar's own reference UI behavior.
+          setCandidates((d.candidates || []).map((c: ValidateCandidate) => ({ ...c, selected: !!c.selected })));
           setPhase("candidates");
           break;
         }
