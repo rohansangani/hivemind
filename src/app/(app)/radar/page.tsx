@@ -2135,7 +2135,7 @@ function EnrichSection() {
             {error && <div className="rounded-lg p-3 text-[12.5px] bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</div>}
 
             <button onClick={startSearch} className="hm-btn hm-btn-primary" style={{ height: 38, padding: "0 18px", fontSize: 13 }}>
-              Search LinkedIn
+              Enrich
             </button>
           </div>
         )}
