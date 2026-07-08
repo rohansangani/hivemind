@@ -2433,6 +2433,17 @@ function ValidateSection() {
     try {
       const d = await call({ action: "check", jobId });
       setCheckResult(d);
+      // check() only returns aggregate counts — pull the per-row bounce_status it just wrote
+      // so the table's Status column actually reflects valid/bounced instead of sitting on
+      // the "pending" value from when the candidates were first loaded.
+      const job = await call({ action: "get_job", jobId });
+      setCandidates((prev) => {
+        const byId = new Map<number, ValidateCandidate>((job.candidates || []).map((c: ValidateCandidate) => [c.id, c]));
+        return prev.map((c) => {
+          const fresh = byId.get(c.id);
+          return fresh ? { ...c, bounce_status: fresh.bounce_status } : c;
+        });
+      });
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -2459,8 +2470,11 @@ function ValidateSection() {
     setError("");
     try {
       const d = await call({ action: "save", jobId });
-      setSavedCount(d.saved ?? 0);
-      setPhase("done");
+      setSavedCount((prev) => prev + (d.saved ?? 0));
+      // Saving doesn't require the campaign to be fully resolved — only close out the job
+      // once every pattern has a final bounce/valid result. Otherwise stay put so the user
+      // can keep checking and saving newly-resolved valids as they come in.
+      if (checkResult?.allResolved) setPhase("done");
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -2751,9 +2765,9 @@ function ValidateSection() {
                       <button onClick={check} disabled={busy} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 14px", fontSize: 12 }}>
                         {busy ? "Checking…" : "Check bounces"}
                       </button>
-                      {checkResult?.allResolved && checkResult.valid > 0 && (
+                      {checkResult && checkResult.valid > 0 && (
                         <button onClick={save} disabled={busy} className="hm-btn hm-btn-primary" style={{ height: 32, padding: "0 14px", fontSize: 12 }}>
-                          Save {checkResult.valid} verified
+                          {checkResult.allResolved ? `Save ${checkResult.valid} verified` : `Save ${checkResult.valid} valid so far`}
                         </button>
                       )}
                     </>
