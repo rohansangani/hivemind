@@ -2189,9 +2189,13 @@ interface InstantlyTag { id: string; label: string; }
 
 function ValidateSection() {
   const [view, setView] = useState<"current" | "history">("current");
-  const emptyPersonRow = (): PersonInput => ({ first_name: "", middle_name: "", last_name: "", domain: "" });
-  const [personRows, setPersonRows] = useState<PersonInput[]>([emptyPersonRow()]);
+  const emptyPerson = (): PersonInput => ({ first_name: "", middle_name: "", last_name: "", domain: "" });
+  const [people, setPeople] = useState<PersonInput[]>([]);
+  const [draft, setDraft] = useState<PersonInput>(emptyPerson());
   const [blankEmailVertical, setBlankEmailVertical] = useState("");
+  const [blankEmailCount, setBlankEmailCount] = useState<number | null>(null);
+  const [blankEmailCounting, setBlankEmailCounting] = useState(false);
+  const [blankEmailMsg, setBlankEmailMsg] = useState("");
   const [useAI, setUseAI] = useState(true);
   const [phase, setPhase] = useState<ValidatePhase>("input");
   const [jobId, setJobId] = useState<number | null>(null);
@@ -2235,16 +2239,20 @@ function ValidateSection() {
     return d;
   };
 
-  const parsePeople = (): PersonInput[] =>
-    personRows
-      .map((p) => ({ ...p, first_name: p.first_name.trim(), middle_name: (p.middle_name || "").trim(), last_name: p.last_name.trim(), domain: p.domain.trim() }))
-      .filter((p) => (p.first_name || p.last_name) && p.domain);
+  const parsePeople = (): PersonInput[] => people;
 
-  const updatePersonRow = (i: number, field: keyof PersonInput, value: string) => {
-    setPersonRows((prev) => prev.map((p, idx) => (idx === i ? { ...p, [field]: value } : p)));
+  const addPerson = () => {
+    const first = draft.first_name.trim();
+    const middle = (draft.middle_name || "").trim();
+    const last = draft.last_name.trim();
+    const domain = draft.domain.trim();
+    if (!domain || (!first && !last)) { setError("Need at least a name and a domain."); return; }
+    setError("");
+    setPeople((prev) => [...prev, { first_name: first, middle_name: middle, last_name: last, domain }]);
+    setDraft(emptyPerson());
   };
-  const addPersonRow = () => setPersonRows((prev) => [...prev, emptyPersonRow()]);
-  const removePersonRow = (i: number) => setPersonRows((prev) => (prev.length > 1 ? prev.filter((_, idx) => idx !== i) : prev));
+  const removePerson = (i: number) => setPeople((prev) => prev.filter((_, idx) => idx !== i));
+  const onDraftKeyDown = (e: React.KeyboardEvent) => { if (e.key === "Enter") addPerson(); };
 
   const loadPatternsCsv = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -2268,7 +2276,7 @@ function ValidateSection() {
         }))
         .filter((p) => (p.first_name || p.last_name) && p.domain);
       if (!parsed.length) { setError("No usable rows found in that CSV."); return; }
-      setPersonRows(parsed);
+      setPeople((prev) => [...prev, ...parsed]);
     } catch (e2) {
       setError((e2 as Error).message);
     } finally {
@@ -2406,16 +2414,37 @@ function ValidateSection() {
     }
   };
 
+  // Live preview count as the vertical filter changes — mirrors Retest's live count.
+  useEffect(() => {
+    if (inputMode !== "patterns") return;
+    let cancelled = false;
+    setBlankEmailCounting(true);
+    const t = setTimeout(async () => {
+      try {
+        const d = await call({ action: "count_blank_emails", vertical: blankEmailVertical || undefined });
+        if (!cancelled) setBlankEmailCount(d.count ?? 0);
+      } catch {
+        if (!cancelled) setBlankEmailCount(null);
+      } finally {
+        if (!cancelled) setBlankEmailCounting(false);
+      }
+    }, 300);
+    return () => { cancelled = true; clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inputMode, blankEmailVertical]);
+
   const loadBlankEmailContacts = async () => {
     setError("");
+    setBlankEmailMsg("");
     setBusy(true);
     try {
       const d = await call({ action: "fetch_blank_emails", limit: 200, vertical: blankEmailVertical || undefined });
-      if (!d.count) { setError("No contacts with a domain but no email were found for that vertical."); return; }
-      const rows = (d.people || []).map((p: { first_name: string; last_name: string; domain: string }) => ({
+      if (!d.count) { setBlankEmailMsg("No blank-email contacts found for that filter."); return; }
+      const added = (d.people || []).map((p: { first_name: string; last_name: string; domain: string }) => ({
         first_name: p.first_name || "", middle_name: "", last_name: p.last_name || "", domain: p.domain,
       }));
-      setPersonRows(rows);
+      setPeople((prev) => [...prev, ...added]);
+      setBlankEmailMsg(`Added ${added.length} contact${added.length === 1 ? "" : "s"} to the list below.`);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -2523,7 +2552,7 @@ function ValidateSection() {
   };
 
   const reset = () => {
-    setPersonRows([emptyPersonRow()]); setPhase("input"); setJobId(null); setCandidates([]);
+    setPeople([]); setDraft(emptyPerson()); setBlankEmailMsg(""); setPhase("input"); setJobId(null); setCandidates([]);
     setCheckResult(null); setSavedCount(0); setSavedInvalidCount(0); setError(""); setMailboxTag(""); setAutoRefresh(false);
     setInputMode("patterns"); setRetestCount(null);
   };
@@ -2685,50 +2714,62 @@ function ValidateSection() {
                     <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">Add people to guess email patterns for — name + domain, middle name optional.</p>
                   </div>
                   <div className="px-5 py-5 space-y-4">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <select value={blankEmailVertical} onChange={(e) => setBlankEmailVertical(e.target.value)} style={{ width: 140 }}>
-                        <option value="">All verticals</option>
-                        <option value="B2B">B2B</option>
-                        <option value="US">US</option>
-                        <option value="D2C">D2C</option>
-                      </select>
-                      <button onClick={loadBlankEmailContacts} disabled={busy} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 12px", fontSize: 12 }}>
-                        Fill blank-email contacts
-                      </button>
-                      <label className="hm-btn hm-btn-secondary cursor-pointer" style={{ height: 32, padding: "0 12px", fontSize: 12 }}>
-                        ⬆ Upload CSV
-                        <input type="file" accept=".csv,text/csv" onChange={loadPatternsCsv} style={{ display: "none" }} />
-                      </label>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <input value={draft.first_name} onChange={(e) => setDraft((d) => ({ ...d, first_name: e.target.value }))} onKeyDown={onDraftKeyDown} placeholder="First name" />
+                      <input value={draft.middle_name || ""} onChange={(e) => setDraft((d) => ({ ...d, middle_name: e.target.value }))} onKeyDown={onDraftKeyDown} placeholder="Middle name (optional)" />
+                      <input value={draft.last_name} onChange={(e) => setDraft((d) => ({ ...d, last_name: e.target.value }))} onKeyDown={onDraftKeyDown} placeholder="Last name" />
+                      <input value={draft.domain} onChange={(e) => setDraft((d) => ({ ...d, domain: e.target.value }))} onKeyDown={onDraftKeyDown} placeholder="domain.com" />
+                    </div>
+                    <button onClick={addPerson} className="hm-btn hm-btn-secondary w-full" style={{ height: 32, fontSize: 12 }}>
+                      + Add to list
+                    </button>
+
+                    <div className="rounded-lg border border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] p-3 space-y-2">
+                      <p className="text-[12px] font-medium text-[var(--hm-text-secondary)]">Fetch blank-email contacts (adds to list below)</p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <select value={blankEmailVertical} onChange={(e) => setBlankEmailVertical(e.target.value)} style={{ width: 140 }}>
+                          <option value="">All verticals</option>
+                          <option value="B2B">B2B</option>
+                          <option value="US">US</option>
+                          <option value="D2C">D2C</option>
+                        </select>
+                        <button onClick={loadBlankEmailContacts} disabled={busy} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 14px", fontSize: 12 }}>
+                          Fetch
+                        </button>
+                      </div>
+                      <p className="text-[11px] text-[var(--hm-text-tertiary)]">
+                        {blankEmailCounting ? "Counting…" : blankEmailCount != null ? `${blankEmailCount.toLocaleString()} blank-email contact(s) match` : ""}
+                      </p>
+                      {blankEmailMsg && <p className="text-[11px] text-[var(--hm-text-secondary)]">{blankEmailMsg}</p>}
                     </div>
 
-                    <div className="space-y-2">
-                      {personRows.map((p, i) => (
-                        <div key={i} className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_1fr_1.2fr_auto] gap-2 items-center">
-                          <input value={p.first_name} onChange={(e) => updatePersonRow(i, "first_name", e.target.value)} placeholder="First name" />
-                          <input value={p.middle_name || ""} onChange={(e) => updatePersonRow(i, "middle_name", e.target.value)} placeholder="Middle name (optional)" />
-                          <input value={p.last_name} onChange={(e) => updatePersonRow(i, "last_name", e.target.value)} placeholder="Last name" />
-                          <input value={p.domain} onChange={(e) => updatePersonRow(i, "domain", e.target.value)} placeholder="domain.com" />
-                          <button
-                            onClick={() => removePersonRow(i)}
-                            disabled={personRows.length === 1}
-                            className="hm-btn hm-btn-secondary"
-                            style={{ height: 34, width: 34, padding: 0, fontSize: 14 }}
-                            title="Remove"
-                          >
-                            ×
-                          </button>
+                    <label className="hm-btn hm-btn-secondary w-full cursor-pointer" style={{ height: 34, fontSize: 12.5 }}>
+                      ⬆ Upload CSV (adds to list below)
+                      <input type="file" accept=".csv,text/csv" onChange={loadPatternsCsv} style={{ display: "none" }} />
+                    </label>
+
+                    {people.length > 0 && (
+                      <div className="space-y-1.5">
+                        <p className="text-[12px] font-medium text-[var(--hm-text-secondary)]">{people.length} {people.length === 1 ? "person" : "people"} queued</p>
+                        <div className="max-h-52 overflow-y-auto space-y-1">
+                          {people.map((p, i) => (
+                            <div key={i} className="flex items-center justify-between text-[12px] px-2.5 py-1.5 rounded-md bg-[var(--hm-bg-secondary)]">
+                              <span>
+                                {[p.first_name, p.middle_name, p.last_name].filter(Boolean).join(" ")}
+                                <span className="text-[var(--hm-text-tertiary)]"> · {p.domain}</span>
+                              </span>
+                              <button onClick={() => removePerson(i)} className="text-red-500 hover:text-red-600" style={{ fontSize: 14, lineHeight: 1 }} title="Remove">×</button>
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
-                    <button onClick={addPersonRow} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 12px", fontSize: 12 }}>
-                      + Add another person
-                    </button>
+                      </div>
+                    )}
 
                     <label className="flex items-center gap-2 text-[12.5px] text-[var(--hm-text-secondary)]">
                       <input type="checkbox" checked={useAI} onChange={(e) => setUseAI(e.target.checked)} />
                       Use AI ranking (Claude scores patterns using domain web evidence)
                     </label>
-                    <button onClick={generate} disabled={busy} className="hm-btn hm-btn-primary" style={{ height: 38, padding: "0 18px", fontSize: 13 }}>
+                    <button onClick={generate} disabled={busy || !people.length} className="hm-btn hm-btn-primary" style={{ height: 38, padding: "0 18px", fontSize: 13 }}>
                       {busy ? (progressLabel || "Generating…") : "Generate patterns"}
                     </button>
                   </div>
