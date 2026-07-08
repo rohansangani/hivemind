@@ -1813,6 +1813,18 @@ interface EnrichLead {
   location: string | null;
 }
 
+interface ExistingContact {
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
+  title: string | null;
+  company_name: string | null;
+  account_name: string | null;
+  domain: string | null;
+  email_status: string | null;
+  validated_at: string | null;
+}
+
 type EnrichPhase = "form" | "running" | "results" | "saved";
 
 interface EnrichScore { email: string; score: number; reason: string; }
@@ -1837,7 +1849,9 @@ function EnrichSection() {
   const [savedIcps, setSavedIcps] = useState<Record<string, IcpProfile>>({});
 
   const [phase, setPhase] = useState<EnrichPhase>("form");
-  const [existingCount, setExistingCount] = useState<number | null>(null);
+  const [existingLeads, setExistingLeads] = useState<ExistingContact[]>([]);
+  const [exportBusy, setExportBusy] = useState(false);
+  const [exportProgress, setExportProgress] = useState<{ processed: number; total: number } | null>(null);
   const [runId, setRunId] = useState<string | null>(null);
   const [datasetId, setDatasetId] = useState<string | null>(null);
   const [leads, setLeads] = useState<EnrichLead[]>([]);
@@ -1919,7 +1933,7 @@ function EnrichSection() {
     const domains = csv(domain);
     try {
       const chk = await call({ action: "check_existing", params: { company_domain: domains } });
-      setExistingCount((chk.existing || []).length);
+      setExistingLeads(chk.existing || []);
 
       const params: Record<string, unknown> = { company_domain: domains, fetch_count: fetchCount };
       if (titles.trim()) params.contact_job_title = csv(titles);
@@ -2015,6 +2029,34 @@ function EnrichSection() {
     }
   };
 
+  // Debounce-validates the selected leads (no DB write — these are fresh Apify results, so
+  // every one is "stale" by the same never-validated rule the Export tab uses) then downloads
+  // a CSV. Chunked and looped client-side the same way Retest/Export's Debounce flows are.
+  const exportSelected = async () => {
+    setError("");
+    setExportBusy(true);
+    const selectedEmails = leads.filter((_, i) => selected.has(i)).map((l) => l.email).filter(Boolean) as string[];
+    let offset = 0, done = false;
+    const allRows: Record<string, unknown>[] = [];
+    setExportProgress({ processed: 0, total: selectedEmails.length });
+    try {
+      for (let guard = 0; guard < 200 && !done; guard++) {
+        const d = await call({ action: "export_leads", datasetId, selectedEmails, offset });
+        allRows.push(...(d.rows || []));
+        offset = d.next_offset ?? offset + (d.rows?.length || 0);
+        done = d.done || !d.rows?.length;
+        setExportProgress({ processed: allRows.length, total: d.total ?? selectedEmails.length });
+      }
+      if (!allRows.length) { setError("No selected leads with emails to export."); return; }
+      downloadCSV(allRows, `radar_enrich_${today()}.csv`);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setExportBusy(false);
+      setExportProgress(null);
+    }
+  };
+
   const validateSaved = async () => {
     setValidateBusy(true);
     setError("");
@@ -2035,7 +2077,7 @@ function EnrichSection() {
 
   const reset = () => {
     setPhase("form"); setRunId(null); setDatasetId(null); setLeads([]); setSelected(new Set());
-    setExistingCount(null); setError(""); setSavedCount(0); setSavedAccountsCount(0); setSaveVertical(""); setScores({}); setValidateResult(null);
+    setExistingLeads([]); setError(""); setSavedCount(0); setSavedAccountsCount(0); setSaveVertical(""); setScores({}); setValidateResult(null);
   };
 
   const sortedLeads = [...leads].map((l, i) => ({ l, i })).sort((a, b) => {
@@ -2050,7 +2092,7 @@ function EnrichSection() {
         <div className="px-5 py-4 border-b border-[var(--hm-border)]">
           <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Find new contacts</h2>
           <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">
-            Search LinkedIn for people at a target company via Apify, then save selected leads to the database.
+            Enrich a target company via Apify to find new people, then export or save selected leads to the database.
           </p>
         </div>
 
@@ -2154,13 +2196,40 @@ function EnrichSection() {
           </div>
         )}
 
+        {existingLeads.length > 0 && (phase === "running" || phase === "results") && (
+          <div className="border-b border-[var(--hm-border)]">
+            <div className="px-5 py-3 text-[12.5px] text-[var(--hm-text-secondary)] bg-[var(--hm-bg-secondary)]">
+              {existingLeads.length} contact(s) already in the database for these domains
+            </div>
+            <div className="overflow-x-auto max-h-56 overflow-y-auto">
+              <table className="w-full border-collapse text-[12.5px]">
+                <thead>
+                  <tr>
+                    {["Name", "Title", "Company", "Email", "Status"].map((h) => (
+                      <th key={h} className="text-left text-[10.5px] font-semibold uppercase tracking-wide text-[var(--hm-text-tertiary)] px-4 py-2 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] whitespace-nowrap sticky top-0">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {existingLeads.map((c, i) => (
+                    <tr key={i} className="hover:bg-[var(--hm-surface-hover)]">
+                      <td className="px-4 py-2 border-b border-[var(--hm-border-light)]">{[c.first_name, c.last_name].filter(Boolean).join(" ") || "—"}</td>
+                      <td className="px-4 py-2 border-b border-[var(--hm-border-light)]">{c.title || "—"}</td>
+                      <td className="px-4 py-2 border-b border-[var(--hm-border-light)]">{c.company_name || c.account_name || "—"}</td>
+                      <td className="px-4 py-2 border-b border-[var(--hm-border-light)] text-[var(--hm-text-secondary)]">{c.email || "—"}</td>
+                      <td className="px-4 py-2 border-b border-[var(--hm-border-light)]"><EmailStatusPill status={c.email_status} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
         {phase === "running" && (
           <div className="px-5 py-14 flex flex-col items-center justify-center text-center gap-3">
             <div className="w-5 h-5 border-2 border-[var(--hm-accent)]/30 border-t-[var(--hm-accent)] rounded-full animate-spin" />
-            <p className="text-[13px] text-[var(--hm-text)]">Searching LinkedIn…</p>
-            {existingCount !== null && (
-              <p className="text-[12px] text-[var(--hm-text-tertiary)]">{existingCount} contact(s) already in the database for these domains.</p>
-            )}
+            <p className="text-[13px] text-[var(--hm-text)]">Enriching via Apify…</p>
           </div>
         )}
 
@@ -2168,7 +2237,7 @@ function EnrichSection() {
           <div>
             <div className="px-5 py-3 border-b border-[var(--hm-border)] flex items-center justify-between flex-wrap gap-2">
               <span className="text-[12.5px] text-[var(--hm-text-secondary)]">
-                {leads.length} profile(s) found{existingCount !== null ? ` · ${existingCount} already in DB` : ""}
+                {leads.length} new profile(s) found from Apify
               </span>
               {phase === "results" && (
                 <div className="flex items-center gap-2 flex-wrap">
@@ -2178,6 +2247,9 @@ function EnrichSection() {
                     </button>
                   )}
                   <button onClick={reset} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 12px", fontSize: 12 }}>New search</button>
+                  <button onClick={exportSelected} disabled={!selected.size || exportBusy} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 14px", fontSize: 12 }}>
+                    {exportBusy ? `Validating… ${exportProgress?.processed ?? 0}/${exportProgress?.total ?? 0}` : `Export ${selected.size}`}
+                  </button>
                   <select value={saveVertical} onChange={(e) => setSaveVertical(e.target.value)} style={{ width: 150, height: 32, fontSize: 12 }} title="Vertical is required to save">
                     <option value="">— Select vertical —</option>
                     <option value="B2B">B2B</option>
