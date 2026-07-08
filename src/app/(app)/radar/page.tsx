@@ -1994,8 +1994,9 @@ function EnrichSection() {
 
   const saveSelected = async () => {
     setError("");
+    if (!saveVertical) { setError("Select a vertical before saving."); return; }
     try {
-      const d = await call({ action: "save", datasetId, vertical: saveVertical || undefined });
+      const d = await call({ action: "save", datasetId, vertical: saveVertical });
       setSavedCount(d.saved || 0);
       setSavedAccountsCount(d.savedAccounts || 0);
       setPhase("saved");
@@ -2167,13 +2168,13 @@ function EnrichSection() {
                     </button>
                   )}
                   <button onClick={reset} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 12px", fontSize: 12 }}>New search</button>
-                  <select value={saveVertical} onChange={(e) => setSaveVertical(e.target.value)} style={{ width: 140, height: 32, fontSize: 12 }} title="Accounts are only created/linked when a vertical is set">
-                    <option value="">No vertical</option>
+                  <select value={saveVertical} onChange={(e) => setSaveVertical(e.target.value)} style={{ width: 150, height: 32, fontSize: 12 }} title="Vertical is required to save">
+                    <option value="">— Select vertical —</option>
                     <option value="B2B">B2B</option>
                     <option value="US">US</option>
                     <option value="D2C">D2C</option>
                   </select>
-                  <button onClick={saveSelected} disabled={!selected.size} className="hm-btn hm-btn-primary" style={{ height: 32, padding: "0 14px", fontSize: 12 }}>
+                  <button onClick={saveSelected} disabled={!selected.size || !saveVertical} className="hm-btn hm-btn-primary" style={{ height: 32, padding: "0 14px", fontSize: 12 }}>
                     Save {selected.size} to database
                   </button>
                 </div>
@@ -2186,7 +2187,7 @@ function EnrichSection() {
                   <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 5" stroke="#059669" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
                 </div>
                 <p className="text-[13px] font-medium text-[var(--hm-text)]">
-                  {savedCount} contact(s) saved{saveVertical ? `, ${savedAccountsCount} account(s) created/updated and linked` : " (pick a vertical next time to create/link accounts)"}.
+                  {savedCount} contact(s) saved, {savedAccountsCount} account(s) created/updated and linked.
                 </p>
 
                 {!validateResult ? (
