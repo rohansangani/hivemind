@@ -1823,6 +1823,7 @@ interface ExistingContact {
   domain: string | null;
   email_status: string | null;
   validated_at: string | null;
+  linkedin_url: string | null;
 }
 
 type EnrichPhase = "form" | "running" | "results" | "saved";
@@ -1850,8 +1851,9 @@ function EnrichSection() {
 
   const [phase, setPhase] = useState<EnrichPhase>("form");
   const [existingLeads, setExistingLeads] = useState<ExistingContact[]>([]);
+  const [existingSelected, setExistingSelected] = useState<Set<number>>(new Set());
   const [exportBusy, setExportBusy] = useState(false);
-  const [exportProgress, setExportProgress] = useState<{ processed: number; total: number } | null>(null);
+  const [exportProgress, setExportProgress] = useState<{ processed: number; validated: number; total: number } | null>(null);
   const [runId, setRunId] = useState<string | null>(null);
   const [datasetId, setDatasetId] = useState<string | null>(null);
   const [leads, setLeads] = useState<EnrichLead[]>([]);
@@ -1933,7 +1935,9 @@ function EnrichSection() {
     const domains = csv(domain);
     try {
       const chk = await call({ action: "check_existing", params: { company_domain: domains } });
-      setExistingLeads(chk.existing || []);
+      const existing = (chk.existing || []) as ExistingContact[];
+      setExistingLeads(existing);
+      setExistingSelected(new Set(existing.map((_, i) => i)));
 
       const params: Record<string, unknown> = { company_domain: domains, fetch_count: fetchCount };
       if (titles.trim()) params.contact_job_title = csv(titles);
@@ -2032,23 +2036,53 @@ function EnrichSection() {
   // Debounce-validates the selected leads (no DB write — these are fresh Apify results, so
   // every one is "stale" by the same never-validated rule the Export tab uses) then downloads
   // a CSV. Chunked and looped client-side the same way Retest/Export's Debounce flows are.
-  const exportSelected = async () => {
+  const toggleExisting = (i: number) => {
+    setExistingSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i); else next.add(i);
+      return next;
+    });
+  };
+  const toggleAllExisting = () => {
+    setExistingSelected((prev) => (prev.size === existingLeads.length ? new Set() : new Set(existingLeads.map((_, i) => i))));
+  };
+
+  // Runs the selected existing-DB contacts through the same Debounce + 14/30-day staleness
+  // pipeline as the Export tab (export-validate.js's validate_chunk, targeted to this exact
+  // set of emails), then re-fetches them so the exported CSV reflects the freshest status.
+  const exportExisting = async () => {
     setError("");
+    const selectedEmails = existingLeads.filter((_, i) => existingSelected.has(i)).map((c) => c.email).filter(Boolean) as string[];
+    if (!selectedEmails.length) { setError("Select at least one existing contact to export."); return; }
     setExportBusy(true);
-    const selectedEmails = leads.filter((_, i) => selected.has(i)).map((l) => l.email).filter(Boolean) as string[];
-    let offset = 0, done = false;
-    const allRows: Record<string, unknown>[] = [];
-    setExportProgress({ processed: 0, total: selectedEmails.length });
+    let offset = 0, done = false, processed = 0, validated = 0;
+    setExportProgress({ processed: 0, validated: 0, total: selectedEmails.length });
     try {
       for (let guard = 0; guard < 200 && !done; guard++) {
-        const d = await call({ action: "export_leads", datasetId, selectedEmails, offset });
-        allRows.push(...(d.rows || []));
-        offset = d.next_offset ?? offset + (d.rows?.length || 0);
-        done = d.done || !d.rows?.length;
-        setExportProgress({ processed: allRows.length, total: d.total ?? selectedEmails.length });
+        const r = await fetch("/api/radar/export-validate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "validate_chunk", filters: { emails: selectedEmails }, offset }),
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d.error || "Debounce validation failed");
+        processed += d.processed || 0;
+        validated += d.validated || 0;
+        offset = d.next_offset ?? offset + (d.processed || 0);
+        done = d.done || d.processed === 0;
+        setExportProgress({ processed, validated, total: selectedEmails.length });
       }
-      if (!allRows.length) { setError("No selected leads with emails to export."); return; }
-      downloadCSV(allRows, `radar_enrich_${today()}.csv`);
+
+      const domains = csv(domain);
+      const chk = await call({ action: "check_existing", params: { company_domain: domains } });
+      const refreshed = (chk.existing || []) as ExistingContact[];
+      const emailSet = new Set(selectedEmails.map((e) => e.toLowerCase()));
+      setExistingLeads(refreshed);
+      setExistingSelected(new Set(refreshed.map((c, i) => i).filter((i) => refreshed[i].email && emailSet.has(refreshed[i].email!.toLowerCase()))));
+
+      const toExport = refreshed.filter((c) => c.email && emailSet.has(c.email.toLowerCase()));
+      if (!toExport.length) { setError("No matching contacts to export."); return; }
+      downloadCSV(toExport, `radar_enrich_existing_${today()}.csv`);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -2077,7 +2111,7 @@ function EnrichSection() {
 
   const reset = () => {
     setPhase("form"); setRunId(null); setDatasetId(null); setLeads([]); setSelected(new Set());
-    setExistingLeads([]); setError(""); setSavedCount(0); setSavedAccountsCount(0); setSaveVertical(""); setScores({}); setValidateResult(null);
+    setExistingLeads([]); setExistingSelected(new Set()); setError(""); setSavedCount(0); setSavedAccountsCount(0); setSaveVertical(""); setScores({}); setValidateResult(null);
   };
 
   const sortedLeads = [...leads].map((l, i) => ({ l, i })).sort((a, b) => {
@@ -2198,14 +2232,29 @@ function EnrichSection() {
 
         {existingLeads.length > 0 && (phase === "running" || phase === "results") && (
           <div className="border-b border-[var(--hm-border)]">
-            <div className="px-5 py-3 text-[12.5px] text-[var(--hm-text-secondary)] bg-[var(--hm-bg-secondary)]">
-              {existingLeads.length} contact(s) already in the database for these domains
+            <div className="px-5 py-3 flex items-center justify-between flex-wrap gap-2 bg-[var(--hm-bg-secondary)]">
+              <span className="text-[12.5px] text-[var(--hm-text-secondary)]">
+                {existingLeads.length} contact(s) already in the database for these domains
+              </span>
+              <button
+                onClick={exportExisting}
+                disabled={!existingSelected.size || exportBusy}
+                className="hm-btn hm-btn-secondary"
+                style={{ height: 30, padding: "0 12px", fontSize: 12 }}
+              >
+                {exportBusy
+                  ? `Validating… ${exportProgress?.processed ?? 0}/${exportProgress?.total ?? 0}`
+                  : `Export ${existingSelected.size}`}
+              </button>
             </div>
             <div className="overflow-x-auto max-h-56 overflow-y-auto">
               <table className="w-full border-collapse text-[12.5px]">
                 <thead>
                   <tr>
-                    {["Name", "Title", "Company", "Email", "Status"].map((h) => (
+                    <th className="px-4 py-2 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] sticky top-0">
+                      <input type="checkbox" checked={existingLeads.length > 0 && existingSelected.size === existingLeads.length} onChange={toggleAllExisting} />
+                    </th>
+                    {["Name", "Title", "Company", "Email", "LinkedIn", "Status"].map((h) => (
                       <th key={h} className="text-left text-[10.5px] font-semibold uppercase tracking-wide text-[var(--hm-text-tertiary)] px-4 py-2 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] whitespace-nowrap sticky top-0">{h}</th>
                     ))}
                   </tr>
@@ -2213,10 +2262,16 @@ function EnrichSection() {
                 <tbody>
                   {existingLeads.map((c, i) => (
                     <tr key={i} className="hover:bg-[var(--hm-surface-hover)]">
+                      <td className="px-4 py-2 border-b border-[var(--hm-border-light)]">
+                        <input type="checkbox" checked={existingSelected.has(i)} onChange={() => toggleExisting(i)} />
+                      </td>
                       <td className="px-4 py-2 border-b border-[var(--hm-border-light)]">{[c.first_name, c.last_name].filter(Boolean).join(" ") || "—"}</td>
                       <td className="px-4 py-2 border-b border-[var(--hm-border-light)]">{c.title || "—"}</td>
                       <td className="px-4 py-2 border-b border-[var(--hm-border-light)]">{c.company_name || c.account_name || "—"}</td>
                       <td className="px-4 py-2 border-b border-[var(--hm-border-light)] text-[var(--hm-text-secondary)]">{c.email || "—"}</td>
+                      <td className="px-4 py-2 border-b border-[var(--hm-border-light)]">
+                        {c.linkedin_url ? <a href={c.linkedin_url} target="_blank" rel="noreferrer" className="text-[var(--hm-accent)]">Profile</a> : "—"}
+                      </td>
                       <td className="px-4 py-2 border-b border-[var(--hm-border-light)]"><EmailStatusPill status={c.email_status} /></td>
                     </tr>
                   ))}
@@ -2247,9 +2302,6 @@ function EnrichSection() {
                     </button>
                   )}
                   <button onClick={reset} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 12px", fontSize: 12 }}>New search</button>
-                  <button onClick={exportSelected} disabled={!selected.size || exportBusy} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 14px", fontSize: 12 }}>
-                    {exportBusy ? `Validating… ${exportProgress?.processed ?? 0}/${exportProgress?.total ?? 0}` : `Export ${selected.size}`}
-                  </button>
                   <select value={saveVertical} onChange={(e) => setSaveVertical(e.target.value)} style={{ width: 150, height: 32, fontSize: 12 }} title="Vertical is required to save">
                     <option value="">— Select vertical —</option>
                     <option value="B2B">B2B</option>
