@@ -486,16 +486,20 @@ interface Column<T> {
   className?: string;
 }
 
-function DataTable<T>({
+function DataTable<T extends { id: string }>({
   endpoint,
   columns,
   searchPlaceholder,
   emptyLabel,
+  bulkActions,
 }: {
   endpoint: string;
   columns: Column<T>[];
   searchPlaceholder: string;
   emptyLabel: string;
+  /** Renders action buttons (e.g. "Export selected") when rows are checked. Selection is
+   * page-scoped and clears on page/filter change. */
+  bulkActions?: (selected: T[], clearSelection: () => void) => React.ReactNode;
 }) {
   const [rows, setRows] = useState<T[]>([]);
   const [total, setTotal] = useState(0);
@@ -505,6 +509,20 @@ function DataTable<T>({
   const [options, setOptions] = useState<RadarOptions | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  const toggleRow = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const toggleAll = () => {
+    setSelected((prev) => (prev.size === rows.length ? new Set() : new Set(rows.map((r) => r.id))));
+  };
+  const clearSelection = () => setSelected(new Set());
+  const selectedRows = rows.filter((r) => selected.has(r.id));
 
   // Load filter dropdown options once.
   useEffect(() => {
@@ -547,7 +565,7 @@ function DataTable<T>({
         return r.json();
       })
       .then((d: { data: T[]; total: number }) => {
-        if (!cancelled) { setRows(d.data || []); setTotal(d.total || 0); }
+        if (!cancelled) { setRows(d.data || []); setTotal(d.total || 0); setSelected(new Set()); }
       })
       .catch((e) => { if (!cancelled) setError(e.message); })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -595,6 +613,17 @@ function DataTable<T>({
         </div>
       </div>
 
+      {/* Bulk actions bar — shown once something is checked */}
+      {bulkActions && selected.size > 0 && (
+        <div className="px-4 py-2.5 border-b border-[var(--hm-border)] bg-[var(--hm-accent-light)] flex items-center gap-3 flex-wrap">
+          <span className="text-[12.5px] font-medium text-[var(--hm-accent)]">{selected.size} selected</span>
+          {bulkActions(selectedRows, clearSelection)}
+          <button onClick={clearSelection} className="text-[12px] text-[var(--hm-text-tertiary)] hover:text-[var(--hm-text)] ml-auto">
+            Clear selection
+          </button>
+        </div>
+      )}
+
       {/* Body */}
       {loading ? (
         <div className="flex items-center justify-center py-20">
@@ -611,6 +640,11 @@ function DataTable<T>({
           <table className="w-full border-collapse text-[13px]">
             <thead>
               <tr>
+                {bulkActions && (
+                  <th className="px-4 py-2.5 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)]">
+                    <input type="checkbox" checked={rows.length > 0 && selected.size === rows.length} onChange={toggleAll} />
+                  </th>
+                )}
                 {columns.map((c) => (
                   <th
                     key={c.key}
@@ -622,8 +656,13 @@ function DataTable<T>({
               </tr>
             </thead>
             <tbody>
-              {rows.map((row, i) => (
-                <tr key={i} className="hover:bg-[var(--hm-surface-hover)]">
+              {rows.map((row) => (
+                <tr key={row.id} className={`hover:bg-[var(--hm-surface-hover)] ${selected.has(row.id) ? "bg-[var(--hm-accent-light)]" : ""}`}>
+                  {bulkActions && (
+                    <td className="px-4 py-3 border-b border-[var(--hm-border-light)]">
+                      <input type="checkbox" checked={selected.has(row.id)} onChange={() => toggleRow(row.id)} />
+                    </td>
+                  )}
                   {columns.map((c) => (
                     <td
                       key={c.key}
@@ -720,6 +759,29 @@ function Cell({ value }: { value: string | number | null | undefined }) {
   return value != null && value !== "" ? <>{value}</> : <span className="text-[var(--hm-text-tertiary)]">—</span>;
 }
 
+function today(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/** Downloads an arbitrary array of flat row objects as a CSV — used for
+ * "export selected" actions where the rows are already loaded client-side. */
+function downloadCSV<T extends object>(rows: T[], filename: string) {
+  if (!rows.length) return;
+  const cols = Object.keys(rows[0]);
+  const esc = (v: unknown) => `"${(v ?? "").toString().replace(/"/g, '""')}"`;
+  const lines = [cols.join(",")];
+  for (const r of rows) lines.push(cols.map((c) => esc((r as Record<string, unknown>)[c])).join(","));
+  const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 function fmtDate(v: string | null): React.ReactNode {
   if (!v) return <span className="text-[var(--hm-text-tertiary)]">—</span>;
   const d = new Date(v);
@@ -779,6 +841,15 @@ function AccountsSection() {
       columns={cols}
       searchPlaceholder="Search company or domain…"
       emptyLabel="No accounts match your filters."
+      bulkActions={(rows, clear) => (
+        <button
+          onClick={() => { downloadCSV(rows, `radar_accounts_${today()}.csv`); clear(); }}
+          className="hm-btn hm-btn-primary"
+          style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}
+        >
+          Export CSV
+        </button>
+      )}
     />
   );
 }
@@ -831,6 +902,7 @@ function EmailStatusPill({ status }: { status: string | null }) {
 
 function ContactsSection() {
   const cols: Column<ContactRow>[] = [
+    { key: "vertical", header: "Vertical", render: (r) => <VerticalBadge v={r.vertical} /> },
     {
       key: "name",
       header: "Name",
@@ -839,14 +911,14 @@ function ContactsSection() {
         return <span className="font-medium">{nm}</span>;
       },
     },
-    { key: "title", header: "Title", render: (r) => <Cell value={r.title} /> },
     { key: "company", header: "Company", render: (r) => <Cell value={r.company_name || r.account_name} /> },
+    { key: "parent", header: "Parent Company", render: (r) => <Cell value={r.parent_company} /> },
     { key: "domain", header: "Domain", render: (r) => <Cell value={r.domain || r.account_domain} /> },
+    { key: "title", header: "Title", render: (r) => <Cell value={r.title} /> },
     { key: "email", header: "Email", render: (r) => r.email ? <span className="text-[var(--hm-text-secondary)]">{r.email}</span> : <span className="text-[var(--hm-text-tertiary)]">—</span> },
     { key: "status", header: "Email Status", render: (r) => <EmailStatusPill status={r.email_status} /> },
     { key: "validated_at", header: "Validated", render: (r) => fmtDate(r.validated_at) },
     { key: "hubspot", header: "HubSpot Excluded", render: (r) => <YesNo v={r.hubspot_excluded} /> },
-    { key: "vertical", header: "Vertical", render: (r) => <VerticalBadge v={r.vertical} /> },
     { key: "industry", header: "Industry", render: (r) => <Cell value={r.industry} /> },
     { key: "sub_industry", header: "Sub-Industry", render: (r) => <Cell value={r.sub_industry} /> },
     { key: "employees", header: "Employees", className: "tabular-nums", render: (r) => <Cell value={r.employee_range} /> },
@@ -857,7 +929,6 @@ function ContactsSection() {
     { key: "country", header: "Country", render: (r) => <Cell value={r.country} /> },
     { key: "linkedin", header: "LinkedIn", render: (r) => r.linkedin_url ? <a href={r.linkedin_url} target="_blank" rel="noreferrer" className="text-[var(--hm-accent)]">Profile</a> : <span className="text-[var(--hm-text-tertiary)]">—</span> },
     { key: "sdr", header: "SDR Owner", render: (r) => <Cell value={r.sdr_owner} /> },
-    { key: "parent", header: "Parent Company", render: (r) => <Cell value={r.parent_company} /> },
     { key: "created", header: "Created", render: (r) => fmtDate(r.created_at) },
     { key: "updated", header: "Updated", render: (r) => fmtDate(r.updated_at) },
   ];
@@ -867,6 +938,15 @@ function ContactsSection() {
       columns={cols}
       searchPlaceholder="Search name or email…"
       emptyLabel="No contacts match your filters."
+      bulkActions={(rows, clear) => (
+        <button
+          onClick={() => { downloadCSV(rows, `radar_contacts_${today()}.csv`); clear(); }}
+          className="hm-btn hm-btn-primary"
+          style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}
+        >
+          Export CSV
+        </button>
+      )}
     />
   );
 }
@@ -1713,6 +1793,9 @@ function EnrichSection() {
       return next;
     });
   };
+  const toggleAllLeads = () => {
+    setSelected((prev) => (prev.size === leads.length ? new Set() : new Set(leads.map((_, i) => i))));
+  };
 
   const scoreAgainstIcp = async () => {
     const icp = savedIcps[icpVertical];
@@ -1925,7 +2008,9 @@ function EnrichSection() {
                 <table className="w-full border-collapse text-[13px]">
                   <thead>
                     <tr>
-                      <th className="px-4 py-2.5 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)]"></th>
+                      <th className="px-4 py-2.5 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)]">
+                        <input type="checkbox" checked={leads.length > 0 && selected.size === leads.length} onChange={toggleAllLeads} />
+                      </th>
                       {["Name", "Title", "Company", "Email", "LinkedIn", ...(Object.keys(scores).length ? ["ICP Fit"] : [])].map((h) => (
                         <th key={h} className="text-left text-[11px] font-semibold uppercase tracking-wide text-[var(--hm-text-tertiary)] px-4 py-2.5 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] whitespace-nowrap">{h}</th>
                       ))}
@@ -2169,6 +2254,12 @@ function ValidateSection() {
 
   const toggle = (id: number) => {
     setCandidates((prev) => prev.map((c) => (c.id === id ? { ...c, selected: !c.selected } : c)));
+  };
+  const toggleAllCandidates = () => {
+    setCandidates((prev) => {
+      const allSelected = prev.every((c) => c.selected);
+      return prev.map((c) => ({ ...c, selected: !allSelected }));
+    });
   };
 
   const loadTags = async () => {
@@ -2570,7 +2661,11 @@ function ValidateSection() {
                   <table className="w-full border-collapse text-[13px]">
                     <thead>
                       <tr>
-                        {phase === "candidates" && <th className="px-4 py-2.5 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)]"></th>}
+                        {phase === "candidates" && (
+                          <th className="px-4 py-2.5 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)]">
+                            <input type="checkbox" checked={candidates.length > 0 && candidates.every((c) => c.selected)} onChange={toggleAllCandidates} />
+                          </th>
+                        )}
                         {["Person", "Email", "Type", "Confidence", "Source", "Status"].map((h) => (
                           <th key={h} className="text-left text-[11px] font-semibold uppercase tracking-wide text-[var(--hm-text-tertiary)] px-4 py-2.5 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] whitespace-nowrap">{h}</th>
                         ))}
