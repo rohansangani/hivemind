@@ -489,6 +489,7 @@ function DataTable<T extends { id: string }>({
   emptyLabel,
   bulkActions,
   booleanFilters,
+  onRowClick,
 }: {
   endpoint: string;
   columns: Column<T>[];
@@ -499,6 +500,8 @@ function DataTable<T extends { id: string }>({
   bulkActions?: (selected: T[], clearSelection: () => void) => React.ReactNode;
   /** Extra checkbox filters (e.g. "Email not blank") sent as `{key: "true"}` in the request body. */
   booleanFilters?: Array<{ key: string; label: string }>;
+  /** Makes rows clickable (e.g. opening a detail panel) without affecting the checkbox column. */
+  onRowClick?: (row: T) => void;
 }) {
   const [rows, setRows] = useState<T[]>([]);
   const [total, setTotal] = useState(0);
@@ -662,9 +665,13 @@ function DataTable<T extends { id: string }>({
             </thead>
             <tbody>
               {rows.map((row) => (
-                <tr key={row.id} className={`hover:bg-[var(--hm-surface-hover)] ${selected.has(row.id) ? "bg-[var(--hm-accent-light)]" : ""}`}>
+                <tr
+                  key={row.id}
+                  onClick={onRowClick ? () => onRowClick(row) : undefined}
+                  className={`hover:bg-[var(--hm-surface-hover)] ${selected.has(row.id) ? "bg-[var(--hm-accent-light)]" : ""} ${onRowClick ? "cursor-pointer" : ""}`}
+                >
                   {bulkActions && (
-                    <td className="px-4 py-3 border-b border-[var(--hm-border-light)]">
+                    <td className="px-4 py-3 border-b border-[var(--hm-border-light)]" onClick={(e) => e.stopPropagation()}>
                       <input type="checkbox" checked={selected.has(row.id)} onChange={() => toggleRow(row.id)} />
                     </td>
                   )}
@@ -824,7 +831,7 @@ function AccountsSection() {
       key: "domain",
       header: "Domain",
       render: (r) => r.domain ? (
-        <a href={`https://${r.domain}`} target="_blank" rel="noreferrer" className="text-[var(--hm-accent)] hover:underline">
+        <a href={`https://${r.domain}`} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-[var(--hm-accent)] hover:underline">
           {r.domain}
         </a>
       ) : <span className="text-[var(--hm-text-tertiary)]">—</span>,
@@ -836,7 +843,7 @@ function AccountsSection() {
     { key: "revenue", header: "Revenue", className: "tabular-nums", render: (r) => <Cell value={r.revenue_range} /> },
     { key: "location", header: "Company Location", render: (r) => <Cell value={r.company_location} /> },
     { key: "country", header: "Country", render: (r) => <Cell value={r.country} /> },
-    { key: "linkedin", header: "LinkedIn", render: (r) => r.linkedin_url ? <a href={r.linkedin_url} target="_blank" rel="noreferrer" className="text-[var(--hm-accent)]">Profile</a> : <span className="text-[var(--hm-text-tertiary)]">—</span> },
+    { key: "linkedin", header: "LinkedIn", render: (r) => r.linkedin_url ? <a href={r.linkedin_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-[var(--hm-accent)]">Profile</a> : <span className="text-[var(--hm-text-tertiary)]">—</span> },
     { key: "sdr", header: "SDR Owner", render: (r) => <Cell value={r.sdr_owner} /> },
     { key: "track_order", header: "Track Order Page", render: (r) => <Cell value={r.track_order_page} /> },
     { key: "edd", header: "EDD", render: (r) => <Cell value={r.edd} /> },
@@ -848,22 +855,104 @@ function AccountsSection() {
     { key: "created", header: "Created", render: (r) => fmtDate(r.created_at) },
     { key: "updated", header: "Updated", render: (r) => fmtDate(r.updated_at) },
   ];
+  const [openAccount, setOpenAccount] = useState<AccountRow | null>(null);
   return (
-    <DataTable<AccountRow>
-      endpoint="/api/radar/accounts"
-      columns={cols}
-      searchPlaceholder="Search company or domain…"
-      emptyLabel="No accounts match your filters."
-      bulkActions={(rows, clear) => (
-        <button
-          onClick={() => { downloadCSV(rows, `radar_accounts_${today()}.csv`); clear(); }}
-          className="hm-btn hm-btn-primary"
-          style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}
-        >
-          Export CSV
-        </button>
-      )}
-    />
+    <>
+      <DataTable<AccountRow>
+        endpoint="/api/radar/accounts"
+        columns={cols}
+        searchPlaceholder="Search company or domain…"
+        emptyLabel="No accounts match your filters."
+        onRowClick={setOpenAccount}
+        bulkActions={(rows, clear) => (
+          <button
+            onClick={() => { downloadCSV(rows, `radar_accounts_${today()}.csv`); clear(); }}
+            className="hm-btn hm-btn-primary"
+            style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}
+          >
+            Export CSV
+          </button>
+        )}
+      />
+      {openAccount && <AccountContactsPanel account={openAccount} onClose={() => setOpenAccount(null)} />}
+    </>
+  );
+}
+
+/** Slide-over showing an account's contacts — view-only, opened by clicking an Accounts row. */
+function AccountContactsPanel({ account, onClose }: { account: AccountRow; onClose: () => void }) {
+  const [rows, setRows] = useState<ContactRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+    fetch("/api/radar/contacts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accountId: account.id, limit: 200 }),
+    })
+      .then(async (r) => {
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Request failed");
+        return r.json();
+      })
+      .then((d: { data: ContactRow[]; total: number }) => {
+        if (!cancelled) { setRows(d.data || []); setTotal(d.total || 0); }
+      })
+      .catch((e) => { if (!cancelled) setError(e.message); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [account.id]);
+
+  return (
+    <div className="fixed inset-0 z-40 flex justify-end" role="dialog" aria-modal="true">
+      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
+      <div className="relative w-full max-w-lg h-full bg-[var(--hm-surface)] shadow-xl flex flex-col">
+        <div className="px-5 py-4 border-b border-[var(--hm-border)] flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-[14px] font-semibold text-[var(--hm-text)] truncate">{account.name || account.domain}</h2>
+            <p className="text-[12px] text-[var(--hm-text-tertiary)] mt-0.5">
+              {loading ? "Loading contacts…" : `${total} contact(s)${total > rows.length ? ` — showing first ${rows.length}` : ""}`}
+            </p>
+          </div>
+          <button onClick={onClose} className="hm-btn hm-btn-secondary flex-shrink-0" style={{ height: 30, width: 30, padding: 0, fontSize: 14 }}>×</button>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          {loading ? (
+            <div className="flex items-center justify-center py-16">
+              <div className="w-5 h-5 border-2 border-[var(--hm-accent)]/30 border-t-[var(--hm-accent)] rounded-full animate-spin" />
+            </div>
+          ) : error ? (
+            <div className="m-4 rounded-lg border border-red-200 bg-red-50 dark:bg-red-900/20 dark:border-red-800 p-4 text-[13px] text-red-600 dark:text-red-400">{error}</div>
+          ) : rows.length === 0 ? (
+            <div className="py-16 text-center text-[13px] text-[var(--hm-text-tertiary)]">No contacts for this account.</div>
+          ) : (
+            <div className="divide-y divide-[var(--hm-border-light)]">
+              {rows.map((c) => (
+                <div key={c.id} className="px-5 py-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[13px] font-medium text-[var(--hm-text)] truncate">
+                      {[c.first_name, c.last_name].filter(Boolean).join(" ") || c.full_name || "—"}
+                    </p>
+                    <EmailStatusPill status={c.email_status} />
+                  </div>
+                  {c.title && <p className="text-[12px] text-[var(--hm-text-tertiary)] mt-0.5">{c.title}</p>}
+                  <div className="flex items-center gap-2 mt-1 text-[12px] text-[var(--hm-text-secondary)]">
+                    {c.email && <span className="truncate">{c.email}</span>}
+                    {c.linkedin_url && (
+                      <a href={c.linkedin_url} target="_blank" rel="noreferrer" className="text-[var(--hm-accent)] flex-shrink-0">LinkedIn</a>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
