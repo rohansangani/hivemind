@@ -2,18 +2,17 @@
 
 import { useState, useEffect } from "react";
 import { useUser } from "@/lib/UserContext";
-import { getEffectivePermissions, hasModuleAccess } from "@/lib/modules";
+import { hasModuleAccess } from "@/lib/modules";
 
 /**
  * Radar — prospecting module (accounts, contacts, enrichment, email validation).
  *
  * Access defaults to "none" for every role except owner/admin (see
- * ROLE_DEFAULT_PERMISSIONS in lib/modules.ts), but an owner/admin can grant
- * any individual user "view" or "edit" on the radar module from their Team
- * profile — same per-user override mechanism every other module uses. This
- * page checks the user's EFFECTIVE permission (role default + any personal
- * override), not a hardcoded role check, so a granted user gets in without
- * needing to be promoted to admin.
+ * ROLE_DEFAULT_PERMISSIONS in lib/modules.ts). An owner/admin can additionally
+ * unlock it two ways: granting it on a custom org role (e.g. "Market
+ * Research"), or granting it to one specific person from their Team profile.
+ * Both paths are pre-merged server-side into user.modulePermissions by
+ * /api/auth/me, so this page just checks the final effective value.
  */
 
 type SectionId =
@@ -43,8 +42,7 @@ export default function RadarPage() {
   const user = useUser();
   const [active, setActive] = useState<SectionId>("dashboard");
 
-  const effectivePerms = getEffectivePermissions(user?.role ?? "others", user?.customPermissions ?? null);
-  const canAccess = hasModuleAccess(effectivePerms, "radar", "view");
+  const canAccess = hasModuleAccess((user?.modulePermissions ?? {}) as Record<string, "none" | "view" | "edit">, "radar", "view");
 
   if (!canAccess) {
     return (

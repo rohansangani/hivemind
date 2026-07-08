@@ -159,6 +159,21 @@ async function getCustomPermissions(userId: string): Promise<Record<string, stri
   }
 }
 
+/** A user's role may be a custom org role (e.g. "market_research") with its own
+ * module permissions set via the Roles admin UI, separate from the hardcoded
+ * ROLE_DEFAULT_PERMISSIONS for built-in roles. */
+async function getCustomRolePermissions(organizationId: string, roleSlug: string): Promise<Record<string, string> | null> {
+  try {
+    const role = await db.customRole.findUnique({
+      where: { organizationId_slug: { organizationId, slug: roleSlug } },
+      select: { permissions: true },
+    });
+    return (role?.permissions as Record<string, string>) ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Guard for radar API routes. Verifies the hivemind JWT, then checks the
  * user's EFFECTIVE radar permission — their role's default (owner/admin get
@@ -188,11 +203,19 @@ export async function requireRadarAccess(
   });
   if (!actor) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
-  const customPermissions = await getCustomPermissions(decoded.userId);
-  const effective = getEffectivePermissions(actor.role, customPermissions);
+  const orgId = actor.organizationId ?? decoded.orgId;
+  const [customPermissions, customRolePermissions] = await Promise.all([
+    getCustomPermissions(decoded.userId),
+    getCustomRolePermissions(orgId, actor.role),
+  ]);
+  const effective = getEffectivePermissions(
+    actor.role,
+    customPermissions,
+    customRolePermissions ? { [actor.role]: customRolePermissions } : undefined,
+  );
   if (!hasModuleAccess(effective, "radar", "view")) {
     return NextResponse.json({ error: "You don't have access to Radar" }, { status: 403 });
   }
 
-  return { userId: decoded.userId, orgId: actor.organizationId ?? decoded.orgId, role: actor.role };
+  return { userId: decoded.userId, orgId, role: actor.role };
 }

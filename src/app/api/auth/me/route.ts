@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import jwt from "jsonwebtoken";
 import pg from "pg";
+import { getEffectivePermissions } from "@/lib/modules";
 
 async function getCustomPermissions(userId: string): Promise<Record<string, string> | null> {
   try {
@@ -14,6 +15,21 @@ async function getCustomPermissions(userId: string): Promise<Record<string, stri
     }
   } catch {
     return null; // table may not exist yet — no custom overrides for anyone
+  }
+}
+
+/** A user's role may be a custom org role (e.g. "market_research") rather than
+ * one of the built-in slugs — those carry their own module permissions set via
+ * the Roles admin UI, stored separately from the hardcoded ROLE_DEFAULT_PERMISSIONS. */
+async function getCustomRolePermissions(organizationId: string, roleSlug: string): Promise<Record<string, string> | null> {
+  try {
+    const role = await db.customRole.findUnique({
+      where: { organizationId_slug: { organizationId, slug: roleSlug } },
+      select: { permissions: true },
+    });
+    return (role?.permissions as Record<string, string>) ?? null;
+  } catch {
+    return null;
   }
 }
 
@@ -48,6 +64,14 @@ export async function GET(req: NextRequest) {
     }
 
     const customPermissions = await getCustomPermissions(user.id);
+    const customRolePermissions = user.organizationId
+      ? await getCustomRolePermissions(user.organizationId, user.role)
+      : null;
+    const modulePermissions = getEffectivePermissions(
+      user.role,
+      customPermissions,
+      customRolePermissions ? { [user.role]: customRolePermissions } : undefined,
+    );
 
     return NextResponse.json({
       user: {
@@ -61,6 +85,7 @@ export async function GET(req: NextRequest) {
         organizationId: user.organizationId,
         organization: user.organization,
         customPermissions,
+        modulePermissions,
       },
     });
   } catch {
