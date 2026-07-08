@@ -2193,7 +2193,7 @@ function ValidateSection() {
   const [people, setPeople] = useState<PersonInput[]>([]);
   const [draft, setDraft] = useState<PersonInput>(emptyPerson());
   const [blankEmailVertical, setBlankEmailVertical] = useState("");
-  const [blankEmailCount, setBlankEmailCount] = useState<number | null>(null);
+  const [blankEmailCount, setBlankEmailCount] = useState<{ count: number; fetchable: number } | null>(null);
   const [blankEmailCounting, setBlankEmailCounting] = useState(false);
   const [blankEmailMsg, setBlankEmailMsg] = useState("");
   const [useAI, setUseAI] = useState(true);
@@ -2422,7 +2422,7 @@ function ValidateSection() {
     const t = setTimeout(async () => {
       try {
         const d = await call({ action: "count_blank_emails", vertical: blankEmailVertical || undefined });
-        if (!cancelled) setBlankEmailCount(d.count ?? 0);
+        if (!cancelled) setBlankEmailCount({ count: d.count ?? 0, fetchable: d.fetchable ?? 0 });
       } catch {
         if (!cancelled) setBlankEmailCount(null);
       } finally {
@@ -2738,7 +2738,15 @@ function ValidateSection() {
                         </button>
                       </div>
                       <p className="text-[11px] text-[var(--hm-text-tertiary)]">
-                        {blankEmailCounting ? "Counting…" : blankEmailCount != null ? `${blankEmailCount.toLocaleString()} blank-email contact(s) match` : ""}
+                        {blankEmailCounting
+                          ? "Counting…"
+                          : blankEmailCount != null
+                          ? `${blankEmailCount.count.toLocaleString()} blank-email contact(s) match (matches the dashboard)${
+                              blankEmailCount.fetchable < blankEmailCount.count
+                                ? ` — ${blankEmailCount.fetchable.toLocaleString()} have a domain and can be fetched`
+                                : ""
+                            }`
+                          : ""}
                       </p>
                       {blankEmailMsg && <p className="text-[11px] text-[var(--hm-text-secondary)]">{blankEmailMsg}</p>}
                     </div>
