@@ -2198,6 +2198,7 @@ function ValidateSection() {
   const [progressLabel, setProgressLabel] = useState("");
   const [checkResult, setCheckResult] = useState<{ bounced: number; valid: number; pending: number; allResolved: boolean } | null>(null);
   const [savedCount, setSavedCount] = useState(0);
+  const [savedInvalidCount, setSavedInvalidCount] = useState(0);
 
   // Patterns vs Retest — top-level mode, mirrors radar's own toggle
   const [inputMode, setInputMode] = useState<"patterns" | "retest">("patterns");
@@ -2471,6 +2472,7 @@ function ValidateSection() {
     try {
       const d = await call({ action: "save", jobId });
       setSavedCount((prev) => prev + (d.saved ?? 0));
+      setSavedInvalidCount((prev) => prev + (d.savedInvalid ?? 0));
       // Saving doesn't require the campaign to be fully resolved — only close out the job
       // once every pattern has a final bounce/valid result. Otherwise stay put so the user
       // can keep checking and saving newly-resolved valids as they come in.
@@ -2484,7 +2486,7 @@ function ValidateSection() {
 
   const reset = () => {
     setPeopleText(""); setPhase("input"); setJobId(null); setCandidates([]);
-    setCheckResult(null); setSavedCount(0); setError(""); setMailboxTag(""); setAutoRefresh(false);
+    setCheckResult(null); setSavedCount(0); setSavedInvalidCount(0); setError(""); setMailboxTag(""); setAutoRefresh(false);
     setInputMode("patterns"); setRetestCount(null);
   };
 
@@ -2818,7 +2820,9 @@ function ValidateSection() {
                   <div className="w-11 h-11 rounded-xl bg-[#DCFCE7] flex items-center justify-center mx-auto mb-3">
                     <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 5" stroke="#059669" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
                   </div>
-                  <p className="text-[13px] font-medium text-[var(--hm-text)]">{savedCount} verified email(s) saved to contacts.</p>
+                  <p className="text-[13px] font-medium text-[var(--hm-text)]">
+                    {savedCount} verified email(s) saved to contacts{savedInvalidCount > 0 ? `, ${savedInvalidCount} bounced email(s) marked invalid` : ""}.
+                  </p>
                   <button onClick={reset} className="hm-btn hm-btn-secondary mt-4" style={{ height: 34, padding: "0 14px", fontSize: 12.5 }}>Validate more people</button>
                 </div>
               ) : (
