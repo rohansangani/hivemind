@@ -1867,7 +1867,7 @@ function EnrichSection() {
   const [scores, setScores] = useState<Record<string, EnrichScore>>({});
   const [scoring, setScoring] = useState(false);
 
-  const [validateBusy, setValidateBusy] = useState(false);
+  const [saveBusy, setSaveBusy] = useState(false);
   const [validateResult, setValidateResult] = useState<{ validated: number } | null>(null);
 
   useEffect(() => { setSavedIcps(loadIcps()); }, []);
@@ -2023,13 +2023,33 @@ function EnrichSection() {
   const saveSelected = async () => {
     setError("");
     if (!saveVertical) { setError("Select a vertical before saving."); return; }
+    setSaveBusy(true);
     try {
       const d = await call({ action: "save", datasetId, vertical: saveVertical });
       setSavedCount(d.saved || 0);
       setSavedAccountsCount(d.savedAccounts || 0);
+
+      // Debounce-validate the just-saved leads immediately — no separate manual step.
+      const savedEmails = leads.filter((_, i) => selected.has(i)).map((l) => l.email).filter(Boolean).map((email) => ({ email }));
+      const domains = csv(domain);
+      if (savedEmails.length) {
+        const v = await call({ action: "validate_and_save", params: { apifyEmails: savedEmails, domains } });
+        setValidateResult({ validated: v.validated || 0 });
+      }
+
+      // Refresh the full picture for these domains — the newly saved+validated leads are now
+      // real contacts rows, so this naturally returns existing + new together, deduped for
+      // free since email is unique in the DB. No manual merge/dedupe needed.
+      const chk = await call({ action: "check_existing", params: { company_domain: domains } });
+      const refreshed = (chk.existing || []) as ExistingContact[];
+      setExistingLeads(refreshed);
+      setExistingSelected(new Set(refreshed.map((_, i) => i)));
+
       setPhase("saved");
     } catch (e) {
       setError((e as Error).message);
+    } finally {
+      setSaveBusy(false);
     }
   };
 
@@ -2088,24 +2108,6 @@ function EnrichSection() {
     } finally {
       setExportBusy(false);
       setExportProgress(null);
-    }
-  };
-
-  const validateSaved = async () => {
-    setValidateBusy(true);
-    setError("");
-    try {
-      const savedLeads = leads.filter((l) => l.email);
-      const domains = csv(domain);
-      const d = await call({
-        action: "validate_and_save",
-        params: { apifyEmails: savedLeads.map((l) => ({ email: l.email })), domains },
-      });
-      setValidateResult({ validated: d.validated || 0 });
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setValidateBusy(false);
     }
   };
 
@@ -2230,11 +2232,13 @@ function EnrichSection() {
           </div>
         )}
 
-        {existingLeads.length > 0 && (phase === "running" || phase === "results") && (
+        {existingLeads.length > 0 && (phase === "running" || phase === "results" || phase === "saved") && (
           <div className="border-b border-[var(--hm-border)]">
             <div className="px-5 py-3 flex items-center justify-between flex-wrap gap-2 bg-[var(--hm-bg-secondary)]">
               <span className="text-[12.5px] text-[var(--hm-text-secondary)]">
-                {existingLeads.length} contact(s) already in the database for these domains
+                {phase === "saved"
+                  ? `${existingLeads.length} contact(s) for these domains — existing + newly saved, deduped by email`
+                  : `${existingLeads.length} contact(s) already in the database for these domains`}
               </span>
               <button
                 onClick={exportExisting}
@@ -2292,7 +2296,9 @@ function EnrichSection() {
           <div>
             <div className="px-5 py-3 border-b border-[var(--hm-border)] flex items-center justify-between flex-wrap gap-2">
               <span className="text-[12.5px] text-[var(--hm-text-secondary)]">
-                {leads.length} new profile(s) found from Apify
+                {phase === "saved"
+                  ? `${savedCount} contact(s) saved, ${savedAccountsCount} account(s) created/updated${validateResult ? `, ${validateResult.validated} validated via Debounce` : ""}`
+                  : `${leads.length} new profile(s) found from Apify`}
               </span>
               {phase === "results" && (
                 <div className="flex items-center gap-2 flex-wrap">
@@ -2308,35 +2314,20 @@ function EnrichSection() {
                     <option value="US">US</option>
                     <option value="D2C">D2C</option>
                   </select>
-                  <button onClick={saveSelected} disabled={!selected.size || !saveVertical} className="hm-btn hm-btn-primary" style={{ height: 32, padding: "0 14px", fontSize: 12 }}>
-                    Save {selected.size} to database
+                  <button onClick={saveSelected} disabled={!selected.size || !saveVertical || saveBusy} className="hm-btn hm-btn-primary" style={{ height: 32, padding: "0 14px", fontSize: 12 }}>
+                    {saveBusy ? "Saving & validating…" : `Save ${selected.size} to database`}
                   </button>
                 </div>
               )}
             </div>
 
             {phase === "saved" ? (
-              <div className="px-5 py-10 text-center">
-                <div className="w-11 h-11 rounded-xl bg-[#DCFCE7] flex items-center justify-center mx-auto mb-3">
-                  <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 5" stroke="#059669" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+              <div className="px-5 py-6 text-center">
+                <div className="w-9 h-9 rounded-xl bg-[#DCFCE7] flex items-center justify-center mx-auto mb-2">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 5" stroke="#059669" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
                 </div>
-                <p className="text-[13px] font-medium text-[var(--hm-text)]">
-                  {savedCount} contact(s) saved, {savedAccountsCount} account(s) created/updated and linked.
-                </p>
-
-                {!validateResult ? (
-                  <button onClick={validateSaved} disabled={validateBusy} className="hm-btn hm-btn-primary mt-4" style={{ height: 34, padding: "0 16px", fontSize: 12.5 }}>
-                    {validateBusy ? "Validating…" : "Validate emails via Debounce"}
-                  </button>
-                ) : (
-                  <p className="text-[12.5px] text-[var(--hm-text-secondary)] mt-3">
-                    {validateResult.validated} email(s) validated.
-                  </p>
-                )}
-
-                <div>
-                  <button onClick={reset} className="hm-btn hm-btn-secondary mt-3" style={{ height: 34, padding: "0 14px", fontSize: 12.5 }}>Search again</button>
-                </div>
+                <p className="text-[12.5px] text-[var(--hm-text-secondary)] mb-3">Saved and validated — export the full list above, or start a new search.</p>
+                <button onClick={reset} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 12px", fontSize: 12 }}>New search</button>
               </div>
             ) : (
               <div className="overflow-x-auto">
