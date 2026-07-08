@@ -74,7 +74,13 @@ export async function POST(req: NextRequest) {
 
     await db.user.update({
       where: { id: user.id },
-      data: { lastActiveAt: new Date(), ...(effectiveOnboarded && !user.onboarded ? { onboarded: true } : {}) },
+      data: {
+        lastActiveAt: new Date(),
+        ...(effectiveOnboarded && !user.onboarded ? { onboarded: true } : {}),
+        // Successful password login is a real first sign-in for an invited user too — there's
+        // no separate accept-invite flow, so this is where "pending" needs to clear.
+        ...(user.inviteStatus === "pending" ? { inviteStatus: null } : {}),
+      },
     });
 
     const token = jwt.sign(

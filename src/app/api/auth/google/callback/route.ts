@@ -81,8 +81,19 @@ export async function GET(req: NextRequest) {
     if (user) {
       // Existing user — fix onboarded for non-admin/owner users who were created before the fix
       const shouldOnboard = !user.onboarded && user.role !== "owner" && user.role !== "admin";
-      await db.user.update({ where: { id: user.id }, data: { lastActiveAt: new Date(), ...(shouldOnboard ? { onboarded: true } : {}) } });
+      // Google sign-in is a real first sign-in for an invited user too — there's no separate
+      // accept-invite flow, so this is where "pending" needs to clear.
+      const clearInvite = user.inviteStatus === "pending";
+      await db.user.update({
+        where: { id: user.id },
+        data: {
+          lastActiveAt: new Date(),
+          ...(shouldOnboard ? { onboarded: true } : {}),
+          ...(clearInvite ? { inviteStatus: null } : {}),
+        },
+      });
       if (shouldOnboard) user = { ...user, onboarded: true };
+      if (clearInvite) user = { ...user, inviteStatus: null };
       orgId = user.organizationId!;
       role = user.role;
     } else {

@@ -50,6 +50,9 @@ export async function POST(req: NextRequest) {
         password: hashed,
         mustResetPassword: false,
         lastActiveAt: new Date(),
+        // Setting a password is the first real sign-in for an invited user — there's no
+        // separate accept-invite flow, so this is where "pending" needs to clear.
+        ...(user.inviteStatus === "pending" ? { inviteStatus: null } : {}),
       },
     });
 
