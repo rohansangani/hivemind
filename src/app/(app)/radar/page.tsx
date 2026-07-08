@@ -2287,6 +2287,45 @@ function ValidateSection() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inputMode, retestStatuses, retestVertical, retestDomain]);
 
+  const [debounceBusy, setDebounceBusy] = useState(false);
+  const [debounceProgress, setDebounceProgress] = useState<{ processed: number; validated: number } | null>(null);
+  const [debounceMsg, setDebounceMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  // Skips Instantly entirely: runs these contacts straight through Debounce and writes
+  // email_status/validated_at directly on the contacts row. No test-send, no candidates job.
+  const runDebounceRetest = async () => {
+    setDebounceBusy(true);
+    setDebounceMsg(null);
+    setDebounceProgress({ processed: 0, validated: 0 });
+    let processed = 0, validated = 0, offset = 0, done = false;
+    try {
+      for (let guard = 0; guard < 500 && !done; guard++) {
+        const r = await fetch("/api/radar/export-validate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "validate_chunk",
+            filters: { vertical: retestVertical || undefined, emailStatus: retestStatuses },
+            offset,
+          }),
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d.error || "Debounce validation failed");
+        processed += d.processed || 0;
+        validated += d.validated || 0;
+        offset = d.next_offset ?? offset + (d.processed || 0);
+        done = d.done || d.processed === 0;
+        setDebounceProgress({ processed, validated });
+      }
+      setDebounceMsg({ kind: "ok", text: `Checked ${processed.toLocaleString()} contact(s) via Debounce, saved ${validated.toLocaleString()} status update(s) directly — nothing sent via Instantly.` });
+      countRetest();
+    } catch (e) {
+      setDebounceMsg({ kind: "err", text: (e as Error).message });
+    } finally {
+      setDebounceBusy(false);
+    }
+  };
+
   const loadForRetest = async () => {
     setError("");
     setBusy(true);
@@ -2657,8 +2696,27 @@ function ValidateSection() {
                     </div>
 
                     <button onClick={loadForRetest} disabled={busy || !retestStatuses.length || !retestCount} className="hm-btn hm-btn-primary w-full" style={{ height: 38, fontSize: 13 }}>
-                      Load contacts
+                      Load contacts (sends real test emails via Instantly)
                     </button>
+
+                    <div className="rounded-lg border border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] p-3 space-y-2">
+                      <p className="text-[12px] text-[var(--hm-text-secondary)]">
+                        Or skip Instantly entirely — check these emails via Debounce and save the result straight to the contact, no test-send.
+                      </p>
+                      <button
+                        onClick={runDebounceRetest}
+                        disabled={debounceBusy || !retestStatuses.length || !retestCount}
+                        className="hm-btn hm-btn-secondary w-full"
+                        style={{ height: 34, fontSize: 12.5 }}
+                      >
+                        {debounceBusy
+                          ? `Validating via Debounce… ${debounceProgress?.processed ?? 0} checked, ${debounceProgress?.validated ?? 0} saved`
+                          : "Validate via Debounce (save directly, no send)"}
+                      </button>
+                      {debounceMsg && (
+                        <p className={`text-[12px] ${debounceMsg.kind === "err" ? "text-red-500" : "text-[#059669]"}`}>{debounceMsg.text}</p>
+                      )}
+                    </div>
 
                     <div className="flex items-center gap-3">
                       <div className="flex-1 h-px bg-[var(--hm-border)]" />
