@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const { vertical, industry, subIndustry, employeeRange, revenueRange, company, title, emailStatus, country, search, page = 0, limit = 50 } = body;
+    const { vertical, industry, subIndustry, employeeRange, revenueRange, company, title, emailStatus, country, search, hasEmail, page = 0, limit = 50 } = body;
 
     let query = `select=*&order=first_name.asc`;
     if (vertical) query += `&vertical=eq.${encodeURIComponent(vertical)}`;
@@ -25,6 +25,7 @@ export async function POST(req: NextRequest) {
     if (country) query += `&country=eq.${encodeURIComponent(country)}`;
     if (emailStatus === "unvalidated") query += `&email_status=is.null`;
     else if (emailStatus) query += `&email_status=eq.${encodeURIComponent(emailStatus)}`;
+    if (hasEmail === "true") query += `&email=not.is.null&email=neq.`;
     if (search) {
       const q = encodeURIComponent(search);
       query += `&or=(email.ilike.*${q}*,first_name.ilike.*${q}*,last_name.ilike.*${q}*)`;

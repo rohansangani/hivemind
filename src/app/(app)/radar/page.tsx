@@ -488,6 +488,7 @@ function DataTable<T extends { id: string }>({
   searchPlaceholder,
   emptyLabel,
   bulkActions,
+  booleanFilters,
 }: {
   endpoint: string;
   columns: Column<T>[];
@@ -496,6 +497,8 @@ function DataTable<T extends { id: string }>({
   /** Renders action buttons (e.g. "Export selected") when rows are checked. Selection is
    * page-scoped and clears on page/filter change. */
   bulkActions?: (selected: T[], clearSelection: () => void) => React.ReactNode;
+  /** Extra checkbox filters (e.g. "Email not blank") sent as `{key: "true"}` in the request body. */
+  booleanFilters?: Array<{ key: string; label: string }>;
 }) {
   const [rows, setRows] = useState<T[]>([]);
   const [total, setTotal] = useState(0);
@@ -606,6 +609,12 @@ function DataTable<T extends { id: string }>({
           <FilterSelect label="Industry" value={filters.industry || ""} onChange={(v) => setFilter("industry", v)} options={options?.industries || []} />
           <FilterSelect label="Employees" value={filters.employeeRange || ""} onChange={(v) => setFilter("employeeRange", v)} options={options?.employeeRanges || []} />
           <FilterSelect label="Country" value={filters.country || ""} onChange={(v) => setFilter("country", v)} options={options?.countries || []} />
+          {booleanFilters?.map((bf) => (
+            <label key={bf.key} className="flex items-center gap-1.5 text-[12.5px] text-[var(--hm-text-secondary)] cursor-pointer select-none px-1">
+              <input type="checkbox" checked={filters[bf.key] === "true"} onChange={(e) => setFilter(bf.key, e.target.checked ? "true" : "")} />
+              {bf.label}
+            </label>
+          ))}
         </div>
       </div>
 
@@ -943,6 +952,7 @@ function ContactsSection() {
       columns={cols}
       searchPlaceholder="Search name or email…"
       emptyLabel="No contacts match your filters."
+      booleanFilters={[{ key: "hasEmail", label: "Email not blank" }]}
       bulkActions={(rows, clear) => (
         <button
           onClick={() => { downloadCSV(rows, `radar_contacts_${today()}.csv`); clear(); }}
