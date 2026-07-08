@@ -19,7 +19,6 @@ type SectionId =
   | "dashboard"
   | "accounts"
   | "contacts"
-  | "check-db"
   | "icp"
   | "upload"
   | "enrich"
@@ -31,11 +30,10 @@ const SECTIONS: Array<{ id: SectionId; label: string; blurb: string }> = [
   { id: "upload",    label: "Upload",    blurb: "Bulk import accounts and contacts from CSV." },
   { id: "accounts",  label: "Accounts",  blurb: "Browse and filter the accounts database." },
   { id: "contacts",  label: "Contacts",  blurb: "Query validated contacts across the database." },
-  { id: "check-db",  label: "Check DB",  blurb: "Look up a list of emails against the contacts database." },
   { id: "icp",       label: "ICP Base",  blurb: "Define Ideal Customer Profiles to auto-fill Enrich searches." },
   { id: "enrich",    label: "Enrich",    blurb: "Find new contacts from LinkedIn for a target account." },
   { id: "validate",  label: "Validate",  blurb: "Generate email patterns, test deliverability, save confirmed emails." },
-  { id: "export",    label: "Export",    blurb: "Download completed, validated contact lists." },
+  { id: "export",    label: "Export",    blurb: "Download validated contact lists, or check a list of emails against the database." },
 ];
 
 export default function RadarPage() {
@@ -102,12 +100,10 @@ export default function RadarPage() {
           <AccountsSection />
         ) : active === "contacts" ? (
           <ContactsSection />
-        ) : active === "check-db" ? (
-          <CheckDbSection />
         ) : active === "icp" ? (
           <IcpBaseSection />
         ) : active === "export" ? (
-          <ExportSection />
+          <ExportAndCheckSection />
         ) : active === "upload" ? (
           <UploadSection />
         ) : active === "enrich" ? (
@@ -970,6 +966,30 @@ const EMAIL_STATUS_OPTIONS: Array<{ key: string; label: string }> = [
   { key: "unknown", label: "Unknown" },
   { key: "unvalidated", label: "Unvalidated" },
 ];
+
+function ExportAndCheckSection() {
+  const [mode, setMode] = useState<"download" | "check">("download");
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-0.5 p-1 rounded-xl bg-[var(--hm-bg-tertiary)] w-fit">
+        {(["download", "check"] as const).map((m) => (
+          <button
+            key={m}
+            onClick={() => setMode(m)}
+            className={`px-3.5 py-1.5 text-[13px] rounded-lg whitespace-nowrap transition-colors ${
+              mode === m
+                ? "bg-[var(--hm-surface)] text-[var(--hm-text)] font-medium shadow-[var(--hm-shadow-sm)]"
+                : "text-[var(--hm-text-secondary)] hover:text-[var(--hm-text)]"
+            }`}
+          >
+            {m === "download" ? "Download" : "Check DB"}
+          </button>
+        ))}
+      </div>
+      {mode === "download" ? <ExportSection /> : <CheckDbSection />}
+    </div>
+  );
+}
 
 function ExportSection() {
   const [exportType, setExportType] = useState<"contacts" | "accounts">("contacts");
