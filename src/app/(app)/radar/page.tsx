@@ -2171,6 +2171,7 @@ interface ValidateCandidate {
 
 interface PersonInput {
   first_name: string;
+  middle_name?: string;
   last_name: string;
   domain: string;
 }
@@ -2188,7 +2189,9 @@ interface InstantlyTag { id: string; label: string; }
 
 function ValidateSection() {
   const [view, setView] = useState<"current" | "history">("current");
-  const [peopleText, setPeopleText] = useState("");
+  const emptyPersonRow = (): PersonInput => ({ first_name: "", middle_name: "", last_name: "", domain: "" });
+  const [personRows, setPersonRows] = useState<PersonInput[]>([emptyPersonRow()]);
+  const [blankEmailVertical, setBlankEmailVertical] = useState("");
   const [useAI, setUseAI] = useState(true);
   const [phase, setPhase] = useState<ValidatePhase>("input");
   const [jobId, setJobId] = useState<number | null>(null);
@@ -2232,18 +2235,51 @@ function ValidateSection() {
     return d;
   };
 
-  // "First,Last,domain.com" one per line
   const parsePeople = (): PersonInput[] =>
-    peopleText
-      .split("\n")
-      .map((line) => line.split(",").map((s) => s.trim()))
-      .filter((parts) => parts.length >= 3 && parts[0] && parts[2])
-      .map(([first_name, last_name, domain]) => ({ first_name, last_name, domain }));
+    personRows
+      .map((p) => ({ ...p, first_name: p.first_name.trim(), middle_name: (p.middle_name || "").trim(), last_name: p.last_name.trim(), domain: p.domain.trim() }))
+      .filter((p) => (p.first_name || p.last_name) && p.domain);
+
+  const updatePersonRow = (i: number, field: keyof PersonInput, value: string) => {
+    setPersonRows((prev) => prev.map((p, idx) => (idx === i ? { ...p, [field]: value } : p)));
+  };
+  const addPersonRow = () => setPersonRows((prev) => [...prev, emptyPersonRow()]);
+  const removePersonRow = (i: number) => setPersonRows((prev) => (prev.length > 1 ? prev.filter((_, idx) => idx !== i) : prev));
+
+  const loadPatternsCsv = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setError("");
+    try {
+      const text = await f.text();
+      const { rows } = parseCSV(text);
+      const findCol = (keys: string[]) => Object.keys(rows[0] || {}).find((h) => keys.includes(h.toLowerCase().trim()));
+      const firstCol = findCol(["first_name", "first name", "first"]);
+      const middleCol = findCol(["middle_name", "middle name", "middle"]);
+      const lastCol = findCol(["last_name", "last name", "last"]);
+      const domainCol = findCol(["domain", "company domain", "website"]);
+      if (!firstCol || !domainCol) { setError("CSV needs at least a first name and a domain column."); return; }
+      const parsed = rows
+        .map((r) => ({
+          first_name: r[firstCol] || "",
+          middle_name: middleCol ? r[middleCol] || "" : "",
+          last_name: lastCol ? r[lastCol] || "" : "",
+          domain: r[domainCol] || "",
+        }))
+        .filter((p) => (p.first_name || p.last_name) && p.domain);
+      if (!parsed.length) { setError("No usable rows found in that CSV."); return; }
+      setPersonRows(parsed);
+    } catch (e2) {
+      setError((e2 as Error).message);
+    } finally {
+      e.target.value = "";
+    }
+  };
 
   const generate = async () => {
     setError("");
     const people = parsePeople();
-    if (!people.length) { setError("Add at least one person as: First, Last, domain.com — one per line."); return; }
+    if (!people.length) { setError("Add at least one person with a name and a domain."); return; }
     setBusy(true);
     try {
       let jid: number | null = null;
@@ -2374,10 +2410,12 @@ function ValidateSection() {
     setError("");
     setBusy(true);
     try {
-      const d = await call({ action: "fetch_blank_emails", limit: 200 });
-      if (!d.count) { setError("No contacts with a domain but no email were found."); return; }
-      const lines = (d.people || []).map((p: { first_name: string; last_name: string; domain: string }) => `${p.first_name || ""}, ${p.last_name || ""}, ${p.domain}`);
-      setPeopleText(lines.join("\n"));
+      const d = await call({ action: "fetch_blank_emails", limit: 200, vertical: blankEmailVertical || undefined });
+      if (!d.count) { setError("No contacts with a domain but no email were found for that vertical."); return; }
+      const rows = (d.people || []).map((p: { first_name: string; last_name: string; domain: string }) => ({
+        first_name: p.first_name || "", middle_name: "", last_name: p.last_name || "", domain: p.domain,
+      }));
+      setPersonRows(rows);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -2485,7 +2523,7 @@ function ValidateSection() {
   };
 
   const reset = () => {
-    setPeopleText(""); setPhase("input"); setJobId(null); setCandidates([]);
+    setPersonRows([emptyPersonRow()]); setPhase("input"); setJobId(null); setCandidates([]);
     setCheckResult(null); setSavedCount(0); setSavedInvalidCount(0); setError(""); setMailboxTag(""); setAutoRefresh(false);
     setInputMode("patterns"); setRetestCount(null);
   };
@@ -2644,18 +2682,48 @@ function ValidateSection() {
                 <>
                   <div className="px-5 py-4 border-b border-[var(--hm-border)]">
                     <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Generate email patterns</h2>
-                    <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">One person per line: First, Last, domain.com</p>
+                    <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">Add people to guess email patterns for — name + domain, middle name optional.</p>
                   </div>
                   <div className="px-5 py-5 space-y-4">
-                    <button onClick={loadBlankEmailContacts} disabled={busy} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 12px", fontSize: 12 }}>
-                      Fill blank-email contacts
+                    <div className="flex flex-wrap items-center gap-2">
+                      <select value={blankEmailVertical} onChange={(e) => setBlankEmailVertical(e.target.value)} style={{ width: 140 }}>
+                        <option value="">All verticals</option>
+                        <option value="B2B">B2B</option>
+                        <option value="US">US</option>
+                        <option value="D2C">D2C</option>
+                      </select>
+                      <button onClick={loadBlankEmailContacts} disabled={busy} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 12px", fontSize: 12 }}>
+                        Fill blank-email contacts
+                      </button>
+                      <label className="hm-btn hm-btn-secondary cursor-pointer" style={{ height: 32, padding: "0 12px", fontSize: 12 }}>
+                        ⬆ Upload CSV
+                        <input type="file" accept=".csv,text/csv" onChange={loadPatternsCsv} style={{ display: "none" }} />
+                      </label>
+                    </div>
+
+                    <div className="space-y-2">
+                      {personRows.map((p, i) => (
+                        <div key={i} className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_1fr_1.2fr_auto] gap-2 items-center">
+                          <input value={p.first_name} onChange={(e) => updatePersonRow(i, "first_name", e.target.value)} placeholder="First name" />
+                          <input value={p.middle_name || ""} onChange={(e) => updatePersonRow(i, "middle_name", e.target.value)} placeholder="Middle name (optional)" />
+                          <input value={p.last_name} onChange={(e) => updatePersonRow(i, "last_name", e.target.value)} placeholder="Last name" />
+                          <input value={p.domain} onChange={(e) => updatePersonRow(i, "domain", e.target.value)} placeholder="domain.com" />
+                          <button
+                            onClick={() => removePersonRow(i)}
+                            disabled={personRows.length === 1}
+                            className="hm-btn hm-btn-secondary"
+                            style={{ height: 34, width: 34, padding: 0, fontSize: 14 }}
+                            title="Remove"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <button onClick={addPersonRow} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 12px", fontSize: 12 }}>
+                      + Add another person
                     </button>
-                    <textarea
-                      value={peopleText}
-                      onChange={(e) => setPeopleText(e.target.value)}
-                      placeholder={"Marcus, Reyes, shopflow.com\nLena, Farouk, nexlogix.io"}
-                      style={{ minHeight: 140 }}
-                    />
+
                     <label className="flex items-center gap-2 text-[12.5px] text-[var(--hm-text-secondary)]">
                       <input type="checkbox" checked={useAI} onChange={(e) => setUseAI(e.target.checked)} />
                       Use AI ranking (Claude scores patterns using domain web evidence)
