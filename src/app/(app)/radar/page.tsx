@@ -1874,6 +1874,28 @@ function EnrichSection() {
 
   const csv = (s: string) => s.split(",").map((t) => t.trim()).filter(Boolean);
 
+  const loadDomainsCsv = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setError("");
+    try {
+      const text = await f.text();
+      // Loose parse: any cell that looks like a domain, whether the CSV has a header row,
+      // a "domain" column among others, or is just a bare one-per-line list.
+      const cells = text.split(/\r?\n/).flatMap((line) => line.split(",")).map((c) => c.trim().replace(/^"|"$/g, ""));
+      const values = cells.filter((c) => c && !["domain", "domains", "company domain", "website"].includes(c.toLowerCase()) && c.includes("."));
+      if (!values.length) { setError("No domains found in that CSV."); return; }
+      setDomain((prev) => {
+        const merged = [...new Set([...csv(prev), ...values])];
+        return merged.join(", ");
+      });
+    } catch (e2) {
+      setError((e2 as Error).message);
+    } finally {
+      e.target.value = "";
+    }
+  };
+
   const startSearch = async () => {
     setError("");
     if (!domain.trim()) { setError("Enter at least one domain to search."); return; }
@@ -2025,7 +2047,13 @@ function EnrichSection() {
             </div>
 
             <div>
-              <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Company domain(s)</label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] block">Company domain(s)</label>
+                <label className="text-[11.5px] text-[var(--hm-accent)] cursor-pointer hover:underline">
+                  ⬆ Upload CSV
+                  <input type="file" accept=".csv,text/csv" onChange={loadDomainsCsv} style={{ display: "none" }} />
+                </label>
+              </div>
               <input type="text" value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="shopflow.com, nexlogix.io" />
             </div>
 
