@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useUser } from "@/lib/UserContext";
 import { hasModuleAccess } from "@/lib/modules";
 
@@ -1811,12 +1811,13 @@ function EnrichSection() {
   const [domain, setDomain] = useState("");
   const [titles, setTitles] = useState("");
   const [notTitles, setNotTitles] = useState("");
-  const [seniority, setSeniority] = useState("");
-  const [functionalLevel, setFunctionalLevel] = useState("");
+  const [seniority, setSeniority] = useState<string[]>([]);
+  const [functionalLevel, setFunctionalLevel] = useState<string[]>([]);
   const [location, setLocation] = useState("");
   const [notLocation, setNotLocation] = useState("");
-  const [industry, setIndustry] = useState("");
-  const [notIndustry, setNotIndustry] = useState("");
+  const [industry, setIndustry] = useState<string[]>([]);
+  const [notIndustry, setNotIndustry] = useState<string[]>([]);
+  const [size, setSize] = useState<string[]>([]);
   const [keywords, setKeywords] = useState("");
   const [notKeywords, setNotKeywords] = useState("");
   const [minRevenue, setMinRevenue] = useState("");
@@ -1839,7 +1840,7 @@ function EnrichSection() {
   const [scoring, setScoring] = useState(false);
 
   const [validateBusy, setValidateBusy] = useState(false);
-  const [validateResult, setValidateResult] = useState<{ validated: number; linkedin_checked: number } | null>(null);
+  const [validateResult, setValidateResult] = useState<{ validated: number } | null>(null);
 
   useEffect(() => { setSavedIcps(loadIcps()); }, []);
 
@@ -1860,12 +1861,16 @@ function EnrichSection() {
     if (!icp) return;
     setTitles(icp.titles || "");
     setNotTitles(icp.notTitles || "");
-    setSeniority(icp.seniority.map((s) => ICP_SENIORITY_LABELS[s] || s).join(", "));
-    setFunctionalLevel(icp.function.map((f) => ICP_FUNCTION_LABELS[f] || f).join(", "));
+    // These were previously joined into a free-text label string (e.g. "Founder, VP") and sent
+    // to Apify as-is — the actor only accepts the raw enum keys ("founder","vp"), so that path
+    // silently sent values the actor couldn't match. Now we keep the real enum keys throughout.
+    setSeniority(icp.seniority || []);
+    setFunctionalLevel(icp.function || []);
     setLocation(icp.location || "");
     setNotLocation(icp.notLocation || "");
-    setIndustry(icp.industry || "");
-    setNotIndustry(icp.notIndustry || "");
+    setIndustry(icp.industry || []);
+    setNotIndustry(icp.notIndustry || []);
+    setSize(icp.size || []);
     setKeywords(icp.keywords || "");
     setNotKeywords(icp.notKeywords || "");
     setMinRevenue(icp.minRevenue || "");
@@ -1907,14 +1912,15 @@ function EnrichSection() {
       const params: Record<string, unknown> = { company_domain: domains, fetch_count: fetchCount };
       if (titles.trim()) params.contact_job_title = csv(titles);
       if (notTitles.trim()) params.contact_not_job_title = csv(notTitles);
-      if (seniority.trim()) params.seniority_level = csv(seniority);
-      if (functionalLevel.trim()) params.functional_level = csv(functionalLevel);
+      if (seniority.length) params.seniority_level = seniority;
+      if (functionalLevel.length) params.functional_level = functionalLevel;
       if (location.trim()) params.contact_location = csv(location);
       if (notLocation.trim()) params.contact_not_location = csv(notLocation);
-      if (industry.trim()) params.company_industry = industry.trim();
-      if (notIndustry.trim()) params.company_not_industry = notIndustry.trim();
-      if (keywords.trim()) params.company_keywords = keywords.trim();
-      if (notKeywords.trim()) params.company_not_keywords = notKeywords.trim();
+      if (industry.length) params.company_industry = industry;
+      if (notIndustry.length) params.company_not_industry = notIndustry;
+      if (size.length) params.size = size;
+      if (keywords.trim()) params.company_keywords = csv(keywords);
+      if (notKeywords.trim()) params.company_not_keywords = csv(notKeywords);
       if (minRevenue) params.min_revenue = minRevenue;
       if (maxRevenue) params.max_revenue = maxRevenue;
 
@@ -2005,7 +2011,7 @@ function EnrichSection() {
         action: "validate_and_save",
         params: { apifyEmails: savedLeads.map((l) => ({ email: l.email })), domains },
       });
-      setValidateResult({ validated: d.validated || 0, linkedin_checked: d.linkedin_checked || 0 });
+      setValidateResult({ validated: d.validated || 0 });
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -2067,28 +2073,12 @@ function EnrichSection() {
                 <input type="text" value={notTitles} onChange={(e) => setNotTitles(e.target.value)} placeholder="Intern, Assistant" />
               </div>
               <div>
-                <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Seniority</label>
-                <input type="text" value={seniority} onChange={(e) => setSeniority(e.target.value)} placeholder="Director, VP, C-Level" />
-              </div>
-              <div>
-                <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Function</label>
-                <input type="text" value={functionalLevel} onChange={(e) => setFunctionalLevel(e.target.value)} placeholder="Sales, Operations" />
-              </div>
-              <div>
                 <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Location</label>
                 <input type="text" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="India, US" />
               </div>
               <div>
                 <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Exclude location</label>
                 <input type="text" value={notLocation} onChange={(e) => setNotLocation(e.target.value)} placeholder="Pakistan" />
-              </div>
-              <div>
-                <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Industry include</label>
-                <input type="text" value={industry} onChange={(e) => setIndustry(e.target.value)} placeholder="computer software" />
-              </div>
-              <div>
-                <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Industry exclude</label>
-                <input type="text" value={notIndustry} onChange={(e) => setNotIndustry(e.target.value)} placeholder="real estate" />
               </div>
               <div>
                 <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Keywords include</label>
@@ -2111,6 +2101,29 @@ function EnrichSection() {
                   <option value="">Any</option>
                   {ICP_REVENUE.map((r) => <option key={r} value={r}>{r}</option>)}
                 </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Seniority</label>
+              <ChipToggle options={ICP_SENIORITY} labels={ICP_SENIORITY_LABELS} selected={seniority} onChange={setSeniority} />
+            </div>
+            <div>
+              <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Function</label>
+              <ChipToggle options={ICP_FUNCTION} labels={ICP_FUNCTION_LABELS} selected={functionalLevel} onChange={setFunctionalLevel} />
+            </div>
+            <div>
+              <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Company size</label>
+              <ChipToggle options={ICP_SIZE} selected={size} onChange={setSize} />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Industry include</label>
+                <SearchableMultiSelect options={ICP_INDUSTRY} selected={industry} onChange={setIndustry} />
+              </div>
+              <div>
+                <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Industry exclude</label>
+                <SearchableMultiSelect options={ICP_INDUSTRY} selected={notIndustry} onChange={setNotIndustry} />
               </div>
             </div>
 
@@ -2171,7 +2184,7 @@ function EnrichSection() {
                   </button>
                 ) : (
                   <p className="text-[12.5px] text-[var(--hm-text-secondary)] mt-3">
-                    {validateResult.validated} email(s) validated{validateResult.linkedin_checked ? `, ${validateResult.linkedin_checked} LinkedIn-checked` : ""}.
+                    {validateResult.validated} email(s) validated.
                   </p>
                 )}
 
@@ -3242,6 +3255,9 @@ const ICP_FUNCTION = ["c_suite", "sales", "marketing", "operations", "engineerin
 const ICP_FUNCTION_LABELS: Record<string, string> = { c_suite: "C-Suite", sales: "Sales", marketing: "Marketing", operations: "Operations", engineering: "Engineering", finance: "Finance", human_resources: "HR", information_technology: "IT", legal: "Legal", product_management: "Product", design: "Design", education: "Education", support: "Support" };
 const ICP_SIZE = ["1-10", "11-20", "21-50", "51-100", "101-200", "201-500", "501-1000", "1001-2000", "2001-5000", "5001-10000", "10001-20000", "20001-50000", "50000+"];
 const ICP_REVENUE = ["100K", "500K", "1M", "5M", "10M", "25M", "50M", "100M", "500M", "1B", "5B", "10B"];
+// Exact `company_industry` enum from the Apify leads-finder actor's input schema — any value
+// outside this list is silently ignored by the actor, so free text here was never a real filter.
+const ICP_INDUSTRY = ["information technology & services", "construction", "marketing & advertising", "real estate", "health, wellness & fitness", "management consulting", "computer software", "internet", "retail", "financial services", "consumer services", "hospital & health care", "automotive", "restaurants", "education management", "food & beverages", "design", "hospitality", "accounting", "events services", "nonprofit organization management", "entertainment", "electrical/electronic manufacturing", "leisure, travel & tourism", "professional training & coaching", "transportation/trucking/railroad", "law practice", "apparel & fashion", "architecture & planning", "mechanical or industrial engineering", "insurance", "telecommunications", "human resources", "staffing & recruiting", "sports", "legal services", "oil & energy", "media production", "machinery", "wholesale", "consumer goods", "music", "photography", "medical practice", "cosmetics", "environmental services", "graphic design", "business supplies & equipment", "renewables & environment", "facilities services", "publishing", "food production", "arts & crafts", "building materials", "civil engineering", "religious institutions", "public relations & communications", "higher education", "printing", "furniture", "mining & metals", "logistics & supply chain", "research", "pharmaceuticals", "individual & family services", "medical devices", "civic & social organization", "e-learning", "security & investigations", "chemicals", "government administration", "online media", "investment management", "farming", "writing & editing", "textiles", "mental health care", "primary/secondary education", "broadcast media", "biotechnology", "information services", "international trade & development", "motion pictures & film", "consumer electronics", "banking", "import & export", "industrial automation", "recreational facilities & services", "performing arts", "utilities", "sporting goods", "fine art", "airlines/aviation", "computer & network security", "maritime", "luxury goods & jewelry", "veterinary", "venture capital & private equity", "wine & spirits", "plastics", "aviation & aerospace", "commercial real estate", "computer games", "packaging & containers", "executive office", "computer hardware", "computer networking", "market research", "outsourcing/offshoring", "program development", "translation & localization", "philanthropy", "public safety", "alternative medicine", "museums & institutions", "warehousing", "defense & space", "newspapers", "paper & forest products", "law enforcement", "investment banking", "government relations", "fund-raising", "think tanks", "glass, ceramics & concrete", "capital markets", "semiconductors", "animation", "political organization", "package/freight delivery", "wireless", "international affairs", "public policy", "libraries", "gambling & casinos", "railroad manufacture", "ranching", "military", "fishery", "supermarkets", "dairy", "tobacco", "shipbuilding", "judiciary", "alternative dispute resolution", "nanotechnology", "agriculture", "legislative office"];
 
 interface IcpProfile {
   titles: string;
@@ -3250,8 +3266,8 @@ interface IcpProfile {
   function: string[];
   location: string;
   notLocation: string;
-  industry: string;
-  notIndustry: string;
+  industry: string[];
+  notIndustry: string[];
   keywords: string;
   notKeywords: string;
   size: string[];
@@ -3262,13 +3278,27 @@ interface IcpProfile {
 
 const EMPTY_ICP: IcpProfile = {
   titles: "", notTitles: "", seniority: [], function: [], location: "", notLocation: "",
-  industry: "", notIndustry: "", keywords: "", notKeywords: "", size: [], minRevenue: "", maxRevenue: "",
+  industry: [], notIndustry: [], keywords: "", notKeywords: "", size: [], minRevenue: "", maxRevenue: "",
 };
 
 const ICP_STORAGE_KEY = "hivemind_radar_icps";
 
 function loadIcps(): Record<string, IcpProfile> {
-  try { return JSON.parse(localStorage.getItem(ICP_STORAGE_KEY) || "{}"); } catch { return {}; }
+  try {
+    const raw = JSON.parse(localStorage.getItem(ICP_STORAGE_KEY) || "{}") as Record<string, IcpProfile & { industry?: unknown; notIndustry?: unknown }>;
+    // Migrate ICPs saved before industry/notIndustry became real enum arrays (was free text).
+    for (const key of Object.keys(raw)) {
+      const icp = raw[key];
+      if (typeof icp.industry === "string") icp.industry = csvToList(icp.industry);
+      if (typeof icp.notIndustry === "string") icp.notIndustry = csvToList(icp.notIndustry);
+      if (!Array.isArray(icp.industry)) icp.industry = [];
+      if (!Array.isArray(icp.notIndustry)) icp.notIndustry = [];
+    }
+    return raw as Record<string, IcpProfile>;
+  } catch { return {}; }
+}
+function csvToList(s: string): string[] {
+  return s.split(",").map((t) => t.trim().toLowerCase()).filter((t) => t && ICP_INDUSTRY.includes(t));
 }
 function saveIcps(icps: Record<string, IcpProfile>) {
   localStorage.setItem(ICP_STORAGE_KEY, JSON.stringify(icps));
@@ -3302,6 +3332,71 @@ function ChipToggle({ options, labels, selected, onChange }: {
           </button>
         );
       })}
+    </div>
+  );
+}
+
+/** Search-as-you-type multi-select for large enum lists (e.g. the 148-value industry list) —
+ * a plain <select> or chip grid is unusable at that size. */
+function SearchableMultiSelect({ options, selected, onChange, placeholder = "Select…" }: {
+  options: string[];
+  selected: string[];
+  onChange: (next: string[]) => void;
+  placeholder?: string;
+}) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, []);
+
+  const toggle = (v: string) => onChange(selected.includes(v) ? selected.filter((s) => s !== v) : [...selected, v]);
+  const filtered = options.filter((o) => o.toLowerCase().includes(query.toLowerCase())).slice(0, 200);
+
+  return (
+    <div ref={ref} className="relative">
+      <div
+        onClick={() => setOpen(true)}
+        className="min-h-[38px] w-full rounded-lg border border-[var(--hm-border)] bg-[var(--hm-bg)] px-2 py-1.5 flex flex-wrap gap-1 items-center cursor-text"
+      >
+        {selected.map((v) => (
+          <span key={v} className="inline-flex items-center gap-1 text-[11.5px] px-2 py-0.5 rounded-md bg-[var(--hm-accent-light)] text-[var(--hm-accent)] font-medium">
+            {v}
+            <button type="button" onClick={(e) => { e.stopPropagation(); toggle(v); }} className="hover:text-red-500" style={{ lineHeight: 1 }}>×</button>
+          </span>
+        ))}
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          placeholder={selected.length ? "" : placeholder}
+          style={{ border: "none", outline: "none", background: "transparent", padding: 0, height: 22, minWidth: 100, flex: 1, fontSize: 13 }}
+        />
+      </div>
+      {open && (
+        <div className="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto rounded-lg border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
+          {filtered.length === 0 ? (
+            <div className="px-3 py-2 text-[12px] text-[var(--hm-text-tertiary)]">No matches</div>
+          ) : (
+            filtered.map((o) => (
+              <div
+                key={o}
+                onClick={() => toggle(o)}
+                className={`px-3 py-1.5 text-[13px] cursor-pointer hover:bg-[var(--hm-bg-secondary)] ${selected.includes(o) ? "text-[var(--hm-accent)] font-medium" : "text-[var(--hm-text)]"}`}
+              >
+                {selected.includes(o) ? "✓ " : ""}{o}
+              </div>
+            ))
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -3358,7 +3453,7 @@ function IcpBaseSection() {
         function: mapFunction(icp.function || []),
         location: icp.location || "",
         notLocation: icp.notLocation || "",
-        industry: icp.industry || "",
+        industry: mapIndustry(icp.industry || []),
         minRevenue: icp.minRevenue || "",
         maxRevenue: icp.maxRevenue || "",
         reasoning: icp.reasoning || "",
@@ -3444,11 +3539,11 @@ function IcpBaseSection() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Industry include</label>
-            <input type="text" value={draft.industry} onChange={(e) => update({ industry: e.target.value })} placeholder="computer software" />
+            <SearchableMultiSelect options={ICP_INDUSTRY} selected={draft.industry} onChange={(v) => update({ industry: v })} />
           </div>
           <div>
             <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Industry exclude</label>
-            <input type="text" value={draft.notIndustry} onChange={(e) => update({ notIndustry: e.target.value })} placeholder="real estate" />
+            <SearchableMultiSelect options={ICP_INDUSTRY} selected={draft.notIndustry} onChange={(v) => update({ notIndustry: v })} />
           </div>
         </div>
 
@@ -3507,4 +3602,8 @@ function mapSeniority(vals: string[]): string[] {
 function mapFunction(vals: string[]): string[] {
   const map: Record<string, string> = { Sales: "sales", Marketing: "marketing", Operations: "operations", Engineering: "engineering", Finance: "finance", HR: "human_resources", IT: "information_technology", Legal: "legal", Product: "product_management", Support: "support" };
   return vals.map((v) => map[v] || v.toLowerCase()).filter((v) => ICP_FUNCTION.includes(v));
+}
+function mapIndustry(vals: string[]): string[] {
+  // AI-guessed industries must land on the actor's exact enum or the filter silently matches nothing.
+  return vals.map((v) => v.toLowerCase().trim()).filter((v) => ICP_INDUSTRY.includes(v));
 }
