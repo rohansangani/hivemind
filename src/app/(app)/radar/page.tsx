@@ -2212,6 +2212,7 @@ function ValidateSection() {
   const [retestStatuses, setRetestStatuses] = useState<string[]>(["unknown", "risky"]);
   const [retestVertical, setRetestVertical] = useState("");
   const [retestDomain, setRetestDomain] = useState("");
+  const [retestLabel, setRetestLabel] = useState("");
   const [retestCount, setRetestCount] = useState<number | null>(null);
   const [retestCounting, setRetestCounting] = useState(false);
 
@@ -2377,7 +2378,7 @@ function ValidateSection() {
     setError("");
     setBusy(true);
     try {
-      const d = await call({ action: "load_contacts", statuses: retestStatuses, vertical: retestVertical || undefined, domain: retestDomain.trim() || undefined, label: "Re-test contacts" });
+      const d = await call({ action: "load_contacts", statuses: retestStatuses, vertical: retestVertical || undefined, domain: retestDomain.trim() || undefined, label: retestLabel.trim() || "Re-test contacts" });
       if (!d.count) { setError("No contacts match those filters."); return; }
       setJobId(d.jobId);
       setCandidates((d.candidates || []).map((c: ValidateCandidate) => ({ ...c, selected: true })));
@@ -2404,7 +2405,7 @@ function ValidateSection() {
         })
         .filter((r): r is { email: string } => !!r && r.email.includes("@"));
       if (!emails.length) { setError("No email column found in that CSV."); return; }
-      const d = await call({ action: "load_contacts", emails, label: `CSV re-test — ${f.name}` });
+      const d = await call({ action: "load_contacts", emails, label: retestLabel.trim() || `CSV re-test — ${f.name}` });
       if (!d.count) { setError("None of those emails could be loaded."); return; }
       setJobId(d.jobId);
       setCandidates((d.candidates || []).map((c: ValidateCandidate) => ({ ...c, selected: true })));
@@ -2556,7 +2557,7 @@ function ValidateSection() {
   const reset = () => {
     setPeople([]); setDraft(emptyPerson()); setBlankEmailMsg(""); setPhase("input"); setJobId(null); setCandidates([]);
     setCheckResult(null); setSavedCount(0); setSavedInvalidCount(0); setError(""); setMailboxTag(""); setAutoRefresh(false);
-    setInputMode("patterns"); setRetestCount(null);
+    setInputMode("patterns"); setRetestCount(null); setRetestLabel("");
   };
 
   const loadJobs = async () => {
@@ -2793,6 +2794,10 @@ function ValidateSection() {
                     </p>
                   </div>
                   <div className="px-5 py-5 space-y-4">
+                    <div>
+                      <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Job name (optional)</label>
+                      <input type="text" value={retestLabel} onChange={(e) => setRetestLabel(e.target.value)} placeholder="e.g. US Risky — July" />
+                    </div>
                     <div>
                       <p className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5">Statuses to include</p>
                       <div className="flex flex-wrap gap-1.5">
