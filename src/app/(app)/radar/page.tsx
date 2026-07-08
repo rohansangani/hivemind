@@ -28,11 +28,11 @@ type SectionId =
 
 const SECTIONS: Array<{ id: SectionId; label: string; blurb: string }> = [
   { id: "dashboard", label: "Dashboard", blurb: "TAM overview, validation health and enrichment activity." },
+  { id: "upload",    label: "Upload",    blurb: "Bulk import accounts and contacts from CSV." },
   { id: "accounts",  label: "Accounts",  blurb: "Browse and filter the accounts database." },
   { id: "contacts",  label: "Contacts",  blurb: "Query validated contacts across the database." },
   { id: "check-db",  label: "Check DB",  blurb: "Look up a list of emails against the contacts database." },
   { id: "icp",       label: "ICP Base",  blurb: "Define Ideal Customer Profiles to auto-fill Enrich searches." },
-  { id: "upload",    label: "Upload",    blurb: "Bulk import accounts and contacts from CSV." },
   { id: "enrich",    label: "Enrich",    blurb: "Find new contacts from LinkedIn for a target account." },
   { id: "validate",  label: "Validate",  blurb: "Generate email patterns, test deliverability, save confirmed emails." },
   { id: "export",    label: "Export",    blurb: "Download completed, validated contact lists." },
@@ -962,9 +962,24 @@ function ContactsSection() {
 
 /* ── Export ────────────────────────────────────────────────────────────── */
 
+const EMAIL_STATUS_OPTIONS: Array<{ key: string; label: string }> = [
+  { key: "safe to send", label: "Safe to send" },
+  { key: "verified", label: "Verified" },
+  { key: "risky", label: "Risky" },
+  { key: "invalid", label: "Invalid" },
+  { key: "unknown", label: "Unknown" },
+  { key: "unvalidated", label: "Unvalidated" },
+];
+
 function ExportSection() {
+  const [exportType, setExportType] = useState<"contacts" | "accounts">("contacts");
   const [vertical, setVertical] = useState("");
+  const [industry, setIndustry] = useState("");
+  const [employeeRange, setEmployeeRange] = useState("");
+  const [country, setCountry] = useState("");
   const [search, setSearch] = useState("");
+  const [emailStatuses, setEmailStatuses] = useState<string[]>(["safe to send", "verified"]);
+  const [options, setOptions] = useState<RadarOptions | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
@@ -973,7 +988,24 @@ function ExportSection() {
   const [revalidating, setRevalidating] = useState(false);
   const [revalidateProgress, setRevalidateProgress] = useState<{ processed: number; validated: number } | null>(null);
 
-  const filters = () => ({ vertical: vertical || undefined, search: search || undefined });
+  useEffect(() => {
+    fetch("/api/radar/options")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d) setOptions(d); })
+      .catch(() => {});
+  }, []);
+
+  const filters = () => ({
+    vertical: vertical || undefined,
+    industry: industry || undefined,
+    employeeRange: employeeRange || undefined,
+    country: country || undefined,
+    search: search || undefined,
+  });
+
+  const toggleStatus = (key: string) => {
+    setEmailStatuses((prev) => (prev.includes(key) ? prev.filter((s) => s !== key) : [...prev, key]));
+  };
 
   const callExportValidate = async (body: Record<string, unknown>) => {
     const r = await fetch("/api/radar/export-validate", {
@@ -1023,32 +1055,40 @@ function ExportSection() {
   };
 
   const download = async () => {
+    if (exportType === "contacts" && !emailStatuses.length) {
+      setMsg({ kind: "err", text: "Pick at least one email status to export." });
+      return;
+    }
     setBusy(true);
     setMsg(null);
     try {
       const res = await fetch("/api/radar/export", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filters: { vertical: vertical || undefined, search: search || undefined } }),
+        body: JSON.stringify({
+          type: exportType,
+          filters: filters(),
+          ...(exportType === "contacts" ? { emailStatuses } : {}),
+        }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Export failed");
       const data = (await res.json()) as { csv: string; matched: number; exported: number; truncated: boolean };
       if (data.exported === 0) {
-        setMsg({ kind: "err", text: "No validated contacts matched — nothing to export." });
+        setMsg({ kind: "err", text: `No ${exportType} matched — nothing to export.` });
         return;
       }
       const blob = new Blob([data.csv], { type: "text/csv" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `radar_validated_contacts_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.download = `radar_${exportType}_${today()}.csv`;
       document.body.appendChild(a);
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
       setMsg({
         kind: "ok",
-        text: `Exported ${data.exported.toLocaleString()} validated contacts${data.truncated ? " (capped at 60k — narrow filters for the rest)" : ""}.`,
+        text: `Exported ${data.exported.toLocaleString()} ${exportType}${data.truncated ? " (capped at 60k — narrow filters for the rest)" : ""}.`,
       });
     } catch (e) {
       setMsg({ kind: "err", text: (e as Error).message });
@@ -1060,52 +1100,96 @@ function ExportSection() {
   return (
     <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
       <div className="px-5 py-4 border-b border-[var(--hm-border)]">
-        <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Export validated contacts</h2>
+        <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Export</h2>
         <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">
-          Downloads a CSV of contacts with a verified / safe-to-send email, excluding HubSpot-suppressed records.
+          Download accounts or contacts matching your filters as a CSV.
         </p>
       </div>
       <div className="px-5 py-5 space-y-4">
+        {/* Type toggle */}
+        <div className="flex items-center gap-2">
+          {(["contacts", "accounts"] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => setExportType(t)}
+              className={`px-3 py-1 rounded-lg text-[12.5px] border capitalize transition-colors ${
+                exportType === t
+                  ? "border-[var(--hm-accent)] text-[var(--hm-accent)] bg-[var(--hm-accent-light)] font-medium"
+                  : "border-[var(--hm-border)] text-[var(--hm-text-secondary)]"
+              }`}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+
+        {/* Filters */}
         <div className="flex items-end gap-3 flex-wrap">
           <div>
             <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Vertical</label>
-            <select value={vertical} onChange={(e) => setVertical(e.target.value)} style={{ width: 160 }}>
+            <select value={vertical} onChange={(e) => setVertical(e.target.value)} style={{ width: 140 }}>
               {VERTICALS.map((v) => (
-                <option key={v} value={v}>{v === "" ? "All verticals" : v}</option>
+                <option key={v} value={v}>{v === "" ? "All" : v}</option>
               ))}
             </select>
           </div>
-          <div className="flex-1 min-w-[200px]">
+          <FilterSelect label="Industry" value={industry} onChange={setIndustry} options={options?.industries || []} />
+          <FilterSelect label="Employees" value={employeeRange} onChange={setEmployeeRange} options={options?.employeeRanges || []} />
+          <FilterSelect label="Country" value={country} onChange={setCountry} options={options?.countries || []} />
+          <div className="flex-1 min-w-[180px]">
             <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Search (optional)</label>
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="name, email…" />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={exportType === "contacts" ? "name, email…" : "company, domain…"} />
           </div>
         </div>
 
-        {/* Debounce re-validation */}
-        <div className="rounded-lg border border-[var(--hm-border)] p-3 space-y-2.5">
-          <p className="text-[12px] font-medium text-[var(--hm-text-secondary)]">Re-validate stale emails before exporting (via Debounce)</p>
-          {!revalidateProgress ? (
-            <div className="flex items-center gap-3 flex-wrap">
-              <button onClick={checkStale} disabled={checkingStale} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 12px", fontSize: 12 }}>
-                {checkingStale ? "Checking…" : "Check staleness"}
-              </button>
-              {staleInfo && (
-                <>
-                  <span className="text-[12px] text-[var(--hm-text-tertiary)]">
-                    {staleInfo.total.toLocaleString()} contact(s) match filters — ~{staleInfo.sampledStalePct}% look stale
-                  </span>
-                  <button onClick={revalidate} className="hm-btn hm-btn-primary" style={{ height: 32, padding: "0 12px", fontSize: 12 }}>
-                    Re-validate now
+        {/* Email status picker — contacts only */}
+        {exportType === "contacts" && (
+          <div>
+            <p className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5">Email status to include</p>
+            <div className="flex flex-wrap gap-1.5">
+              {EMAIL_STATUS_OPTIONS.map((s) => {
+                const active = emailStatuses.includes(s.key);
+                return (
+                  <button
+                    key={s.key}
+                    onClick={() => toggleStatus(s.key)}
+                    className={`text-[11.5px] px-2.5 py-1 rounded-md border ${active ? "border-[var(--hm-accent)] bg-[var(--hm-accent-light)] text-[var(--hm-accent)] font-medium" : "border-[var(--hm-border)] text-[var(--hm-text-secondary)]"}`}
+                  >
+                    {s.label}
                   </button>
-                </>
-              )}
+                );
+              })}
             </div>
-          ) : (
-            <div className="text-[12px] text-[var(--hm-text-secondary)]">
-              {revalidating ? "Re-validating…" : "Done."} {revalidateProgress.processed.toLocaleString()} checked, {revalidateProgress.validated.toLocaleString()} updated.
-            </div>
-          )}
-        </div>
+          </div>
+        )}
+
+        {/* Debounce re-validation — contacts only */}
+        {exportType === "contacts" && (
+          <div className="rounded-lg border border-[var(--hm-border)] p-3 space-y-2.5">
+            <p className="text-[12px] font-medium text-[var(--hm-text-secondary)]">Re-validate stale emails before exporting (via Debounce)</p>
+            {!revalidateProgress ? (
+              <div className="flex items-center gap-3 flex-wrap">
+                <button onClick={checkStale} disabled={checkingStale} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 12px", fontSize: 12 }}>
+                  {checkingStale ? "Checking…" : "Check staleness"}
+                </button>
+                {staleInfo && (
+                  <>
+                    <span className="text-[12px] text-[var(--hm-text-tertiary)]">
+                      {staleInfo.total.toLocaleString()} contact(s) match filters — ~{staleInfo.sampledStalePct}% look stale
+                    </span>
+                    <button onClick={revalidate} className="hm-btn hm-btn-primary" style={{ height: 32, padding: "0 12px", fontSize: 12 }}>
+                      Re-validate now
+                    </button>
+                  </>
+                )}
+              </div>
+            ) : (
+              <div className="text-[12px] text-[var(--hm-text-secondary)]">
+                {revalidating ? "Re-validating…" : "Done."} {revalidateProgress.processed.toLocaleString()} checked, {revalidateProgress.validated.toLocaleString()} updated.
+              </div>
+            )}
+          </div>
+        )}
 
         <button
           onClick={download}
@@ -1113,7 +1197,7 @@ function ExportSection() {
           className="hm-btn hm-btn-primary"
           style={{ height: 38, padding: "0 18px", fontSize: 13 }}
         >
-          {busy ? "Preparing…" : "Download CSV"}
+          {busy ? "Preparing…" : `Download ${exportType} CSV`}
         </button>
 
         {msg && (
@@ -2391,7 +2475,7 @@ function ValidateSection() {
   };
 
   const selectedCount = candidates.filter((c) => c.selected).length;
-  const RETEST_STATUSES = ["unknown", "risky", "invalid", "bounced"];
+  const RETEST_STATUSES = ["unvalidated", "unknown", "risky", "invalid", "bounced"];
 
   return (
     <div className="space-y-5">
