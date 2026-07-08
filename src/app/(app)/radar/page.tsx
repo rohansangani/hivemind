@@ -1138,7 +1138,7 @@ function ExportSection() {
           <FilterSelect label="Country" value={country} onChange={setCountry} options={options?.countries || []} />
           <div className="flex-1 min-w-[180px]">
             <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Search (optional)</label>
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={exportType === "contacts" ? "name, email…" : "company, domain…"} />
+            <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={exportType === "contacts" ? "name, email…" : "company, domain…"} />
           </div>
         </div>
 
@@ -1971,49 +1971,49 @@ function EnrichSection() {
 
             <div>
               <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Company domain(s)</label>
-              <input value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="shopflow.com, nexlogix.io" />
+              <input type="text" value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="shopflow.com, nexlogix.io" />
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Job titles include</label>
-                <input value={titles} onChange={(e) => setTitles(e.target.value)} placeholder="VP Operations, Director" />
+                <input type="text" value={titles} onChange={(e) => setTitles(e.target.value)} placeholder="VP Operations, Director" />
               </div>
               <div>
                 <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Job titles exclude</label>
-                <input value={notTitles} onChange={(e) => setNotTitles(e.target.value)} placeholder="Intern, Assistant" />
+                <input type="text" value={notTitles} onChange={(e) => setNotTitles(e.target.value)} placeholder="Intern, Assistant" />
               </div>
               <div>
                 <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Seniority</label>
-                <input value={seniority} onChange={(e) => setSeniority(e.target.value)} placeholder="Director, VP, C-Level" />
+                <input type="text" value={seniority} onChange={(e) => setSeniority(e.target.value)} placeholder="Director, VP, C-Level" />
               </div>
               <div>
                 <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Function</label>
-                <input value={functionalLevel} onChange={(e) => setFunctionalLevel(e.target.value)} placeholder="Sales, Operations" />
+                <input type="text" value={functionalLevel} onChange={(e) => setFunctionalLevel(e.target.value)} placeholder="Sales, Operations" />
               </div>
               <div>
                 <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Location</label>
-                <input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="India, US" />
+                <input type="text" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="India, US" />
               </div>
               <div>
                 <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Exclude location</label>
-                <input value={notLocation} onChange={(e) => setNotLocation(e.target.value)} placeholder="Pakistan" />
+                <input type="text" value={notLocation} onChange={(e) => setNotLocation(e.target.value)} placeholder="Pakistan" />
               </div>
               <div>
                 <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Industry include</label>
-                <input value={industry} onChange={(e) => setIndustry(e.target.value)} placeholder="computer software" />
+                <input type="text" value={industry} onChange={(e) => setIndustry(e.target.value)} placeholder="computer software" />
               </div>
               <div>
                 <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Industry exclude</label>
-                <input value={notIndustry} onChange={(e) => setNotIndustry(e.target.value)} placeholder="real estate" />
+                <input type="text" value={notIndustry} onChange={(e) => setNotIndustry(e.target.value)} placeholder="real estate" />
               </div>
               <div>
                 <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Keywords include</label>
-                <input value={keywords} onChange={(e) => setKeywords(e.target.value)} placeholder="B2B, supply chain" />
+                <input type="text" value={keywords} onChange={(e) => setKeywords(e.target.value)} placeholder="B2B, supply chain" />
               </div>
               <div>
                 <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Keywords exclude</label>
-                <input value={notKeywords} onChange={(e) => setNotKeywords(e.target.value)} placeholder="staffing" />
+                <input type="text" value={notKeywords} onChange={(e) => setNotKeywords(e.target.value)} placeholder="staffing" />
               </div>
               <div>
                 <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Min revenue</label>
@@ -2717,10 +2717,10 @@ function ValidateSection() {
                   </div>
                   <div className="px-5 py-5 space-y-4">
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                      <input value={draft.first_name} onChange={(e) => setDraft((d) => ({ ...d, first_name: e.target.value }))} onKeyDown={onDraftKeyDown} placeholder="First name" />
-                      <input value={draft.middle_name || ""} onChange={(e) => setDraft((d) => ({ ...d, middle_name: e.target.value }))} onKeyDown={onDraftKeyDown} placeholder="Middle name (optional)" />
-                      <input value={draft.last_name} onChange={(e) => setDraft((d) => ({ ...d, last_name: e.target.value }))} onKeyDown={onDraftKeyDown} placeholder="Last name" />
-                      <input value={draft.domain} onChange={(e) => setDraft((d) => ({ ...d, domain: e.target.value }))} onKeyDown={onDraftKeyDown} placeholder="domain.com" />
+                      <input type="text" value={draft.first_name} onChange={(e) => setDraft((d) => ({ ...d, first_name: e.target.value }))} onKeyDown={onDraftKeyDown} placeholder="First name" />
+                      <input type="text" value={draft.middle_name || ""} onChange={(e) => setDraft((d) => ({ ...d, middle_name: e.target.value }))} onKeyDown={onDraftKeyDown} placeholder="Middle name (optional)" />
+                      <input type="text" value={draft.last_name} onChange={(e) => setDraft((d) => ({ ...d, last_name: e.target.value }))} onKeyDown={onDraftKeyDown} placeholder="Last name" />
+                      <input type="text" value={draft.domain} onChange={(e) => setDraft((d) => ({ ...d, domain: e.target.value }))} onKeyDown={onDraftKeyDown} placeholder="domain.com" />
                     </div>
                     <button onClick={addPerson} className="hm-btn hm-btn-secondary w-full" style={{ height: 32, fontSize: 12 }}>
                       + Add to list
@@ -2822,7 +2822,7 @@ function ValidateSection() {
                       </div>
                       <div>
                         <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Domain (optional)</label>
-                        <input value={retestDomain} onChange={(e) => setRetestDomain(e.target.value)} placeholder="e.g. acme.com" />
+                        <input type="text" value={retestDomain} onChange={(e) => setRetestDomain(e.target.value)} placeholder="e.g. acme.com" />
                       </div>
                     </div>
 
@@ -2907,11 +2907,11 @@ function ValidateSection() {
                   </div>
                   <div>
                     <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Subject</label>
-                    <input value={subject} onChange={(e) => setSubject(e.target.value)} />
+                    <input type="text" value={subject} onChange={(e) => setSubject(e.target.value)} />
                   </div>
                   <div>
                     <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Body</label>
-                    <input value={emailBody} onChange={(e) => setEmailBody(e.target.value)} />
+                    <input type="text" value={emailBody} onChange={(e) => setEmailBody(e.target.value)} />
                   </div>
                   <div className="sm:col-span-3">
                     <button onClick={send} disabled={busy || !selectedCount || !mailboxTag} className="hm-btn hm-btn-primary" style={{ height: 34, padding: "0 16px", fontSize: 12.5 }}>
@@ -3324,11 +3324,11 @@ function IcpBaseSection() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Titles include</label>
-            <input value={draft.titles} onChange={(e) => update({ titles: e.target.value })} placeholder="VP Sales, Head of Logistics" />
+            <input type="text" value={draft.titles} onChange={(e) => update({ titles: e.target.value })} placeholder="VP Sales, Head of Logistics" />
           </div>
           <div>
             <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Titles exclude</label>
-            <input value={draft.notTitles} onChange={(e) => update({ notTitles: e.target.value })} placeholder="Intern, Trainee" />
+            <input type="text" value={draft.notTitles} onChange={(e) => update({ notTitles: e.target.value })} placeholder="Intern, Trainee" />
           </div>
         </div>
 
@@ -3345,33 +3345,33 @@ function IcpBaseSection() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Location</label>
-            <input value={draft.location} onChange={(e) => update({ location: e.target.value })} placeholder="India, US" />
+            <input type="text" value={draft.location} onChange={(e) => update({ location: e.target.value })} placeholder="India, US" />
           </div>
           <div>
             <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Exclude location</label>
-            <input value={draft.notLocation} onChange={(e) => update({ notLocation: e.target.value })} placeholder="Pakistan" />
+            <input type="text" value={draft.notLocation} onChange={(e) => update({ notLocation: e.target.value })} placeholder="Pakistan" />
           </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Industry include</label>
-            <input value={draft.industry} onChange={(e) => update({ industry: e.target.value })} placeholder="computer software" />
+            <input type="text" value={draft.industry} onChange={(e) => update({ industry: e.target.value })} placeholder="computer software" />
           </div>
           <div>
             <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Industry exclude</label>
-            <input value={draft.notIndustry} onChange={(e) => update({ notIndustry: e.target.value })} placeholder="real estate" />
+            <input type="text" value={draft.notIndustry} onChange={(e) => update({ notIndustry: e.target.value })} placeholder="real estate" />
           </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Keywords include</label>
-            <input value={draft.keywords} onChange={(e) => update({ keywords: e.target.value })} placeholder="B2B, supply chain" />
+            <input type="text" value={draft.keywords} onChange={(e) => update({ keywords: e.target.value })} placeholder="B2B, supply chain" />
           </div>
           <div>
             <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Keywords exclude</label>
-            <input value={draft.notKeywords} onChange={(e) => update({ notKeywords: e.target.value })} placeholder="staffing" />
+            <input type="text" value={draft.notKeywords} onChange={(e) => update({ notKeywords: e.target.value })} placeholder="staffing" />
           </div>
         </div>
 
