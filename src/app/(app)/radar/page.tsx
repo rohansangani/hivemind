@@ -1868,6 +1868,7 @@ function EnrichSection() {
   const [scoring, setScoring] = useState(false);
 
   const [saveBusy, setSaveBusy] = useState(false);
+  const [searchBusy, setSearchBusy] = useState(false);
   const [validateResult, setValidateResult] = useState<{ validated: number } | null>(null);
 
   useEffect(() => { setSavedIcps(loadIcps()); }, []);
@@ -1933,6 +1934,7 @@ function EnrichSection() {
     setError("");
     if (!domain.trim()) { setError("Enter at least one domain to search."); return; }
     const domains = csv(domain);
+    setSearchBusy(true);
     try {
       const chk = await call({ action: "check_existing", params: { company_domain: domains } });
       const existing = (chk.existing || []) as ExistingContact[];
@@ -1960,6 +1962,8 @@ function EnrichSection() {
       setPhase("running");
     } catch (e) {
       setError((e as Error).message);
+    } finally {
+      setSearchBusy(false);
     }
   };
 
@@ -2226,8 +2230,8 @@ function EnrichSection() {
 
             {error && <div className="rounded-lg p-3 text-[12.5px] bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</div>}
 
-            <button onClick={startSearch} className="hm-btn hm-btn-primary" style={{ height: 38, padding: "0 18px", fontSize: 13 }}>
-              Enrich
+            <button onClick={startSearch} disabled={searchBusy} className="hm-btn hm-btn-primary" style={{ height: 38, padding: "0 18px", fontSize: 13 }}>
+              {searchBusy ? "Enriching…" : "Enrich"}
             </button>
           </div>
         )}
