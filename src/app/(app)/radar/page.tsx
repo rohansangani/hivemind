@@ -2775,7 +2775,10 @@ function ValidateSection() {
   const loadTags = async () => {
     try {
       const d = await call({ action: "list_tags" });
-      setTags(d.tags || []);
+      const loaded = (d.tags || []) as InstantlyTag[];
+      setTags(loaded);
+      const mrTeam = loaded.find((t) => t.label.toLowerCase() === "mrteam");
+      if (mrTeam) setMailboxTag((prev) => prev || mrTeam.id);
     } catch { /* non-critical */ }
   };
 
