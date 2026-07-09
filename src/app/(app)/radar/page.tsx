@@ -3114,30 +3114,36 @@ function ValidateSection() {
     }
   };
 
+  // Shared by the manual "Check bounces" button and openJob() below — takes an explicit jid so
+  // it can run right after loading a job, before React has re-rendered jobId into scope.
+  const runCheck = async (jid: number) => {
+    const d = await call({ action: "check", jobId: jid });
+    setCheckResult(d);
+    // check() auto-saves newly-resolved valid/bounced leads to contacts itself (using the
+    // vertical chosen up front when the job was created) — no separate save step needed.
+    if (d.saved || d.savedInvalid) {
+      setSavedCount((prev) => prev + (d.saved ?? 0));
+      setSavedInvalidCount((prev) => prev + (d.savedInvalid ?? 0));
+    }
+    // check() only returns aggregate counts — pull the per-row bounce_status it just wrote
+    // so the table's Status column actually reflects valid/bounced instead of sitting on
+    // the "pending" value from when the candidates were first loaded.
+    const job = await call({ action: "get_job", jobId: jid });
+    setCandidates((prev) => {
+      const byId = new Map<number, ValidateCandidate>((job.candidates || []).map((c: ValidateCandidate) => [c.id, c]));
+      return prev.map((c) => {
+        const fresh = byId.get(c.id);
+        return fresh ? { ...c, bounce_status: fresh.bounce_status } : c;
+      });
+    });
+  };
+
   const check = async () => {
     if (!jobId) return;
     setBusy(true);
     setError("");
     try {
-      const d = await call({ action: "check", jobId });
-      setCheckResult(d);
-      // check() auto-saves newly-resolved valid/bounced leads to contacts itself (using the
-      // vertical chosen up front when the job was created) — no separate save step needed.
-      if (d.saved || d.savedInvalid) {
-        setSavedCount((prev) => prev + (d.saved ?? 0));
-        setSavedInvalidCount((prev) => prev + (d.savedInvalid ?? 0));
-      }
-      // check() only returns aggregate counts — pull the per-row bounce_status it just wrote
-      // so the table's Status column actually reflects valid/bounced instead of sitting on
-      // the "pending" value from when the candidates were first loaded.
-      const job = await call({ action: "get_job", jobId });
-      setCandidates((prev) => {
-        const byId = new Map<number, ValidateCandidate>((job.candidates || []).map((c: ValidateCandidate) => [c.id, c]));
-        return prev.map((c) => {
-          const fresh = byId.get(c.id);
-          return fresh ? { ...c, bounce_status: fresh.bounce_status } : c;
-        });
-      });
+      await runCheck(jobId);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -3215,6 +3221,10 @@ function ValidateSection() {
       // so it resets to false on any remount: page reload, tab switch away and back, etc).
       setAutoRefresh(status === "sent");
       setView("current");
+      // Pull live status from Instantly right away instead of showing whatever bounce_status
+      // happened to be in the DB from the last check (could be 15+ minutes stale) and making
+      // the user click "Check bounces" themselves just to see where things actually stand.
+      if (status === "sent") await runCheck(jid);
     } catch (e) {
       setError((e as Error).message);
     } finally {
