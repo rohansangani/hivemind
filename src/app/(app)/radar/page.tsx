@@ -2576,6 +2576,7 @@ interface LinkedInCheckRow {
   dbContactId: string | null;
   match: boolean | null;
   error?: string;
+  created?: boolean;
 }
 
 interface PersonInput {
@@ -2629,10 +2630,11 @@ function ValidateSection() {
   // Check LinkedIn — standalone flow, doesn't touch phase/jobId/candidates.
   const [linkedinUrlsText, setLinkedinUrlsText] = useState("");
   const [linkedinScrapeMode, setLinkedinScrapeMode] = useState<"basic" | "email">("basic");
+  const [linkedinVertical, setLinkedinVertical] = useState("");
   const [linkedinBusy, setLinkedinBusy] = useState(false);
   const [linkedinProgress, setLinkedinProgress] = useState<{ done: number; total: number } | null>(null);
   const [linkedinResults, setLinkedinResults] = useState<LinkedInCheckRow[]>([]);
-  const [linkedinSummary, setLinkedinSummary] = useState<{ matched: number; mismatched: number; notFound: number } | null>(null);
+  const [linkedinSummary, setLinkedinSummary] = useState<{ matched: number; mismatched: number; notFound: number; created: number } | null>(null);
 
   // Send controls
   const [tags, setTags] = useState<InstantlyTag[]>([]);
@@ -2747,7 +2749,7 @@ function ValidateSection() {
     setLinkedinResults([]);
     setLinkedinSummary(null);
     const CHUNK = 15;
-    let matched = 0, mismatched = 0, notFound = 0;
+    let matched = 0, mismatched = 0, notFound = 0, created = 0;
     const allRows: LinkedInCheckRow[] = [];
     try {
       for (let i = 0; i < urls.length; i += CHUNK) {
@@ -2756,7 +2758,7 @@ function ValidateSection() {
         const r = await fetch("/api/radar/enrich", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "check_linkedin", params: { urls: batch, mode: linkedinScrapeMode } }),
+          body: JSON.stringify({ action: "check_linkedin", params: { urls: batch, mode: linkedinScrapeMode, vertical: linkedinVertical || undefined } }),
         });
         const d = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(d.error || "LinkedIn check failed");
@@ -2764,9 +2766,10 @@ function ValidateSection() {
         matched += d.matched || 0;
         mismatched += d.mismatched || 0;
         notFound += d.notFound || 0;
+        created += d.created || 0;
         setLinkedinResults([...allRows]);
       }
-      setLinkedinSummary({ matched, mismatched, notFound });
+      setLinkedinSummary({ matched, mismatched, notFound, created });
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -3021,7 +3024,7 @@ function ValidateSection() {
     setPeople([]); setDraft(emptyPerson()); setPatternsLabel(""); setBlankEmailMsg(""); setPhase("input"); setJobId(null); setCandidates([]);
     setCheckResult(null); setSavedCount(0); setSavedInvalidCount(0); setError(""); setMailboxTag(""); setAutoRefresh(false);
     setInputMode("patterns"); setRetestCount(null); setRetestLabel("");
-    setLinkedinUrlsText(""); setLinkedinResults([]); setLinkedinSummary(null);
+    setLinkedinUrlsText(""); setLinkedinResults([]); setLinkedinSummary(null); setLinkedinVertical("");
   };
 
   const loadJobs = async () => {
@@ -3217,15 +3220,26 @@ function ValidateSection() {
                         </button>
                       </div>
                     </div>
+                    <div>
+                      <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Vertical for new contacts (optional)</label>
+                      <select value={linkedinVertical} onChange={(e) => setLinkedinVertical(e.target.value)} style={{ width: 180 }}>
+                        <option value="">— No vertical (skip account creation) —</option>
+                        <option value="B2B">B2B</option>
+                        <option value="US">US</option>
+                        <option value="D2C">D2C</option>
+                      </select>
+                      <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-1">Only used when a profile has no matching contact — a new one gets created either way, but an account only gets linked if a vertical is set and the profile has a company domain (needs the "+ email" mode).</p>
+                    </div>
                     <button onClick={runLinkedInCheck} disabled={linkedinBusy} className="hm-btn hm-btn-primary w-full" style={{ height: 38, fontSize: 13 }}>
                       {linkedinBusy ? `Checking… ${linkedinProgress?.done ?? 0}/${linkedinProgress?.total ?? 0}` : "Run check"}
                     </button>
 
                     {linkedinSummary && (
-                      <div className="flex gap-4 text-[12.5px]">
+                      <div className="flex gap-4 text-[12.5px] flex-wrap">
                         <span className="text-[#059669]">✓ {linkedinSummary.matched} same company</span>
-                        <span className="text-red-500">✗ {linkedinSummary.mismatched} different company</span>
-                        <span className="text-[var(--hm-text-tertiary)]">— {linkedinSummary.notFound} not matched to a contact</span>
+                        <span className="text-red-500">✗ {linkedinSummary.mismatched} different company (marked moved)</span>
+                        <span className="text-[var(--hm-accent)]">+ {linkedinSummary.created} new contact(s) created</span>
+                        <span className="text-[var(--hm-text-tertiary)]">— {linkedinSummary.notFound} profile(s) not found</span>
                       </div>
                     )}
 
@@ -3251,7 +3265,8 @@ function ValidateSection() {
                                 <td className="px-3 py-2 border-b border-[var(--hm-border-light)]">
                                   {r.error ? <span className="text-[var(--hm-text-tertiary)]" title={r.error}>Not found</span>
                                     : r.match === true ? <span className="text-[#059669] font-medium">✓ Same</span>
-                                    : r.match === false ? <span className="text-red-500 font-medium">✗ Different</span>
+                                    : r.match === false ? <span className="text-red-500 font-medium">✗ Different — marked moved</span>
+                                    : r.created ? <span className="text-[var(--hm-accent)] font-medium">+ Created</span>
                                     : <span className="text-[var(--hm-text-tertiary)]">No DB match</span>}
                                 </td>
                                 {linkedinScrapeMode === "email" && (
