@@ -2588,6 +2588,7 @@ function ValidateSection() {
   const emptyPerson = (): PersonInput => ({ first_name: "", middle_name: "", last_name: "", domain: "" });
   const [people, setPeople] = useState<PersonInput[]>([]);
   const [draft, setDraft] = useState<PersonInput>(emptyPerson());
+  const [patternsLabel, setPatternsLabel] = useState("");
   const [blankEmailVertical, setBlankEmailVertical] = useState("");
   const [blankEmailCount, setBlankEmailCount] = useState<{ count: number; fetchable: number } | null>(null);
   const [blankEmailCounting, setBlankEmailCounting] = useState(false);
@@ -2690,7 +2691,7 @@ function ValidateSection() {
       let jid: number | null = null;
       let offset = 0;
       for (let guard = 0; guard < 20; guard++) {
-        const d = await call({ action: "generate", rows: people, useAI, jobId: jid, offset });
+        const d = await call({ action: "generate", rows: people, useAI, jobId: jid, offset, label: patternsLabel.trim() || undefined });
         jid = d.jobId;
         if (d.done) {
           setJobId(jid);
@@ -2954,7 +2955,7 @@ function ValidateSection() {
   };
 
   const reset = () => {
-    setPeople([]); setDraft(emptyPerson()); setBlankEmailMsg(""); setPhase("input"); setJobId(null); setCandidates([]);
+    setPeople([]); setDraft(emptyPerson()); setPatternsLabel(""); setBlankEmailMsg(""); setPhase("input"); setJobId(null); setCandidates([]);
     setCheckResult(null); setSavedCount(0); setSavedInvalidCount(0); setError(""); setMailboxTag(""); setAutoRefresh(false);
     setInputMode("patterns"); setRetestCount(null); setRetestLabel("");
   };
@@ -3116,6 +3117,10 @@ function ValidateSection() {
                     <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">Add people to guess email patterns for — name + domain, middle name optional.</p>
                   </div>
                   <div className="px-5 py-5 space-y-4">
+                    <div>
+                      <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Job name (optional)</label>
+                      <input type="text" value={patternsLabel} onChange={(e) => setPatternsLabel(e.target.value)} placeholder="e.g. New leads — July" />
+                    </div>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                       <input type="text" value={draft.first_name} onChange={(e) => setDraft((d) => ({ ...d, first_name: e.target.value }))} onKeyDown={onDraftKeyDown} placeholder="First name" />
                       <input type="text" value={draft.middle_name || ""} onChange={(e) => setDraft((d) => ({ ...d, middle_name: e.target.value }))} onKeyDown={onDraftKeyDown} placeholder="Middle name (optional)" />
