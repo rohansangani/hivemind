@@ -3520,7 +3520,7 @@ function ValidateSection() {
                     </div>
 
                     <label className="hm-btn hm-btn-secondary w-full cursor-pointer" style={{ height: 36, fontSize: 12.5 }}>
-                      ⬆ Upload CSV of emails
+                      ⬆ CSV upload — send campaign instantly to check statuses
                       <input type="file" accept=".csv,text/csv" onChange={loadRetestCsv} style={{ display: "none" }} />
                     </label>
                   </div>
