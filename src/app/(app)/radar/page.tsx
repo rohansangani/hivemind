@@ -2736,6 +2736,7 @@ function ValidateSection() {
 
   const generate = async () => {
     setError("");
+    if (!patternsLabel.trim()) { setError("Give this job a name before running it."); return; }
     const people = parsePeople();
     if (!people.length) { setError("Add at least one person with a name and a domain."); return; }
     setBusy(true);
@@ -2743,7 +2744,7 @@ function ValidateSection() {
       let jid: number | null = null;
       let offset = 0;
       for (let guard = 0; guard < 20; guard++) {
-        const d = await call({ action: "generate", rows: people, useAI, jobId: jid, offset, label: patternsLabel.trim() || undefined });
+        const d = await call({ action: "generate", rows: people, useAI, jobId: jid, offset, label: patternsLabel.trim() });
         jid = d.jobId;
         if (d.done) {
           setJobId(jid);
@@ -2872,15 +2873,19 @@ function ValidateSection() {
     }
   };
 
-  const runDebounceRetest = () => startDebounceJob(
-    { vertical: retestVertical || undefined, emailStatus: retestStatuses, label: retestLabel.trim() || "Debounce re-test" },
-    "contact(s)",
-  );
+  const runDebounceRetest = () => {
+    if (!retestLabel.trim()) { setError("Give this job a name before running it."); return; }
+    return startDebounceJob(
+      { vertical: retestVertical || undefined, emailStatus: retestStatuses, label: retestLabel.trim() },
+      "contact(s)",
+    );
+  };
 
   const runDebounceRetestCsv = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
     setError("");
+    if (!retestLabel.trim()) { setError("Give this job a name before running it."); e.target.value = ""; return; }
     setDebounceCsvStage("Reading file…");
     try {
       const text = await f.text();
@@ -2895,7 +2900,7 @@ function ValidateSection() {
       if (!emails.length) { setError("No email column found in that CSV."); return; }
       setDebounceCsvStage(`Uploading ${emails.length.toLocaleString()} email(s)…`);
       await startDebounceJob(
-        { emails, label: retestLabel.trim() || `CSV Debounce check — ${f.name}` },
+        { emails, label: retestLabel.trim() },
         "email(s)",
       );
     } catch (e2) {
@@ -2941,9 +2946,10 @@ function ValidateSection() {
 
   const loadForRetest = async () => {
     setError("");
+    if (!retestLabel.trim()) { setError("Give this job a name before running it."); return; }
     setBusy(true);
     try {
-      const d = await call({ action: "load_contacts", statuses: retestStatuses, vertical: retestVertical || undefined, domain: retestDomain.trim() || undefined, label: retestLabel.trim() || "Re-test contacts" });
+      const d = await call({ action: "load_contacts", statuses: retestStatuses, vertical: retestVertical || undefined, domain: retestDomain.trim() || undefined, label: retestLabel.trim() });
       if (!d.count) { setError("No contacts match those filters."); return; }
       setJobId(d.jobId);
       setCandidates((d.candidates || []).map((c: ValidateCandidate) => ({ ...c, selected: true })));
@@ -2959,6 +2965,7 @@ function ValidateSection() {
     const f = e.target.files?.[0];
     if (!f) return;
     setError("");
+    if (!retestLabel.trim()) { setError("Give this job a name before running it."); e.target.value = ""; return; }
     setBusy(true);
     setInstantlyCsvStage("Reading file…");
     try {
@@ -2976,7 +2983,7 @@ function ValidateSection() {
       // Chunked so there's no practical ceiling on CSV size — a single request with tens of
       // thousands of rows risks Vercel's request body limit; each batch lands in the same job.
       const BATCH = 1000;
-      const label = retestLabel.trim() || `CSV re-test — ${f.name}`;
+      const label = retestLabel.trim();
       let currentJobId: number | null = null;
       const allCandidates: ValidateCandidate[] = [];
       for (let i = 0; i < emails.length; i += BATCH) {
@@ -3413,7 +3420,7 @@ function ValidateSection() {
                   </div>
                   <div className="px-5 py-5 space-y-4">
                     <div>
-                      <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Job name (optional)</label>
+                      <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Job name (required)</label>
                       <input type="text" value={patternsLabel} onChange={(e) => setPatternsLabel(e.target.value)} placeholder="e.g. New leads — July" />
                     </div>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -3479,7 +3486,7 @@ function ValidateSection() {
                       <input type="checkbox" checked={useAI} onChange={(e) => setUseAI(e.target.checked)} />
                       Use AI ranking (Claude scores patterns using domain web evidence)
                     </label>
-                    <button onClick={generate} disabled={busy || !people.length} className="hm-btn hm-btn-primary" style={{ height: 38, padding: "0 18px", fontSize: 13 }}>
+                    <button onClick={generate} disabled={busy || !people.length || !patternsLabel.trim()} className="hm-btn hm-btn-primary" style={{ height: 38, padding: "0 18px", fontSize: 13 }}>
                       {busy ? (progressLabel || "Generating…") : "Generate patterns"}
                     </button>
                   </div>
@@ -3494,7 +3501,7 @@ function ValidateSection() {
                   </div>
                   <div className="px-5 py-5 space-y-4">
                     <div>
-                      <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Job name (optional)</label>
+                      <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Job name (required)</label>
                       <input type="text" value={retestLabel} onChange={(e) => setRetestLabel(e.target.value)} placeholder="e.g. US Risky — July" />
                     </div>
                     <div>
@@ -3534,7 +3541,7 @@ function ValidateSection() {
                       {retestCounting ? "Counting…" : retestCount != null ? `${retestCount.toLocaleString()} contact(s) match` : "—"}
                     </div>
 
-                    <button onClick={loadForRetest} disabled={busy || !retestStatuses.length || !retestCount} className="hm-btn hm-btn-primary w-full" style={{ height: 38, fontSize: 13 }}>
+                    <button onClick={loadForRetest} disabled={busy || !retestStatuses.length || !retestCount || !retestLabel.trim()} className="hm-btn hm-btn-primary w-full" style={{ height: 38, fontSize: 13 }}>
                       Load contacts (sends real test emails via Instantly)
                     </button>
 
@@ -3544,7 +3551,7 @@ function ValidateSection() {
                       </p>
                       <button
                         onClick={runDebounceRetest}
-                        disabled={debounceBusy || !retestStatuses.length || !retestCount}
+                        disabled={debounceBusy || !retestStatuses.length || !retestCount || !retestLabel.trim()}
                         className="hm-btn hm-btn-secondary w-full"
                         style={{ height: 34, fontSize: 12.5 }}
                       >
@@ -3552,7 +3559,7 @@ function ValidateSection() {
                           ? `Starting… ${debounceProgress?.processed ?? 0} checked, ${debounceProgress?.validated ?? 0} saved`
                           : "Validate via Debounce (save directly, no send)"}
                       </button>
-                      <label className={`hm-btn hm-btn-secondary w-full cursor-pointer ${(debounceBusy || debounceCsvStage) ? "opacity-50 pointer-events-none" : ""}`} style={{ height: 34, fontSize: 12.5 }}>
+                      <label className={`hm-btn hm-btn-secondary w-full cursor-pointer ${(debounceBusy || debounceCsvStage || !retestLabel.trim()) ? "opacity-50 pointer-events-none" : ""}`} style={{ height: 34, fontSize: 12.5 }}>
                         {debounceCsvStage ? (
                           <span className="inline-flex items-center gap-2">
                             <span className="w-3 h-3 border-2 border-current/30 border-t-current rounded-full animate-spin" />
@@ -3561,7 +3568,7 @@ function ValidateSection() {
                         ) : (
                           "⬆ Upload CSV of emails — validate via Debounce directly"
                         )}
-                        <input type="file" accept=".csv,text/csv" onChange={runDebounceRetestCsv} style={{ display: "none" }} disabled={debounceBusy || !!debounceCsvStage} />
+                        <input type="file" accept=".csv,text/csv" onChange={runDebounceRetestCsv} style={{ display: "none" }} disabled={debounceBusy || !!debounceCsvStage || !retestLabel.trim()} />
                       </label>
                       {retestJobId != null && !retestJobDone && (
                         <button
@@ -3584,7 +3591,7 @@ function ValidateSection() {
                       <div className="flex-1 h-px bg-[var(--hm-border)]" />
                     </div>
 
-                    <label className={`hm-btn hm-btn-secondary w-full cursor-pointer ${(busy || instantlyCsvStage) ? "opacity-50 pointer-events-none" : ""}`} style={{ height: 36, fontSize: 12.5 }}>
+                    <label className={`hm-btn hm-btn-secondary w-full cursor-pointer ${(busy || instantlyCsvStage || !retestLabel.trim()) ? "opacity-50 pointer-events-none" : ""}`} style={{ height: 36, fontSize: 12.5 }}>
                       {instantlyCsvStage ? (
                         <span className="inline-flex items-center gap-2">
                           <span className="w-3 h-3 border-2 border-current/30 border-t-current rounded-full animate-spin" />
@@ -3593,7 +3600,7 @@ function ValidateSection() {
                       ) : (
                         "⬆ CSV upload — send campaign instantly to check statuses"
                       )}
-                      <input type="file" accept=".csv,text/csv" onChange={loadRetestCsv} style={{ display: "none" }} disabled={busy || !!instantlyCsvStage} />
+                      <input type="file" accept=".csv,text/csv" onChange={loadRetestCsv} style={{ display: "none" }} disabled={busy || !!instantlyCsvStage || !retestLabel.trim()} />
                     </label>
                   </div>
                 </>
