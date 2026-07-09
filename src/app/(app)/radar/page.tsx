@@ -1924,16 +1924,16 @@ function UploadStatusPill({ status }: { status: string }) {
 // "sent"/"checked" only count as actively Running if the job is from today — a job sent/checked
 // days ago and never saved isn't running anymore (the check_all cron only re-checks jobs from the
 // last 72h), it's just sitting unsaved, so its bounce results are final either way.
-function ValidateJobStatusPill({ status, createdAt }: { status: string; createdAt: string | null }) {
+// Running vs Completed is decided by whether the job actually still has unresolved candidates
+// (pending_count from list_jobs — real signal from the DB), NOT by job age. A big campaign (e.g.
+// 2,550 leads on Instantly's own daily cap) can take many days to finish sending — it must keep
+// showing Running for however long that genuinely takes, not flip to Completed after one day.
+function ValidateJobStatusPill({ status, pendingCount }: { status: string; pendingCount?: number }) {
   const s = (status || "").toLowerCase();
-  // Compared as IST calendar days (not the viewer's local timezone) so this agrees with the
-  // IST-formatted "Created" column regardless of where the person viewing the page is.
-  const istDay = (v: string) => new Date(v).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" });
-  const isToday = !!createdAt && istDay(createdAt) === istDay(new Date().toISOString());
   let label = "Draft", cls = "bg-[var(--hm-bg-tertiary)] text-[var(--hm-text-tertiary)]";
   if (s === "done") { label = "Completed"; cls = "bg-[#DCFCE7] text-[#059669]"; }
   else if (s === "sent" || s === "checked") {
-    if (isToday) { label = "Running"; cls = "bg-[#FEF3C7] text-[#B45309]"; }
+    if ((pendingCount ?? 0) > 0) { label = "Running"; cls = "bg-[#FEF3C7] text-[#B45309]"; }
     else { label = "Completed"; cls = "bg-[#DCFCE7] text-[#059669]"; }
   }
   return <span className={`text-[11px] px-2 py-0.5 rounded-md font-medium ${cls}`}>{label}</span>;
@@ -2637,6 +2637,7 @@ interface ValidateJob {
   status: string;
   campaign_id: string | null;
   created_at: string;
+  pending_count?: number;
 }
 interface InstantlyTag { id: string; label: string; }
 
@@ -3288,7 +3289,7 @@ function ValidateSection() {
                   {jobs.map((j) => (
                     <tr key={j.id} className="hover:bg-[var(--hm-surface-hover)]">
                       <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">{j.label || `Job #${j.id}`}</td>
-                      <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]"><ValidateJobStatusPill status={j.status} createdAt={j.created_at} /></td>
+                      <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]"><ValidateJobStatusPill status={j.status} pendingCount={j.pending_count} /></td>
                       <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text-tertiary)] whitespace-nowrap">{fmtDateTimeIST(j.created_at)}</td>
                       <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)] text-right whitespace-nowrap">
                         <button onClick={() => openJob(j.id)} className="text-[12px] text-[var(--hm-accent)] mr-3">Open</button>
