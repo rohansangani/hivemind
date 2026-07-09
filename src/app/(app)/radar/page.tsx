@@ -2806,6 +2806,10 @@ function ValidateSection() {
   const [retestJobId, setRetestJobId] = useState<number | null>(null);
   const [retestJobDone, setRetestJobDone] = useState(false);
   const [statusChecking, setStatusChecking] = useState(false);
+  // Granular stage text for the two CSV-upload buttons below — read/parse/upload all happen
+  // before any request even fires, so without this the button just looks stuck for a few seconds.
+  const [debounceCsvStage, setDebounceCsvStage] = useState<string | null>(null);
+  const [instantlyCsvStage, setInstantlyCsvStage] = useState<string | null>(null);
 
   // Skips Instantly entirely: runs these contacts straight through Debounce and writes
   // email_status/validated_at directly on the contacts row. No test-send, no candidates job.
@@ -2850,8 +2854,10 @@ function ValidateSection() {
     const f = e.target.files?.[0];
     if (!f) return;
     setError("");
+    setDebounceCsvStage("Reading file…");
     try {
       const text = await f.text();
+      setDebounceCsvStage("Parsing CSV…");
       const { rows } = parseCSV(text);
       const emails = rows
         .map((r) => {
@@ -2860,6 +2866,7 @@ function ValidateSection() {
         })
         .filter((v): v is string => !!v && v.includes("@"));
       if (!emails.length) { setError("No email column found in that CSV."); return; }
+      setDebounceCsvStage(`Uploading ${emails.length.toLocaleString()} email(s)…`);
       await startDebounceJob(
         { emails, label: retestLabel.trim() || `CSV Debounce check — ${f.name}` },
         "email(s)",
@@ -2867,6 +2874,7 @@ function ValidateSection() {
     } catch (e2) {
       setError((e2 as Error).message);
     } finally {
+      setDebounceCsvStage(null);
       e.target.value = "";
     }
   };
@@ -2925,8 +2933,10 @@ function ValidateSection() {
     if (!f) return;
     setError("");
     setBusy(true);
+    setInstantlyCsvStage("Reading file…");
     try {
       const text = await f.text();
+      setInstantlyCsvStage("Parsing CSV…");
       const { rows } = parseCSV(text);
       const emails = rows
         .map((r) => {
@@ -2935,6 +2945,7 @@ function ValidateSection() {
         })
         .filter((r): r is { email: string } => !!r && r.email.includes("@"));
       if (!emails.length) { setError("No email column found in that CSV."); return; }
+      setInstantlyCsvStage(`Uploading ${emails.length.toLocaleString()} email(s)…`);
       const d = await call({ action: "load_contacts", emails, label: retestLabel.trim() || `CSV re-test — ${f.name}` });
       if (!d.count) { setError("None of those emails could be loaded."); return; }
       setJobId(d.jobId);
@@ -2944,6 +2955,8 @@ function ValidateSection() {
       setError((e2 as Error).message);
     } finally {
       setBusy(false);
+      setInstantlyCsvStage(null);
+      e.target.value = "";
     }
   };
 
@@ -3494,9 +3507,16 @@ function ValidateSection() {
                           ? `Starting… ${debounceProgress?.processed ?? 0} checked, ${debounceProgress?.validated ?? 0} saved`
                           : "Validate via Debounce (save directly, no send)"}
                       </button>
-                      <label className={`hm-btn hm-btn-secondary w-full cursor-pointer ${debounceBusy ? "opacity-50 pointer-events-none" : ""}`} style={{ height: 34, fontSize: 12.5 }}>
-                        ⬆ Upload CSV of emails — validate via Debounce directly
-                        <input type="file" accept=".csv,text/csv" onChange={runDebounceRetestCsv} style={{ display: "none" }} disabled={debounceBusy} />
+                      <label className={`hm-btn hm-btn-secondary w-full cursor-pointer ${(debounceBusy || debounceCsvStage) ? "opacity-50 pointer-events-none" : ""}`} style={{ height: 34, fontSize: 12.5 }}>
+                        {debounceCsvStage ? (
+                          <span className="inline-flex items-center gap-2">
+                            <span className="w-3 h-3 border-2 border-current/30 border-t-current rounded-full animate-spin" />
+                            {debounceCsvStage}
+                          </span>
+                        ) : (
+                          "⬆ Upload CSV of emails — validate via Debounce directly"
+                        )}
+                        <input type="file" accept=".csv,text/csv" onChange={runDebounceRetestCsv} style={{ display: "none" }} disabled={debounceBusy || !!debounceCsvStage} />
                       </label>
                       {retestJobId != null && !retestJobDone && (
                         <button
@@ -3519,9 +3539,16 @@ function ValidateSection() {
                       <div className="flex-1 h-px bg-[var(--hm-border)]" />
                     </div>
 
-                    <label className="hm-btn hm-btn-secondary w-full cursor-pointer" style={{ height: 36, fontSize: 12.5 }}>
-                      ⬆ CSV upload — send campaign instantly to check statuses
-                      <input type="file" accept=".csv,text/csv" onChange={loadRetestCsv} style={{ display: "none" }} />
+                    <label className={`hm-btn hm-btn-secondary w-full cursor-pointer ${(busy || instantlyCsvStage) ? "opacity-50 pointer-events-none" : ""}`} style={{ height: 36, fontSize: 12.5 }}>
+                      {instantlyCsvStage ? (
+                        <span className="inline-flex items-center gap-2">
+                          <span className="w-3 h-3 border-2 border-current/30 border-t-current rounded-full animate-spin" />
+                          {instantlyCsvStage}
+                        </span>
+                      ) : (
+                        "⬆ CSV upload — send campaign instantly to check statuses"
+                      )}
+                      <input type="file" accept=".csv,text/csv" onChange={loadRetestCsv} style={{ display: "none" }} disabled={busy || !!instantlyCsvStage} />
                     </label>
                   </div>
                 </>
