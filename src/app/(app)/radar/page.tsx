@@ -2787,10 +2787,15 @@ function ValidateSection() {
     }
   };
 
-  const loadRetestCsv = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const loadRetestCsv = async (e: React.ChangeEvent<HTMLInputElement>, sendImmediately = false) => {
     const f = e.target.files?.[0];
     if (!f) return;
     setError("");
+    if (sendImmediately && !mailboxTag) {
+      setError("Choose a mailbox tag to send from before using instant send.");
+      e.target.value = "";
+      return;
+    }
     setBusy(true);
     try {
       const text = await f.text();
@@ -2804,13 +2809,36 @@ function ValidateSection() {
       if (!emails.length) { setError("No email column found in that CSV."); return; }
       const d = await call({ action: "load_contacts", emails, label: retestLabel.trim() || `CSV re-test — ${f.name}` });
       if (!d.count) { setError("None of those emails could be loaded."); return; }
+      const loaded = (d.candidates || []).map((c: ValidateCandidate) => ({ ...c, selected: true }));
       setJobId(d.jobId);
-      setCandidates((d.candidates || []).map((c: ValidateCandidate) => ({ ...c, selected: true })));
-      setPhase("candidates");
+      setCandidates(loaded);
+
+      if (!sendImmediately) {
+        setPhase("candidates");
+        return;
+      }
+      // Skip the review step entirely — go straight from CSV to a live Instantly campaign.
+      // Read straight off the CSV response (not the `candidates`/`jobId` state, which won't
+      // have re-rendered yet) so this doesn't race the setState calls above.
+      if (!confirm(`Send ${loaded.length} test emails via Instantly right now, with no review step? These are real inboxes.`)) {
+        setPhase("candidates");
+        return;
+      }
+      const sendResult = await call({
+        action: "send",
+        jobId: d.jobId,
+        mailboxTag,
+        subject,
+        body: emailBody,
+        selectedIds: loaded.map((c: ValidateCandidate) => c.id),
+      });
+      setPhase("sent");
+      setProgressLabel(`Campaign live — ${sendResult.added ?? loaded.length} leads sending via ${sendResult.senders ?? "?"} mailboxes.`);
     } catch (e2) {
       setError((e2 as Error).message);
     } finally {
       setBusy(false);
+      e.target.value = "";
     }
   };
 
@@ -2931,9 +2959,11 @@ function ValidateSection() {
   }, [autoRefresh, phase, checkResult?.allResolved, jobId]);
 
   useEffect(() => {
-    if (phase === "candidates" && !tags.length) loadTags();
+    // Loaded on mount (not just once reaching the candidates screen) so the mailbox tag is
+    // already defaulted to MRTeam by the time an "upload & send immediately" flow needs it.
+    loadTags();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase]);
+  }, []);
 
   const save = async () => {
     if (!jobId) return;
@@ -3272,6 +3302,20 @@ function ValidateSection() {
                       ⬆ Upload CSV of emails
                       <input type="file" accept=".csv,text/csv" onChange={loadRetestCsv} style={{ display: "none" }} />
                     </label>
+
+                    <div className="rounded-lg border border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] p-3 space-y-2">
+                      <p className="text-[12px] text-[var(--hm-text-secondary)]">
+                        Or skip the review step — upload a CSV and send it as a live Instantly campaign immediately, with no chance to deselect rows first.
+                      </p>
+                      <select value={mailboxTag} onChange={(e) => setMailboxTag(e.target.value)}>
+                        <option value="">— Choose a mailbox tag —</option>
+                        {tags.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+                      </select>
+                      <label className="hm-btn hm-btn-primary w-full cursor-pointer" style={{ height: 36, fontSize: 12.5 }}>
+                        ⚡ Upload CSV &amp; send immediately
+                        <input type="file" accept=".csv,text/csv" onChange={(e) => loadRetestCsv(e, true)} style={{ display: "none" }} />
+                      </label>
+                    </div>
                   </div>
                 </>
               )}
