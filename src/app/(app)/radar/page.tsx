@@ -968,6 +968,7 @@ interface ContactRow {
   account_name: string | null;
   account_domain: string | null;
   domain: string | null;
+  validated_company: string | null;
   email: string | null;
   email_status: string | null;
   validated_at: string | null;
@@ -1024,6 +1025,7 @@ function ContactsSection() {
     },
     { key: "last_name", header: "Last Name", render: (r) => <Cell value={r.last_name} /> },
     { key: "company", header: "Company", render: (r) => <Cell value={r.company_name || r.account_name} /> },
+    { key: "validated_company", header: "Validated Company", render: (r) => <Cell value={r.validated_company} /> },
     { key: "parent", header: "Parent Company", render: (r) => <Cell value={r.parent_company} /> },
     { key: "domain", header: "Domain", render: (r) => <Cell value={r.domain || r.account_domain} /> },
     { key: "title", header: "Title", render: (r) => <Cell value={r.title} /> },
