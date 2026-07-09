@@ -2803,39 +2803,78 @@ function ValidateSection() {
   const [debounceBusy, setDebounceBusy] = useState(false);
   const [debounceProgress, setDebounceProgress] = useState<{ processed: number; validated: number } | null>(null);
   const [debounceMsg, setDebounceMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [retestJobId, setRetestJobId] = useState<number | null>(null);
+  const [retestJobDone, setRetestJobDone] = useState(false);
+  const [statusChecking, setStatusChecking] = useState(false);
 
   // Skips Instantly entirely: runs these contacts straight through Debounce and writes
   // email_status/validated_at directly on the contacts row. No test-send, no candidates job.
+  // Runs as a server-side job (retest_job_start) instead of a client-driven loop, so it keeps
+  // going — via a 15-min cron tick — even if you navigate away or close this tab.
   const runDebounceRetest = async () => {
     setDebounceBusy(true);
     setDebounceMsg(null);
+    setRetestJobDone(false);
     setDebounceProgress({ processed: 0, validated: 0 });
-    let processed = 0, validated = 0, offset = 0, done = false;
     try {
-      for (let guard = 0; guard < 500 && !done; guard++) {
-        const r = await fetch("/api/radar/export-validate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "validate_chunk",
-            filters: { vertical: retestVertical || undefined, emailStatus: retestStatuses },
-            offset,
-          }),
-        });
-        const d = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(d.error || "Debounce validation failed");
-        processed += d.processed || 0;
-        validated += d.validated || 0;
-        offset = d.next_offset ?? offset + (d.processed || 0);
-        done = d.done || d.processed === 0;
-        setDebounceProgress({ processed, validated });
+      const r = await fetch("/api/radar/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "retest_job_start",
+          vertical: retestVertical || undefined,
+          emailStatus: retestStatuses,
+          label: retestLabel.trim() || "Debounce re-test",
+        }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || "Debounce validation failed to start");
+      setRetestJobId(d.jobId ?? null);
+      setDebounceProgress({ processed: d.processed || 0, validated: d.validated || 0 });
+      if (d.done) {
+        setRetestJobDone(true);
+        setDebounceMsg({ kind: "ok", text: `Checked ${(d.processed || 0).toLocaleString()} contact(s) via Debounce, saved ${(d.validated || 0).toLocaleString()} status update(s) directly — done. Nothing sent via Instantly.` });
+        countRetest();
+      } else {
+        setDebounceMsg({ kind: "ok", text: `Started (job #${d.jobId}) — checked ${(d.processed || 0).toLocaleString()} so far. This keeps running in the background every ~15 min even if you leave this page. Click "Check status" any time, or just come back later.` });
       }
-      setDebounceMsg({ kind: "ok", text: `Checked ${processed.toLocaleString()} contact(s) via Debounce, saved ${validated.toLocaleString()} status update(s) directly — nothing sent via Instantly.` });
-      countRetest();
     } catch (e) {
       setDebounceMsg({ kind: "err", text: (e as Error).message });
     } finally {
       setDebounceBusy(false);
+    }
+  };
+
+  const checkRetestJobStatus = async () => {
+    if (!retestJobId) return;
+    setStatusChecking(true);
+    try {
+      const r = await fetch("/api/radar/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "retest_job_status", jobId: retestJobId }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || "Couldn't fetch job status");
+      const job = d.job || {};
+      setDebounceProgress({ processed: job.processed || 0, validated: job.validated || 0 });
+      const done = job.status === "done";
+      setRetestJobDone(done);
+      if (job.status === "error") {
+        setDebounceMsg({ kind: "err", text: job.error || "Retest job failed." });
+      } else {
+        setDebounceMsg({
+          kind: "ok",
+          text: done
+            ? `Checked ${(job.processed || 0).toLocaleString()} contact(s) via Debounce, saved ${(job.validated || 0).toLocaleString()} status update(s) — done.`
+            : `Still running — checked ${(job.processed || 0).toLocaleString()} so far. Check back again shortly.`,
+        });
+      }
+      if (done) countRetest();
+    } catch (e) {
+      setDebounceMsg({ kind: "err", text: (e as Error).message });
+    } finally {
+      setStatusChecking(false);
     }
   };
 
@@ -3426,9 +3465,19 @@ function ValidateSection() {
                         style={{ height: 34, fontSize: 12.5 }}
                       >
                         {debounceBusy
-                          ? `Validating via Debounce… ${debounceProgress?.processed ?? 0} checked, ${debounceProgress?.validated ?? 0} saved`
+                          ? `Starting… ${debounceProgress?.processed ?? 0} checked, ${debounceProgress?.validated ?? 0} saved`
                           : "Validate via Debounce (save directly, no send)"}
                       </button>
+                      {retestJobId != null && !retestJobDone && (
+                        <button
+                          onClick={checkRetestJobStatus}
+                          disabled={statusChecking}
+                          className="hm-btn hm-btn-secondary w-full"
+                          style={{ height: 30, fontSize: 12 }}
+                        >
+                          {statusChecking ? "Checking…" : `Check status — job #${retestJobId}`}
+                        </button>
+                      )}
                       {debounceMsg && (
                         <p className={`text-[12px] ${debounceMsg.kind === "err" ? "text-red-500" : "text-[#059669]"}`}>{debounceMsg.text}</p>
                       )}
