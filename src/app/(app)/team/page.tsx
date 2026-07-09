@@ -513,7 +513,7 @@ function ViewPermsModal({ member, onClose }: { member: Member; onClose: () => vo
 
 // ── Member row (extracted for reuse between active and pending sections) ───────
 function MemberRow({
-  m, user, canManage, timeAgo, getInitials, setEditTarget, setDeleteTarget, setViewPermsTarget, setLeaveOpen, setResetTarget,
+  m, user, canManage, timeAgo, getInitials, setEditTarget, setDeleteTarget, setViewPermsTarget, setLeaveOpen, setResetTarget, customRoles,
 }: {
   m: Member;
   user: CurrentUser | null;
@@ -525,6 +525,7 @@ function MemberRow({
   setViewPermsTarget: (v: Member | null) => void;
   setLeaveOpen: (v: boolean) => void;
   setResetTarget: (v: Member | null) => void;
+  customRoles: CustomRoleDef[];
 }) {
   const isPending = m.inviteStatus === "pending";
   const isMe = m.id === user?.id;
@@ -532,7 +533,11 @@ function MemberRow({
   const canDelete = canManage && user ? canManageUser(user.role, m.role) && !isMe : false;
   // Non-admin members (not owners) can leave voluntarily; owners must transfer ownership first
   const canLeave = isMe && !canManage && user?.role !== "owner";
-  const effective = getEffectivePermissions(m.role, m.customPermissions);
+  // Custom-role slugs (e.g. "market_research") have no entry in the built-in
+  // ROLE_DEFAULT_PERMISSIONS map — getEffectivePermissions needs their real stored
+  // permissions passed as orgRolePerms, or it silently falls back to the generic "others" role.
+  const orgRolePerms = Object.fromEntries(customRoles.map(r => [r.slug, r.permissions as ModulePermissions]));
+  const effective = getEffectivePermissions(m.role, m.customPermissions, orgRolePerms);
   const hasCustom = m.customPermissions && Object.keys(m.customPermissions).length > 0;
 
   const counts = { edit: 0, view: 0, none: 0 };
@@ -836,7 +841,7 @@ export default function TeamPage() {
                           Active members ({activeFiltered.length})
                         </div>
                       )}
-                      {activeFiltered.map(m => <MemberRow key={m.id} m={m} user={user} canManage={canManage} timeAgo={timeAgo} getInitials={getInitials} setEditTarget={setEditTarget} setDeleteTarget={setDeleteTarget} setViewPermsTarget={setViewPermsTarget} setLeaveOpen={setLeaveOpen} setResetTarget={setResetTarget} />)}
+                      {activeFiltered.map(m => <MemberRow key={m.id} m={m} user={user} canManage={canManage} timeAgo={timeAgo} getInitials={getInitials} setEditTarget={setEditTarget} setDeleteTarget={setDeleteTarget} setViewPermsTarget={setViewPermsTarget} setLeaveOpen={setLeaveOpen} setResetTarget={setResetTarget} customRoles={customRoles} />)}
                     </>
                   )}
 
@@ -848,7 +853,7 @@ export default function TeamPage() {
                         <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />
                         Pending invites ({pendingFiltered.length}) — awaiting acceptance
                       </div>
-                      {pendingFiltered.map(m => <MemberRow key={m.id} m={m} user={user} canManage={canManage} timeAgo={timeAgo} getInitials={getInitials} setEditTarget={setEditTarget} setDeleteTarget={setDeleteTarget} setViewPermsTarget={setViewPermsTarget} setLeaveOpen={setLeaveOpen} setResetTarget={setResetTarget} />)}
+                      {pendingFiltered.map(m => <MemberRow key={m.id} m={m} user={user} canManage={canManage} timeAgo={timeAgo} getInitials={getInitials} setEditTarget={setEditTarget} setDeleteTarget={setDeleteTarget} setViewPermsTarget={setViewPermsTarget} setLeaveOpen={setLeaveOpen} setResetTarget={setResetTarget} customRoles={customRoles} />)}
                     </>
                   )}
                 </div>
