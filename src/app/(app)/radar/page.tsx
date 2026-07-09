@@ -2646,6 +2646,7 @@ function ValidateSection() {
   const [people, setPeople] = useState<PersonInput[]>([]);
   const [draft, setDraft] = useState<PersonInput>(emptyPerson());
   const [patternsLabel, setPatternsLabel] = useState("");
+  const [patternsVertical, setPatternsVertical] = useState("");
   const [blankEmailVertical, setBlankEmailVertical] = useState("");
   const [blankEmailCount, setBlankEmailCount] = useState<{ count: number; fetchable: number } | null>(null);
   const [blankEmailCounting, setBlankEmailCounting] = useState(false);
@@ -2660,7 +2661,6 @@ function ValidateSection() {
   const [checkResult, setCheckResult] = useState<{ bounced: number; valid: number; pending: number; allResolved: boolean } | null>(null);
   const [savedCount, setSavedCount] = useState(0);
   const [savedInvalidCount, setSavedInvalidCount] = useState(0);
-  const [saveVertical, setSaveVertical] = useState("");
 
   // Patterns vs Retest — top-level mode, mirrors radar's own toggle
   const [inputMode, setInputMode] = useState<"patterns" | "retest" | "linkedin">("patterns");
@@ -2752,6 +2752,7 @@ function ValidateSection() {
   const generate = async () => {
     setError("");
     if (!patternsLabel.trim()) { setError("Give this job a name before running it."); return; }
+    if (!patternsVertical) { setError("Select a vertical before running it."); return; }
     const people = parsePeople();
     if (!people.length) { setError("Add at least one person with a name and a domain."); return; }
     setBusy(true);
@@ -2759,7 +2760,7 @@ function ValidateSection() {
       let jid: number | null = null;
       let offset = 0;
       for (let guard = 0; guard < 20; guard++) {
-        const d = await call({ action: "generate", rows: people, useAI, jobId: jid, offset, label: patternsLabel.trim() });
+        const d = await call({ action: "generate", rows: people, useAI, jobId: jid, offset, label: patternsLabel.trim(), vertical: patternsVertical });
         jid = d.jobId;
         if (d.done) {
           setJobId(jid);
@@ -2962,9 +2963,10 @@ function ValidateSection() {
   const loadForRetest = async () => {
     setError("");
     if (!retestLabel.trim()) { setError("Give this job a name before running it."); return; }
+    if (!retestVertical) { setError("Select a vertical before running it."); return; }
     setBusy(true);
     try {
-      const d = await call({ action: "load_contacts", statuses: retestStatuses, vertical: retestVertical || undefined, domain: retestDomain.trim() || undefined, label: retestLabel.trim() });
+      const d = await call({ action: "load_contacts", statuses: retestStatuses, vertical: retestVertical, domain: retestDomain.trim() || undefined, label: retestLabel.trim() });
       if (!d.count) { setError("No contacts match those filters."); return; }
       setJobId(d.jobId);
       setCandidates((d.candidates || []).map((c: ValidateCandidate) => ({ ...c, selected: true })));
@@ -2981,6 +2983,7 @@ function ValidateSection() {
     if (!f) return;
     setError("");
     if (!retestLabel.trim()) { setError("Give this job a name before running it."); e.target.value = ""; return; }
+    if (!retestVertical) { setError("Select a vertical before running it."); e.target.value = ""; return; }
     setBusy(true);
     setInstantlyCsvStage("Reading file…");
     try {
@@ -2999,6 +3002,7 @@ function ValidateSection() {
       // thousands of rows risks Vercel's request body limit; each batch lands in the same job.
       const BATCH = 1000;
       const label = retestLabel.trim();
+      const vertical = retestVertical;
       let currentJobId: number | null = null;
       const allCandidates: ValidateCandidate[] = [];
       for (let i = 0; i < emails.length; i += BATCH) {
@@ -3010,7 +3014,7 @@ function ValidateSection() {
             ? `Uploading batch ${batchNum}/${totalBatches} (${Math.min(i + BATCH, emails.length).toLocaleString()}/${emails.length.toLocaleString()})…`
             : `Uploading ${emails.length.toLocaleString()} email(s)…`,
         );
-        const d = await call({ action: "load_contacts", emails: batch, label, jobId: currentJobId ?? undefined });
+        const d = await call({ action: "load_contacts", emails: batch, label, vertical, jobId: currentJobId ?? undefined });
         currentJobId = d.jobId ?? currentJobId;
         allCandidates.push(...(d.candidates || []).map((c: ValidateCandidate) => ({ ...c, selected: true })));
       }
@@ -3117,6 +3121,12 @@ function ValidateSection() {
     try {
       const d = await call({ action: "check", jobId });
       setCheckResult(d);
+      // check() auto-saves newly-resolved valid/bounced leads to contacts itself (using the
+      // vertical chosen up front when the job was created) — no separate save step needed.
+      if (d.saved || d.savedInvalid) {
+        setSavedCount((prev) => prev + (d.saved ?? 0));
+        setSavedInvalidCount((prev) => prev + (d.savedInvalid ?? 0));
+      }
       // check() only returns aggregate counts — pull the per-row bounce_status it just wrote
       // so the table's Status column actually reflects valid/bounced instead of sitting on
       // the "pending" value from when the candidates were first loaded.
@@ -3148,13 +3158,16 @@ function ValidateSection() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
 
+  // Vertical is chosen once up front (Generate patterns / Retest DB Contacts both require it
+  // before a job can even be created) and stored on the job itself — check() already auto-saves
+  // newly-resolved leads using that stored vertical on every call, so clicking this button is
+  // just a "don't wait for the next check" convenience, not a separate vertical question.
   const save = async () => {
     if (!jobId) return;
-    if (!saveVertical) { setError("Select a vertical before saving."); return; }
     setBusy(true);
     setError("");
     try {
-      const d = await call({ action: "save", jobId, vertical: saveVertical });
+      const d = await call({ action: "save", jobId });
       setSavedCount((prev) => prev + (d.saved ?? 0));
       setSavedInvalidCount((prev) => prev + (d.savedInvalid ?? 0));
       // Saving doesn't require the campaign to be fully resolved — only close out the job
@@ -3169,9 +3182,9 @@ function ValidateSection() {
   };
 
   const reset = () => {
-    setPeople([]); setDraft(emptyPerson()); setPatternsLabel(""); setBlankEmailMsg(""); setPhase("input"); setJobId(null); setCandidates([]);
+    setPeople([]); setDraft(emptyPerson()); setPatternsLabel(""); setPatternsVertical(""); setBlankEmailMsg(""); setPhase("input"); setJobId(null); setCandidates([]);
     setCheckResult(null); setSavedCount(0); setSavedInvalidCount(0); setError(""); setMailboxTag(""); setAutoRefresh(false);
-    setInputMode("patterns"); setRetestCount(null); setRetestLabel(""); setSaveVertical("");
+    setInputMode("patterns"); setRetestCount(null); setRetestLabel(""); setRetestVertical("");
     setLinkedinUrlsText(""); setLinkedinResults([]); setLinkedinSummary(null); setLinkedinVertical("");
   };
 
@@ -3435,9 +3448,20 @@ function ValidateSection() {
                     <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">Add people to guess email patterns for — name + domain, middle name optional.</p>
                   </div>
                   <div className="px-5 py-5 space-y-4">
-                    <div>
-                      <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Job name (required)</label>
-                      <input type="text" value={patternsLabel} onChange={(e) => setPatternsLabel(e.target.value)} placeholder="e.g. New leads — July" />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Job name (required)</label>
+                        <input type="text" value={patternsLabel} onChange={(e) => setPatternsLabel(e.target.value)} placeholder="e.g. New leads — July" />
+                      </div>
+                      <div>
+                        <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Vertical (required)</label>
+                        <select value={patternsVertical} onChange={(e) => setPatternsVertical(e.target.value)} title="Chosen once here — resolved leads save to contacts automatically as they're checked, no separate save step needed">
+                          <option value="">— Choose —</option>
+                          <option value="B2B">B2B</option>
+                          <option value="US">US</option>
+                          <option value="D2C">D2C</option>
+                        </select>
+                      </div>
                     </div>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                       <input type="text" value={draft.first_name} onChange={(e) => setDraft((d) => ({ ...d, first_name: e.target.value }))} onKeyDown={onDraftKeyDown} placeholder="First name" />
@@ -3502,7 +3526,7 @@ function ValidateSection() {
                       <input type="checkbox" checked={useAI} onChange={(e) => setUseAI(e.target.checked)} />
                       Use AI ranking (Claude scores patterns using domain web evidence)
                     </label>
-                    <button onClick={generate} disabled={busy || !people.length || !patternsLabel.trim()} className="hm-btn hm-btn-primary" style={{ height: 38, padding: "0 18px", fontSize: 13 }}>
+                    <button onClick={generate} disabled={busy || !people.length || !patternsLabel.trim() || !patternsVertical} className="hm-btn hm-btn-primary" style={{ height: 38, padding: "0 18px", fontSize: 13 }}>
                       {busy ? (progressLabel || "Generating…") : "Generate patterns"}
                     </button>
                   </div>
@@ -3539,9 +3563,9 @@ function ValidateSection() {
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
-                        <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Vertical (optional)</label>
-                        <select value={retestVertical} onChange={(e) => setRetestVertical(e.target.value)}>
-                          <option value="">All</option>
+                        <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Vertical</label>
+                        <select value={retestVertical} onChange={(e) => setRetestVertical(e.target.value)} title="Required for the Instantly-send options below — filter-only for the Debounce ones">
+                          <option value="">All (Debounce-only — required to send via Instantly)</option>
                           <option value="B2B">B2B</option>
                           <option value="US">US</option>
                           <option value="D2C">D2C</option>
@@ -3557,7 +3581,7 @@ function ValidateSection() {
                       {retestCounting ? "Counting…" : retestCount != null ? `${retestCount.toLocaleString()} contact(s) match` : "—"}
                     </div>
 
-                    <button onClick={loadForRetest} disabled={busy || !retestStatuses.length || !retestCount || !retestLabel.trim()} className="hm-btn hm-btn-primary w-full" style={{ height: 38, fontSize: 13 }}>
+                    <button onClick={loadForRetest} disabled={busy || !retestStatuses.length || !retestCount || !retestLabel.trim() || !retestVertical} className="hm-btn hm-btn-primary w-full" style={{ height: 38, fontSize: 13 }}>
                       Load contacts (sends real test emails via Instantly)
                     </button>
 
@@ -3607,7 +3631,7 @@ function ValidateSection() {
                       <div className="flex-1 h-px bg-[var(--hm-border)]" />
                     </div>
 
-                    <label className={`hm-btn hm-btn-secondary w-full cursor-pointer ${(busy || instantlyCsvStage || !retestLabel.trim()) ? "opacity-50 pointer-events-none" : ""}`} style={{ height: 36, fontSize: 12.5 }}>
+                    <label className={`hm-btn hm-btn-secondary w-full cursor-pointer ${(busy || instantlyCsvStage || !retestLabel.trim() || !retestVertical) ? "opacity-50 pointer-events-none" : ""}`} style={{ height: 36, fontSize: 12.5 }}>
                       {instantlyCsvStage ? (
                         <span className="inline-flex items-center gap-2">
                           <span className="w-3 h-3 border-2 border-current/30 border-t-current rounded-full animate-spin" />
@@ -3616,7 +3640,7 @@ function ValidateSection() {
                       ) : (
                         "⬆ CSV upload — send campaign instantly to check statuses"
                       )}
-                      <input type="file" accept=".csv,text/csv" onChange={loadRetestCsv} style={{ display: "none" }} disabled={busy || !!instantlyCsvStage || !retestLabel.trim()} />
+                      <input type="file" accept=".csv,text/csv" onChange={loadRetestCsv} style={{ display: "none" }} disabled={busy || !!instantlyCsvStage || !retestLabel.trim() || !retestVertical} />
                     </label>
                   </div>
                 </>
@@ -3657,17 +3681,9 @@ function ValidateSection() {
                         {busy ? "Checking…" : "Check bounces"}
                       </button>
                       {checkResult && checkResult.valid > 0 && (
-                        <>
-                          <select value={saveVertical} onChange={(e) => setSaveVertical(e.target.value)} style={{ height: 32, fontSize: 12 }} title="Vertical is required to save">
-                            <option value="">— Vertical —</option>
-                            <option value="B2B">B2B</option>
-                            <option value="US">US</option>
-                            <option value="D2C">D2C</option>
-                          </select>
-                          <button onClick={save} disabled={busy || !saveVertical} className="hm-btn hm-btn-primary" style={{ height: 32, padding: "0 14px", fontSize: 12 }}>
-                            {checkResult.allResolved ? `Save ${checkResult.valid} verified` : `Save ${checkResult.valid} valid so far`}
-                          </button>
-                        </>
+                        <button onClick={save} disabled={busy} className="hm-btn hm-btn-primary" style={{ height: 32, padding: "0 14px", fontSize: 12 }} title="Newly-resolved leads already save automatically on every check — this just forces it right now">
+                          {checkResult.allResolved ? `Save ${checkResult.valid} verified` : `Save ${checkResult.valid} valid so far`}
+                        </button>
                       )}
                     </>
                   )}
