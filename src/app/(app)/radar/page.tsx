@@ -824,10 +824,21 @@ function YesNo({ v }: { v: boolean | null }) {
   return v ? <span style={{ color: "#059669" }}>Yes</span> : <span className="text-[var(--hm-text-tertiary)]">No</span>;
 }
 
+// "unvalidated" is never a literal DB value — it's this app's convention for
+// email_status IS NULL (see EMAIL_STATUS_OPTIONS usage in Export and here).
+const EMAIL_STATUS_OPTIONS: Array<{ key: string; label: string }> = [
+  { key: "safe to send", label: "Safe to send" },
+  { key: "verified", label: "Verified" },
+  { key: "risky", label: "Risky" },
+  { key: "invalid", label: "Invalid" },
+  { key: "unknown", label: "Unknown" },
+  { key: "unvalidated", label: "Unvalidated" },
+];
+
 interface EditField {
   key: string;
   label: string;
-  type?: "text" | "boolean" | "list" | "vertical";
+  type?: "text" | "boolean" | "list" | "vertical" | "email_status";
 }
 
 const ACCOUNT_EDIT_FIELDS: EditField[] = [
@@ -860,7 +871,7 @@ const CONTACT_EDIT_FIELDS: EditField[] = [
   { key: "title", label: "Title" },
   { key: "company_name", label: "Company Name" },
   { key: "email", label: "Email" },
-  { key: "email_status", label: "Email Status" },
+  { key: "email_status", label: "Email Status", type: "email_status" },
   { key: "phone", label: "Phone" },
   { key: "phone2", label: "Phone 2" },
   { key: "location", label: "Location" },
@@ -898,6 +909,9 @@ function EditRecordPanel<T extends { id: string }>({
       const v = rowValues[f.key];
       if (f.type === "boolean") init[f.key] = !!v;
       else if (f.type === "list") init[f.key] = Array.isArray(v) ? v.join(", ") : (v as string) ?? "";
+      // "unvalidated" convention = email_status IS NULL, never a literal string — preselect
+      // it in the dropdown when the row's actual value is null.
+      else if (f.type === "email_status") init[f.key] = (v as string) ?? "unvalidated";
       else init[f.key] = (v as string) ?? "";
     }
     return init;
@@ -914,6 +928,7 @@ function EditRecordPanel<T extends { id: string }>({
         const v = values[f.key];
         if (f.type === "boolean") fieldsPayload[f.key] = !!v;
         else if (f.type === "list") fieldsPayload[f.key] = String(v).split(",").map((s) => s.trim()).filter(Boolean);
+        else if (f.type === "email_status") fieldsPayload[f.key] = v === "unvalidated" ? null : v;
         else fieldsPayload[f.key] = String(v).trim() === "" ? null : v;
       }
       const r = await fetch(`/api/radar/${table}`, {
@@ -956,6 +971,10 @@ function EditRecordPanel<T extends { id: string }>({
                   <option value="B2B">B2B</option>
                   <option value="US">US</option>
                   <option value="D2C">D2C</option>
+                </select>
+              ) : f.type === "email_status" ? (
+                <select value={values[f.key] as string} onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}>
+                  {EMAIL_STATUS_OPTIONS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
                 </select>
               ) : (
                 <input type="text" value={values[f.key] as string} onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))} />
@@ -1288,15 +1307,6 @@ function ContactsSection() {
 }
 
 /* ── Export ────────────────────────────────────────────────────────────── */
-
-const EMAIL_STATUS_OPTIONS: Array<{ key: string; label: string }> = [
-  { key: "safe to send", label: "Safe to send" },
-  { key: "verified", label: "Verified" },
-  { key: "risky", label: "Risky" },
-  { key: "invalid", label: "Invalid" },
-  { key: "unknown", label: "Unknown" },
-  { key: "unvalidated", label: "Unvalidated" },
-];
 
 function ExportAndCheckSection() {
   const [mode, setMode] = useState<"download" | "check">("download");
