@@ -377,7 +377,16 @@ interface RadarMember {
   debounce: number;
   leads_finder: number;
   linkedin: number;
+  tavily: number;
   cost: number;
+}
+interface RadarCredential {
+  key: string;
+  label: string;
+  detail: string;
+  configured: boolean;
+  rate: string | null;
+  credits_remaining?: number | null;
 }
 interface RadarUsage {
   supabase?: {
@@ -387,6 +396,14 @@ interface RadarUsage {
     row_pct: number;
   };
   debounce?: { credits_remaining: number; credits_used: number; configured: boolean };
+  vercel?: {
+    plan: string;
+    total_deployments: number;
+    bandwidth_limit_gb: number;
+    build_minutes_limit: number;
+    max_fn_timeout_s: number;
+  } | null;
+  credentials?: RadarCredential[];
   members?: RadarMember[];
   error?: string;
 }
@@ -458,18 +475,44 @@ function RadarUsageSection() {
             </div>
           </div>
 
+          {/* Vercel infra */}
+          {data.vercel && (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-bg)] p-4">
+                <p className="text-[11px] uppercase tracking-wider text-[var(--hm-text-tertiary)] font-medium">Deployments</p>
+                <p className="text-[24px] font-semibold text-[var(--hm-text)] mt-1 leading-tight tabular-nums">{data.vercel.total_deployments}</p>
+                <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-1 capitalize">{data.vercel.plan} plan</p>
+              </div>
+              <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-bg)] p-4">
+                <p className="text-[11px] uppercase tracking-wider text-[var(--hm-text-tertiary)] font-medium">Bandwidth</p>
+                <p className="text-[24px] font-semibold text-[var(--hm-text)] mt-1 leading-tight">{data.vercel.bandwidth_limit_gb} GB</p>
+                <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-1">per month (plan limit)</p>
+              </div>
+              <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-bg)] p-4">
+                <p className="text-[11px] uppercase tracking-wider text-[var(--hm-text-tertiary)] font-medium">Build minutes</p>
+                <p className="text-[24px] font-semibold text-[var(--hm-text)] mt-1 leading-tight tabular-nums">{data.vercel.build_minutes_limit.toLocaleString()}</p>
+                <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-1">per month (plan limit)</p>
+              </div>
+              <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-bg)] p-4">
+                <p className="text-[11px] uppercase tracking-wider text-[var(--hm-text-tertiary)] font-medium">Max fn timeout</p>
+                <p className="text-[24px] font-semibold text-[var(--hm-text)] mt-1 leading-tight">{data.vercel.max_fn_timeout_s}s</p>
+                <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-1">per serverless invocation</p>
+              </div>
+            </div>
+          )}
+
           {/* Per-member activity */}
           {(data.members ?? []).length > 0 && (
             <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-bg)] overflow-hidden">
               <div className="px-5 py-3 border-b border-[var(--hm-border)]">
                 <h3 className="text-[13px] font-semibold text-[var(--hm-text)]">Activity by member</h3>
-                <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-0.5">Enrichment, email validation and LinkedIn checks run through Radar.</p>
+                <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-0.5">Enrichment, email validation, LinkedIn checks and Tavily lookups run through Radar.</p>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse text-[13px]">
                   <thead>
                     <tr>
-                      {["Member", "Leads finder", "Debounce", "LinkedIn", "Est. cost"].map((hd, i) => (
+                      {["Member", "Leads finder", "Debounce", "LinkedIn", "Tavily", "Est. cost"].map((hd, i) => (
                         <th key={hd} className={`text-[11px] font-semibold uppercase tracking-wide text-[var(--hm-text-tertiary)] px-4 py-2.5 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] whitespace-nowrap ${i === 0 ? "text-left" : "text-right"}`}>{hd}</th>
                       ))}
                     </tr>
@@ -484,11 +527,41 @@ function RadarUsageSection() {
                         <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)] text-right tabular-nums">{m.leads_finder.toLocaleString()}</td>
                         <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)] text-right tabular-nums">{m.debounce.toLocaleString()}</td>
                         <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)] text-right tabular-nums">{m.linkedin.toLocaleString()}</td>
+                        <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)] text-right tabular-nums">{m.tavily.toLocaleString()}</td>
                         <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)] text-right tabular-nums">${m.cost.toFixed(2)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+              </div>
+            </div>
+          )}
+
+          {/* API credentials */}
+          {(data.credentials ?? []).length > 0 && (
+            <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-bg)] overflow-hidden">
+              <div className="px-5 py-3 border-b border-[var(--hm-border)]">
+                <h3 className="text-[13px] font-semibold text-[var(--hm-text)]">API credentials</h3>
+                <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-0.5">External services Radar is configured to call.</p>
+              </div>
+              <div className="divide-y divide-[var(--hm-border-light)]">
+                {(data.credentials ?? []).map((c) => (
+                  <div key={c.key} className="flex items-center justify-between px-5 py-3">
+                    <div className="flex items-center gap-3">
+                      <span className={`w-2 h-2 rounded-full ${c.configured ? "bg-emerald-500" : "bg-[var(--hm-text-tertiary)]/40"}`} />
+                      <div>
+                        <div className="text-[13px] font-medium text-[var(--hm-text)]">{c.label}</div>
+                        <div className="text-[11.5px] text-[var(--hm-text-tertiary)]">{c.detail}</div>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-[12.5px] text-[var(--hm-text)]">{c.rate ?? "—"}</div>
+                      {c.credits_remaining != null && c.credits_remaining >= 0 && (
+                        <div className="text-[11px] text-[var(--hm-text-tertiary)]">{c.credits_remaining.toLocaleString()} credits left</div>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}
