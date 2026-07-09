@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { selectFrom, requireRadarAccess } from "@/lib/radar/supabase";
+import { selectFrom, requireRadarAccess, updateRow } from "@/lib/radar/supabase";
 
 /**
  * Radar accounts list — paginated, searchable, filterable by vertical.
@@ -32,5 +32,23 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error("Radar accounts error:", err);
     return NextResponse.json({ error: "Failed to load accounts" }, { status: 502 });
+  }
+}
+
+/** Edit a single account record — requires radar:edit, not just view. */
+export async function PATCH(req: NextRequest) {
+  const access = await requireRadarAccess(req, "edit");
+  if (access instanceof NextResponse) return access;
+
+  try {
+    const body = await req.json().catch(() => ({}));
+    const { id, fields } = body as { id?: string; fields?: Record<string, unknown> };
+    if (!id || !fields) return NextResponse.json({ error: "id and fields are required" }, { status: 400 });
+
+    const updated = await updateRow("accounts", id, fields);
+    return NextResponse.json({ data: updated });
+  } catch (err) {
+    console.error("Radar account update error:", err);
+    return NextResponse.json({ error: (err as Error).message || "Failed to update account" }, { status: 400 });
   }
 }
