@@ -1898,6 +1898,16 @@ function UploadStatusPill({ status }: { status: string }) {
   return <span className={`text-[11px] px-2 py-0.5 rounded-md font-medium ${cls}`}>{status}</span>;
 }
 
+// email_validation_jobs.status is a raw lifecycle value (draft → sent → checked → done) — collapse
+// that into the 3 states a user actually cares about: not started yet, actively running, finished.
+function ValidateJobStatusPill({ status }: { status: string }) {
+  const s = (status || "").toLowerCase();
+  let label = "Draft", cls = "bg-[var(--hm-bg-tertiary)] text-[var(--hm-text-tertiary)]";
+  if (s === "done") { label = "Completed"; cls = "bg-[#DCFCE7] text-[#059669]"; }
+  else if (s === "sent" || s === "checked") { label = "Running"; cls = "bg-[#FEF3C7] text-[#B45309]"; }
+  return <span className={`text-[11px] px-2 py-0.5 rounded-md font-medium ${cls}`}>{label}</span>;
+}
+
 /* ── Enrich ────────────────────────────────────────────────────────────── */
 
 interface EnrichLead {
@@ -3192,7 +3202,7 @@ function ValidateSection() {
                   {jobs.map((j) => (
                     <tr key={j.id} className="hover:bg-[var(--hm-surface-hover)]">
                       <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">{j.label || `Job #${j.id}`}</td>
-                      <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]"><UploadStatusPill status={j.status} /></td>
+                      <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]"><ValidateJobStatusPill status={j.status} /></td>
                       <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text-tertiary)]">{j.created_at ? new Date(j.created_at).toLocaleDateString() : "—"}</td>
                       <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)] text-right whitespace-nowrap">
                         <button onClick={() => openJob(j.id)} className="text-[12px] text-[var(--hm-accent)] mr-3">Open</button>
