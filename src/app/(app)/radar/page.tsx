@@ -1531,9 +1531,15 @@ function parseCSV(text: string): { headers: string[]; rows: Record<string, strin
   const nonEmpty = out.filter((r) => r.some((v) => v.trim() !== ""));
   if (!nonEmpty.length) return { headers: [], rows: [] };
   const headers = nonEmpty[0].map((h) => h.trim());
+  // Strip invisible Unicode formatting marks (zero-width space/joiner, LTR/RTL marks, BOM) —
+  // confirmed live: a CSV with a stray ‎ before an email address made it through parsing
+  // untouched, silently failed every Instantly lead-add call as an "invalid" address, and (since
+  // that failure was swallowed) never surfaced until 1,551 leads out of 2,550 mysteriously never
+  // got added to a campaign.
+  const stripInvisible = (s: string) => s.replace(/[​-‏﻿]/g, "").trim();
   const rows = nonEmpty.slice(1).map((r) => {
     const o: Record<string, string> = {};
-    headers.forEach((h, i) => { o[h] = (r[i] ?? "").trim(); });
+    headers.forEach((h, i) => { o[h] = stripInvisible(r[i] ?? ""); });
     return o;
   });
   return { headers, rows };
