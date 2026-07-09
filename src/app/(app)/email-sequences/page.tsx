@@ -109,6 +109,8 @@ export default function EmailSequencesPage() {
   const [senderName, setSenderName] = useState("");
   const [senderRole, setSenderRole] = useState("");
   const [objective, setObjective] = useState("");
+  const [subjectMode, setSubjectMode] = useState<"single" | "variant">("variant");
+  const [singleSubject, setSingleSubject] = useState("");
 
   // Products from KB
   const [products, setProducts] = useState<string[]>([]);
@@ -199,6 +201,8 @@ export default function EmailSequencesPage() {
           senderName,
           senderRole,
           objective,
+          subjectMode,
+          singleSubject: subjectMode === "single" ? singleSubject : undefined,
         },
       }),
     });
@@ -700,6 +704,33 @@ export default function EmailSequencesPage() {
             <div className="mb-4">
               <label className={labelCls}>Campaign Objective (optional)</label>
               <input className={inputCls} placeholder="e.g. Get enterprise ecommerce brands to book a demo for our returns management platform" value={objective} onChange={e => setObjective(e.target.value)} />
+            </div>
+
+            {/* Subject line strategy */}
+            <div className="mb-4">
+              <label className={labelCls}>Subject Line</label>
+              <div className="flex gap-1.5">
+                <button
+                  onClick={() => setSubjectMode("variant")}
+                  className={`h-[32px] px-3 rounded-lg text-[12px] transition-all ${subjectMode === "variant" ? "bg-[#4361ee] text-white" : "border border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[#4361ee]/40"}`}
+                >
+                  Different per email
+                </button>
+                <button
+                  onClick={() => setSubjectMode("single")}
+                  className={`h-[32px] px-3 rounded-lg text-[12px] transition-all ${subjectMode === "single" ? "bg-[#4361ee] text-white" : "border border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[#4361ee]/40"}`}
+                >
+                  Single subject for whole sequence
+                </button>
+              </div>
+              {subjectMode === "single" && (
+                <input
+                  className={inputCls + " mt-2"}
+                  placeholder="Leave blank to let AI write one — same subject on every follow-up"
+                  value={singleSubject}
+                  onChange={e => setSingleSubject(e.target.value)}
+                />
+              )}
             </div>
 
             {/* Sender info */}

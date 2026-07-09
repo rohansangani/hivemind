@@ -29,6 +29,13 @@ interface SequenceConfig {
   senderName?: string;
   senderRole?: string;
   objective?: string;
+  /** "variant" (default) = each email gets its own subject. "single" = every email in the
+   * sequence reuses one subject line, mimicking the cold-email convention of replying in the
+   * same thread rather than starting a new one each time. */
+  subjectMode?: "single" | "variant";
+  /** Only used when subjectMode is "single" — if blank, the AI invents one subject and it's
+   * still forced identical across every email below as a safety net. */
+  singleSubject?: string;
 }
 
 async function scrapeProspectWebsite(website: string): Promise<string> {
@@ -190,7 +197,9 @@ SEQUENCE STRATEGY:
 - Email 3: Social proof or different angle — approach from a new direction or reference relevant results.
 - Email 4+: Follow-up with breakup energy, curiosity gaps, or a completely fresh angle.
 - Each email should work standalone but build upon the narrative arc.
-- Subject lines must be short (3-6 words), intriguing, and never clickbaity.
+- ${config.subjectMode === "single"
+    ? `Use exactly ONE subject line for every single email in the sequence — do not vary it between emails. ${config.singleSubject ? `Use this exact subject line, verbatim, for every email: "${config.singleSubject}"` : "Invent one short (3-6 words), intriguing, non-clickbaity subject and reuse it identically across every email."} This mimics replying in the same email thread rather than starting a new one each follow-up.`
+    : `Subject lines must be short (3-6 words), intriguing, never clickbaity, and distinct for each email in the sequence.`}
 - Never use "just following up", "touching base", "hope this finds you well", or other generic openers.
 - ${prospectContext ? "Reference SPECIFIC details from the prospect's website or role. Generic flattery like 'I love what your company is doing' is banned." : "Use clear placeholders like [specific metric], [relevant challenge] that prompt the user to fill in real details."}
 
@@ -254,6 +263,13 @@ Return ONLY valid JSON, no markdown or explanation.`;
       parsed = JSON.parse(jsonStr.trim());
     } catch {
       return NextResponse.json({ error: "Failed to parse email sequence. Please try again." }, { status: 500 });
+    }
+
+    // Safety net: force one identical subject across every email regardless of how well the
+    // model followed the prompt instruction above.
+    if (config.subjectMode === "single" && Array.isArray(parsed?.emails) && parsed.emails.length) {
+      const sharedSubject = config.singleSubject || parsed.emails[0].subject;
+      parsed.emails = parsed.emails.map((e: { subject: string }) => ({ ...e, subject: sharedSubject }));
     }
 
     return NextResponse.json({
