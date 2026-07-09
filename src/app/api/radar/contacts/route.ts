@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { selectFrom, requireRadarAccess } from "@/lib/radar/supabase";
+import { selectFrom, requireRadarAccess, updateRow } from "@/lib/radar/supabase";
 
 /**
  * Radar contacts list — paginated, searchable, filterable by vertical and
@@ -38,5 +38,24 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error("Radar contacts error:", err);
     return NextResponse.json({ error: "Failed to load contacts" }, { status: 502 });
+  }
+}
+
+/** Edit a single contact record — requires radar:edit, not just view. Writes to the base
+ * `contacts` table, not the contacts_view the list above reads from (views aren't writable). */
+export async function PATCH(req: NextRequest) {
+  const access = await requireRadarAccess(req, "edit");
+  if (access instanceof NextResponse) return access;
+
+  try {
+    const body = await req.json().catch(() => ({}));
+    const { id, fields } = body as { id?: string; fields?: Record<string, unknown> };
+    if (!id || !fields) return NextResponse.json({ error: "id and fields are required" }, { status: 400 });
+
+    const updated = await updateRow("contacts", id, fields);
+    return NextResponse.json({ data: updated });
+  } catch (err) {
+    console.error("Radar contact update error:", err);
+    return NextResponse.json({ error: (err as Error).message || "Failed to update contact" }, { status: 400 });
   }
 }

@@ -180,9 +180,15 @@ async function getCustomRolePermissions(organizationId: string, roleSlug: string
  * it automatically; everyone else defaults to none) merged with any personal
  * override an owner/admin granted from their Team profile. Returns the actor
  * on success, or a NextResponse to return immediately on failure.
+ *
+ * `minLevel` defaults to "view" (every existing route's behavior, unchanged).
+ * Routes that write data (record editing) should pass "edit" explicitly —
+ * until this was added, every radar route only ever checked "view", so a
+ * view-only grant could technically reach write endpoints too.
  */
 export async function requireRadarAccess(
   req: NextRequest,
+  minLevel: "view" | "edit" = "view",
 ): Promise<{ userId: string; orgId: string; role: string } | NextResponse> {
   const token = req.cookies.get("hm-token")?.value;
   if (!token) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
@@ -213,9 +219,66 @@ export async function requireRadarAccess(
     customPermissions,
     customRolePermissions ? { [actor.role]: customRolePermissions } : undefined,
   );
-  if (!hasModuleAccess(effective, "radar", "view")) {
+  if (!hasModuleAccess(effective, "radar", minLevel)) {
     return NextResponse.json({ error: "You don't have access to Radar" }, { status: 403 });
   }
 
   return { userId: decoded.userId, orgId, role: actor.role };
+}
+
+/**
+ * Column allowlists for direct record editing — never trust a client-supplied
+ * column name. `id`/`created_at`/`updated_at` and any auto-managed timestamp
+ * fields (validated_at, linkedin_checked_at, upload_job_id) are deliberately
+ * excluded; those are only ever written by automated pipelines (validate,
+ * enrich, upload), not by hand.
+ */
+export const EDITABLE_COLUMNS: Record<"accounts" | "contacts", string[]> = {
+  accounts: [
+    "name", "domain", "vertical", "industry", "sub_industry", "account_size",
+    "employee_range", "revenue_range", "company_location", "country", "linkedin_url",
+    "sdr_owner", "parent_company", "track_order_page", "edd", "no_of_stores", "ebo", "mbo",
+    "shopify", "alt_names",
+  ],
+  contacts: [
+    "account_id", "first_name", "last_name", "full_name", "title", "company_name", "email",
+    "email_status", "phone", "phone2", "location", "country", "linkedin_url", "vertical",
+    "domain", "validated_company", "parent_company", "sdr_owner", "seniority_level",
+    "functional_level", "personal_email", "headline", "hubspot_excluded",
+  ],
+};
+
+/**
+ * Updates a single row by id, restricted to EDITABLE_COLUMNS for that table.
+ * Uses the service-role key (writes bypass anon-key RLS the same way every
+ * other write in this codebase already does). Throws on any disallowed
+ * column name instead of silently dropping it — a typo should fail loud, not
+ * quietly save nothing.
+ */
+export async function updateRow(
+  table: "accounts" | "contacts",
+  id: string,
+  fields: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  if (!RADAR_SUPABASE_URL || !RADAR_SUPABASE_SERVICE_KEY) {
+    throw new Error("Radar Supabase service key is not configured");
+  }
+  const allowed = EDITABLE_COLUMNS[table];
+  const keys = Object.keys(fields);
+  const bad = keys.filter((k) => !allowed.includes(k));
+  if (bad.length) throw new Error(`Not editable: ${bad.join(", ")}`);
+  if (!keys.length) throw new Error("No fields to update");
+
+  const r = await fetch(`${RADAR_SUPABASE_URL}/rest/v1/${table}?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: serviceHeaders({ Prefer: "return=representation" }),
+    body: JSON.stringify(fields),
+  });
+  if (!r.ok) {
+    const body = await r.text().catch(() => "");
+    throw new Error(`Radar Supabase update failed (${r.status}): ${body || "no details"}`);
+  }
+  const rows = (await r.json()) as Record<string, unknown>[];
+  if (!rows.length) throw new Error("Record not found");
+  return rows[0];
 }

@@ -490,6 +490,7 @@ function DataTable<T extends { id: string }>({
   bulkActions,
   booleanFilters,
   onRowClick,
+  refreshToken,
 }: {
   endpoint: string;
   columns: Column<T>[];
@@ -502,6 +503,9 @@ function DataTable<T extends { id: string }>({
   booleanFilters?: Array<{ key: string; label: string }>;
   /** Makes rows clickable (e.g. opening a detail panel) without affecting the checkbox column. */
   onRowClick?: (row: T) => void;
+  /** Bump this (e.g. a counter) to force a refetch of the current page/filters — used after an
+   * edit-panel save so the table reflects the new values without losing pagination/search state. */
+  refreshToken?: number;
 }) {
   const [rows, setRows] = useState<T[]>([]);
   const [total, setTotal] = useState(0);
@@ -572,7 +576,7 @@ function DataTable<T extends { id: string }>({
       .catch((e) => { if (!cancelled) setError(e.message); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [endpoint, term, filtersKey, page]);
+  }, [endpoint, term, filtersKey, page, refreshToken]);
 
   const from = total === 0 ? 0 : page * PAGE_SIZE + 1;
   const to = Math.min((page + 1) * PAGE_SIZE, total);
@@ -820,8 +824,171 @@ function YesNo({ v }: { v: boolean | null }) {
   return v ? <span style={{ color: "#059669" }}>Yes</span> : <span className="text-[var(--hm-text-tertiary)]">No</span>;
 }
 
+interface EditField {
+  key: string;
+  label: string;
+  type?: "text" | "boolean" | "list" | "vertical";
+}
+
+const ACCOUNT_EDIT_FIELDS: EditField[] = [
+  { key: "name", label: "Company name" },
+  { key: "domain", label: "Domain" },
+  { key: "vertical", label: "Vertical", type: "vertical" },
+  { key: "industry", label: "Industry" },
+  { key: "sub_industry", label: "Sub-Industry" },
+  { key: "account_size", label: "Account Size" },
+  { key: "employee_range", label: "Employees" },
+  { key: "revenue_range", label: "Revenue" },
+  { key: "company_location", label: "Company Location" },
+  { key: "country", label: "Country" },
+  { key: "linkedin_url", label: "LinkedIn URL" },
+  { key: "sdr_owner", label: "SDR Owner" },
+  { key: "parent_company", label: "Parent Company" },
+  { key: "track_order_page", label: "Track Order Page" },
+  { key: "edd", label: "EDD" },
+  { key: "no_of_stores", label: "No. of Stores" },
+  { key: "ebo", label: "EBO" },
+  { key: "mbo", label: "MBO" },
+  { key: "shopify", label: "Shopify", type: "boolean" },
+  { key: "alt_names", label: "Alt Names (comma-separated)", type: "list" },
+];
+
+const CONTACT_EDIT_FIELDS: EditField[] = [
+  { key: "first_name", label: "First Name" },
+  { key: "last_name", label: "Last Name" },
+  { key: "full_name", label: "Full Name" },
+  { key: "title", label: "Title" },
+  { key: "company_name", label: "Company Name" },
+  { key: "email", label: "Email" },
+  { key: "email_status", label: "Email Status" },
+  { key: "phone", label: "Phone" },
+  { key: "phone2", label: "Phone 2" },
+  { key: "location", label: "Location" },
+  { key: "country", label: "Country" },
+  { key: "linkedin_url", label: "LinkedIn URL" },
+  { key: "vertical", label: "Vertical", type: "vertical" },
+  { key: "domain", label: "Domain" },
+  { key: "validated_company", label: "Validated Company" },
+  { key: "parent_company", label: "Parent Company" },
+  { key: "sdr_owner", label: "SDR Owner" },
+  { key: "seniority_level", label: "Seniority Level" },
+  { key: "functional_level", label: "Functional Level" },
+  { key: "personal_email", label: "Personal Email" },
+  { key: "headline", label: "Headline" },
+  { key: "hubspot_excluded", label: "HubSpot Excluded", type: "boolean" },
+];
+
+/** Generic edit form for a single record — row-level "Edit" action shared by Accounts and
+ * Contacts. Fields are driven by config so each table's editable columns stay in one place;
+ * the backend independently re-validates the same column names against its own allowlist. */
+function EditRecordPanel<T extends { id: string }>({
+  title, table, fields, row, onClose, onSaved,
+}: {
+  title: string;
+  table: "accounts" | "contacts";
+  fields: EditField[];
+  row: T;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const rowValues = row as unknown as Record<string, unknown>;
+  const [values, setValues] = useState<Record<string, string | boolean>>(() => {
+    const init: Record<string, string | boolean> = {};
+    for (const f of fields) {
+      const v = rowValues[f.key];
+      if (f.type === "boolean") init[f.key] = !!v;
+      else if (f.type === "list") init[f.key] = Array.isArray(v) ? v.join(", ") : (v as string) ?? "";
+      else init[f.key] = (v as string) ?? "";
+    }
+    return init;
+  });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const save = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const fieldsPayload: Record<string, unknown> = {};
+      for (const f of fields) {
+        const v = values[f.key];
+        if (f.type === "boolean") fieldsPayload[f.key] = !!v;
+        else if (f.type === "list") fieldsPayload[f.key] = String(v).split(",").map((s) => s.trim()).filter(Boolean);
+        else fieldsPayload[f.key] = String(v).trim() === "" ? null : v;
+      }
+      const r = await fetch(`/api/radar/${table}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: row.id, fields: fieldsPayload }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || "Save failed");
+      onSaved();
+      onClose();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-40 flex justify-end" role="dialog" aria-modal="true">
+      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
+      <div className="relative w-full max-w-lg h-full bg-[var(--hm-surface)] shadow-xl flex flex-col">
+        <div className="px-5 py-4 border-b border-[var(--hm-border)] flex items-center justify-between gap-3">
+          <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">{title}</h2>
+          <button onClick={onClose} className="hm-btn hm-btn-secondary flex-shrink-0" style={{ height: 30, width: 30, padding: 0, fontSize: 14 }}>×</button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-5 space-y-3">
+          {error && <div className="rounded-lg p-3 text-[12.5px] bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</div>}
+          {fields.map((f) => (
+            <div key={f.key}>
+              <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">{f.label}</label>
+              {f.type === "boolean" ? (
+                <label className="flex items-center gap-2 text-[13px]">
+                  <input type="checkbox" checked={!!values[f.key]} onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.checked }))} />
+                  Yes
+                </label>
+              ) : f.type === "vertical" ? (
+                <select value={values[f.key] as string} onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}>
+                  <option value="">—</option>
+                  <option value="B2B">B2B</option>
+                  <option value="US">US</option>
+                  <option value="D2C">D2C</option>
+                </select>
+              ) : (
+                <input type="text" value={values[f.key] as string} onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))} />
+              )}
+            </div>
+          ))}
+        </div>
+        <div className="px-5 py-4 border-t border-[var(--hm-border)] flex items-center justify-end gap-2">
+          <button onClick={onClose} className="hm-btn hm-btn-secondary" style={{ height: 34, padding: "0 14px", fontSize: 12.5 }}>Cancel</button>
+          <button onClick={save} disabled={busy} className="hm-btn hm-btn-primary" style={{ height: 34, padding: "0 14px", fontSize: 12.5 }}>{busy ? "Saving…" : "Save"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AccountsSection() {
+  const [editAccount, setEditAccount] = useState<AccountRow | null>(null);
+  const [refreshToken, setRefreshToken] = useState(0);
   const cols: Column<AccountRow>[] = [
+    {
+      key: "edit",
+      header: "",
+      render: (r) => (
+        <button
+          onClick={(e) => { e.stopPropagation(); setEditAccount(r); }}
+          className="hm-btn hm-btn-secondary"
+          style={{ height: 26, padding: "0 10px", fontSize: 11.5 }}
+        >
+          Edit
+        </button>
+      ),
+    },
     { key: "vertical", header: "Vertical", render: (r) => <VerticalBadge v={r.vertical} /> },
     {
       key: "company",
@@ -879,6 +1046,7 @@ function AccountsSection() {
         searchPlaceholder="Search company or domain…"
         emptyLabel="No accounts match your filters."
         onRowClick={setOpenAccount}
+        refreshToken={refreshToken}
         bulkActions={(rows, clear) => (
           <button
             onClick={() => { downloadCSV(rows, `radar_accounts_${today()}.csv`); clear(); }}
@@ -890,6 +1058,16 @@ function AccountsSection() {
         )}
       />
       {openAccount && <AccountContactsPanel account={openAccount} onClose={() => setOpenAccount(null)} />}
+      {editAccount && (
+        <EditRecordPanel
+          title={`Edit — ${editAccount.name || editAccount.domain || "Account"}`}
+          table="accounts"
+          fields={ACCOUNT_EDIT_FIELDS}
+          row={editAccount}
+          onClose={() => setEditAccount(null)}
+          onSaved={() => setRefreshToken((t) => t + 1)}
+        />
+      )}
     </>
   );
 }
@@ -1028,7 +1206,22 @@ function formatStatusBreakdown(byStatus: Record<string, number>): string {
 }
 
 function ContactsSection() {
+  const [editContact, setEditContact] = useState<ContactRow | null>(null);
+  const [refreshToken, setRefreshToken] = useState(0);
   const cols: Column<ContactRow>[] = [
+    {
+      key: "edit",
+      header: "",
+      render: (r) => (
+        <button
+          onClick={() => setEditContact(r)}
+          className="hm-btn hm-btn-secondary"
+          style={{ height: 26, padding: "0 10px", fontSize: 11.5 }}
+        >
+          Edit
+        </button>
+      ),
+    },
     { key: "vertical", header: "Vertical", render: (r) => <VerticalBadge v={r.vertical} /> },
     {
       key: "first_name",
@@ -1062,22 +1255,35 @@ function ContactsSection() {
     { key: "updated", header: "Updated", render: (r) => fmtDate(r.updated_at) },
   ];
   return (
-    <DataTable<ContactRow>
-      endpoint="/api/radar/contacts"
-      columns={cols}
-      searchPlaceholder="Search name or email…"
-      emptyLabel="No contacts match your filters."
-      booleanFilters={[{ key: "hasEmail", label: "Email not blank" }]}
-      bulkActions={(rows, clear) => (
-        <button
-          onClick={() => { downloadCSV(rows, `radar_contacts_${today()}.csv`); clear(); }}
-          className="hm-btn hm-btn-primary"
-          style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}
-        >
-          Export CSV
-        </button>
+    <>
+      <DataTable<ContactRow>
+        endpoint="/api/radar/contacts"
+        columns={cols}
+        searchPlaceholder="Search name or email…"
+        emptyLabel="No contacts match your filters."
+        booleanFilters={[{ key: "hasEmail", label: "Email not blank" }]}
+        refreshToken={refreshToken}
+        bulkActions={(rows, clear) => (
+          <button
+            onClick={() => { downloadCSV(rows, `radar_contacts_${today()}.csv`); clear(); }}
+            className="hm-btn hm-btn-primary"
+            style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}
+          >
+            Export CSV
+          </button>
+        )}
+      />
+      {editContact && (
+        <EditRecordPanel
+          title={`Edit — ${[editContact.first_name, editContact.last_name].filter(Boolean).join(" ") || editContact.email || "Contact"}`}
+          table="contacts"
+          fields={CONTACT_EDIT_FIELDS}
+          row={editContact}
+          onClose={() => setEditContact(null)}
+          onSaved={() => setRefreshToken((t) => t + 1)}
+        />
       )}
-    />
+    </>
   );
 }
 
