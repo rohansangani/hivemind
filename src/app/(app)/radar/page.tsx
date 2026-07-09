@@ -3209,6 +3209,11 @@ function ValidateSection() {
       const status = d.job?.status;
       setPhase(status === "sent" || status === "checked" ? "sent" : "candidates");
       setCheckResult(null);
+      // Reopening a job whose bounce checks aren't fully resolved yet almost always means the
+      // user wants to keep watching it — default auto-refresh back on instead of making them
+      // re-check the box every single time they revisit (autoRefresh is plain component state,
+      // so it resets to false on any remount: page reload, tab switch away and back, etc).
+      setAutoRefresh(status === "sent");
       setView("current");
     } catch (e) {
       setError((e as Error).message);
