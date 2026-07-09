@@ -4,6 +4,9 @@ import { readFile } from "fs/promises";
 import path from "path";
 import { getAnthropicKey } from "@/lib/aiProvider";
 import { logTokenUsage, extractAnthropicUsage } from "@/lib/tokenTracking";
+import { ensureFeatureRegistered } from "@/lib/featureBootstrap";
+import { composeSkills, formatSkillsBlock } from "@/lib/skillComposer";
+import { recordSignal } from "@/lib/signalCapture";
 
 function cuid() {
   return crypto.randomUUID().replace(/-/g, "");
@@ -212,6 +215,7 @@ export async function analyzeAsset(
   userId: string,
 ): Promise<AnalyzeResult> {
   const apiKey = await getAnthropicKey(orgId);
+  ensureFeatureRegistered(orgId, "asset_analysis").catch(() => {});
 
   const asset = await db.contentAsset.findUnique({ where: { id: assetId } });
   if (!asset || asset.organizationId !== orgId) {
@@ -224,13 +228,14 @@ export async function analyzeAsset(
   });
 
   try {
-    const [org, products, personas, competitors, brandProfile, markets] = await Promise.all([
+    const [org, products, personas, competitors, brandProfile, markets, composedSkills] = await Promise.all([
       db.organization.findUnique({ where: { id: orgId } }),
       db.product.findMany({ where: { organizationId: orgId }, select: { name: true } }),
       db.persona.findMany({ where: { organizationId: orgId }, select: { title: true } }),
       db.competitor.findMany({ where: { organizationId: orgId }, select: { name: true } }),
       db.brandProfile.findFirst({ where: { organizationId: orgId } }),
       db.market.findMany({ where: { organizationId: orgId }, select: { name: true } }),
+      composeSkills(orgId, { featureKey: "asset_analysis" }),
     ]);
 
     const orgName = org?.name || "Unknown";
@@ -254,10 +259,13 @@ BRAND IDENTITY:
 - Words we avoid: ${(brandProfile.wordsWeAvoid as string[]).join(", ") || "None"}
 - Competitive moat: ${brandProfile.competitiveMoat || "Not set"}` : "BRAND IDENTITY: Not configured yet.";
 
+    const skillsBlock = formatSkillsBlock(composedSkills);
+
     const combinedPrompt = `You are a marketing intelligence analyst. Analyze this content asset for ${orgName} (${orgIndustry}) and return TWO things in a single JSON response.
 
 Asset: "${asset.name}" (type: ${asset.contentType || ext || "unknown"})
 ${brandBlock}
+${skillsBlock}
 Known products: ${products.map(p => p.name).join(", ") || "None"}
 Known personas: ${personas.map(p => p.title).join(", ") || "None"}
 Known competitors: ${competitors.map(c => c.name).join(", ") || "None"}
@@ -454,6 +462,15 @@ IMPORTANT: Tag each learning with "contentType:${asset.contentType || "general"}
         scoreSuggestions: analysisResult.recommendations || [],
       },
     });
+
+    recordSignal({
+      orgId,
+      signalType: "used",
+      featureKey: "asset_analysis",
+      outputId: assetId,
+      userId,
+      metadata: { contentType: asset.contentType || null },
+    }).catch(() => {});
 
     return { analysis, learnings, entriesCreated: entries.length };
   } catch (error) {

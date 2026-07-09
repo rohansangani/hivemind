@@ -8,6 +8,9 @@ import { logTokenUsage, extractAnthropicUsage } from "@/lib/tokenTracking";
 import { retrieveRelevantKnowledge } from "@/lib/knowledgeRetrieval";
 import { buildGroundedContext } from "@/lib/groundingEngine";
 import { resolveEntities } from "@/lib/intentEngine";
+import { ensureFeatureRegistered } from "@/lib/featureBootstrap";
+import { recordSignal } from "@/lib/signalCapture";
+import { getVariationInstructions, fingerprintOutput } from "@/lib/variationEngine";
 
 interface Prospect {
   name?: string;
@@ -86,6 +89,8 @@ export async function POST(req: NextRequest) {
     if (!token) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     const decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as { userId: string; orgId: string };
 
+    ensureFeatureRegistered(decoded.orgId, "email_sequences").catch(() => {});
+
     let body;
     try { body = await req.json(); } catch {
       return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
@@ -125,6 +130,7 @@ export async function POST(req: NextRequest) {
     const knowledge = await retrieveRelevantKnowledge(decoded.orgId, config.objective || config.products.join(", ") || "outreach", entities, {
       targetProduct: config.products[0] || entities.products[0] || undefined,
       searchDocuments: true,
+      featureKey: "email_sequences",
     });
 
     const groundedContext = buildGroundedContext(knowledge);
@@ -170,8 +176,10 @@ export async function POST(req: NextRequest) {
       custom: config.customCta || "Custom CTA",
     };
 
-    const prompt = `You are an elite B2B cold email copywriter who crafts hyper-personalised outreach sequences that get responses. You write emails that sound human, specific, and valuable — never generic or spammy.
+    const variationInstructions = await getVariationInstructions({ orgId: decoded.orgId, featureKey: "email_sequences" });
 
+    const prompt = `You are an elite B2B cold email copywriter who crafts hyper-personalised outreach sequences that get responses. You write emails that sound human, specific, and valuable — never generic or spammy.
+${variationInstructions ? `\n${variationInstructions}\n` : ""}
 SENDER CONTEXT:
 Company: ${org?.name || "Unknown"} — ${org?.description || ""}
 Industry: ${org?.industry || "Not specified"}
@@ -271,6 +279,22 @@ Return ONLY valid JSON, no markdown or explanation.`;
       const sharedSubject = config.singleSubject || parsed.emails[0].subject;
       parsed.emails = parsed.emails.map((e: { subject: string }) => ({ ...e, subject: sharedSubject }));
     }
+
+    recordSignal({
+      orgId: decoded.orgId,
+      signalType: "used",
+      featureKey: "email_sequences",
+      metadata: { mode, objective: config.objective || null },
+      userId: decoded.userId,
+    }).catch(() => {});
+
+    // Fingerprint the output for variation tracking
+    const emailContent = JSON.stringify(parsed);
+    fingerprintOutput({
+      orgId: decoded.orgId,
+      featureKey: "email_sequences",
+      content: emailContent,
+    }).catch(() => {});
 
     return NextResponse.json({
       sequence: parsed,

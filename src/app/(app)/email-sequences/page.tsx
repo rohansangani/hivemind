@@ -304,13 +304,19 @@ export default function EmailSequencesPage() {
 
   /* ── Inline edit ──────────────────────────────────────────────────────── */
 
+  const editOriginalRef = useRef({ subject: "", body: "" });
+
   const startEdit = (resultIdx: number, emailIdx: number, email: Email) => {
     const key = `${resultIdx}-${emailIdx}`;
     setEditingEmail(key);
     setEditBuffer({ subject: email.subject, body: email.body });
+    editOriginalRef.current = { subject: email.subject, body: email.body };
   };
 
   const saveEdit = (resultIdx: number, emailIdx: number) => {
+    const orig = editOriginalRef.current;
+    const changed = orig.subject !== editBuffer.subject || orig.body !== editBuffer.body;
+
     setResults(prev => {
       const next = [...prev];
       const seq = { ...next[resultIdx].sequence };
@@ -321,6 +327,18 @@ export default function EmailSequencesPage() {
       return next;
     });
     setEditingEmail(null);
+
+    if (changed) {
+      fetch("/api/edit-signal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          featureKey: "email_sequences",
+          original: `Subject: ${orig.subject}\n\n${orig.body}`,
+          edited: `Subject: ${editBuffer.subject}\n\n${editBuffer.body}`,
+        }),
+      }).catch(() => {});
+    }
   };
 
   /* ── Render ───────────────────────────────────────────────────────────── */

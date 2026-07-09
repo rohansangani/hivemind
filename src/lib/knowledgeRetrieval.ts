@@ -8,6 +8,8 @@
 
 import { db } from "@/lib/db";
 import type { QueryEntities } from "@/lib/intentEngine";
+import { composeSkills, type ComposedSkill } from "@/lib/skillComposer";
+import type { FeatureKey } from "@/lib/skillSystem";
 
 // ─────────────────────────────────────────────────────────
 //  Types
@@ -97,7 +99,7 @@ export interface RetrievedKnowledge {
   items: KnowledgeItem[];
 
   /** Active skills for this org */
-  skills: Array<{ name: string; category: string; instructions: string }>;
+  skills: Array<{ name: string; category: string; instructions: string; confidence?: number }>;
 
   /** All markets for the org */
   markets: Array<{ name: string; type: string; notes: string | null }>;
@@ -563,6 +565,7 @@ export async function retrieveRelevantKnowledge(
     targetCompetitor?: string;
     targetMarket?: string;
     searchDocuments?: boolean;
+    featureKey?: string;
   }
 ): Promise<RetrievedKnowledge> {
   const maxItems = options?.maxItems ?? 30;
@@ -581,7 +584,13 @@ export async function retrieveRelevantKnowledge(
     db.persona.findMany({ where: { organizationId: orgId } }),
     db.competitor.findMany({ where: { organizationId: orgId } }),
     db.brandProfile.findFirst({ where: { organizationId: orgId } }),
-    db.skill.findMany({ where: { organizationId: orgId, isActive: true } }),
+    composeSkills(orgId, {
+      featureKey: (options?.featureKey ?? "assistant") as FeatureKey,
+      targetProduct: options?.targetProduct ?? entities.products?.[0] ?? undefined,
+      targetPersona: options?.targetPersona ?? entities.personas?.[0] ?? undefined,
+      targetMarket: options?.targetMarket ?? entities.markets?.[0] ?? undefined,
+      targetCompetitor: options?.targetCompetitor ?? entities.competitors?.[0] ?? undefined,
+    }),
     // Fetch ALL knowledge entries — proof points, messaging, custom entries, content analyses, corrections
     db.knowledgeEntry.findMany({
       where: { organizationId: orgId },
@@ -926,7 +935,7 @@ export async function retrieveRelevantKnowledge(
     otherCompetitors,
     brand,
     items: rankedItems,
-    skills: skills.map(s => ({ name: s.name, category: s.category, instructions: s.instructions })),
+    skills: skills.map(s => ({ name: s.name, category: s.category, instructions: s.instructions, confidence: s.confidence })),
     markets: markets.map(m => ({ name: m.name, type: m.type, notes: m.notes })),
     targetMarket: effectiveMarket,
     productsInMarket: effectiveMarket

@@ -6,6 +6,9 @@ import path from "path";
 import { z } from "zod";
 import { getAnthropicKey, AIKeyNotConfiguredError } from "@/lib/aiProvider";
 import { logTokenUsage, extractAnthropicUsage } from "@/lib/tokenTracking";
+import { ensureFeatureRegistered } from "@/lib/featureBootstrap";
+import { composeSkills, formatSkillsBlock } from "@/lib/skillComposer";
+import { recordSignal } from "@/lib/signalCapture";
 
 const score0to100 = z.number().transform(v => Math.min(100, Math.max(0, Math.round(v))));
 
@@ -131,6 +134,8 @@ export async function POST(req: NextRequest) {
     const decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as { userId: string; orgId: string; role?: string };
     if (decoded.role === "viewer") return NextResponse.json({ error: "Read-only access" }, { status: 403 });
 
+    ensureFeatureRegistered(decoded.orgId, "brand_review").catch(() => {});
+
     const apiKey = await getAnthropicKey(decoded.orgId);
 
     const { assetId } = await req.json();
@@ -141,7 +146,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Asset not found" }, { status: 404 });
     }
 
-    const [org, products, personas, brandProfile, knowledgeEntries, scoringEntry, markets] = await Promise.all([
+    const [org, products, personas, brandProfile, knowledgeEntries, scoringEntry, markets, composedSkills] = await Promise.all([
       db.organization.findUnique({ where: { id: decoded.orgId } }),
       db.product.findMany({ where: { organizationId: decoded.orgId }, select: { name: true, description: true } }),
       db.persona.findMany({ where: { organizationId: decoded.orgId }, select: { title: true, painPoints: true } }),
@@ -153,6 +158,7 @@ export async function POST(req: NextRequest) {
       }),
       db.knowledgeEntry.findFirst({ where: { organizationId: decoded.orgId, category: "settings", title: "brand_scoring_config" } }),
       db.market.findMany({ where: { organizationId: decoded.orgId }, select: { name: true } }),
+      composeSkills(decoded.orgId, { featureKey: "brand_review" }),
     ]);
 
     // Parse scoring weights (fallback to equal weights)
@@ -197,10 +203,13 @@ Words we AVOID: ${(brandProfile.wordsWeAvoid as string[]).join(", ") || "None de
 Tone calibration:
   ${toneDesc || "Not set"}${knowledgeEntries.length > 0 ? "\n\nAdditional brand guidelines:\n" + knowledgeEntries.map(e => `[${e.category}] ${e.title}: ${e.content.slice(0, 200)}`).join("\n") : ""}` : "No brand profile configured yet — score based on general marketing best practices.";
 
+    const skillsBlock = formatSkillsBlock(composedSkills);
+
     const prompt = `You are an expert brand compliance analyst. Perform a detailed brand review of this content asset for ${orgName}${orgIndustry ? ` (${orgIndustry})` : ""}.
 
 BRAND GUIDELINES:
 ${brandContext}
+${skillsBlock}
 
 Products: ${products.map(p => p.name + (p.description ? ` — ${p.description.slice(0, 80)}` : "")).join("; ") || "Not specified"}
 Target personas: ${personas.map(p => p.title + (p.painPoints ? ` — ${p.painPoints.slice(0, 60)}` : "")).join("; ") || "Not specified"}
@@ -428,6 +437,14 @@ Rules:
     } catch (e) {
       console.error("Failed to save brand review learnings:", e);
     }
+
+    recordSignal({
+      orgId: decoded.orgId,
+      signalType: "used",
+      featureKey: "brand_review",
+      outputId: assetId,
+      userId: decoded.userId,
+    }).catch(() => {});
 
     return NextResponse.json({ review });
   } catch (error) {

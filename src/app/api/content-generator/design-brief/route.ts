@@ -5,6 +5,10 @@ import { db } from "@/lib/db";
 import jwt from "jsonwebtoken";
 import { getAnthropicKey, AIKeyNotConfiguredError } from "@/lib/aiProvider";
 import { logTokenUsage, extractAnthropicUsage } from "@/lib/tokenTracking";
+import { ensureFeatureRegistered } from "@/lib/featureBootstrap";
+import { composeSkills, formatSkillsBlock } from "@/lib/skillComposer";
+import { recordSignal } from "@/lib/signalCapture";
+import { getVariationInstructions, fingerprintOutput } from "@/lib/variationEngine";
 
 async function callClaude(apiKey: string, prompt: string): Promise<{ text: string; usage: { inputTokens: number; outputTokens: number } | null }> {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -42,6 +46,8 @@ export async function POST(req: NextRequest) {
     if (!token) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     const decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as { userId: string; orgId: string };
 
+    ensureFeatureRegistered(decoded.orgId, "design_brief").catch(() => {});
+
     const apiKey = await getAnthropicKey(decoded.orgId);
 
     const { content, format, topic, targetProduct, targetPersona, targetMarket } = await req.json();
@@ -55,11 +61,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "topic is required" }, { status: 400 });
     }
 
-    // Fetch org + brand profile + style guide
-    const [org, brandProfile, styleEntry] = await Promise.all([
+    // Fetch org + brand profile + style guide + composed skills
+    const [org, brandProfile, styleEntry, composedSkills] = await Promise.all([
       db.organization.findUnique({ where: { id: decoded.orgId } }),
       db.brandProfile.findFirst({ where: { organizationId: decoded.orgId } }),
       db.knowledgeEntry.findFirst({ where: { organizationId: decoded.orgId, category: "brand_style_guide", title: "brand_style_guide" } }),
+      composeSkills(decoded.orgId, { featureKey: "design_brief", targetProduct, targetPersona, targetMarket }),
     ]);
     const orgName = org?.name || "the company";
     const orgIndustry = org?.industry || "";
@@ -115,12 +122,16 @@ ${brandProfile.competitiveMoat ? `- Competitive moat: ${brandProfile.competitive
       : "";
 
     const formatName = FORMAT_NAMES[format] || format;
+    const skillsBlock = formatSkillsBlock(composedSkills);
+    const variationInstructions = await getVariationInstructions({ orgId: decoded.orgId, featureKey: "design_brief", format });
 
     const prompt = `You are a creative director creating a design brief for a design team.
 
 The following content has been written for ${orgName}${orgIndustry ? ` (${orgIndustry})` : ""}:
 ${brandStyleBlock}
 ${brandVoiceBlock}
+${skillsBlock}
+${variationInstructions ? `\n${variationInstructions}\n` : ""}
 
 FORMAT: ${formatName}
 TOPIC: ${topic}
@@ -179,6 +190,21 @@ Write clearly and concisely. Be specific and opinionated — vague briefs are us
         userId: decoded.userId,
       });
     }
+    recordSignal({
+      orgId: decoded.orgId,
+      signalType: "used",
+      featureKey: "design_brief",
+      metadata: { format, topic, targetProduct: targetProduct || null },
+      userId: decoded.userId,
+    }).catch(() => {});
+
+    fingerprintOutput({
+      orgId: decoded.orgId,
+      featureKey: "design_brief",
+      format,
+      content: result.text,
+    }).catch(() => {});
+
     return NextResponse.json({ brief: result.text });
   } catch (error) {
     if (error instanceof AIKeyNotConfiguredError) {

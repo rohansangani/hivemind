@@ -49,6 +49,10 @@ model Organization {
   aiProviders        AIProviderConfig[]
   tokenUsageLogs     TokenUsageLog[]
   customRoles        CustomRole[]
+  skillsV2           SkillV2[]
+  featureRegistries  FeatureRegistry[]
+  usageSignals       UsageSignal[]
+  outputFingerprints OutputFingerprint[]
 }
 
 model User {
@@ -496,4 +500,93 @@ model TourProgress {
   createdAt   DateTime @default(now())
 
   @@unique([userId, tourId])
+}
+
+// ═══════════════════════════════════════
+// SKILLS V2 — Entity-level, feature-scoped, self-evolving
+// ═══════════════════════════════════════
+
+model SkillV2 {
+  id              String   @id @default(cuid())
+  name            String
+  instructions    String
+  description     String?
+  version         Int      @default(1)
+
+  scope           String   // "entity" | "feature" | "global"
+  category        String   // brand | product | persona | competitor | market | messaging | proof_point | industry | seo | general | format | tone
+
+  entityType      String?  // "product" | "persona" | "market" | "competitor"
+  entityId        String?
+
+  featureKey      String?  // "content_generator" | "assistant" | "email_sequences" | "design_brief" | "brand_review" | "content_review" | "industry_insights" | "asset_analysis"
+
+  isActive        Boolean  @default(true)
+  isSynthesized   Boolean  @default(false)
+  confidence      Float    @default(0.5)
+  sourceCount     Int      @default(0)
+
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id])
+
+  parentSkillId   String?
+  parentSkill     SkillV2?  @relation("SkillVersions", fields: [parentSkillId], references: [id])
+  childVersions   SkillV2[] @relation("SkillVersions")
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([organizationId, scope, category])
+  @@index([organizationId, featureKey])
+  @@index([organizationId, entityType, entityId])
+}
+
+model FeatureRegistry {
+  id              String   @id @default(cuid())
+  key             String
+  name            String
+  description     String?
+  skillCategories String[]
+  isActive        Boolean  @default(true)
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([organizationId, key])
+}
+
+model UsageSignal {
+  id              String   @id @default(cuid())
+  signalType      String   // "feedback_positive" | "feedback_negative" | "edit" | "used" | "discarded" | "regenerated"
+  featureKey      String
+  outputId        String?
+  entityType      String?
+  entityId        String?
+  metadata        Json     @default("{}")
+  userId          String?
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  createdAt       DateTime @default(now())
+
+  @@index([organizationId, featureKey, createdAt])
+  @@index([organizationId, signalType])
+}
+
+model OutputFingerprint {
+  id              String   @id @default(cuid())
+  featureKey      String
+  format          String?
+  entityType      String?
+  entityId        String?
+  structureHash   String
+  openingPattern  String?
+  headingPatterns String[] @default([])
+  ctaPattern      String?
+  outputId        String?
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  createdAt       DateTime @default(now())
+
+  @@index([organizationId, featureKey, format, createdAt])
 }

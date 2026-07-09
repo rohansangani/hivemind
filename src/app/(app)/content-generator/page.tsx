@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useUser } from "@/lib/UserContext";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
+import InlineEditableContent from "@/components/InlineEditableContent";
 import { analyzeSeo, type SeoAnalysis } from "@/lib/seoAnalyzer";
 
 interface OutputData {
@@ -1009,7 +1010,19 @@ export default function ContentGeneratorPage() {
                             </span>
                           )}
                         </div>
-                        <MarkdownRenderer content={outputs[activeTab].content} />
+                        <InlineEditableContent
+                          content={outputs[activeTab].content}
+                          featureKey="content_generator"
+                          outputId={generatedId || undefined}
+                          onSave={(edited) => {
+                            const wc = edited.split(/\s+/).filter(Boolean).length;
+                            const updated = { ...outputs, [activeTab]: { ...outputs[activeTab], content: edited, wordCount: wc } };
+                            setOutputs(updated);
+                            setSuggestions(prev => { const n = { ...prev }; delete n[`${generatedId}:${activeTab}`]; return n; });
+                            loadSuggestions(activeTab, edited);
+                            autoSave(updated);
+                          }}
+                        />
                         <div className="flex flex-wrap gap-2 mt-6 pt-4 border-t border-[var(--hm-border)]">
                           <button onClick={() => { navigator.clipboard.writeText(outputs[activeTab].content); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
                             className={"px-3 py-1.5 text-[11px] bg-white border rounded-lg transition-all flex items-center gap-1.5 shadow-sm " + (copied ? "border-emerald-400 text-emerald-600" : "text-[var(--hm-text-secondary)] border-[var(--hm-border)] hover:border-[#4361ee] hover:text-[#4361ee]")}>

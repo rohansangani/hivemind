@@ -8,6 +8,9 @@ import { resolveEntities } from "@/lib/intentEngine";
 import { ANTHROPIC_WEB_SEARCH_TOOL, ANTHROPIC_WEB_SEARCH_BETA } from "@/lib/webSearch";
 import { getAnthropicKey, AIKeyNotConfiguredError } from "@/lib/aiProvider";
 import { logTokenUsage, extractAnthropicUsage } from "@/lib/tokenTracking";
+import { ensureFeatureRegistered } from "@/lib/featureBootstrap";
+import { recordSignal } from "@/lib/signalCapture";
+import { getVariationInstructions, fingerprintOutput } from "@/lib/variationEngine";
 import jwt from "jsonwebtoken";
 
 export async function POST(req: NextRequest) {
@@ -21,6 +24,8 @@ export async function POST(req: NextRequest) {
       token,
       process.env.NEXTAUTH_SECRET || "fallback-secret"
     ) as { userId: string; orgId: string };
+
+    ensureFeatureRegistered(decoded.orgId, "content_generator").catch(() => {});
 
     const body = await req.json();
     const { topic, formats, customFormatLabel, targetProduct, targetMarket, targetPersona, positionAgainst, toneOverride, keyPoints, focusKeyword, secondaryKeywords, length, webSearch } = body;
@@ -70,17 +75,27 @@ export async function POST(req: NextRequest) {
       targetCompetitor: positionAgainst || entities.competitors[0] || undefined,
       targetMarket: targetMarket || undefined,
       searchDocuments: true,
+      featureKey: "content_generator",
     });
 
     // Resolve API key for this workspace
     const apiKey = await getAnthropicKey(decoded.orgId);
 
+    // Get variation instructions per format to prevent repetitive outputs
+    const variationMap = new Map<string, string>();
+    await Promise.all(
+      formats.map(async (format: string) => {
+        const vi = await getVariationInstructions({ orgId: decoded.orgId, featureKey: "content_generator", format });
+        if (vi) variationMap.set(format, vi);
+      })
+    );
+
     // Generate content for all formats in parallel (was sequential — 3 formats × 40s = 120s → 504)
     const outputs: Record<string, { content: string; wordCount: number; score: number; scoreBreakdown: Record<string, number> }> = {};
 
     const formatResults = await Promise.all(
-      formats.map(format =>
-        generateForFormat(format, topic, knowledge, toneOverride, keyPoints, brandProfile, effectiveProduct, focusKeyword, secondaryKeywords, length, !!webSearch, customFormatLabel, apiKey, decoded.orgId, decoded.userId)
+      formats.map((format: string) =>
+        generateForFormat(format, topic, knowledge, toneOverride, keyPoints, brandProfile, effectiveProduct, focusKeyword, secondaryKeywords, length, !!webSearch, customFormatLabel, apiKey, decoded.orgId, decoded.userId, variationMap.get(format))
       )
     );
 
@@ -89,6 +104,14 @@ export async function POST(req: NextRequest) {
       const wordCount = content.split(/\s+/).length;
       const score = generateScore();
       outputs[formats[i]] = { content, wordCount, score: score.overall, scoreBreakdown: score.breakdown };
+
+      // Fingerprint each output for future variation detection
+      fingerprintOutput({
+        orgId: decoded.orgId,
+        featureKey: "content_generator",
+        format: formats[i],
+        content,
+      }).catch(() => {});
     }
 
     // Save to database
@@ -108,6 +131,15 @@ export async function POST(req: NextRequest) {
         organizationId: decoded.orgId,
       },
     });
+
+    recordSignal({
+      orgId: decoded.orgId,
+      signalType: "used",
+      featureKey: "content_generator",
+      outputId: saved.id,
+      metadata: { topic, formats, targetProduct: targetProduct || null, targetPersona: targetPersona || null },
+      userId: decoded.userId,
+    }).catch(() => {});
 
     return NextResponse.json({ id: saved.id, outputs });
   } catch (error) {
@@ -174,7 +206,8 @@ async function generateForFormat(
   customFormatLabel?: string | null,
   apiKey?: string | null,
   orgId?: string,
-  userId?: string
+  userId?: string,
+  variationInstructions?: string
 ): Promise<string> {
   if (apiKey) {
     try {
@@ -201,6 +234,7 @@ ${toneOverride && toneOverride !== "default" ? "Tone adjustment: " + toneOverrid
 ${lengthInstruction}
 ${keyPoints ? "Key points to include: " + keyPoints + "." : ""}
 ${useWebSearch ? "You have access to a web search tool — use it to find current industry statistics, news, and trends relevant to the topic. Cite web sources inline." : ""}
+${variationInstructions || ""}
 
 CONTENT GENERATION RULES (these override the grounding contract above for this task):
 - You are writing marketing content, NOT answering a factual question. You MUST produce the full requested format.

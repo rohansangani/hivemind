@@ -5,6 +5,9 @@ import { db } from "@/lib/db";
 import jwt from "jsonwebtoken";
 import { getAnthropicKey, AIKeyNotConfiguredError } from "@/lib/aiProvider";
 import { logTokenUsage, extractAnthropicUsage } from "@/lib/tokenTracking";
+import { ensureFeatureRegistered } from "@/lib/featureBootstrap";
+import { composeSkills, formatSkillsBlock } from "@/lib/skillComposer";
+import { recordSignal } from "@/lib/signalCapture";
 
 const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
 
@@ -120,6 +123,8 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  ensureFeatureRegistered(decoded.orgId, "industry_insights").catch(() => {});
+
   const orgId = decoded.orgId;
   const encoder = new TextEncoder();
 
@@ -148,11 +153,12 @@ export async function POST(req: NextRequest) {
       return;
     }
 
-    const [org, competitors, products, markets] = await Promise.all([
+    const [org, competitors, products, markets, composedSkills] = await Promise.all([
       db.organization.findUnique({ where: { id: decoded.orgId } }),
       db.competitor.findMany({ where: { organizationId: decoded.orgId } }),
       db.product.findMany({ where: { organizationId: decoded.orgId } }),
       db.market.findMany({ where: { organizationId: decoded.orgId } }),
+      composeSkills(decoded.orgId, { featureKey: "industry_insights" }),
     ]);
 
     const orgName = org?.name || "the company";
@@ -358,6 +364,7 @@ export async function POST(req: NextRequest) {
 
     // Build source URL map for inserting real links into insights
     const articleUrlMap = new Map(articles.map((a, idx) => [idx + 1, { url: a.url, source: a.source }]));
+    const skillsBlock = formatSkillsBlock(composedSkills);
 
     const prompt = hasLiveArticles
       ? `You are a senior competitive intelligence analyst for ${orgName}, a ${industry} company.
@@ -367,6 +374,7 @@ Company context:
 - Products: ${prodNames}
 - Markets: ${marketsStr}
 - Competitors: ${compNames}
+${skillsBlock}
 ${articleBlock}
 
 Using ONLY the articles above as your source material, extract as many specific, actionable intelligence insights as possible — aim for up to 50. Every insight MUST be grounded in one or more of the articles above — do not use your training data.
@@ -403,6 +411,7 @@ Company context:
 - Products: ${prodNames}
 - Markets: ${marketsStr}
 - Competitors: ${compNames}
+${skillsBlock}
 
 Generate as many strategic insights as possible (up to 50) covering competitor positioning, market dynamics, regulatory environment, and technology trends. Focus on structural intelligence — things that are ongoing and don't expire — NOT specific dated events or press releases from training data.${excludeBlock}
 
@@ -595,6 +604,13 @@ Return ONLY a valid JSON array:
       where: { organizationId: decoded.orgId },
       orderBy: [{ createdAt: "desc" }, { relevanceScore: "desc" }],
     });
+
+        recordSignal({
+          orgId: decoded.orgId,
+          signalType: "used",
+          featureKey: "industry_insights",
+          metadata: { newCount: toCreate.length },
+        }).catch(() => {});
 
         clearInterval(keepalive);
         controller.enqueue(encoder.encode(

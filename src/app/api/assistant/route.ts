@@ -9,6 +9,8 @@ import { retrieveRelevantKnowledge } from "@/lib/knowledgeRetrieval";
 import { buildGroundedSystemPrompt, getGroundedResponseInstructions } from "@/lib/groundingEngine";
 import { getAnthropicKey, AIKeyNotConfiguredError } from "@/lib/aiProvider";
 import { logTokenUsage, extractAnthropicUsage } from "@/lib/tokenTracking";
+import { ensureFeatureRegistered } from "@/lib/featureBootstrap";
+import { recordSignal } from "@/lib/signalCapture";
 import pg from "pg";
 
 // ─────────────────────────────────────────────────────────
@@ -239,6 +241,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
     }
 
+    ensureFeatureRegistered(decoded.orgId, "assistant").catch(() => {});
+
     const { message, conversationId } = await req.json();
     if (!message?.trim()) return NextResponse.json({ error: "Message required" }, { status: 400 });
     if (!decoded.orgId) return NextResponse.json({ error: "No organisation associated with this account" }, { status: 403 });
@@ -330,6 +334,7 @@ export async function POST(req: NextRequest) {
                 targetCompetitor: entities.competitors[0] || undefined,
                 targetMarket: entities.markets[0] || undefined,
                 searchDocuments: true,
+                featureKey: "assistant",
               }
             )
           : {
@@ -458,6 +463,15 @@ CONVERSATION BEHAVIOR:
     });
 
     await db.conversation.update({ where: { id: convo.id }, data: { updatedAt: new Date() } });
+
+    recordSignal({
+      orgId: decoded.orgId,
+      signalType: "used",
+      featureKey: "assistant",
+      outputId: convo.id,
+      metadata: { intent: intent || null },
+      userId: decoded.userId,
+    }).catch(() => {});
 
     return NextResponse.json({ reply: assistantReply, conversationId: convo.id, intent });
   } catch (error) {

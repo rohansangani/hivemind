@@ -5,12 +5,17 @@ import { db } from "@/lib/db";
 import jwt from "jsonwebtoken";
 import { getAnthropicKey, AIKeyNotConfiguredError } from "@/lib/aiProvider";
 import { logTokenUsage, extractAnthropicUsage } from "@/lib/tokenTracking";
+import { ensureFeatureRegistered } from "@/lib/featureBootstrap";
+import { composeSkills, formatSkillsBlock } from "@/lib/skillComposer";
+import { recordSignal } from "@/lib/signalCapture";
 
 export async function POST(req: NextRequest) {
   try {
     const token = req.cookies.get("hm-token")?.value;
     if (!token) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     const decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as { userId: string; orgId: string };
+
+    ensureFeatureRegistered(decoded.orgId, "content_review").catch(() => {});
 
     let content: string;
     let contentType: string;
@@ -27,10 +32,11 @@ export async function POST(req: NextRequest) {
 
     const apiKey = await getAnthropicKey(decoded.orgId);
 
-    const [brandProfile, org, knowledgeEntries] = await Promise.all([
+    const [brandProfile, org, knowledgeEntries, composedSkills] = await Promise.all([
       db.brandProfile.findFirst({ where: { organizationId: decoded.orgId } }),
       db.organization.findUnique({ where: { id: decoded.orgId }, select: { name: true, description: true, industry: true } }),
       db.knowledgeEntry.findMany({ where: { organizationId: decoded.orgId }, select: { category: true, title: true, content: true }, take: 20 }),
+      composeSkills(decoded.orgId, { featureKey: "content_review" }),
     ]);
 
     let brandContext = "";
@@ -52,6 +58,8 @@ BRAND PROFILE:
         knowledgeEntries.map(e => `[${e.category}] ${e.title}: ${e.content}`).join("\n");
     }
 
+    const skillsBlock = formatSkillsBlock(composedSkills);
+
     const prompt = `You are a senior content editor and quality analyst. Review the following content across multiple quality dimensions.
 
 COMPANY: ${org?.name || "Unknown"} — ${org?.description || ""}
@@ -59,6 +67,7 @@ Industry: ${org?.industry || "Not specified"}
 Content type: ${contentType || "General"}
 ${brandContext}
 ${kbContext}
+${skillsBlock}
 
 CONTENT TO REVIEW:
 ---
@@ -204,6 +213,14 @@ Return ONLY valid JSON, no markdown or explanation.`;
     } catch {
       return NextResponse.json({ error: "Failed to parse review results. Please try again." }, { status: 500 });
     }
+
+    recordSignal({
+      orgId: decoded.orgId,
+      signalType: "used",
+      featureKey: "content_review",
+      metadata: { contentType },
+      userId: decoded.userId,
+    }).catch(() => {});
 
     return NextResponse.json({ review: parsed });
   } catch (error) {
