@@ -660,7 +660,7 @@ function DataTable<T extends { id: string }>({
                 {columns.map((c) => (
                   <th
                     key={c.key}
-                    className="text-left text-[11px] font-semibold uppercase tracking-wide text-[var(--hm-text-tertiary)] px-4 py-2.5 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] whitespace-nowrap"
+                    className={`text-left text-[11px] font-semibold uppercase tracking-wide text-[var(--hm-text-tertiary)] px-4 py-2.5 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] whitespace-nowrap ${c.className ?? ""}`}
                   >
                     {c.header}
                   </th>
@@ -1047,8 +1047,8 @@ function AccountsSection() {
     { key: "mbo", header: "MBO", render: (r) => <Cell value={r.mbo} /> },
     { key: "shopify", header: "Shopify", render: (r) => <YesNo v={r.shopify} /> },
     { key: "alt_names", header: "Alt Names", render: (r) => <Cell value={r.alt_names?.length ? r.alt_names.join(", ") : null} /> },
-    { key: "created", header: "Created", render: (r) => fmtDateTimeIST(r.created_at) },
-    { key: "updated", header: "Updated", render: (r) => fmtDateTimeIST(r.updated_at) },
+    { key: "created", header: "Created", className: "min-w-[190px] whitespace-nowrap", render: (r) => fmtDateTimeIST(r.created_at) },
+    { key: "updated", header: "Updated", className: "min-w-[190px] whitespace-nowrap", render: (r) => fmtDateTimeIST(r.updated_at) },
   ];
   const [openAccount, setOpenAccount] = useState<AccountRow | null>(null);
   return (
@@ -1264,8 +1264,8 @@ function ContactsSection() {
     { key: "country", header: "Country", render: (r) => <Cell value={r.country} /> },
     { key: "linkedin", header: "LinkedIn", render: (r) => r.linkedin_url ? <a href={linkedinHref(r.linkedin_url)} target="_blank" rel="noreferrer" className="text-[var(--hm-accent)]">Profile</a> : <span className="text-[var(--hm-text-tertiary)]">—</span> },
     { key: "sdr", header: "SDR Owner", render: (r) => <Cell value={r.sdr_owner} /> },
-    { key: "created", header: "Created", render: (r) => fmtDateTimeIST(r.created_at) },
-    { key: "updated", header: "Updated", render: (r) => fmtDateTimeIST(r.updated_at) },
+    { key: "created", header: "Created", className: "min-w-[190px] whitespace-nowrap", render: (r) => fmtDateTimeIST(r.created_at) },
+    { key: "updated", header: "Updated", className: "min-w-[190px] whitespace-nowrap", render: (r) => fmtDateTimeIST(r.updated_at) },
   ];
   return (
     <>
