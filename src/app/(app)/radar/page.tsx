@@ -2810,8 +2810,9 @@ function ValidateSection() {
   // Skips Instantly entirely: runs these contacts straight through Debounce and writes
   // email_status/validated_at directly on the contacts row. No test-send, no candidates job.
   // Runs as a server-side job (retest_job_start) instead of a client-driven loop, so it keeps
-  // going — via a 15-min cron tick — even if you navigate away or close this tab.
-  const runDebounceRetest = async () => {
+  // going — via a 15-min cron tick — even if you navigate away or close this tab. Shared by
+  // the filter-based retest button and the CSV-upload path below (exact email-list mode).
+  const startDebounceJob = async (body: Record<string, unknown>, doneNote: string) => {
     setDebounceBusy(true);
     setDebounceMsg(null);
     setRetestJobDone(false);
@@ -2820,12 +2821,7 @@ function ValidateSection() {
       const r = await fetch("/api/radar/validate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "retest_job_start",
-          vertical: retestVertical || undefined,
-          emailStatus: retestStatuses,
-          label: retestLabel.trim() || "Debounce re-test",
-        }),
+        body: JSON.stringify({ action: "retest_job_start", ...body }),
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error || "Debounce validation failed to start");
@@ -2833,7 +2829,7 @@ function ValidateSection() {
       setDebounceProgress({ processed: d.processed || 0, validated: d.validated || 0 });
       if (d.done) {
         setRetestJobDone(true);
-        setDebounceMsg({ kind: "ok", text: `Checked ${(d.processed || 0).toLocaleString()} contact(s) via Debounce, saved ${(d.validated || 0).toLocaleString()} status update(s) directly — done. Nothing sent via Instantly.` });
+        setDebounceMsg({ kind: "ok", text: `Checked ${(d.processed || 0).toLocaleString()} ${doneNote} via Debounce, saved ${(d.validated || 0).toLocaleString()} status update(s) directly — done. Nothing sent via Instantly.` });
         countRetest();
       } else {
         setDebounceMsg({ kind: "ok", text: `Started (job #${d.jobId}) — checked ${(d.processed || 0).toLocaleString()} so far. This keeps running in the background every ~15 min even if you leave this page. Click "Check status" any time, or just come back later.` });
@@ -2842,6 +2838,36 @@ function ValidateSection() {
       setDebounceMsg({ kind: "err", text: (e as Error).message });
     } finally {
       setDebounceBusy(false);
+    }
+  };
+
+  const runDebounceRetest = () => startDebounceJob(
+    { vertical: retestVertical || undefined, emailStatus: retestStatuses, label: retestLabel.trim() || "Debounce re-test" },
+    "contact(s)",
+  );
+
+  const runDebounceRetestCsv = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setError("");
+    try {
+      const text = await f.text();
+      const { rows } = parseCSV(text);
+      const emails = rows
+        .map((r) => {
+          const emailKey = Object.keys(r).find((k) => k.toLowerCase().includes("email"));
+          return emailKey ? r[emailKey] : null;
+        })
+        .filter((v): v is string => !!v && v.includes("@"));
+      if (!emails.length) { setError("No email column found in that CSV."); return; }
+      await startDebounceJob(
+        { emails, label: retestLabel.trim() || `CSV Debounce check — ${f.name}` },
+        "email(s)",
+      );
+    } catch (e2) {
+      setError((e2 as Error).message);
+    } finally {
+      e.target.value = "";
     }
   };
 
@@ -3468,6 +3494,10 @@ function ValidateSection() {
                           ? `Starting… ${debounceProgress?.processed ?? 0} checked, ${debounceProgress?.validated ?? 0} saved`
                           : "Validate via Debounce (save directly, no send)"}
                       </button>
+                      <label className={`hm-btn hm-btn-secondary w-full cursor-pointer ${debounceBusy ? "opacity-50 pointer-events-none" : ""}`} style={{ height: 34, fontSize: 12.5 }}>
+                        ⬆ Upload CSV of emails — validate via Debounce directly
+                        <input type="file" accept=".csv,text/csv" onChange={runDebounceRetestCsv} style={{ display: "none" }} disabled={debounceBusy} />
+                      </label>
                       {retestJobId != null && !retestJobDone && (
                         <button
                           onClick={checkRetestJobStatus}
