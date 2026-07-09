@@ -806,12 +806,6 @@ function linkedinHref(url: string | null): string {
   return /^https?:\/\//i.test(url) ? url : `https://${url.replace(/^\/+/, "")}`;
 }
 
-function fmtDate(v: string | null): React.ReactNode {
-  if (!v) return <span className="text-[var(--hm-text-tertiary)]">—</span>;
-  const d = new Date(v);
-  return isNaN(d.getTime()) ? <span className="text-[var(--hm-text-tertiary)]">—</span> : d.toLocaleDateString();
-}
-
 function fmtDateTimeIST(v: string | null): React.ReactNode {
   if (!v) return <span className="text-[var(--hm-text-tertiary)]">—</span>;
   const d = new Date(v);
@@ -1053,8 +1047,8 @@ function AccountsSection() {
     { key: "mbo", header: "MBO", render: (r) => <Cell value={r.mbo} /> },
     { key: "shopify", header: "Shopify", render: (r) => <YesNo v={r.shopify} /> },
     { key: "alt_names", header: "Alt Names", render: (r) => <Cell value={r.alt_names?.length ? r.alt_names.join(", ") : null} /> },
-    { key: "created", header: "Created", render: (r) => fmtDate(r.created_at) },
-    { key: "updated", header: "Updated", render: (r) => fmtDate(r.updated_at) },
+    { key: "created", header: "Created", render: (r) => fmtDateTimeIST(r.created_at) },
+    { key: "updated", header: "Updated", render: (r) => fmtDateTimeIST(r.updated_at) },
   ];
   const [openAccount, setOpenAccount] = useState<AccountRow | null>(null);
   return (
@@ -1258,7 +1252,7 @@ function ContactsSection() {
     { key: "title", header: "Title", render: (r) => <Cell value={r.title} /> },
     { key: "email", header: "Email", render: (r) => r.email ? <span className="text-[var(--hm-text-secondary)]">{r.email}</span> : <span className="text-[var(--hm-text-tertiary)]">—</span> },
     { key: "status", header: "Email Status", render: (r) => <EmailStatusPill status={r.email_status} /> },
-    { key: "validated_at", header: "Validated", render: (r) => fmtDate(r.validated_at) },
+    { key: "validated_at", header: "Validated", render: (r) => fmtDateTimeIST(r.validated_at) },
     { key: "hubspot", header: "HubSpot Excluded", render: (r) => <YesNo v={r.hubspot_excluded} /> },
     { key: "industry", header: "Industry", render: (r) => <Cell value={r.industry} /> },
     { key: "sub_industry", header: "Sub-Industry", render: (r) => <Cell value={r.sub_industry} /> },
@@ -1270,8 +1264,8 @@ function ContactsSection() {
     { key: "country", header: "Country", render: (r) => <Cell value={r.country} /> },
     { key: "linkedin", header: "LinkedIn", render: (r) => r.linkedin_url ? <a href={linkedinHref(r.linkedin_url)} target="_blank" rel="noreferrer" className="text-[var(--hm-accent)]">Profile</a> : <span className="text-[var(--hm-text-tertiary)]">—</span> },
     { key: "sdr", header: "SDR Owner", render: (r) => <Cell value={r.sdr_owner} /> },
-    { key: "created", header: "Created", render: (r) => fmtDate(r.created_at) },
-    { key: "updated", header: "Updated", render: (r) => fmtDate(r.updated_at) },
+    { key: "created", header: "Created", render: (r) => fmtDateTimeIST(r.created_at) },
+    { key: "updated", header: "Updated", render: (r) => fmtDateTimeIST(r.updated_at) },
   ];
   return (
     <>
