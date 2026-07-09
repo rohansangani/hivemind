@@ -2972,11 +2972,29 @@ function ValidateSection() {
         })
         .filter((r): r is { email: string } => !!r && r.email.includes("@"));
       if (!emails.length) { setError("No email column found in that CSV."); return; }
-      setInstantlyCsvStage(`Uploading ${emails.length.toLocaleString()} email(s)…`);
-      const d = await call({ action: "load_contacts", emails, label: retestLabel.trim() || `CSV re-test — ${f.name}` });
-      if (!d.count) { setError("None of those emails could be loaded."); return; }
-      setJobId(d.jobId);
-      setCandidates((d.candidates || []).map((c: ValidateCandidate) => ({ ...c, selected: true })));
+
+      // Chunked so there's no practical ceiling on CSV size — a single request with tens of
+      // thousands of rows risks Vercel's request body limit; each batch lands in the same job.
+      const BATCH = 1000;
+      const label = retestLabel.trim() || `CSV re-test — ${f.name}`;
+      let currentJobId: number | null = null;
+      const allCandidates: ValidateCandidate[] = [];
+      for (let i = 0; i < emails.length; i += BATCH) {
+        const batch = emails.slice(i, i + BATCH);
+        const batchNum = Math.floor(i / BATCH) + 1;
+        const totalBatches = Math.ceil(emails.length / BATCH);
+        setInstantlyCsvStage(
+          totalBatches > 1
+            ? `Uploading batch ${batchNum}/${totalBatches} (${Math.min(i + BATCH, emails.length).toLocaleString()}/${emails.length.toLocaleString()})…`
+            : `Uploading ${emails.length.toLocaleString()} email(s)…`,
+        );
+        const d = await call({ action: "load_contacts", emails: batch, label, jobId: currentJobId ?? undefined });
+        currentJobId = d.jobId ?? currentJobId;
+        allCandidates.push(...(d.candidates || []).map((c: ValidateCandidate) => ({ ...c, selected: true })));
+      }
+      if (!allCandidates.length) { setError("None of those emails could be loaded."); return; }
+      setJobId(currentJobId);
+      setCandidates(allCandidates);
       setPhase("candidates");
     } catch (e2) {
       setError((e2 as Error).message);
@@ -3590,6 +3608,21 @@ function ValidateSection() {
                   {candidates.length} pattern(s) · {selectedCount} selected
                 </span>
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => downloadCSV(
+                      candidates.map((c) => ({
+                        first_name: c.first_name, last_name: c.last_name, domain: c.domain,
+                        email: c.pattern_email, pattern_type: c.pattern_type, confidence: c.confidence ?? "",
+                        source: c.source, selected: c.selected, bounce_status: c.bounce_status ?? "pending",
+                      })),
+                      `validate_job_${jobId ?? "export"}_${today()}.csv`,
+                    )}
+                    disabled={!candidates.length}
+                    className="hm-btn hm-btn-secondary"
+                    style={{ height: 32, padding: "0 12px", fontSize: 12 }}
+                  >
+                    Export CSV
+                  </button>
                   <button onClick={reset} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 12px", fontSize: 12 }}>Start over</button>
                   {phase === "sent" && (
                     <>
