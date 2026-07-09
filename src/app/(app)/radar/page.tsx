@@ -800,6 +800,13 @@ function fmtDate(v: string | null): React.ReactNode {
   return isNaN(d.getTime()) ? <span className="text-[var(--hm-text-tertiary)]">—</span> : d.toLocaleDateString();
 }
 
+function fmtDateTimeIST(v: string | null): React.ReactNode {
+  if (!v) return <span className="text-[var(--hm-text-tertiary)]">—</span>;
+  const d = new Date(v);
+  if (isNaN(d.getTime())) return <span className="text-[var(--hm-text-tertiary)]">—</span>;
+  return d.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true });
+}
+
 function YesNo({ v }: { v: boolean | null }) {
   if (v == null) return <span className="text-[var(--hm-text-tertiary)]">—</span>;
   return v ? <span style={{ color: "#059669" }}>Yes</span> : <span className="text-[var(--hm-text-tertiary)]">No</span>;
@@ -3203,7 +3210,7 @@ function ValidateSection() {
                     <tr key={j.id} className="hover:bg-[var(--hm-surface-hover)]">
                       <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">{j.label || `Job #${j.id}`}</td>
                       <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]"><ValidateJobStatusPill status={j.status} /></td>
-                      <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text-tertiary)]">{j.created_at ? new Date(j.created_at).toLocaleDateString() : "—"}</td>
+                      <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text-tertiary)] whitespace-nowrap">{fmtDateTimeIST(j.created_at)}</td>
                       <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)] text-right whitespace-nowrap">
                         <button onClick={() => openJob(j.id)} className="text-[12px] text-[var(--hm-accent)] mr-3">Open</button>
                         <button onClick={() => deleteJob(j.id)} className="text-[12px] text-red-500">Delete</button>
