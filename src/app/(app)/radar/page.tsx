@@ -1928,13 +1928,21 @@ function UploadStatusPill({ status }: { status: string }) {
 // (pending_count from list_jobs — real signal from the DB), NOT by job age. A big campaign (e.g.
 // 2,550 leads on Instantly's own daily cap) can take many days to finish sending — it must keep
 // showing Running for however long that genuinely takes, not flip to Completed after one day.
-function ValidateJobStatusPill({ status, pendingCount }: { status: string; pendingCount?: number }) {
+// Verifying: pending_count hit zero (every sent lead has an initial result) but it's been less
+// than 72h since resolved_at — Instantly can still report a delayed bounce in that window, which
+// automatically downgrades the contact to invalid (see check_all's delayed-bounce handling).
+// Past 72h with no further bounce, it's genuinely final — Completed. Jobs from before this
+// feature existed have no resolved_at at all; those just go straight to Completed (no window to
+// judge), matching their previous behavior.
+function ValidateJobStatusPill({ status, pendingCount, resolvedAt }: { status: string; pendingCount?: number; resolvedAt?: string | null }) {
   const s = (status || "").toLowerCase();
   let label = "Draft", cls = "bg-[var(--hm-bg-tertiary)] text-[var(--hm-text-tertiary)]";
   if (s === "done") { label = "Completed"; cls = "bg-[#DCFCE7] text-[#059669]"; }
   else if (s === "sent" || s === "checked") {
     if ((pendingCount ?? 0) > 0) { label = "Running"; cls = "bg-[#FEF3C7] text-[#B45309]"; }
-    else { label = "Completed"; cls = "bg-[#DCFCE7] text-[#059669]"; }
+    else if (resolvedAt && Date.now() - new Date(resolvedAt).getTime() < 72 * 60 * 60 * 1000) {
+      label = "Verifying"; cls = "bg-[#DBEAFE] text-[#1D4ED8]";
+    } else { label = "Completed"; cls = "bg-[#DCFCE7] text-[#059669]"; }
   }
   return <span className={`text-[11px] px-2 py-0.5 rounded-md font-medium ${cls}`}>{label}</span>;
 }
@@ -2638,6 +2646,7 @@ interface ValidateJob {
   campaign_id: string | null;
   created_at: string;
   pending_count?: number;
+  resolved_at?: string | null;
 }
 interface InstantlyTag { id: string; label: string; }
 
@@ -3289,7 +3298,7 @@ function ValidateSection() {
                   {jobs.map((j) => (
                     <tr key={j.id} className="hover:bg-[var(--hm-surface-hover)]">
                       <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">{j.label || `Job #${j.id}`}</td>
-                      <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]"><ValidateJobStatusPill status={j.status} pendingCount={j.pending_count} /></td>
+                      <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]"><ValidateJobStatusPill status={j.status} pendingCount={j.pending_count} resolvedAt={j.resolved_at} /></td>
                       <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text-tertiary)] whitespace-nowrap">{fmtDateTimeIST(j.created_at)}</td>
                       <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)] text-right whitespace-nowrap">
                         <button onClick={() => openJob(j.id)} className="text-[12px] text-[var(--hm-accent)] mr-3">Open</button>
