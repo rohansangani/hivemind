@@ -2660,6 +2660,7 @@ function ValidateSection() {
   const [checkResult, setCheckResult] = useState<{ bounced: number; valid: number; pending: number; allResolved: boolean } | null>(null);
   const [savedCount, setSavedCount] = useState(0);
   const [savedInvalidCount, setSavedInvalidCount] = useState(0);
+  const [saveVertical, setSaveVertical] = useState("");
 
   // Patterns vs Retest — top-level mode, mirrors radar's own toggle
   const [inputMode, setInputMode] = useState<"patterns" | "retest" | "linkedin">("patterns");
@@ -3149,10 +3150,11 @@ function ValidateSection() {
 
   const save = async () => {
     if (!jobId) return;
+    if (!saveVertical) { setError("Select a vertical before saving."); return; }
     setBusy(true);
     setError("");
     try {
-      const d = await call({ action: "save", jobId });
+      const d = await call({ action: "save", jobId, vertical: saveVertical });
       setSavedCount((prev) => prev + (d.saved ?? 0));
       setSavedInvalidCount((prev) => prev + (d.savedInvalid ?? 0));
       // Saving doesn't require the campaign to be fully resolved — only close out the job
@@ -3169,7 +3171,7 @@ function ValidateSection() {
   const reset = () => {
     setPeople([]); setDraft(emptyPerson()); setPatternsLabel(""); setBlankEmailMsg(""); setPhase("input"); setJobId(null); setCandidates([]);
     setCheckResult(null); setSavedCount(0); setSavedInvalidCount(0); setError(""); setMailboxTag(""); setAutoRefresh(false);
-    setInputMode("patterns"); setRetestCount(null); setRetestLabel("");
+    setInputMode("patterns"); setRetestCount(null); setRetestLabel(""); setSaveVertical("");
     setLinkedinUrlsText(""); setLinkedinResults([]); setLinkedinSummary(null); setLinkedinVertical("");
   };
 
@@ -3655,9 +3657,17 @@ function ValidateSection() {
                         {busy ? "Checking…" : "Check bounces"}
                       </button>
                       {checkResult && checkResult.valid > 0 && (
-                        <button onClick={save} disabled={busy} className="hm-btn hm-btn-primary" style={{ height: 32, padding: "0 14px", fontSize: 12 }}>
-                          {checkResult.allResolved ? `Save ${checkResult.valid} verified` : `Save ${checkResult.valid} valid so far`}
-                        </button>
+                        <>
+                          <select value={saveVertical} onChange={(e) => setSaveVertical(e.target.value)} style={{ height: 32, fontSize: 12 }} title="Vertical is required to save">
+                            <option value="">— Vertical —</option>
+                            <option value="B2B">B2B</option>
+                            <option value="US">US</option>
+                            <option value="D2C">D2C</option>
+                          </select>
+                          <button onClick={save} disabled={busy || !saveVertical} className="hm-btn hm-btn-primary" style={{ height: 32, padding: "0 14px", fontSize: 12 }}>
+                            {checkResult.allResolved ? `Save ${checkResult.valid} verified` : `Save ${checkResult.valid} valid so far`}
+                          </button>
+                        </>
                       )}
                     </>
                   )}
