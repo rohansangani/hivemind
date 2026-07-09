@@ -794,6 +794,14 @@ function downloadCSV<T extends object>(rows: T[], filename: string) {
   URL.revokeObjectURL(url);
 }
 
+// DB-stored linkedin_url values are often bare ("www.linkedin.com/in/...", no protocol) — used
+// as-is in an <a href>, the browser treats them as a path relative to the current site instead
+// of an absolute external URL (e.g. resolving to hivemind.clickpost.io/www.linkedin.com/...).
+function linkedinHref(url: string | null): string {
+  if (!url) return "#";
+  return /^https?:\/\//i.test(url) ? url : `https://${url.replace(/^\/+/, "")}`;
+}
+
 function fmtDate(v: string | null): React.ReactNode {
   if (!v) return <span className="text-[var(--hm-text-tertiary)]">—</span>;
   const d = new Date(v);
@@ -850,7 +858,7 @@ function AccountsSection() {
     { key: "revenue", header: "Revenue", className: "tabular-nums", render: (r) => <Cell value={r.revenue_range} /> },
     { key: "location", header: "Company Location", render: (r) => <Cell value={r.company_location} /> },
     { key: "country", header: "Country", render: (r) => <Cell value={r.country} /> },
-    { key: "linkedin", header: "LinkedIn", render: (r) => r.linkedin_url ? <a href={r.linkedin_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-[var(--hm-accent)]">Profile</a> : <span className="text-[var(--hm-text-tertiary)]">—</span> },
+    { key: "linkedin", header: "LinkedIn", render: (r) => r.linkedin_url ? <a href={linkedinHref(r.linkedin_url)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-[var(--hm-accent)]">Profile</a> : <span className="text-[var(--hm-text-tertiary)]">—</span> },
     { key: "sdr", header: "SDR Owner", render: (r) => <Cell value={r.sdr_owner} /> },
     { key: "track_order", header: "Track Order Page", render: (r) => <Cell value={r.track_order_page} /> },
     { key: "edd", header: "EDD", render: (r) => <Cell value={r.edd} /> },
@@ -950,7 +958,7 @@ function AccountContactsPanel({ account, onClose }: { account: AccountRow; onClo
                   <div className="flex items-center gap-2 mt-1 text-[12px] text-[var(--hm-text-secondary)]">
                     {c.email && <span className="truncate">{c.email}</span>}
                     {c.linkedin_url && (
-                      <a href={c.linkedin_url} target="_blank" rel="noreferrer" className="text-[var(--hm-accent)] flex-shrink-0">LinkedIn</a>
+                      <a href={linkedinHref(c.linkedin_url)} target="_blank" rel="noreferrer" className="text-[var(--hm-accent)] flex-shrink-0">LinkedIn</a>
                     )}
                   </div>
                 </div>
@@ -1048,7 +1056,7 @@ function ContactsSection() {
     { key: "phone2", header: "Phone 2", render: (r) => <Cell value={r.phone2} /> },
     { key: "location", header: "Location", render: (r) => <Cell value={r.location} /> },
     { key: "country", header: "Country", render: (r) => <Cell value={r.country} /> },
-    { key: "linkedin", header: "LinkedIn", render: (r) => r.linkedin_url ? <a href={r.linkedin_url} target="_blank" rel="noreferrer" className="text-[var(--hm-accent)]">Profile</a> : <span className="text-[var(--hm-text-tertiary)]">—</span> },
+    { key: "linkedin", header: "LinkedIn", render: (r) => r.linkedin_url ? <a href={linkedinHref(r.linkedin_url)} target="_blank" rel="noreferrer" className="text-[var(--hm-accent)]">Profile</a> : <span className="text-[var(--hm-text-tertiary)]">—</span> },
     { key: "sdr", header: "SDR Owner", render: (r) => <Cell value={r.sdr_owner} /> },
     { key: "created", header: "Created", render: (r) => fmtDate(r.created_at) },
     { key: "updated", header: "Updated", render: (r) => fmtDate(r.updated_at) },
@@ -2458,7 +2466,7 @@ function EnrichSection() {
                       <td className="px-4 py-2 border-b border-[var(--hm-border-light)]">{c.company_name || c.account_name || "—"}</td>
                       <td className="px-4 py-2 border-b border-[var(--hm-border-light)] text-[var(--hm-text-secondary)]">{c.email || "—"}</td>
                       <td className="px-4 py-2 border-b border-[var(--hm-border-light)]">
-                        {c.linkedin_url ? <a href={c.linkedin_url} target="_blank" rel="noreferrer" className="text-[var(--hm-accent)]">Profile</a> : "—"}
+                        {c.linkedin_url ? <a href={linkedinHref(c.linkedin_url)} target="_blank" rel="noreferrer" className="text-[var(--hm-accent)]">Profile</a> : "—"}
                       </td>
                       <td className="px-4 py-2 border-b border-[var(--hm-border-light)]"><EmailStatusPill status={c.email_status} /></td>
                     </tr>
@@ -2547,7 +2555,7 @@ function EnrichSection() {
                           <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">{l.company_name || "—"}</td>
                           <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text-secondary)]">{l.email || "—"}</td>
                           <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">
-                            {l.linkedin_url ? <a href={l.linkedin_url} target="_blank" rel="noreferrer" className="text-[var(--hm-accent)]">Profile</a> : "—"}
+                            {l.linkedin_url ? <a href={linkedinHref(l.linkedin_url)} target="_blank" rel="noreferrer" className="text-[var(--hm-accent)]">Profile</a> : "—"}
                           </td>
                           {Object.keys(scores).length > 0 && (
                             <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">
@@ -3390,7 +3398,7 @@ function ValidateSection() {
                               <tr key={i} className="hover:bg-[var(--hm-surface-hover)]">
                                 <td className="px-3 py-2 border-b border-[var(--hm-border-light)]">{[r.firstName, r.lastName].filter(Boolean).join(" ") || "—"}</td>
                                 <td className="px-3 py-2 border-b border-[var(--hm-border-light)]">
-                                  {r.linkedinUrl ? <a href={r.linkedinUrl} target="_blank" rel="noreferrer" className="text-[var(--hm-accent)]">Profile</a> : "—"}
+                                  {r.linkedinUrl ? <a href={linkedinHref(r.linkedinUrl)} target="_blank" rel="noreferrer" className="text-[var(--hm-accent)]">Profile</a> : "—"}
                                 </td>
                                 <td className="px-3 py-2 border-b border-[var(--hm-border-light)]">{r.company || "—"}</td>
                                 <td className="px-3 py-2 border-b border-[var(--hm-border-light)]">{r.dbCompany || "—"}</td>
