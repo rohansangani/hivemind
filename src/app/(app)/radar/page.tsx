@@ -2565,6 +2565,19 @@ interface ValidateCandidate {
   bounce_status: "pending" | "valid" | "bounced" | null;
 }
 
+interface LinkedInCheckRow {
+  linkedinUrl: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  headline: string | null;
+  company: string | null;
+  email: string | null;
+  dbCompany: string | null;
+  dbContactId: string | null;
+  match: boolean | null;
+  error?: string;
+}
+
 interface PersonInput {
   first_name: string;
   middle_name?: string;
@@ -2605,13 +2618,21 @@ function ValidateSection() {
   const [savedInvalidCount, setSavedInvalidCount] = useState(0);
 
   // Patterns vs Retest — top-level mode, mirrors radar's own toggle
-  const [inputMode, setInputMode] = useState<"patterns" | "retest">("patterns");
+  const [inputMode, setInputMode] = useState<"patterns" | "retest" | "linkedin">("patterns");
   const [retestStatuses, setRetestStatuses] = useState<string[]>(["unknown", "risky"]);
   const [retestVertical, setRetestVertical] = useState("");
   const [retestDomain, setRetestDomain] = useState("");
   const [retestLabel, setRetestLabel] = useState("");
   const [retestCount, setRetestCount] = useState<number | null>(null);
   const [retestCounting, setRetestCounting] = useState(false);
+
+  // Check LinkedIn — standalone flow, doesn't touch phase/jobId/candidates.
+  const [linkedinUrlsText, setLinkedinUrlsText] = useState("");
+  const [linkedinScrapeMode, setLinkedinScrapeMode] = useState<"basic" | "email">("basic");
+  const [linkedinBusy, setLinkedinBusy] = useState(false);
+  const [linkedinProgress, setLinkedinProgress] = useState<{ done: number; total: number } | null>(null);
+  const [linkedinResults, setLinkedinResults] = useState<LinkedInCheckRow[]>([]);
+  const [linkedinSummary, setLinkedinSummary] = useState<{ matched: number; mismatched: number; notFound: number } | null>(null);
 
   // Send controls
   const [tags, setTags] = useState<InstantlyTag[]>([]);
@@ -2709,6 +2730,48 @@ function ValidateSection() {
     } finally {
       setBusy(false);
       setProgressLabel("");
+    }
+  };
+
+  // Standalone — hits enrich.js's check_linkedin action (not validate.js), so this bypasses
+  // the shared `call()` helper and posts to /api/radar/enrich directly. Chunked because
+  // Apify's own scrape time per profile adds up fast across a large paste.
+  const runLinkedInCheck = async () => {
+    setError("");
+    const urls = [...new Set(linkedinUrlsText.split(/[\n,]+/).map((u) => u.trim()).filter(Boolean))];
+    if (!urls.length) { setError("Add at least one LinkedIn URL."); return; }
+    const costNote = linkedinScrapeMode === "email" ? "$10 per 1,000 profiles" : "$4 per 1,000 profiles";
+    if (!confirm(`Scrape ${urls.length} LinkedIn profile(s) via Apify (${costNote})? This is a real paid API call.`)) return;
+
+    setLinkedinBusy(true);
+    setLinkedinResults([]);
+    setLinkedinSummary(null);
+    const CHUNK = 15;
+    let matched = 0, mismatched = 0, notFound = 0;
+    const allRows: LinkedInCheckRow[] = [];
+    try {
+      for (let i = 0; i < urls.length; i += CHUNK) {
+        const batch = urls.slice(i, i + CHUNK);
+        setLinkedinProgress({ done: i, total: urls.length });
+        const r = await fetch("/api/radar/enrich", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "check_linkedin", params: { urls: batch, mode: linkedinScrapeMode } }),
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d.error || "LinkedIn check failed");
+        allRows.push(...(d.results || []));
+        matched += d.matched || 0;
+        mismatched += d.mismatched || 0;
+        notFound += d.notFound || 0;
+        setLinkedinResults([...allRows]);
+      }
+      setLinkedinSummary({ matched, mismatched, notFound });
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLinkedinBusy(false);
+      setLinkedinProgress(null);
     }
   };
 
@@ -2958,6 +3021,7 @@ function ValidateSection() {
     setPeople([]); setDraft(emptyPerson()); setPatternsLabel(""); setBlankEmailMsg(""); setPhase("input"); setJobId(null); setCandidates([]);
     setCheckResult(null); setSavedCount(0); setSavedInvalidCount(0); setError(""); setMailboxTag(""); setAutoRefresh(false);
     setInputMode("patterns"); setRetestCount(null); setRetestLabel("");
+    setLinkedinUrlsText(""); setLinkedinResults([]); setLinkedinSummary(null);
   };
 
   const loadJobs = async () => {
@@ -3108,9 +3172,100 @@ function ValidateSection() {
                 >
                   Re-test DB contacts
                 </button>
+                <button
+                  onClick={() => setInputMode("linkedin")}
+                  className={`flex-1 py-2.5 text-[12.5px] font-semibold transition-colors ${
+                    inputMode === "linkedin" ? "text-[var(--hm-accent)] bg-[var(--hm-accent-light)]" : "text-[var(--hm-text-tertiary)]"
+                  }`}
+                >
+                  Check LinkedIn
+                </button>
               </div>
 
-              {inputMode === "patterns" ? (
+              {inputMode === "linkedin" ? (
+                <>
+                  <div className="px-5 py-4 border-b border-[var(--hm-border)]">
+                    <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Check LinkedIn</h2>
+                    <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">
+                      Scrape each profile&apos;s current employer and compare it to what we have on file — catches people who&apos;ve moved on. Saves the result directly to the matching contact.
+                    </p>
+                  </div>
+                  <div className="px-5 py-5 space-y-4">
+                    <div>
+                      <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">LinkedIn profile URLs (one per line, or comma-separated)</label>
+                      <textarea
+                        value={linkedinUrlsText}
+                        onChange={(e) => setLinkedinUrlsText(e.target.value)}
+                        placeholder={"https://www.linkedin.com/in/johndoe\nhttps://www.linkedin.com/in/janedoe"}
+                        style={{ minHeight: 120 }}
+                      />
+                    </div>
+                    <div>
+                      <p className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5">Mode</p>
+                      <div className="flex gap-1.5">
+                        <button
+                          onClick={() => setLinkedinScrapeMode("basic")}
+                          className={`text-[11.5px] px-2.5 py-1 rounded-md border ${linkedinScrapeMode === "basic" ? "border-[var(--hm-accent)] bg-[var(--hm-accent-light)] text-[var(--hm-accent)] font-medium" : "border-[var(--hm-border)] text-[var(--hm-text-secondary)]"}`}
+                        >
+                          Profile details ($4/1k)
+                        </button>
+                        <button
+                          onClick={() => setLinkedinScrapeMode("email")}
+                          className={`text-[11.5px] px-2.5 py-1 rounded-md border ${linkedinScrapeMode === "email" ? "border-[var(--hm-accent)] bg-[var(--hm-accent-light)] text-[var(--hm-accent)] font-medium" : "border-[var(--hm-border)] text-[var(--hm-text-secondary)]"}`}
+                        >
+                          Profile details + email ($10/1k)
+                        </button>
+                      </div>
+                    </div>
+                    <button onClick={runLinkedInCheck} disabled={linkedinBusy} className="hm-btn hm-btn-primary w-full" style={{ height: 38, fontSize: 13 }}>
+                      {linkedinBusy ? `Checking… ${linkedinProgress?.done ?? 0}/${linkedinProgress?.total ?? 0}` : "Run check"}
+                    </button>
+
+                    {linkedinSummary && (
+                      <div className="flex gap-4 text-[12.5px]">
+                        <span className="text-[#059669]">✓ {linkedinSummary.matched} same company</span>
+                        <span className="text-red-500">✗ {linkedinSummary.mismatched} different company</span>
+                        <span className="text-[var(--hm-text-tertiary)]">— {linkedinSummary.notFound} not matched to a contact</span>
+                      </div>
+                    )}
+
+                    {linkedinResults.length > 0 && (
+                      <div className="overflow-x-auto rounded-lg border border-[var(--hm-border)]">
+                        <table className="w-full border-collapse text-[12.5px]">
+                          <thead>
+                            <tr>
+                              {["Name", "LinkedIn", "Current Company", "DB Company", "Status", ...(linkedinScrapeMode === "email" ? ["Email"] : [])].map((h) => (
+                                <th key={h} className="text-left text-[10.5px] font-semibold uppercase tracking-wide text-[var(--hm-text-tertiary)] px-3 py-2 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] whitespace-nowrap">{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {linkedinResults.map((r, i) => (
+                              <tr key={i} className="hover:bg-[var(--hm-surface-hover)]">
+                                <td className="px-3 py-2 border-b border-[var(--hm-border-light)]">{[r.firstName, r.lastName].filter(Boolean).join(" ") || "—"}</td>
+                                <td className="px-3 py-2 border-b border-[var(--hm-border-light)]">
+                                  {r.linkedinUrl ? <a href={r.linkedinUrl} target="_blank" rel="noreferrer" className="text-[var(--hm-accent)]">Profile</a> : "—"}
+                                </td>
+                                <td className="px-3 py-2 border-b border-[var(--hm-border-light)]">{r.company || "—"}</td>
+                                <td className="px-3 py-2 border-b border-[var(--hm-border-light)]">{r.dbCompany || "—"}</td>
+                                <td className="px-3 py-2 border-b border-[var(--hm-border-light)]">
+                                  {r.error ? <span className="text-[var(--hm-text-tertiary)]" title={r.error}>Not found</span>
+                                    : r.match === true ? <span className="text-[#059669] font-medium">✓ Same</span>
+                                    : r.match === false ? <span className="text-red-500 font-medium">✗ Different</span>
+                                    : <span className="text-[var(--hm-text-tertiary)]">No DB match</span>}
+                                </td>
+                                {linkedinScrapeMode === "email" && (
+                                  <td className="px-3 py-2 border-b border-[var(--hm-border-light)]">{r.email || "—"}</td>
+                                )}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </>
+              ) : inputMode === "patterns" ? (
                 <>
                   <div className="px-5 py-4 border-b border-[var(--hm-border)]">
                     <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Generate email patterns</h2>
