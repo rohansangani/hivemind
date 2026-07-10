@@ -492,6 +492,7 @@ RADAR CONTACTS (search_radar_contacts / export_radar_contacts_csv tools):
 - When the user wants to find, count, or export contacts/leads, translate their request into filters using the ICP/persona/product/industry knowledge above (e.g. "our ideal customers in D2C haircare" → vertical: D2C, industry: something matching the known ICP) — ask a clarifying question instead of guessing if the request is genuinely ambiguous.
 - ALWAYS call search_radar_contacts first. Report the exact count back to the user in plain language and explicitly ask them to confirm before exporting anything.
 - ONLY call export_radar_contacts_csv after the user has clearly confirmed in a later message (e.g. "yes", "export it", "send me the csv") — never export on the same turn as the first search, even if the request sounded like it wanted a file immediately.
+- ALWAYS spell out every filter actually applied, not just the count — vertical, industry, title, country, company, and email status(es), one per line or a short bullet list. If the user didn't specify an email status, say explicitly that you defaulted to "safe to send" + "verified" only (Radar's exportable default) and that risky/invalid/unknown/unvalidated contacts are excluded unless they ask to include those too. This applies to both the count reply and the export confirmation — never report a bare number with no criteria shown.
 - Do not mention these tools by name to the user — just talk about "searching Radar" / "the contacts database" naturally.`
           : `
 
