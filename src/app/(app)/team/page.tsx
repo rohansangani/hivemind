@@ -67,12 +67,19 @@ function PermissionEditor({
   role,
   permissions,
   onChange,
+  orgRolePerms,
 }: {
   role: string;
   permissions: ModulePermissions;
   onChange: (p: ModulePermissions) => void;
+  orgRolePerms: Record<string, ModulePermissions>;
 }) {
-  const defaults = ROLE_DEFAULT_PERMISSIONS[role] ?? ROLE_DEFAULT_PERMISSIONS.viewer;
+  // Custom org roles (e.g. "market_research") have no entry in the hardcoded
+  // ROLE_DEFAULT_PERMISSIONS map — their real defaults live in orgRolePerms
+  // (fetched from /api/roles). Without this, the toggle silently fell back to
+  // ROLE_DEFAULT_PERMISSIONS.viewer for every custom-role user, showing
+  // permissions that didn't match what they'd actually been granted.
+  const defaults = orgRolePerms[role] ?? ROLE_DEFAULT_PERMISSIONS[role] ?? ROLE_DEFAULT_PERMISSIONS.others;
 
   const resetToDefaults = () => onChange({ ...defaults });
 
@@ -320,6 +327,7 @@ function UserModal({
               role={role}
               permissions={permissions}
               onChange={setPermissions}
+              orgRolePerms={orgRolePerms}
             />
           )}
         </div>
