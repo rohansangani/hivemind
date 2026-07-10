@@ -3252,6 +3252,7 @@ function ValidateSection() {
   // Apify's own scrape time per profile adds up fast across a large paste.
   const runLinkedInCheck = async () => {
     setError("");
+    if (!linkedinVertical) { setError("Select a vertical before running the check."); return; }
     const urls = [...new Set(linkedinUrlsText.split(/[\n,]+/).map((u) => u.trim()).filter(Boolean))];
     if (!urls.length) { setError("Add at least one LinkedIn URL."); return; }
     const costNote = linkedinScrapeMode === "email" ? "$10 per 1,000 profiles" : "$4 per 1,000 profiles";
@@ -3270,7 +3271,7 @@ function ValidateSection() {
         const r = await fetch("/api/radar/enrich", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "check_linkedin", params: { urls: batch, mode: linkedinScrapeMode, vertical: linkedinVertical || undefined } }),
+          body: JSON.stringify({ action: "check_linkedin", params: { urls: batch, mode: linkedinScrapeMode, vertical: linkedinVertical } }),
         });
         const d = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(d.error || "LinkedIn check failed");
@@ -3897,16 +3898,16 @@ function ValidateSection() {
                       </div>
                     </div>
                     <div>
-                      <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Vertical for new contacts (optional)</label>
-                      <select value={linkedinVertical} onChange={(e) => setLinkedinVertical(e.target.value)} style={{ width: 180 }}>
-                        <option value="">— No vertical (skip account creation) —</option>
+                      <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Vertical for new contacts</label>
+                      <select value={linkedinVertical} onChange={(e) => setLinkedinVertical(e.target.value)} style={{ width: 180 }} title="Required — new contacts are never saved without a vertical">
+                        <option value="">— Select vertical —</option>
                         <option value="B2B">B2B</option>
                         <option value="US">US</option>
                         <option value="D2C">D2C</option>
                       </select>
-                      <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-1">Only used when a profile has no matching contact — a new one gets created either way, but an account only gets linked if a vertical is set and the profile has a company domain (needs the "+ email" mode).</p>
+                      <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-1">Required. Used when a profile has no matching contact — the new contact and its account (if the profile has a company domain, needs the "+ email" mode) are created under this vertical.</p>
                     </div>
-                    <button onClick={runLinkedInCheck} disabled={linkedinBusy} className="hm-btn hm-btn-primary w-full" style={{ height: 38, fontSize: 13 }}>
+                    <button onClick={runLinkedInCheck} disabled={linkedinBusy || !linkedinVertical} className="hm-btn hm-btn-primary w-full" style={{ height: 38, fontSize: 13 }}>
                       {linkedinBusy ? `Checking… ${linkedinProgress?.done ?? 0}/${linkedinProgress?.total ?? 0}` : "Run check"}
                     </button>
 
