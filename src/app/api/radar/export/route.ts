@@ -98,10 +98,7 @@ async function fetchAllPages(table: string, query: string): Promise<{ rows: Reco
 }
 
 export async function POST(req: NextRequest) {
-  // "export" is the lowest tier that satisfies this route — a user with only
-  // export-level radar access can hit this endpoint, but not accounts/contacts/
-  // upload/validate (those still require "view" or "edit").
-  const access = await requireRadarAccess(req, "export");
+  const access = await requireRadarAccess(req);
   if (access instanceof NextResponse) return access;
 
   try {

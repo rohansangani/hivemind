@@ -7,7 +7,9 @@ import { selectFrom, requireRadarAccess, updateRow } from "@/lib/radar/supabase"
  * gated behind hivemind owner/admin auth.
  */
 export async function POST(req: NextRequest) {
-  const access = await requireRadarAccess(req);
+  // Radar's "view" tier is restricted to Dashboard + Export only — browsing
+  // Contacts requires "edit".
+  const access = await requireRadarAccess(req, "edit");
   if (access instanceof NextResponse) return access;
 
   try {

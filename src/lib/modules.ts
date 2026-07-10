@@ -2,17 +2,17 @@
  * Module definitions and customizable access-level system.
  *
  * Each user has a per-module permission stored in the UserPermission table.
- * Access levels: "none" | "export" | "view" | "edit"
+ * Access levels: "none" | "view" | "edit"
  *
- * "export" sits below "view": it's Radar-specific, granting only the ability
- * to download CSVs from the Export tab, with no browse/edit access to the
- * underlying Accounts/Contacts data or any other module. Other modules only
- * ever use none/view/edit.
+ * For Radar specifically: "edit" is full access (browse + edit + export
+ * everything); "view" is restricted to just the Dashboard and Export tabs
+ * (see radar/page.tsx) — no browse/edit of Accounts, Contacts, Validate,
+ * Upload, ICP, or Enrich.
  *
  * If no custom permission exists for a user, the role default is used.
  */
 
-export type AccessLevel = "none" | "export" | "view" | "edit";
+export type AccessLevel = "none" | "view" | "edit";
 
 export interface ModuleDef {
   id: string;
@@ -148,7 +148,6 @@ export function getEffectivePermissions(role: string, custom: Record<string, str
 export function hasModuleAccess(permissions: ModulePermissions, moduleId: string, level: AccessLevel): boolean {
   const userLevel = permissions[moduleId] ?? "none";
   if (level === "none") return true;
-  if (level === "export") return userLevel === "export" || userLevel === "view" || userLevel === "edit";
   if (level === "view") return userLevel === "view" || userLevel === "edit";
   if (level === "edit") return userLevel === "edit";
   return false;

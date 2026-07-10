@@ -15,7 +15,9 @@ export const maxDuration = 60;
 const RADAR_API_BASE = process.env.RADAR_API_BASE || "https://radar-clickpost.vercel.app";
 
 export async function POST(req: NextRequest) {
-  const access = await requireRadarAccess(req);
+  // Radar's "view" tier is restricted to Dashboard + Export only — Enrich and
+  // ICP Base (which also calls this route) require "edit".
+  const access = await requireRadarAccess(req, "edit");
   if (access instanceof NextResponse) return access;
 
   try {

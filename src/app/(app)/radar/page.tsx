@@ -40,15 +40,16 @@ export default function RadarPage() {
   const user = useUser();
   const [active, setActive] = useState<SectionId>("dashboard");
 
-  const modulePermissions = (user?.modulePermissions ?? {}) as Record<string, "none" | "export" | "view" | "edit">;
-  const canAccess = hasModuleAccess(modulePermissions, "radar", "export");
-  // Export-only grant: no browse/edit access to anything, just the Export tab.
-  const exportOnly = modulePermissions.radar === "export";
-  const visibleSections = exportOnly ? SECTIONS.filter((s) => s.id === "export") : SECTIONS;
+  const modulePermissions = (user?.modulePermissions ?? {}) as Record<string, "none" | "view" | "edit">;
+  const canAccess = hasModuleAccess(modulePermissions, "radar", "view");
+  // "view"-level grant is restricted to Dashboard + Export only — no browse/edit
+  // of Accounts, Contacts, Validate, Upload, ICP, or Enrich. "edit" sees everything.
+  const viewOnly = modulePermissions.radar === "view";
+  const visibleSections = viewOnly ? SECTIONS.filter((s) => s.id === "dashboard" || s.id === "export") : SECTIONS;
 
   useEffect(() => {
-    if (exportOnly) setActive("export");
-  }, [exportOnly]);
+    if (viewOnly && active !== "dashboard" && active !== "export") setActive("dashboard");
+  }, [viewOnly, active]);
 
   if (!canAccess) {
     return (
