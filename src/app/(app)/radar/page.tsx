@@ -40,7 +40,15 @@ export default function RadarPage() {
   const user = useUser();
   const [active, setActive] = useState<SectionId>("dashboard");
 
-  const canAccess = hasModuleAccess((user?.modulePermissions ?? {}) as Record<string, "none" | "view" | "edit">, "radar", "view");
+  const modulePermissions = (user?.modulePermissions ?? {}) as Record<string, "none" | "export" | "view" | "edit">;
+  const canAccess = hasModuleAccess(modulePermissions, "radar", "export");
+  // Export-only grant: no browse/edit access to anything, just the Export tab.
+  const exportOnly = modulePermissions.radar === "export";
+  const visibleSections = exportOnly ? SECTIONS.filter((s) => s.id === "export") : SECTIONS;
+
+  useEffect(() => {
+    if (exportOnly) setActive("export");
+  }, [exportOnly]);
 
   if (!canAccess) {
     return (
@@ -74,7 +82,7 @@ export default function RadarPage() {
 
         {/* ── Section tabs ───────────────────────────────────────── */}
         <div className="flex gap-0.5 p-1 rounded-xl bg-[var(--hm-bg-tertiary)] w-fit max-w-full overflow-x-auto">
-          {SECTIONS.map((s) => (
+          {visibleSections.map((s) => (
             <button
               key={s.id}
               onClick={() => setActive(s.id)}
