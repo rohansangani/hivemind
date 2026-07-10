@@ -3154,6 +3154,9 @@ function ValidateSection() {
   const [linkedinProgress, setLinkedinProgress] = useState<{ done: number; total: number } | null>(null);
   const [linkedinResults, setLinkedinResults] = useState<LinkedInCheckRow[]>([]);
   const [linkedinSummary, setLinkedinSummary] = useState<{ matched: number; mismatched: number; notFound: number; created: number; uncertain: number } | null>(null);
+  // Which uncertain rows currently have a Same/Moved resolve in flight — keyed by dbContactId
+  // so the buttons show a busy state instead of looking like nothing happened on click.
+  const [resolvingContactIds, setResolvingContactIds] = useState<Set<string>>(new Set());
 
   // Send controls
   const [tags, setTags] = useState<InstantlyTag[]>([]);
@@ -3307,11 +3310,13 @@ function ValidateSection() {
   // "moved" applies the same effect a confident "different" verdict would have.
   const resolveLinkedinMatch = async (row: LinkedInCheckRow, moved: boolean) => {
     if (!row.dbContactId) return;
+    const contactId = row.dbContactId;
+    setResolvingContactIds((prev) => new Set(prev).add(contactId));
     try {
       const r = await fetch("/api/radar/enrich", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "resolve_linkedin_match", params: { contactId: row.dbContactId, moved } }),
+        body: JSON.stringify({ action: "resolve_linkedin_match", params: { contactId, moved } }),
       });
       if (!r.ok) { const d = await r.json().catch(() => ({})); setError(d.error || "Failed to resolve"); return; }
       setLinkedinResults((prev) => prev.map((x) => (x === row ? { ...x, uncertain: false, match: !moved } : x)));
@@ -3323,6 +3328,8 @@ function ValidateSection() {
       });
     } catch {
       setError("Failed to resolve");
+    } finally {
+      setResolvingContactIds((prev) => { const next = new Set(prev); next.delete(contactId); return next; });
     }
   };
 
@@ -3991,13 +3998,32 @@ function ValidateSection() {
                                 <td className="px-3 py-2 border-b border-[var(--hm-border-light)]">{r.dbCompany || "—"}</td>
                                 <td className="px-3 py-2 border-b border-[var(--hm-border-light)]">
                                   {r.error ? <span className="text-[var(--hm-text-tertiary)]" title={r.error}>Not found</span>
-                                    : r.uncertain ? (
-                                      <div className="flex items-center gap-2">
-                                        <span className="text-[#B45309] font-medium whitespace-nowrap">? Possible match — review</span>
-                                        <button onClick={() => resolveLinkedinMatch(r, false)} className="hm-btn hm-btn-secondary" style={{ height: 22, padding: "0 8px", fontSize: 10.5 }}>Same</button>
-                                        <button onClick={() => resolveLinkedinMatch(r, true)} className="hm-btn" style={{ height: 22, padding: "0 8px", fontSize: 10.5, background: "#FEE2E2", color: "#DC2626" }}>Moved</button>
-                                      </div>
-                                    )
+                                    : r.uncertain ? (() => {
+                                      const isResolving = !!r.dbContactId && resolvingContactIds.has(r.dbContactId);
+                                      return (
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-[#B45309] font-medium whitespace-nowrap">
+                                            {isResolving ? "Saving…" : "? Possible match — review"}
+                                          </span>
+                                          <button
+                                            onClick={() => resolveLinkedinMatch(r, false)}
+                                            disabled={isResolving}
+                                            className="hm-btn hm-btn-secondary"
+                                            style={{ height: 22, padding: "0 8px", fontSize: 10.5, opacity: isResolving ? 0.5 : 1, cursor: isResolving ? "default" : "pointer" }}
+                                          >
+                                            {isResolving ? "…" : "Same"}
+                                          </button>
+                                          <button
+                                            onClick={() => resolveLinkedinMatch(r, true)}
+                                            disabled={isResolving}
+                                            className="hm-btn"
+                                            style={{ height: 22, padding: "0 8px", fontSize: 10.5, background: "#FEE2E2", color: "#DC2626", opacity: isResolving ? 0.5 : 1, cursor: isResolving ? "default" : "pointer" }}
+                                          >
+                                            {isResolving ? "…" : "Moved"}
+                                          </button>
+                                        </div>
+                                      );
+                                    })()
                                     : r.match === true ? <span className="text-[#059669] font-medium">✓ Same</span>
                                     : r.match === false ? <span className="text-red-500 font-medium">✗ Different — marked moved</span>
                                     : r.created ? <span className="text-[var(--hm-accent)] font-medium">+ Created</span>
