@@ -36,32 +36,24 @@ function RoleBadge({ role, customMeta }: { role: string; customMeta?: Record<str
   );
 }
 
-// 3-segment toggle: None / View / Edit — 4-segment (adds Export) for the Radar module only,
-// since "export" (download-only, no browse/edit) is a Radar-specific tier.
-function AccessToggle({ value, onChange, disabled, moduleId }: { value: AccessLevel; onChange: (v: AccessLevel) => void; disabled?: boolean; moduleId?: string }) {
-  const levels: AccessLevel[] = moduleId === "radar" ? ["none", "export", "view", "edit"] : ["none", "view", "edit"];
+// 3-segment toggle: None / View / Edit
+function AccessToggle({ value, onChange, disabled }: { value: AccessLevel; onChange: (v: AccessLevel) => void; disabled?: boolean }) {
+  const levels: AccessLevel[] = ["none", "view", "edit"];
   const colors: Record<AccessLevel, string> = {
     none: "var(--hm-text-tertiary)",
-    export: "#D97706",
     view: "#0EA5E9",
     edit: "#059669",
-  };
-  const bgs: Record<AccessLevel, string> = {
-    none: "var(--hm-bg-tertiary)",
-    export: "#FEF3C7",
-    view: "#E0F2FE",
-    edit: "#DCFCE7",
   };
   return (
     <div className="flex rounded-lg overflow-hidden border border-[var(--hm-border)] h-7 text-[11px] font-medium flex-shrink-0"
       style={{ opacity: disabled ? 0.4 : 1, pointerEvents: disabled ? "none" : "auto" }}>
-      {levels.map((l, i) => (
+      {levels.map(l => (
         <button key={l} onClick={() => onChange(l)}
           className="px-3 capitalize transition-all"
           style={{
-            background: value === l ? bgs[l] : "var(--hm-bg)",
+            background: value === l ? (l === "none" ? "var(--hm-bg-tertiary)" : l === "view" ? "#E0F2FE" : "#DCFCE7") : "var(--hm-bg)",
             color: value === l ? colors[l] : "var(--hm-text-tertiary)",
-            borderRight: i < levels.length - 1 ? "1px solid var(--hm-border)" : undefined,
+            borderRight: l !== "edit" ? "1px solid var(--hm-border)" : undefined,
           }}>
           {l}
         </button>
@@ -129,7 +121,6 @@ function PermissionEditor({
                         <p className="text-[11px]" style={{ color: "var(--hm-text-tertiary)" }}>{mod.description}</p>
                       </div>
                       <AccessToggle
-                        moduleId={mod.id}
                         value={current}
                         onChange={val => onChange({ ...permissions, [mod.id]: val })}
                       />
@@ -144,8 +135,7 @@ function PermissionEditor({
 
       <p className="text-[10px] mt-3 px-1" style={{ color: "var(--hm-text-tertiary)" }}>
         <strong style={{ color: "var(--hm-text-secondary)" }}>None</strong> — hidden from nav &nbsp;·&nbsp;
-        <strong style={{ color: "#D97706" }}>Export</strong> — Radar only: CSV download, no browse/edit &nbsp;·&nbsp;
-        <strong style={{ color: "#0EA5E9" }}>View</strong> — read only &nbsp;·&nbsp;
+        <strong style={{ color: "#0EA5E9" }}>View</strong> — read only (Radar: Dashboard + Export tabs only) &nbsp;·&nbsp;
         <strong style={{ color: "#059669" }}>Edit</strong> — full create/edit access
       </p>
     </div>
@@ -309,8 +299,8 @@ function UserModal({
                 <div className="grid grid-cols-2 gap-1.5">
                   {MODULES.map(mod => {
                     const level = effectivePerms[mod.id] as AccessLevel ?? "none";
-                    const colors: Record<AccessLevel, string> = { none: "var(--hm-text-tertiary)", export: "#D97706", view: "#0EA5E9", edit: "#059669" };
-                    const bgs: Record<AccessLevel, string> = { none: "var(--hm-bg-secondary)", export: "#FEF3C7", view: "#E0F2FE", edit: "#DCFCE7" };
+                    const colors: Record<AccessLevel, string> = { none: "var(--hm-text-tertiary)", view: "#0EA5E9", edit: "#059669" };
+                    const bgs: Record<AccessLevel, string> = { none: "var(--hm-bg-secondary)", view: "#E0F2FE", edit: "#DCFCE7" };
                     return (
                       <div key={mod.id} className="flex items-center justify-between px-3 py-1.5 rounded-lg"
                         style={{ background: "var(--hm-bg-secondary)" }}>
@@ -468,8 +458,8 @@ function ViewPermsModal({ member, onClose }: { member: Member; onClose: () => vo
     { key: "content", label: "Content & AI" },
     { key: "admin", label: "Admin" },
   ];
-  const colors: Record<AccessLevel, string> = { none: "var(--hm-text-tertiary)", export: "#D97706", view: "#0EA5E9", edit: "#059669" };
-  const bgs: Record<AccessLevel, string> = { none: "var(--hm-bg-secondary)", export: "#FEF3C7", view: "#E0F2FE", edit: "#DCFCE7" };
+  const colors: Record<AccessLevel, string> = { none: "var(--hm-text-tertiary)", view: "#0EA5E9", edit: "#059669" };
+  const bgs: Record<AccessLevel, string> = { none: "var(--hm-bg-secondary)", view: "#E0F2FE", edit: "#DCFCE7" };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.5)" }}>
@@ -550,7 +540,7 @@ function MemberRow({
   const effective = getEffectivePermissions(m.role, m.customPermissions, orgRolePerms);
   const hasCustom = m.customPermissions && Object.keys(m.customPermissions).length > 0;
 
-  const counts = { edit: 0, view: 0, export: 0, none: 0 };
+  const counts = { edit: 0, view: 0, none: 0 };
   MODULES.forEach(mod => { counts[(effective[mod.id] as AccessLevel) ?? "none"]++; });
 
   const isOwner = m.role === "owner";
