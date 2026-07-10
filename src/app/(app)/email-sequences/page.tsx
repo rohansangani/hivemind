@@ -846,9 +846,9 @@ export default function EmailSequencesPage() {
                 the copy should use literally instead of writing the real value inline */}
             <div className="mb-4">
               <label className={labelCls}>Personalization tags (optional)</label>
-              <p className="text-[11.5px] text-[var(--hm-text-tertiary)] mb-2">
+              <p className="text-[11px] text-[var(--hm-text-tertiary)] mb-2">
                 Select any you want written as an Instantly merge tag (e.g. <code>{"{{firstName}}"}</code>) instead of the real value —
-                these resolve automatically when sent. Leave unselected to write the actual value directly, as before.
+                these resolve automatically when sent. Leave unselected to write the actual value directly, as before. Select as many as you need.
               </p>
               <div className="flex flex-wrap gap-1.5">
                 {PERSONALIZATION_TAGS.map(t => {
@@ -858,7 +858,7 @@ export default function EmailSequencesPage() {
                       key={t.id}
                       type="button"
                       onClick={() => setPersonalizationTags(prev => active ? prev.filter(id => id !== t.id) : [...prev, t.id])}
-                      className={`h-[30px] px-3 rounded-lg text-[12px] transition-all ${active ? "bg-[#4361ee] text-white" : "border border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[#4361ee]/40"}`}
+                      className={`h-[32px] px-3 rounded-lg text-[12px] transition-all ${active ? "bg-[#4361ee] text-white" : "border border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[#4361ee]/40"}`}
                     >
                       {t.label}
                     </button>
