@@ -31,16 +31,19 @@ function parseDay(sendDelay: string): number {
 }
 
 /**
- * Sends a generated Email Sequences batch as a real Instantly campaign — one campaign, one
+ * Creates a generated Email Sequences batch as a real Instantly campaign — one campaign, one
  * step per email-in-sequence, with each lead getting its OWN AI-generated subject/body via
  * per-lead custom_variables (not a single shared template), since every prospect's sequence in
  * `results` was generated uniquely. Step scheduling (day-of-sequence delays) is taken from the
  * FIRST result's sendDelay values and shared across every lead in the campaign — the campaign
  * structure (step count + timing) is necessarily shared, only body/subject content varies.
  *
- * Uses the same Instantly workspace Radar's Validate already sends test emails through
- * (RADAR_INSTANTLY_API_KEY) — an explicit user decision, not a default. Same access level as
- * generating a sequence (no extra owner/admin gate) — also an explicit user decision.
+ * The campaign is created and leads are added, but it is NOT activated — the user launches it
+ * themselves from Instantly's own UI after reviewing/adjusting the schedule there.
+ *
+ * Uses the same Instantly workspace Radar's Validate already sends test emails through — an
+ * explicit user decision, not a default. Same access level as generating a sequence (no extra
+ * owner/admin gate) — also an explicit user decision.
  */
 export async function POST(req: NextRequest) {
   const token = req.cookies.get("hm-token")?.value;
@@ -54,21 +57,10 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const {
-      results, mailboxTag, campaignName,
-      sendWindowStart, sendWindowEnd, sendDays, dailyLimit, openTracking, linkTracking,
-    } = body as {
+    const { results, mailboxTag, campaignName } = body as {
       results?: ProspectResult[];
       mailboxTag?: string;
       campaignName?: string;
-      /** "HH:MM" 24h — defaults to a 24/7 window (00:00–23:59) if either is omitted. */
-      sendWindowStart?: string;
-      sendWindowEnd?: string;
-      /** 7 booleans, Sun=0..Sat=6 — defaults to every day if omitted. */
-      sendDays?: boolean[];
-      dailyLimit?: number;
-      openTracking?: boolean;
-      linkTracking?: boolean;
     };
 
     if (!mailboxTag) return NextResponse.json({ error: "Select a mailbox tag to send from" }, { status: 400 });
@@ -96,28 +88,26 @@ export async function POST(req: NextRequest) {
       return { type: "email", delay, variants: [{ subject: `{{step${i + 1}Subject}}`, body: `{{step${i + 1}Body}}\n\n{{accountSignature}}` }] };
     });
 
-    // Defaults preserve the original behaviour (24/7, all days, 800/day, tracking off) when the
-    // caller doesn't specify — only the Email Sequences send panel sends these explicitly.
-    const days: Record<string, boolean> = {};
-    (Array.isArray(sendDays) && sendDays.length === 7 ? sendDays : [true, true, true, true, true, true, true])
-      .forEach((v, i) => { days[String(i)] = !!v; });
-
+    // Default schedule — business hours, weekdays only, Eastern Time — matching the user's own
+    // Instantly default (9 AM–6 PM ET, Mon–Fri). This is only a starting point: the campaign is
+    // never auto-launched (see below), so the user reviews/adjusts timing in Instantly itself
+    // before clicking Launch.
     const campaignBody = {
       name: campaignName || `Email Sequences — ${new Date().toISOString().slice(0, 10)}`,
       campaign_schedule: {
         schedules: [{
-          name: "Custom",
-          timing: { from: sendWindowStart || "00:00", to: sendWindowEnd || "23:59" },
-          days,
-          timezone: "Asia/Kolkata",
+          name: "Business hours",
+          timing: { from: "09:00", to: "18:00" },
+          days: { 0: false, 1: true, 2: true, 3: true, 4: true, 5: true, 6: false }, // Sun=0..Sat=6
+          timezone: "America/New_York",
         }],
       },
       sequences: [{ steps }],
       email_list: senderEmails,
       email_tag_list: [mailboxTag],
-      daily_limit: Number.isFinite(dailyLimit) && Number(dailyLimit) > 0 ? Number(dailyLimit) : 800,
-      open_tracking: !!openTracking,
-      link_tracking: !!linkTracking,
+      daily_limit: 800,
+      open_tracking: false,
+      link_tracking: false,
     };
     const campaign = await instantly<{ id: string }>("/campaigns", { method: "POST", body: JSON.stringify(campaignBody) }, decoded.orgId);
     const campaignId = campaign.id;
@@ -155,9 +145,8 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Instantly rejects an empty body when content-type is JSON — send {}.
-    await instantly(`/campaigns/${campaignId}/activate`, { method: "POST", body: "{}" }, decoded.orgId);
-
+    // Deliberately NOT activated — the campaign is created with leads added but left in draft/
+    // paused state so the user can review timing and launch it themselves from Instantly's UI.
     return NextResponse.json({
       campaignId,
       added,
