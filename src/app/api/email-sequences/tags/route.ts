@@ -7,14 +7,15 @@ import { instantly } from "@/lib/instantly";
 export async function POST(req: NextRequest) {
   const token = req.cookies.get("hm-token")?.value;
   if (!token) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  let decoded: { orgId: string };
   try {
-    jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret");
+    decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as { orgId: string };
   } catch {
     return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
   }
 
   try {
-    const d = await instantly<{ items?: Array<{ id: string; label?: string; name?: string }> }>("/custom-tags?limit=100");
+    const d = await instantly<{ items?: Array<{ id: string; label?: string; name?: string }> }>("/custom-tags?limit=100", {}, decoded.orgId);
     const tags = (d.items || []).map((t) => ({ id: t.id, label: t.label || t.name })).filter((t) => t.label);
     return NextResponse.json({ tags });
   } catch (err) {

@@ -45,8 +45,9 @@ function parseDay(sendDelay: string): number {
 export async function POST(req: NextRequest) {
   const token = req.cookies.get("hm-token")?.value;
   if (!token) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  let decoded: { orgId: string };
   try {
-    jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret");
+    decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as { orgId: string };
   } catch {
     return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
   }
@@ -76,7 +77,7 @@ export async function POST(req: NextRequest) {
 
     // Resolve mailbox tag → actual sending account emails (email_tag_list on the campaign does
     // NOT auto-attach senders; email_list must be set explicitly — same as Radar's Validate).
-    const accRes = await instantly<{ items?: Array<{ email?: string }> }>(`/accounts?limit=100&tag_ids=${encodeURIComponent(mailboxTag)}`);
+    const accRes = await instantly<{ items?: Array<{ email?: string }> }>(`/accounts?limit=100&tag_ids=${encodeURIComponent(mailboxTag)}`, {}, decoded.orgId);
     const senderEmails = (accRes.items || []).map((a) => a.email).filter((e): e is string => !!e);
     if (!senderEmails.length) {
       return NextResponse.json({ error: "No sending mailboxes found for the selected tag" }, { status: 400 });
@@ -118,7 +119,7 @@ export async function POST(req: NextRequest) {
       open_tracking: !!openTracking,
       link_tracking: !!linkTracking,
     };
-    const campaign = await instantly<{ id: string }>("/campaigns", { method: "POST", body: JSON.stringify(campaignBody) });
+    const campaign = await instantly<{ id: string }>("/campaigns", { method: "POST", body: JSON.stringify(campaignBody) }, decoded.orgId);
     const campaignId = campaign.id;
 
     const startedAt = Date.now();
@@ -147,7 +148,7 @@ export async function POST(req: NextRequest) {
             website: r.prospect!.website || undefined,
             custom_variables: customVariables,
           }),
-        });
+        }, decoded.orgId);
         if (lead?.id) added++; else failures.push(r.prospect!.email!);
       } catch (e) {
         failures.push(`${r.prospect!.email} (${(e as Error).message})`);
@@ -155,7 +156,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Instantly rejects an empty body when content-type is JSON — send {}.
-    await instantly(`/campaigns/${campaignId}/activate`, { method: "POST", body: "{}" });
+    await instantly(`/campaigns/${campaignId}/activate`, { method: "POST", body: "{}" }, decoded.orgId);
 
     return NextResponse.json({
       campaignId,
