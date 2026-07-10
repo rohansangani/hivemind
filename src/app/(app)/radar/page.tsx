@@ -1345,6 +1345,7 @@ function ExportSection() {
 
   const [matchCount, setMatchCount] = useState<number | null>(null);
   const [counting, setCounting] = useState(false);
+  const [exportRefreshToken, setExportRefreshToken] = useState(0);
 
   useEffect(() => {
     fetch("/api/radar/options")
@@ -1476,6 +1477,7 @@ function ExportSection() {
         kind: "ok",
         text: `Exported ${data.exported.toLocaleString()} ${exportType}${data.truncated ? " (capped at 60k — narrow filters for the rest)" : ""}.`,
       });
+      setExportRefreshToken((t) => t + 1);
     } catch (e) {
       setMsg({ kind: "err", text: (e as Error).message });
     } finally {
@@ -1484,6 +1486,7 @@ function ExportSection() {
   };
 
   return (
+    <>
     <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
       <div className="px-5 py-4 border-b border-[var(--hm-border)]">
         <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Export</h2>
@@ -1602,6 +1605,73 @@ function ExportSection() {
           </div>
         )}
       </div>
+    </div>
+    <RecentExports refreshToken={exportRefreshToken} />
+    </>
+  );
+}
+
+interface ExportLogRow {
+  id: string;
+  type: string;
+  rowCount: number;
+  createdAt: string;
+  exportedBy: string;
+}
+
+function RecentExports({ refreshToken }: { refreshToken: number }) {
+  const [logs, setLogs] = useState<ExportLogRow[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = () => {
+    setLoading(true);
+    fetch("/api/radar/export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "list" }),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setLogs(d?.exports || []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  };
+  useEffect(load, [refreshToken]);
+
+  return (
+    <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
+      <div className="px-5 py-4 border-b border-[var(--hm-border)] flex items-center justify-between">
+        <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Recent exports</h2>
+        <button onClick={load} className="text-[12px] text-[var(--hm-text-secondary)] hover:text-[var(--hm-accent)]">Refresh</button>
+      </div>
+      {loading ? (
+        <div className="flex items-center justify-center py-10">
+          <div className="w-4 h-4 border-2 border-[var(--hm-accent)]/30 border-t-[var(--hm-accent)] rounded-full animate-spin" />
+        </div>
+      ) : logs.length === 0 ? (
+        <div className="py-8 text-center text-[12.5px] text-[var(--hm-text-tertiary)]">No exports yet.</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-[13px]">
+            <thead>
+              <tr>
+                {["Type", "Rows", "Exported By", "Date"].map((h) => (
+                  <th key={h} className="text-left text-[11px] font-semibold uppercase tracking-wide text-[var(--hm-text-tertiary)] px-4 py-2.5 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] whitespace-nowrap">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {logs.map((l) => (
+                <tr key={l.id} className="hover:bg-[var(--hm-surface-hover)]">
+                  <td className="px-4 py-3 border-b border-[var(--hm-border-light)] capitalize">{l.type}</td>
+                  <td className="px-4 py-3 border-b border-[var(--hm-border-light)] tabular-nums">{(l.rowCount ?? 0).toLocaleString()}</td>
+                  <td className="px-4 py-3 border-b border-[var(--hm-border-light)] whitespace-nowrap">{l.exportedBy || <span className="text-[var(--hm-text-tertiary)]">—</span>}</td>
+                  <td className="px-4 py-3 border-b border-[var(--hm-border-light)] whitespace-nowrap">{fmtDateTimeIST(l.createdAt)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
@@ -2054,6 +2124,7 @@ function UploadSection() {
 interface UploadJob {
   id: string;
   created_by: string;
+  created_by_name?: string;
   table_name: string;
   filename: string;
   status: string;
@@ -2097,7 +2168,7 @@ function UploadJobs() {
           <table className="w-full border-collapse text-[13px]">
             <thead>
               <tr>
-                {["File", "Table", "Processed", "Inserted", "Status"].map((h) => (
+                {["File", "Table", "Processed", "Inserted", "Status", "Uploaded By", "Date"].map((h) => (
                   <th key={h} className="text-left text-[11px] font-semibold uppercase tracking-wide text-[var(--hm-text-tertiary)] px-4 py-2.5 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] whitespace-nowrap">{h}</th>
                 ))}
               </tr>
@@ -2110,6 +2181,8 @@ function UploadJobs() {
                   <td className="px-4 py-3 border-b border-[var(--hm-border-light)] tabular-nums">{(j.processed_rows ?? 0).toLocaleString()}</td>
                   <td className="px-4 py-3 border-b border-[var(--hm-border-light)] tabular-nums">{(j.inserted_count ?? 0).toLocaleString()}</td>
                   <td className="px-4 py-3 border-b border-[var(--hm-border-light)]"><UploadStatusPill status={j.status} /></td>
+                  <td className="px-4 py-3 border-b border-[var(--hm-border-light)] whitespace-nowrap">{j.created_by_name || j.created_by || <span className="text-[var(--hm-text-tertiary)]">—</span>}</td>
+                  <td className="px-4 py-3 border-b border-[var(--hm-border-light)] whitespace-nowrap">{fmtDateTimeIST(j.created_at)}</td>
                 </tr>
               ))}
             </tbody>

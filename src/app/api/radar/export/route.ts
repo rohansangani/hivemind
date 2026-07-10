@@ -120,6 +120,26 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ count: total });
     }
 
+    // Recent-exports history — the export flow itself is a stateless CSV builder, so this reads
+    // from RadarExportLog (hivemind's own DB), stamped on every real export below.
+    if (body.mode === "list") {
+      const { db } = await import("@/lib/db");
+      const logs = await db.radarExportLog.findMany({
+        orderBy: { createdAt: "desc" },
+        take: 20,
+        include: { user: { select: { name: true, email: true } } },
+      });
+      return NextResponse.json({
+        exports: logs.map((l) => ({
+          id: l.id,
+          type: l.type,
+          rowCount: l.rowCount,
+          createdAt: l.createdAt.toISOString(),
+          exportedBy: l.user.name || l.user.email,
+        })),
+      });
+    }
+
     if (type === "accounts") {
       const query = buildAccountQuery(filters);
       const { rows: all, truncated } = await fetchAllPages("accounts", query);
@@ -127,10 +147,12 @@ export async function POST(req: NextRequest) {
       const csvRows = [ACCOUNT_EXPORT_LABELS.join(",")];
       for (const a of all) csvRows.push(ACCOUNT_EXPORT_COLS.map((col) => csvCell(a[col])).join(","));
 
+      const exported = csvRows.length - 1;
+      await logExport(access.userId, "accounts", exported);
       return NextResponse.json({
         csv: csvRows.join("\n"),
         matched: all.length,
-        exported: csvRows.length - 1,
+        exported,
         truncated,
       });
     }
@@ -156,14 +178,27 @@ export async function POST(req: NextRequest) {
       csvRows.push(CONTACT_EXPORT_COLS.map((col) => csvCell(c[col])).join(","));
     }
 
+    const exported = csvRows.length - 1;
+    await logExport(access.userId, "contacts", exported);
     return NextResponse.json({
       csv: csvRows.join("\n"),
       matched: all.length,
-      exported: csvRows.length - 1,
+      exported,
       truncated,
     });
   } catch (err) {
     console.error("Radar export error:", err);
     return NextResponse.json({ error: "Failed to build export" }, { status: 502 });
+  }
+}
+
+/** Logs a real export (never the count-only preview) to RadarExportLog. Best-effort — a logging
+ * failure must never block the user from actually getting their CSV. */
+async function logExport(userId: string, type: "contacts" | "accounts", rowCount: number): Promise<void> {
+  try {
+    const { db } = await import("@/lib/db");
+    await db.radarExportLog.create({ data: { userId, type, rowCount } });
+  } catch (e) {
+    console.error("Radar export log error:", e);
   }
 }

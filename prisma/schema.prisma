@@ -77,6 +77,22 @@ model User {
   conversations    Conversation[]
   designBriefs     DesignBrief[]
   tourProgress     TourProgress[]
+  radarExportLogs  RadarExportLog[]
+}
+
+// Tracks who exported what from Radar (Accounts/Contacts CSV download), and when — the export
+// flow itself is a stateless CSV builder with no history of its own, unlike Upload's own
+// upload_jobs table on radar's side.
+model RadarExportLog {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String // "contacts" | "accounts"
+  rowCount  Int
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([createdAt])
 }
 
 model Account {

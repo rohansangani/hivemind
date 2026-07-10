@@ -37,6 +37,24 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify(payload),
     });
 
+    // The "list" action's job history is keyed by created_by email — enrich with the hivemind
+    // user's actual name (falling back to email for anyone not found, e.g. a deleted account)
+    // so job history reads as a person, not an inbox address.
+    if (body.action === "list" && r.ok) {
+      const data = await r.json().catch(() => null);
+      const jobs = Array.isArray(data?.jobs) ? data.jobs : [];
+      const emails = [...new Set(jobs.map((j: { created_by?: string }) => j.created_by).filter(Boolean))] as string[];
+      if (emails.length) {
+        const { db } = await import("@/lib/db");
+        const users = await db.user.findMany({ where: { email: { in: emails } }, select: { email: true, name: true } });
+        const nameByEmail = new Map(users.map((u) => [u.email.toLowerCase(), u.name]));
+        for (const j of jobs) {
+          if (j.created_by) j.created_by_name = nameByEmail.get(j.created_by.toLowerCase()) || j.created_by;
+        }
+      }
+      return NextResponse.json({ jobs });
+    }
+
     const text = await r.text();
     // Pass radar's response straight through (status + JSON body).
     return new NextResponse(text, {
