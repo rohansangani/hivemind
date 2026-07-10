@@ -95,8 +95,10 @@ export async function POST(req: NextRequest) {
       const subject = i === 0 || !isSingleSubject ? `{{step${i + 1}Subject}}` : "";
       // {{accountSignature}} is Instantly's own built-in tag, resolved per sending mailbox at
       // send time — it has to actually appear in the step body for Instantly to substitute it;
-      // it's not something we generate or pass per-lead.
-      return { type: "email", delay, variants: [{ subject, body: `{{step${i + 1}Body}}\n\n{{accountSignature}}` }] };
+      // it's not something we generate or pass per-lead. Extra blank line for a clearer visual
+      // gap (the raw stored value does contain "\n\n" either way — confirmed via a live test —
+      // Instantly's own template preview just renders it compactly).
+      return { type: "email", delay, variants: [{ subject, body: `{{step${i + 1}Body}}\n\n\n{{accountSignature}}` }] };
     });
 
     // Default schedule — business hours, weekdays only, Eastern Time — matching the user's own
@@ -133,7 +135,10 @@ export async function POST(req: NextRequest) {
       if (Date.now() - startedAt > 45000) { failures.push(`${r.prospect!.email} (skipped — time budget, retry by sending again)`); continue; }
       const customVariables: Record<string, string> = {};
       r.sequence.emails.forEach((e, i) => {
-        customVariables[`step${i + 1}Subject`] = e.subject;
+        // Only step 1's subject is ever referenced in the template when every step shares one
+        // subject (see isSingleSubject above) — sending step2Subject/step3Subject/etc. anyway
+        // just cluttered Instantly's custom-variables view with unused, identical duplicates.
+        if (i === 0 || !isSingleSubject) customVariables[`step${i + 1}Subject`] = e.subject;
         customVariables[`step${i + 1}Body`] = e.body;
       });
       const nameParts = (r.prospect!.name || "").trim().split(/\s+/);
