@@ -118,7 +118,9 @@ Write ONLY the instruction text. Start with "When creating content about ${group
         messages: [{ role: "user", content: prompt }],
       }),
     });
-    const data = await res.json();
+    const raw = await res.text();
+    let data;
+    try { data = JSON.parse(raw); } catch { return false; }
     if (!res.ok) return false;
 
     const instructions = data.content?.[0]?.type === "text" ? data.content[0].text.trim() : null;

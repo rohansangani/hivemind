@@ -244,44 +244,48 @@ Write ONLY the instruction text. No labels, no preamble.`;
       }
 
       // Dual-write: also upsert into SkillV2 so the new composer picks them up
-      const validV2Categories = new Set(Object.keys(V2_CATEGORIES));
-      for (const s of synthesized) {
-        const rawCat = s.category.toLowerCase().trim();
-        const v2Category: SkillCategory =
-          (KB_CATEGORY_ALIASES[rawCat] as SkillCategory) ??
-          (validV2Categories.has(rawCat) ? (rawCat as SkillCategory) : "general");
+      try {
+        const validV2Categories = new Set(Object.keys(V2_CATEGORIES));
+        for (const s of synthesized) {
+          const rawCat = s.category.toLowerCase().trim();
+          const v2Category: SkillCategory =
+            (KB_CATEGORY_ALIASES[rawCat] as SkillCategory) ??
+            (validV2Categories.has(rawCat) ? (rawCat as SkillCategory) : "general");
 
-        const existing = await db.skillV2.findFirst({
-          where: { organizationId: orgId, category: v2Category, scope: "global", isSynthesized: true },
-        });
+          const existing = await db.skillV2.findFirst({
+            where: { organizationId: orgId, category: v2Category, scope: "global", isSynthesized: true },
+          });
 
-        if (existing) {
-          await db.skillV2.update({
-            where: { id: existing.id },
-            data: {
-              name: s.name,
-              instructions: s.instructions,
-              description: s.description,
-              isActive: true,
-              version: existing.version + 1,
-            },
-          });
-        } else {
-          await db.skillV2.create({
-            data: {
-              name: s.name,
-              instructions: s.instructions,
-              description: s.description,
-              scope: "global",
-              category: v2Category,
-              isActive: true,
-              isSynthesized: true,
-              confidence: 0.5,
-              sourceCount: s.count,
-              organizationId: orgId,
-            },
-          });
+          if (existing) {
+            await db.skillV2.update({
+              where: { id: existing.id },
+              data: {
+                name: s.name,
+                instructions: s.instructions,
+                description: s.description,
+                isActive: true,
+                version: existing.version + 1,
+              },
+            });
+          } else {
+            await db.skillV2.create({
+              data: {
+                name: s.name,
+                instructions: s.instructions,
+                description: s.description,
+                scope: "global",
+                category: v2Category,
+                isActive: true,
+                isSynthesized: true,
+                confidence: 0.5,
+                sourceCount: s.count,
+                organizationId: orgId,
+              },
+            });
+          }
         }
+      } catch (e) {
+        console.error("SkillV2 dual-write failed (non-fatal):", e);
       }
     }
 
