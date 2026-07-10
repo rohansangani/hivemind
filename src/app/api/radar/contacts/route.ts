@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { selectFrom, requireRadarAccess, updateRow, setMarkedIrrelevant, deleteMarkedIrrelevant, fetchAllIds } from "@/lib/radar/supabase";
+import { logRadarActivity } from "@/lib/radar/activityLog";
 
 const RADAR_ADMIN_ROLES = ["owner", "admin"];
 
@@ -67,6 +68,7 @@ export async function POST(req: NextRequest) {
         ? await fetchAllIds("contacts_view", buildContactsFilter(body, access.role).replace(/^&/, ""))
         : body.ids;
       const count = await setMarkedIrrelevant("contacts", ids, irrelevant, actor ?? "unknown");
+      await logRadarActivity(access.userId, irrelevant ? "mark_irrelevant_contacts" : "unmark_irrelevant_contacts", `${irrelevant ? "Marked" : "Unmarked"} ${count} contact(s) as irrelevant`);
       return NextResponse.json({ updated: count });
     }
 
@@ -78,6 +80,7 @@ export async function POST(req: NextRequest) {
         ? await fetchAllIds("contacts_view", buildContactsFilter(body, access.role).replace(/^&/, ""))
         : body.ids;
       const count = await deleteMarkedIrrelevant("contacts", ids);
+      await logRadarActivity(access.userId, "delete_contacts", `Permanently deleted ${count} contact(s)`);
       return NextResponse.json({ deleted: count });
     }
 
@@ -112,6 +115,8 @@ export async function PATCH(req: NextRequest) {
     if (!id || !fields) return NextResponse.json({ error: "id and fields are required" }, { status: 400 });
 
     const updated = await updateRow("contacts", id, fields);
+    const name = [(updated as Record<string, unknown>).first_name, (updated as Record<string, unknown>).last_name].filter(Boolean).join(" ") || (updated as Record<string, unknown>).email || id;
+    await logRadarActivity(access.userId, "edit_contact", `Edited contact "${name}" — changed ${Object.keys(fields).join(", ")}`);
     return NextResponse.json({ data: updated });
   } catch (err) {
     console.error("Radar contact update error:", err);

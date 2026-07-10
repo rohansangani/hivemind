@@ -82,6 +82,7 @@ model User {
   designBriefs     DesignBrief[]
   tourProgress     TourProgress[]
   radarExportLogs  RadarExportLog[]
+  radarActivityLogs RadarActivityLog[]
 }
 
 // Tracks who exported what from Radar (Accounts/Contacts CSV download), and when — the export
@@ -92,6 +93,22 @@ model RadarExportLog {
   userId    String
   type      String // "contacts" | "accounts"
   rowCount  Int
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([createdAt])
+}
+
+// Admin-only audit trail of write/run actions by radar users — edits, mark irrelevant/unmark,
+// permanent delete, uploads, and Validate/Enrich/Check LinkedIn runs. Deliberately excludes
+// read/browse activity (viewing Accounts/Contacts, filtering) — that's noisy and low-signal;
+// this only logs things that change data or cost money (Apify/Instantly/Debounce calls).
+model RadarActivityLog {
+  id        String   @id @default(cuid())
+  userId    String
+  action    String   // e.g. "edit_contact", "mark_irrelevant_accounts", "delete_contacts", "validate_send", "linkedin_check"
+  summary   String   // human-readable one-liner shown in the Logs tab
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id])

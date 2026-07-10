@@ -1,5 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRadarAccess } from "@/lib/radar/supabase";
+import { logRadarActivity } from "@/lib/radar/activityLog";
+
+// Actions worth an activity-log entry — genuine user-initiated writes/runs (each is a real
+// Apify/Debounce call or a DB write). Reads/polls (check_existing, poll, fetch, parse_icp,
+// score_contacts — transient, no persisted write) are deliberately not logged.
+const LOGGABLE_ENRICH_ACTIONS: Record<string, (body: Record<string, unknown>, result: Record<string, unknown>) => string> = {
+  start: (body) => `Started an Enrich search${body.label ? `: "${body.label}"` : ""}`,
+  save: (body, result) => `Saved Enrich results to contacts — ${result?.saved ?? "?"} lead(s)`,
+  export_leads: (body, result) => `Ran Debounce validation on Enrich leads — ${result?.validated ?? result?.checked ?? "?"} checked`,
+  validate_and_save: (body, result) => `Validated and saved Enrich leads — ${result?.saved ?? "?"} lead(s)`,
+  check_linkedin: (body, result) => {
+    const params = (body.params as Record<string, unknown>) || {};
+    const urlCount = Array.isArray(params.urls) ? params.urls.length : "?";
+    return `Ran Check LinkedIn — ${urlCount} profile(s), ${result?.matched ?? 0} same / ${result?.mismatched ?? 0} different / ${result?.created ?? 0} created`;
+  },
+  resolve_linkedin_match: (body) => {
+    const params = (body.params as Record<string, unknown>) || {};
+    return `Resolved an uncertain LinkedIn match as "${params.moved ? "moved" : "same"}"`;
+  },
+};
 
 /**
  * Radar enrich proxy.
@@ -32,6 +52,16 @@ export async function POST(req: NextRequest) {
     });
 
     const text = await r.text();
+
+    if (r.ok) {
+      const logFn = LOGGABLE_ENRICH_ACTIONS[body.action as string];
+      if (logFn) {
+        let result: Record<string, unknown> = {};
+        try { result = JSON.parse(text || "{}"); } catch {}
+        await logRadarActivity(access.userId, `enrich_${body.action}`, logFn(body, result));
+      }
+    }
+
     return new NextResponse(text, {
       status: r.status,
       headers: { "Content-Type": r.headers.get("content-type") || "application/json" },

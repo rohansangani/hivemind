@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRadarAccess } from "@/lib/radar/supabase";
+import { logRadarActivity } from "@/lib/radar/activityLog";
 
 /**
  * Radar upload proxy.
@@ -58,6 +59,22 @@ export async function POST(req: NextRequest) {
     }
 
     const text = await r.text();
+
+    if (r.ok) {
+      if (!body.action) {
+        // A new CSV upload submission (job actions like list/status/stop always carry an
+        // explicit action, so no-action here means the actual bulk-import write path).
+        let parsed: Record<string, unknown> = {};
+        try { parsed = JSON.parse(text || "{}"); } catch {}
+        const filename = body.filename || "CSV";
+        const table = body.table || "contacts/accounts";
+        const inserted = parsed?.inserted_count ?? parsed?.processed_rows;
+        await logRadarActivity(access.userId, "upload_csv", `Uploaded "${filename}" (${table})${inserted != null ? ` — ${inserted} row(s)` : ""}`);
+      } else if (body.action === "stop") {
+        await logRadarActivity(access.userId, "stop_upload_job", `Stopped and rolled back upload job ${body.jobId ?? ""}`.trim());
+      }
+    }
+
     // Pass radar's response straight through (status + JSON body).
     return new NextResponse(text, {
       status: r.status,

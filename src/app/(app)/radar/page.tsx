@@ -23,7 +23,8 @@ type SectionId =
   | "upload"
   | "enrich"
   | "validate"
-  | "export";
+  | "export"
+  | "logs";
 
 const SECTIONS: Array<{ id: SectionId; label: string; blurb: string }> = [
   { id: "dashboard", label: "Dashboard", blurb: "TAM overview, validation health and enrichment activity." },
@@ -34,6 +35,7 @@ const SECTIONS: Array<{ id: SectionId; label: string; blurb: string }> = [
   { id: "enrich",    label: "Enrich",    blurb: "Find new contacts from LinkedIn for a target account." },
   { id: "validate",  label: "Validate",  blurb: "Generate email patterns, test deliverability, save confirmed emails." },
   { id: "export",    label: "Export",    blurb: "Download validated contact lists, or check a list of emails against the database." },
+  { id: "logs",      label: "Logs",      blurb: "Admin-only audit trail of edits, deletes, uploads, exports, and validate/enrich runs." },
 ];
 
 export default function RadarPage() {
@@ -51,14 +53,17 @@ export default function RadarPage() {
 
   const modulePermissions = (user?.modulePermissions ?? {}) as Record<string, "none" | "view" | "edit">;
   const canAccess = hasModuleAccess(modulePermissions, "radar", "view");
+  const isAdmin = user?.role === "owner" || user?.role === "admin";
   // "view"-level grant is restricted to Dashboard + Export only — no browse/edit
   // of Accounts, Contacts, Validate, Upload, ICP, or Enrich. "edit" sees everything.
   const viewOnly = modulePermissions.radar === "view";
-  const visibleSections = viewOnly ? SECTIONS.filter((s) => s.id === "dashboard" || s.id === "export") : SECTIONS;
+  const visibleSections = (viewOnly ? SECTIONS.filter((s) => s.id === "dashboard" || s.id === "export") : SECTIONS)
+    .filter((s) => s.id !== "logs" || isAdmin);
 
   useEffect(() => {
     if (viewOnly && active !== "dashboard" && active !== "export") setActive("dashboard");
-  }, [viewOnly, active]);
+    if (active === "logs" && !isAdmin) setActive("dashboard");
+  }, [viewOnly, active, isAdmin]);
 
   if (!canAccess) {
     return (
@@ -124,6 +129,7 @@ export default function RadarPage() {
               : s.id === "upload" ? <UploadSection />
               : s.id === "enrich" ? <EnrichSection />
               : s.id === "validate" ? <ValidateSection />
+              : s.id === "logs" ? <RadarActivityLogSection />
               : (
                 <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
                   <div className="px-5 py-4 border-b border-[var(--hm-border)]">
@@ -147,6 +153,123 @@ export default function RadarPage() {
           </div>
         ))}
 
+      </div>
+    </div>
+  );
+}
+
+/* ── Activity Log (admin-only) ────────────────────────────────────────── */
+
+interface RadarActivityLogRow {
+  id: string;
+  action: string;
+  summary: string;
+  createdAt: string;
+  user: string;
+}
+
+const ACTIVITY_LOG_PAGE_SIZE = 50;
+
+function RadarActivityLogSection() {
+  const [rows, setRows] = useState<RadarActivityLogRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+    fetch("/api/radar/activity-log", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ page, limit: ACTIVITY_LOG_PAGE_SIZE }),
+    })
+      .then(async (r) => {
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Request failed");
+        return r.json();
+      })
+      .then((d: { data: RadarActivityLogRow[]; total: number }) => {
+        if (!cancelled) { setRows(d.data || []); setTotal(d.total || 0); }
+      })
+      .catch((e) => { if (!cancelled) setError(e.message); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [page]);
+
+  const from = total === 0 ? 0 : page * ACTIVITY_LOG_PAGE_SIZE + 1;
+  const to = Math.min((page + 1) * ACTIVITY_LOG_PAGE_SIZE, total);
+  const maxPage = Math.max(0, Math.ceil(total / ACTIVITY_LOG_PAGE_SIZE) - 1);
+
+  return (
+    <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
+      <div className="px-5 py-4 border-b border-[var(--hm-border)]">
+        <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Activity Log</h2>
+        <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">
+          Admin-only audit trail of edits, mark irrelevant/unmark, permanent deletes, uploads, exports, and
+          Validate/Enrich/Check LinkedIn runs. Browsing and searching aren&apos;t logged.
+        </p>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-20">
+          <div className="w-5 h-5 border-2 border-[var(--hm-accent)]/30 border-t-[var(--hm-accent)] rounded-full animate-spin" />
+        </div>
+      ) : error ? (
+        <div className="m-4 rounded-lg border border-red-200 bg-red-50 dark:bg-red-900/20 dark:border-red-800 p-4 text-[13px] text-red-600 dark:text-red-400">
+          {error}
+        </div>
+      ) : rows.length === 0 ? (
+        <div className="py-16 text-center text-[13px] text-[var(--hm-text-tertiary)]">No activity logged yet.</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-[13px]">
+            <thead>
+              <tr>
+                {["Time", "User", "Action", "Details"].map((h) => (
+                  <th key={h} className="text-left text-[11px] font-semibold uppercase tracking-wide text-[var(--hm-text-tertiary)] px-4 py-2.5 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] whitespace-nowrap">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.id} className="hover:bg-[var(--hm-surface-hover)]">
+                  <td className="px-4 py-3 border-b border-[var(--hm-border-light)] whitespace-nowrap">{fmtDateTimeIST(r.createdAt)}</td>
+                  <td className="px-4 py-3 border-b border-[var(--hm-border-light)] whitespace-nowrap">{r.user}</td>
+                  <td className="px-4 py-3 border-b border-[var(--hm-border-light)] whitespace-nowrap">
+                    <span className="text-[11px] px-2 py-0.5 rounded-md font-medium bg-[var(--hm-bg-tertiary)] text-[var(--hm-text-secondary)]">{r.action}</span>
+                  </td>
+                  <td className="px-4 py-3 border-b border-[var(--hm-border-light)]">{r.summary}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between px-4 py-3 border-t border-[var(--hm-border)]">
+        <span className="text-[12px] text-[var(--hm-text-tertiary)] tabular-nums">
+          {loading ? "Loading…" : `Showing ${fmt(from)}–${fmt(to)} of ${fmt(total)}`}
+        </span>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => setPage((p) => Math.max(0, p - 1))}
+            disabled={page === 0}
+            className="hm-btn hm-btn-secondary"
+            style={{ height: 28, padding: "0 10px", fontSize: 12 }}
+          >
+            Prev
+          </button>
+          <button
+            onClick={() => setPage((p) => Math.min(maxPage, p + 1))}
+            disabled={page >= maxPage}
+            className="hm-btn hm-btn-secondary"
+            style={{ height: 28, padding: "0 10px", fontSize: 12 }}
+          >
+            Next
+          </button>
+        </div>
       </div>
     </div>
   );

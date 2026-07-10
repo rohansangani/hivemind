@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRadarAccess } from "@/lib/radar/supabase";
 import { countContacts, exportContactsCsv, logContactExport } from "@/lib/radar/contactExport";
 import { countAccounts, exportAccountsCsv, logAccountExport } from "@/lib/radar/accountExport";
+import { logRadarActivity } from "@/lib/radar/activityLog";
 
 /**
  * Radar export — builds a CSV of accounts or contacts matching the given
@@ -57,6 +58,7 @@ export async function POST(req: NextRequest) {
     if (type === "accounts") {
       const { csv, matched, exported, truncated } = await exportAccountsCsv(filters);
       await logAccountExport(access.userId, exported);
+      await logRadarActivity(access.userId, "export_accounts", `Exported ${exported} account(s) to CSV`);
       return NextResponse.json({ csv, matched, exported, truncated });
     }
 
@@ -65,6 +67,7 @@ export async function POST(req: NextRequest) {
     // including "unvalidated" for contacts with no status yet.
     const { csv, matched, exported, truncated } = await exportContactsCsv(filters, body.emailStatuses);
     await logContactExport(access.userId, exported);
+    await logRadarActivity(access.userId, "export_contacts", `Exported ${exported} contact(s) to CSV`);
     return NextResponse.json({ csv, matched, exported, truncated });
   } catch (err) {
     console.error("Radar export error:", err);
