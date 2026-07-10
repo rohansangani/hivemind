@@ -507,8 +507,19 @@ function DataTable<T extends { id: string }>({
   searchPlaceholder: string;
   emptyLabel: string;
   /** Renders action buttons (e.g. "Export selected") when rows are checked. Selection is
-   * page-scoped and clears on page/filter change. */
-  bulkActions?: (selected: T[], clearSelection: () => void) => React.ReactNode;
+   * page-scoped and clears on page/filter change. When the user opts into "select all N
+   * matching filters", `selected` is just the current page's rows (not the full set) but
+   * `allFiltered`/`totalMatching`/`queryBody` describe the full filtered set so an action that
+   * doesn't need row data client-side (e.g. a bulk update by filter) can act on all of it. */
+  bulkActions?: (ctx: {
+    selected: T[];
+    clearSelection: () => void;
+    allFiltered: boolean;
+    totalMatching: number;
+    /** The exact body the list fetch itself used (search + filters + extraBody), useful for
+     * an action endpoint that accepts the same filter shape to act on the whole matching set. */
+    queryBody: Record<string, unknown>;
+  }) => React.ReactNode;
   /** Extra checkbox filters (e.g. "Email not blank") sent as `{key: "true"}` in the request body. */
   booleanFilters?: Array<{ key: string; label: string }>;
   /** Makes rows clickable (e.g. opening a detail panel) without affecting the checkbox column. */
@@ -529,8 +540,14 @@ function DataTable<T extends { id: string }>({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // "Select all N matching filters" — beyond just the current page. `selected` still only
+  // holds the current page's ids (that's all the DOM checkboxes can reflect), but bulkActions
+  // gets told the true scope via `allFiltered`/`totalMatching` so an action that works by
+  // filter (not by id list) can act on the whole set without fetching every row to the client.
+  const [allFiltered, setAllFiltered] = useState(false);
 
   const toggleRow = (id: string) => {
+    setAllFiltered(false);
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
@@ -538,9 +555,10 @@ function DataTable<T extends { id: string }>({
     });
   };
   const toggleAll = () => {
+    setAllFiltered(false);
     setSelected((prev) => (prev.size === rows.length ? new Set() : new Set(rows.map((r) => r.id))));
   };
-  const clearSelection = () => setSelected(new Set());
+  const clearSelection = () => { setSelected(new Set()); setAllFiltered(false); };
   const selectedRows = rows.filter((r) => selected.has(r.id));
 
   // Load filter dropdown options once.
@@ -585,7 +603,7 @@ function DataTable<T extends { id: string }>({
         return r.json();
       })
       .then((d: { data: T[]; total: number }) => {
-        if (!cancelled) { setRows(d.data || []); setTotal(d.total || 0); setSelected(new Set()); }
+        if (!cancelled) { setRows(d.data || []); setTotal(d.total || 0); setSelected(new Set()); setAllFiltered(false); }
       })
       .catch((e) => { if (!cancelled) setError(e.message); })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -641,13 +659,33 @@ function DataTable<T extends { id: string }>({
       </div>
 
       {/* Bulk actions bar — shown once something is checked */}
-      {bulkActions && selected.size > 0 && (
-        <div className="px-4 py-2.5 border-b border-[var(--hm-border)] bg-[var(--hm-accent-light)] flex items-center gap-3 flex-wrap">
-          <span className="text-[12.5px] font-medium text-[var(--hm-accent)]">{selected.size} selected</span>
-          {bulkActions(selectedRows, clearSelection)}
-          <button onClick={clearSelection} className="text-[12px] text-[var(--hm-text-tertiary)] hover:text-[var(--hm-text)] ml-auto">
-            Clear selection
-          </button>
+      {bulkActions && (selected.size > 0 || allFiltered) && (
+        <div className="px-4 py-2.5 border-b border-[var(--hm-border)] bg-[var(--hm-accent-light)] flex flex-col gap-2">
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="text-[12.5px] font-medium text-[var(--hm-accent)]">
+              {allFiltered ? `All ${fmt(total)} matching selected` : `${selected.size} selected`}
+            </span>
+            {bulkActions({
+              selected: selectedRows,
+              clearSelection,
+              allFiltered,
+              totalMatching: total,
+              queryBody: { search: term, ...filters, ...extraBody },
+            })}
+            <button onClick={clearSelection} className="text-[12px] text-[var(--hm-text-tertiary)] hover:text-[var(--hm-text)] ml-auto">
+              Clear selection
+            </button>
+          </div>
+          {/* Once every row on the page is checked, offer to extend the selection to
+             everything matching the current filters, not just this page. */}
+          {!allFiltered && selected.size === rows.length && total > rows.length && (
+            <button
+              onClick={() => setAllFiltered(true)}
+              className="text-[12px] text-[var(--hm-accent)] hover:underline text-left w-fit"
+            >
+              Select all {fmt(total)} matching your filters
+            </button>
+          )}
         </div>
       )}
 
@@ -1000,6 +1038,10 @@ function EditRecordPanel<T extends { id: string }>({
   );
 }
 
+/** Either an explicit id list, or "act on everything matching my current filters" — the same
+ * shape the accounts/contacts routes' mark_irrelevant/delete_irrelevant actions accept. */
+type IrrelevantSelector = { ids: string[] } | { allMatching: true; [key: string]: unknown };
+
 /**
  * Shared "mark irrelevant" / permanent-delete actions for Accounts and Contacts.
  * Marking is the only "delete" a radar:edit user gets — flagged rows drop out of
@@ -1030,13 +1072,13 @@ function useIrrelevantActions(table: "accounts" | "contacts", onDone: () => void
   };
   return {
     busy,
-    markIrrelevant: (ids: string[], clear: () => void) =>
-      call("mark_irrelevant", { ids, irrelevant: true }).then(clear),
-    unmark: (ids: string[], clear: () => void) =>
-      call("mark_irrelevant", { ids, irrelevant: false }).then(clear),
-    deleteForever: (ids: string[], clear: () => void) => {
-      if (!confirm(`Permanently delete ${ids.length} record(s)? This cannot be undone.`)) return Promise.resolve();
-      return call("delete_irrelevant", { ids }).then(clear);
+    markIrrelevant: (sel: IrrelevantSelector, clear: () => void) =>
+      call("mark_irrelevant", { ...sel, irrelevant: true }).then(clear),
+    unmark: (sel: IrrelevantSelector, clear: () => void) =>
+      call("mark_irrelevant", { ...sel, irrelevant: false }).then(clear),
+    deleteForever: (sel: IrrelevantSelector, clear: () => void, count: number) => {
+      if (!confirm(`Permanently delete ${count} record(s)? This cannot be undone.`)) return Promise.resolve();
+      return call("delete_irrelevant", sel).then(clear);
     },
   };
 }
@@ -1129,33 +1171,39 @@ function AccountsSection() {
         onRowClick={setOpenAccount}
         refreshToken={refreshToken}
         extraBody={{ includeIrrelevant: showIrrelevant }}
-        bulkActions={(rows, clear) => (
-          <>
-            <button
-              onClick={() => { downloadCSV(rows, `radar_accounts_${today()}.csv`); clear(); }}
-              className="hm-btn hm-btn-primary"
-              style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}
-            >
-              Export CSV
-            </button>
-            {showIrrelevant ? (
-              <>
-                <button onClick={() => unmark(rows.map((r) => r.id), clear)} className="hm-btn hm-btn-secondary" style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}>
-                  Unmark
+        bulkActions={({ selected, clearSelection, allFiltered, totalMatching, queryBody }) => {
+          const sel: IrrelevantSelector = allFiltered ? { allMatching: true, ...queryBody } : { ids: selected.map((r) => r.id) };
+          const count = allFiltered ? totalMatching : selected.length;
+          return (
+            <>
+              {!allFiltered && (
+                <button
+                  onClick={() => { downloadCSV(selected, `radar_accounts_${today()}.csv`); clearSelection(); }}
+                  className="hm-btn hm-btn-primary"
+                  style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}
+                >
+                  Export CSV
                 </button>
-                {isAdmin && (
-                  <button onClick={() => deleteForever(rows.map((r) => r.id), clear)} className="hm-btn" style={{ height: 28, padding: "0 10px", fontSize: 11.5, background: "#FEE2E2", color: "#DC2626" }}>
-                    Delete permanently
+              )}
+              {showIrrelevant ? (
+                <>
+                  <button onClick={() => unmark(sel, clearSelection)} className="hm-btn hm-btn-secondary" style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}>
+                    Unmark
                   </button>
-                )}
-              </>
-            ) : (
-              <button onClick={() => markIrrelevant(rows.map((r) => r.id), clear)} className="hm-btn hm-btn-secondary" style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}>
-                Mark irrelevant
-              </button>
-            )}
-          </>
-        )}
+                  {isAdmin && (
+                    <button onClick={() => deleteForever(sel, clearSelection, count)} className="hm-btn" style={{ height: 28, padding: "0 10px", fontSize: 11.5, background: "#FEE2E2", color: "#DC2626" }}>
+                      Delete permanently
+                    </button>
+                  )}
+                </>
+              ) : (
+                <button onClick={() => markIrrelevant(sel, clearSelection)} className="hm-btn hm-btn-secondary" style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}>
+                  Mark irrelevant
+                </button>
+              )}
+            </>
+          );
+        }}
       />
       {openAccount && <AccountContactsPanel account={openAccount} onClose={() => setOpenAccount(null)} />}
       {editAccount && (
@@ -1376,33 +1424,39 @@ function ContactsSection() {
         booleanFilters={[{ key: "hasEmail", label: "Email not blank" }]}
         refreshToken={refreshToken}
         extraBody={{ includeIrrelevant: showIrrelevant }}
-        bulkActions={(rows, clear) => (
-          <>
-            <button
-              onClick={() => { downloadCSV(rows, `radar_contacts_${today()}.csv`); clear(); }}
-              className="hm-btn hm-btn-primary"
-              style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}
-            >
-              Export CSV
-            </button>
-            {showIrrelevant ? (
-              <>
-                <button onClick={() => unmark(rows.map((r) => r.id), clear)} className="hm-btn hm-btn-secondary" style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}>
-                  Unmark
+        bulkActions={({ selected, clearSelection, allFiltered, totalMatching, queryBody }) => {
+          const sel: IrrelevantSelector = allFiltered ? { allMatching: true, ...queryBody } : { ids: selected.map((r) => r.id) };
+          const count = allFiltered ? totalMatching : selected.length;
+          return (
+            <>
+              {!allFiltered && (
+                <button
+                  onClick={() => { downloadCSV(selected, `radar_contacts_${today()}.csv`); clearSelection(); }}
+                  className="hm-btn hm-btn-primary"
+                  style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}
+                >
+                  Export CSV
                 </button>
-                {isAdmin && (
-                  <button onClick={() => deleteForever(rows.map((r) => r.id), clear)} className="hm-btn" style={{ height: 28, padding: "0 10px", fontSize: 11.5, background: "#FEE2E2", color: "#DC2626" }}>
-                    Delete permanently
+              )}
+              {showIrrelevant ? (
+                <>
+                  <button onClick={() => unmark(sel, clearSelection)} className="hm-btn hm-btn-secondary" style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}>
+                    Unmark
                   </button>
-                )}
-              </>
-            ) : (
-              <button onClick={() => markIrrelevant(rows.map((r) => r.id), clear)} className="hm-btn hm-btn-secondary" style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}>
-                Mark irrelevant
-              </button>
-            )}
-          </>
-        )}
+                  {isAdmin && (
+                    <button onClick={() => deleteForever(sel, clearSelection, count)} className="hm-btn" style={{ height: 28, padding: "0 10px", fontSize: 11.5, background: "#FEE2E2", color: "#DC2626" }}>
+                      Delete permanently
+                    </button>
+                  )}
+                </>
+              ) : (
+                <button onClick={() => markIrrelevant(sel, clearSelection)} className="hm-btn hm-btn-secondary" style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}>
+                  Mark irrelevant
+                </button>
+              )}
+            </>
+          );
+        }}
       />
       {editContact && (
         <EditRecordPanel

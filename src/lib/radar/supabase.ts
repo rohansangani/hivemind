@@ -330,6 +330,28 @@ export async function setMarkedIrrelevant(
 }
 
 /**
+ * Resolves every id matching a filter fragment, paginating past PostgREST's
+ * ~1000-row page cap. Used for "select all N matching your filters" bulk
+ * actions — `table` can be a read view (e.g. `contacts_view`, which exposes
+ * joined account fields the base `contacts` table doesn't have) since this
+ * only ever reads `id`; the caller then applies the actual mutation against
+ * the correct writable table via the existing id-based functions. Capped at
+ * 20,000 ids as a sanity backstop.
+ */
+export async function fetchAllIds(table: string, filterQuery: string): Promise<string[]> {
+  const pageSize = 1000;
+  const maxPages = 20;
+  const ids: string[] = [];
+  for (let page = 0; page < maxPages; page++) {
+    const offset = page * pageSize;
+    const { rows } = await selectFrom(table, `select=id&${filterQuery}`, { from: offset, to: offset + pageSize - 1 });
+    ids.push(...(rows as { id: string }[]).map((r) => r.id));
+    if (rows.length < pageSize) break;
+  }
+  return ids;
+}
+
+/**
  * Permanent delete — owner/admin only (enforced by the caller checking
  * `access.role`, not just the radar edit level, since a regular radar:edit
  * grant should never reach this). Only ever deletes rows already flagged
@@ -355,3 +377,4 @@ export async function deleteMarkedIrrelevant(table: "accounts" | "contacts", ids
   const rows = (await r.json()) as Record<string, unknown>[];
   return rows.length;
 }
+
