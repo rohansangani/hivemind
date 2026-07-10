@@ -148,6 +148,13 @@ export default function EmailSequencesPage() {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
   const [sendResult, setSendResult] = useState<{ campaignId: string; added: number; total: number; failed: number; senders: number } | null>(null);
+  const [showSendOptions, setShowSendOptions] = useState(false);
+  const [sendWindowStart, setSendWindowStart] = useState("00:00");
+  const [sendWindowEnd, setSendWindowEnd] = useState("23:59");
+  const [sendDays, setSendDays] = useState<boolean[]>([true, true, true, true, true, true, true]); // Sun..Sat
+  const [dailyLimit, setDailyLimit] = useState(800);
+  const [openTracking, setOpenTracking] = useState(false);
+  const [linkTracking, setLinkTracking] = useState(false);
 
   // Load products from KB on mount
   const loadProducts = useCallback(async () => {
@@ -193,7 +200,16 @@ export default function EmailSequencesPage() {
       const res = await fetch("/api/email-sequences/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ results: sendableProspects, mailboxTag }),
+        body: JSON.stringify({
+          results: sendableProspects,
+          mailboxTag,
+          sendWindowStart,
+          sendWindowEnd,
+          sendDays,
+          dailyLimit,
+          openTracking,
+          linkTracking,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Send failed");
@@ -444,25 +460,83 @@ export default function EmailSequencesPage() {
           {/* Send via Instantly — only when there's at least one real prospect email (not template mode) */}
           {sendableProspects.length > 0 && (() => {
             if (!tagsLoaded) loadMailboxTags();
+            const dayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
             return (
-              <div className="flex items-center gap-3 mb-5 p-3 rounded-lg border border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] flex-wrap">
-                <span className="text-[12.5px] font-medium text-[var(--hm-text-primary)] whitespace-nowrap">Send via Instantly</span>
-                <select
-                  value={mailboxTag}
-                  onChange={(e) => setMailboxTag(e.target.value)}
-                  className="h-[32px] px-2 rounded-lg border border-[var(--hm-border)] text-[12.5px] bg-[var(--hm-bg-primary)]"
-                >
-                  <option value="">— Select mailbox tag —</option>
-                  {mailboxTags.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
-                </select>
-                <button onClick={sendCampaign} disabled={sending || !mailboxTag} className={btnPrimary} style={{ opacity: sending || !mailboxTag ? 0.6 : 1 }}>
-                  {sending ? "Sending…" : `Send to ${sendableProspects.length} prospect${sendableProspects.length !== 1 ? "s" : ""}`}
-                </button>
-                {sendError && <span className="text-[12px] text-red-500">{sendError}</span>}
-                {sendResult && (
-                  <span className="text-[12px] text-[#059669]">
-                    ✓ Campaign live — {sendResult.added}/{sendResult.total} added{sendResult.failed > 0 ? `, ${sendResult.failed} failed` : ""} across {sendResult.senders} mailbox(es)
-                  </span>
+              <div className="mb-5 p-3 rounded-lg border border-[var(--hm-border)] bg-[var(--hm-bg-secondary)]">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <span className="text-[12.5px] font-medium text-[var(--hm-text-primary)] whitespace-nowrap">Send via Instantly</span>
+                  <select
+                    value={mailboxTag}
+                    onChange={(e) => setMailboxTag(e.target.value)}
+                    className="h-[32px] px-2 rounded-lg border border-[var(--hm-border)] text-[12.5px] bg-[var(--hm-bg-primary)]"
+                  >
+                    <option value="">— Select mailbox tag —</option>
+                    {mailboxTags.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+                  </select>
+                  <button onClick={() => setShowSendOptions(v => !v)} className="h-[32px] px-3 rounded-lg text-[12px] border border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[#4361ee]/40 transition-all">
+                    {showSendOptions ? "Hide options" : "Sending options"}
+                  </button>
+                  <button onClick={sendCampaign} disabled={sending || !mailboxTag} className={btnPrimary} style={{ opacity: sending || !mailboxTag ? 0.6 : 1 }}>
+                    {sending ? "Sending…" : `Send to ${sendableProspects.length} prospect${sendableProspects.length !== 1 ? "s" : ""}`}
+                  </button>
+                  {sendError && <span className="text-[12px] text-red-500">{sendError}</span>}
+                  {sendResult && (
+                    <span className="text-[12px] text-[#059669]">
+                      ✓ Campaign live — {sendResult.added}/{sendResult.total} added{sendResult.failed > 0 ? `, ${sendResult.failed} failed` : ""} across {sendResult.senders} mailbox(es)
+                    </span>
+                  )}
+                </div>
+
+                {showSendOptions && (
+                  <div className="mt-3 pt-3 border-t border-[var(--hm-border)] flex flex-wrap items-start gap-5">
+                    <div>
+                      <label className={labelCls}>Sending window</label>
+                      <div className="flex items-center gap-1.5">
+                        <input type="time" value={sendWindowStart} onChange={e => setSendWindowStart(e.target.value)} className="h-[32px] px-2 rounded-lg border border-[var(--hm-border)] text-[12px] bg-[var(--hm-bg-primary)]" />
+                        <span className="text-[12px] text-[var(--hm-text-tertiary)]">to</span>
+                        <input type="time" value={sendWindowEnd} onChange={e => setSendWindowEnd(e.target.value)} className="h-[32px] px-2 rounded-lg border border-[var(--hm-border)] text-[12px] bg-[var(--hm-bg-primary)]" />
+                        <span className="text-[11px] text-[var(--hm-text-tertiary)] ml-1">IST</span>
+                      </div>
+                    </div>
+                    <div>
+                      <label className={labelCls}>Days</label>
+                      <div className="flex gap-1">
+                        {dayLabels.map((d, i) => (
+                          <button
+                            key={d}
+                            type="button"
+                            onClick={() => setSendDays(prev => prev.map((v, idx) => idx === i ? !v : v))}
+                            className={`h-[32px] w-[38px] rounded-lg text-[11px] transition-all ${sendDays[i] ? "bg-[#4361ee] text-white" : "border border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[#4361ee]/40"}`}
+                          >
+                            {d}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label className={labelCls}>Daily send limit</label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={dailyLimit}
+                        onChange={e => setDailyLimit(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                        className="h-[32px] w-[90px] px-2 rounded-lg border border-[var(--hm-border)] text-[12px] bg-[var(--hm-bg-primary)]"
+                      />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Tracking</label>
+                      <div className="flex gap-3 h-[32px] items-center">
+                        <label className="flex items-center gap-1.5 text-[12px] text-[var(--hm-text-secondary)] cursor-pointer">
+                          <input type="checkbox" checked={openTracking} onChange={e => setOpenTracking(e.target.checked)} />
+                          Open tracking
+                        </label>
+                        <label className="flex items-center gap-1.5 text-[12px] text-[var(--hm-text-secondary)] cursor-pointer">
+                          <input type="checkbox" checked={linkTracking} onChange={e => setLinkTracking(e.target.checked)} />
+                          Link tracking
+                        </label>
+                      </div>
+                    </div>
+                  </div>
                 )}
               </div>
             );

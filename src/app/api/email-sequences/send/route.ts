@@ -53,10 +53,21 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const { results, mailboxTag, campaignName } = body as {
+    const {
+      results, mailboxTag, campaignName,
+      sendWindowStart, sendWindowEnd, sendDays, dailyLimit, openTracking, linkTracking,
+    } = body as {
       results?: ProspectResult[];
       mailboxTag?: string;
       campaignName?: string;
+      /** "HH:MM" 24h — defaults to a 24/7 window (00:00–23:59) if either is omitted. */
+      sendWindowStart?: string;
+      sendWindowEnd?: string;
+      /** 7 booleans, Sun=0..Sat=6 — defaults to every day if omitted. */
+      sendDays?: boolean[];
+      dailyLimit?: number;
+      openTracking?: boolean;
+      linkTracking?: boolean;
     };
 
     if (!mailboxTag) return NextResponse.json({ error: "Select a mailbox tag to send from" }, { status: 400 });
@@ -84,16 +95,28 @@ export async function POST(req: NextRequest) {
       return { type: "email", delay, variants: [{ subject: `{{step${i + 1}Subject}}`, body: `{{step${i + 1}Body}}\n\n{{accountSignature}}` }] };
     });
 
+    // Defaults preserve the original behaviour (24/7, all days, 800/day, tracking off) when the
+    // caller doesn't specify — only the Email Sequences send panel sends these explicitly.
+    const days: Record<string, boolean> = {};
+    (Array.isArray(sendDays) && sendDays.length === 7 ? sendDays : [true, true, true, true, true, true, true])
+      .forEach((v, i) => { days[String(i)] = !!v; });
+
     const campaignBody = {
       name: campaignName || `Email Sequences — ${new Date().toISOString().slice(0, 10)}`,
-      // 24/7 window, same as Radar's Validate sends — fires immediately regardless of local time.
-      campaign_schedule: { schedules: [{ name: "24/7", timing: { from: "00:00", to: "23:59" }, days: { 0: true, 1: true, 2: true, 3: true, 4: true, 5: true, 6: true }, timezone: "Asia/Kolkata" }] },
+      campaign_schedule: {
+        schedules: [{
+          name: "Custom",
+          timing: { from: sendWindowStart || "00:00", to: sendWindowEnd || "23:59" },
+          days,
+          timezone: "Asia/Kolkata",
+        }],
+      },
       sequences: [{ steps }],
       email_list: senderEmails,
       email_tag_list: [mailboxTag],
-      daily_limit: 800,
-      open_tracking: false,
-      link_tracking: false,
+      daily_limit: Number.isFinite(dailyLimit) && Number(dailyLimit) > 0 ? Number(dailyLimit) : 800,
+      open_tracking: !!openTracking,
+      link_tracking: !!linkTracking,
     };
     const campaign = await instantly<{ id: string }>("/campaigns", { method: "POST", body: JSON.stringify(campaignBody) });
     const campaignId = campaign.id;
