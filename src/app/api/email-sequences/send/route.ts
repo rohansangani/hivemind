@@ -78,14 +78,20 @@ export async function POST(req: NextRequest) {
     // Build the shared step schedule from the first lead's sequence — every lead's step N body/
     // subject comes from its own custom_variables, so the steps themselves are just placeholders.
     const master = leads[0].sequence.emails;
+    // Single-subject sequences (every email shares one subject, generated when the "single
+    // subject for whole sequence" option was picked) leave every step AFTER the first with a
+    // blank subject — that's what makes Instantly send it as a reply in the same thread rather
+    // than a new email with a repeated subject line, matching the cold-email convention.
+    const isSingleSubject = master.length > 1 && master.every((e) => e.subject === master[0].subject);
     const steps = master.map((e, i) => {
       const day = parseDay(e.sendDelay);
       const prevDay = i === 0 ? day : parseDay(master[i - 1].sendDelay);
       const delay = i === 0 ? 0 : Math.max(1, day - prevDay);
+      const subject = i === 0 || !isSingleSubject ? `{{step${i + 1}Subject}}` : "";
       // {{accountSignature}} is Instantly's own built-in tag, resolved per sending mailbox at
       // send time — it has to actually appear in the step body for Instantly to substitute it;
       // it's not something we generate or pass per-lead.
-      return { type: "email", delay, variants: [{ subject: `{{step${i + 1}Subject}}`, body: `{{step${i + 1}Body}}\n\n{{accountSignature}}` }] };
+      return { type: "email", delay, variants: [{ subject, body: `{{step${i + 1}Body}}\n\n{{accountSignature}}` }] };
     });
 
     // Default schedule — business hours, weekdays only, Eastern Time — matching the user's own
