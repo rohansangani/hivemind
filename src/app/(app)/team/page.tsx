@@ -86,6 +86,8 @@ function PermissionEditor({
   const groups: Array<{ key: string; label: string }> = [
     { key: "core", label: "Core" },
     { key: "content", label: "Content & AI" },
+    { key: "knowledge", label: "Knowledge" },
+    { key: "prospecting", label: "Prospecting" },
     { key: "admin", label: "Admin" },
   ];
 
@@ -459,11 +461,14 @@ function ResetPasswordModal({ member, onClose, onDone }: { member: Member; onClo
 }
 
 // ── Read-only permissions viewer (for non-admin self-view) ───────────────────
-function ViewPermsModal({ member, onClose }: { member: Member; onClose: () => void }) {
-  const effectivePerms = getEffectivePermissions(member.role, member.customPermissions);
+function ViewPermsModal({ member, onClose, customRoles }: { member: Member; onClose: () => void; customRoles: CustomRoleDef[] }) {
+  const orgRolePerms = Object.fromEntries(customRoles.map(r => [r.slug, r.permissions as ModulePermissions]));
+  const effectivePerms = getEffectivePermissions(member.role, member.customPermissions, orgRolePerms);
   const groups: Array<{ key: string; label: string }> = [
     { key: "core", label: "Core" },
     { key: "content", label: "Content & AI" },
+    { key: "knowledge", label: "Knowledge" },
+    { key: "prospecting", label: "Prospecting" },
     { key: "admin", label: "Admin" },
   ];
   const colors: Record<AccessLevel, string> = { none: "var(--hm-text-tertiary)", view: "#0EA5E9", edit: "#059669" };
@@ -890,6 +895,7 @@ export default function TeamPage() {
         <ViewPermsModal
           member={viewPermsTarget}
           onClose={() => setViewPermsTarget(null)}
+          customRoles={customRoles}
         />
       )}
       {leaveOpen && (
