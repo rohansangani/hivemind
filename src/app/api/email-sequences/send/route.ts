@@ -57,11 +57,16 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const { results, mailboxTag, campaignName } = body as {
+    const { results, mailboxTag, campaignName, skipDuplicates } = body as {
       results?: ProspectResult[];
       mailboxTag?: string;
       campaignName?: string;
+      /** Defaults true (matches Instantly's own manual CSV-import dialog default) — skip a
+       * prospect whose email already exists in another campaign/list/anywhere in the workspace
+       * instead of adding them again. */
+      skipDuplicates?: boolean;
     };
+    const dedupe = skipDuplicates !== false;
 
     if (!mailboxTag) return NextResponse.json({ error: "Select a mailbox tag to send from" }, { status: 400 });
     const leads = (results || []).filter((r) => r.prospect?.email && r.sequence?.emails?.length);
@@ -150,9 +155,10 @@ export async function POST(req: NextRequest) {
             // duplicates across Campaigns/Lists/The Workspace", all checked by default) — skips
             // re-adding a lead that already exists anywhere in the workspace instead of only
             // deduping within this one campaign (which the API already does automatically).
-            skip_if_in_workspace: true,
-            skip_if_in_campaign: true,
-            skip_if_in_list: true,
+            // User-toggleable via the send panel's "Skip duplicates" checkbox.
+            skip_if_in_workspace: dedupe,
+            skip_if_in_campaign: dedupe,
+            skip_if_in_list: dedupe,
           }),
         }, decoded.orgId);
         if (lead?.id) added++; else failures.push(r.prospect!.email!);

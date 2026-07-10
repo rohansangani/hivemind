@@ -148,6 +148,10 @@ export default function EmailSequencesPage() {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
   const [sendResult, setSendResult] = useState<{ campaignId: string; added: number; total: number; failed: number; senders: number } | null>(null);
+  // Same duplicate-check behavior Instantly's own manual CSV-import dialog defaults to (checked)
+  // — skip a lead already in another campaign/list/anywhere in the workspace instead of adding
+  // it again. On by default; uncheck to add every prospect regardless of existing duplicates.
+  const [skipDuplicates, setSkipDuplicates] = useState(true);
 
   // Load products from KB on mount
   const loadProducts = useCallback(async () => {
@@ -193,7 +197,7 @@ export default function EmailSequencesPage() {
       const res = await fetch("/api/email-sequences/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ results: sendableProspects, mailboxTag }),
+        body: JSON.stringify({ results: sendableProspects, mailboxTag, skipDuplicates }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Send failed");
@@ -477,6 +481,10 @@ export default function EmailSequencesPage() {
                   <option value="">— Select mailbox tag —</option>
                   {mailboxTags.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
                 </select>
+                <label className="flex items-center gap-1.5 text-[12px] text-[var(--hm-text-secondary)] cursor-pointer whitespace-nowrap" title="Skip a prospect if their email already exists in another campaign/list anywhere in the workspace, instead of adding them again">
+                  <input type="checkbox" checked={skipDuplicates} onChange={e => setSkipDuplicates(e.target.checked)} />
+                  Skip duplicates already in workspace
+                </label>
                 <button onClick={sendCampaign} disabled={sending || !mailboxTag} className={btnPrimary + " flex items-center gap-2"} style={{ opacity: sending || !mailboxTag ? 0.6 : 1 }}>
                   {sending ? (
                     <>
