@@ -126,6 +126,13 @@ export default function EmailSequencesPage() {
   const [editingEmail, setEditingEmail] = useState<string | null>(null);
   const [editBuffer, setEditBuffer] = useState({ subject: "", body: "" });
 
+  // Send via Instantly
+  const [mailboxTags, setMailboxTags] = useState<Array<{ id: string; label: string }>>([]);
+  const [mailboxTag, setMailboxTag] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState("");
+  const [sendResult, setSendResult] = useState<{ campaignId: string; added: number; total: number; failed: number; senders: number } | null>(null);
+
   // Load products from KB on mount
   const loadProducts = useCallback(async () => {
     if (productsLoaded) return;
@@ -141,6 +148,46 @@ export default function EmailSequencesPage() {
   }, [productsLoaded]);
 
   if (!productsLoaded) loadProducts();
+
+  // Mailbox tags for "Send via Instantly" — lazy-loaded only once results exist, not on every
+  // page load, since most visits never reach the send step.
+  const [tagsLoaded, setTagsLoaded] = useState(false);
+  const loadMailboxTags = useCallback(async () => {
+    if (tagsLoaded) return;
+    setTagsLoaded(true);
+    try {
+      const res = await fetch("/api/email-sequences/tags", { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        setMailboxTags(data.tags || []);
+      }
+    } catch { /* ignore */ }
+  }, [tagsLoaded]);
+
+  const sendableProspects = results.filter(r => r.prospect?.email && r.sequence?.emails?.length);
+
+  const sendCampaign = async () => {
+    setSendError("");
+    if (!mailboxTag) { setSendError("Select a mailbox tag to send from"); return; }
+    if (!sendableProspects.length) { setSendError("No prospects with an email address to send to"); return; }
+    if (!confirm(`Send this sequence as a real Instantly campaign to ${sendableProspects.length} prospect(s)? This sends real emails — not a test.`)) return;
+    setSending(true);
+    setSendResult(null);
+    try {
+      const res = await fetch("/api/email-sequences/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ results: sendableProspects, mailboxTag }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Send failed");
+      setSendResult(data);
+    } catch (e) {
+      setSendError((e as Error).message || "Send failed");
+    } finally {
+      setSending(false);
+    }
+  };
 
   /* ── CSV handling ─────────────────────────────────────────────────────── */
 
@@ -376,6 +423,33 @@ export default function EmailSequencesPage() {
             </button>
             <span className="text-[12px] text-[var(--hm-text-tertiary)] ml-auto">{results.length} sequence{results.length !== 1 ? "s" : ""} generated</span>
           </div>
+
+          {/* Send via Instantly — only when there's at least one real prospect email (not template mode) */}
+          {sendableProspects.length > 0 && (() => {
+            if (!tagsLoaded) loadMailboxTags();
+            return (
+              <div className="flex items-center gap-3 mb-5 p-3 rounded-lg border border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] flex-wrap">
+                <span className="text-[12.5px] font-medium text-[var(--hm-text-primary)] whitespace-nowrap">Send via Instantly</span>
+                <select
+                  value={mailboxTag}
+                  onChange={(e) => setMailboxTag(e.target.value)}
+                  className="h-[32px] px-2 rounded-lg border border-[var(--hm-border)] text-[12.5px] bg-[var(--hm-bg-primary)]"
+                >
+                  <option value="">— Select mailbox tag —</option>
+                  {mailboxTags.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+                </select>
+                <button onClick={sendCampaign} disabled={sending || !mailboxTag} className={btnPrimary} style={{ opacity: sending || !mailboxTag ? 0.6 : 1 }}>
+                  {sending ? "Sending…" : `Send to ${sendableProspects.length} prospect${sendableProspects.length !== 1 ? "s" : ""}`}
+                </button>
+                {sendError && <span className="text-[12px] text-red-500">{sendError}</span>}
+                {sendResult && (
+                  <span className="text-[12px] text-[#059669]">
+                    ✓ Campaign live — {sendResult.added}/{sendResult.total} added{sendResult.failed > 0 ? `, ${sendResult.failed} failed` : ""} across {sendResult.senders} mailbox(es)
+                  </span>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Prospect tabs (bulk mode) */}
           {results.length > 1 && (
