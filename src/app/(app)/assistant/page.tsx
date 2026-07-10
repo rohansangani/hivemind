@@ -15,6 +15,22 @@ interface Message {
   /** ISO string – used for messages re-hydrated from the DB */
   createdAt?: string;
   error?: boolean;
+  /** Set when this reply came from a confirmed Radar contacts export — offers a CSV download.
+   * Only ever present on freshly-sent messages this session (not persisted, so re-opening an
+   * old conversation won't show a download button for a past export). */
+  download?: { filename: string; csv: string };
+}
+
+function downloadCsvString(csv: string, filename: string) {
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 interface Conversation {
@@ -102,7 +118,7 @@ export default function AssistantPage() {
       if (!res.ok) throw new Error(`Server error ${res.status}`);
       const data = await res.json();
       if (data.reply) {
-        setMessages((prev) => [...prev, { role: "assistant", content: data.reply, timestamp: Date.now() }]);
+        setMessages((prev) => [...prev, { role: "assistant", content: data.reply, timestamp: Date.now(), download: data.download || undefined }]);
         if (data.conversationId) {
           const isNew = !conversationId;
           setConversationId(data.conversationId);
@@ -541,6 +557,15 @@ export default function AssistantPage() {
                         <MarkdownRenderer content={msg.content} />
                       ) : msg.content}
                     </div>
+                    {msg.download && (
+                      <button
+                        onClick={() => downloadCsvString(msg.download!.csv, msg.download!.filename)}
+                        className="mt-2 inline-flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5 rounded-lg border border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[#4361ee] hover:text-[#4361ee] transition-colors"
+                      >
+                        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 2v8m0 0l-3-3m3 3l3-3M3 13h10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                        Download CSV
+                      </button>
+                    )}
                     {/* Timestamp + copy row */}
                     <div className={"flex items-center gap-2 mt-1 " + (msg.role === "user" ? "justify-end" : "justify-start")}>
                       {(msg.timestamp || msg.createdAt) && (
