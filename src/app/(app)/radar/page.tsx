@@ -3081,6 +3081,9 @@ interface LinkedInCheckRow {
   dbCompany: string | null;
   dbContactId: string | null;
   match: boolean | null;
+  /** Company name overlap was partial (or LinkedIn returned no company at all) — not
+   * confident enough to auto-decide same/moved, needs a human call (see resolveLinkedinMatch). */
+  uncertain?: boolean;
   error?: string;
   created?: boolean;
 }
@@ -3143,7 +3146,7 @@ function ValidateSection() {
   const [linkedinBusy, setLinkedinBusy] = useState(false);
   const [linkedinProgress, setLinkedinProgress] = useState<{ done: number; total: number } | null>(null);
   const [linkedinResults, setLinkedinResults] = useState<LinkedInCheckRow[]>([]);
-  const [linkedinSummary, setLinkedinSummary] = useState<{ matched: number; mismatched: number; notFound: number; created: number } | null>(null);
+  const [linkedinSummary, setLinkedinSummary] = useState<{ matched: number; mismatched: number; notFound: number; created: number; uncertain: number } | null>(null);
 
   // Send controls
   const [tags, setTags] = useState<InstantlyTag[]>([]);
@@ -3262,7 +3265,7 @@ function ValidateSection() {
     setLinkedinResults([]);
     setLinkedinSummary(null);
     const CHUNK = 15;
-    let matched = 0, mismatched = 0, notFound = 0, created = 0;
+    let matched = 0, mismatched = 0, notFound = 0, created = 0, uncertain = 0;
     const allRows: LinkedInCheckRow[] = [];
     try {
       for (let i = 0; i < urls.length; i += CHUNK) {
@@ -3280,14 +3283,39 @@ function ValidateSection() {
         mismatched += d.mismatched || 0;
         notFound += d.notFound || 0;
         created += d.created || 0;
+        uncertain += d.uncertain || 0;
         setLinkedinResults([...allRows]);
       }
-      setLinkedinSummary({ matched, mismatched, notFound, created });
+      setLinkedinSummary({ matched, mismatched, notFound, created, uncertain });
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setLinkedinBusy(false);
       setLinkedinProgress(null);
+    }
+  };
+
+  // A human resolving an "uncertain" company-match row: "same" is a no-op server-side
+  // (validated_company/linkedin_checked_at were already stamped by the check itself),
+  // "moved" applies the same effect a confident "different" verdict would have.
+  const resolveLinkedinMatch = async (row: LinkedInCheckRow, moved: boolean) => {
+    if (!row.dbContactId) return;
+    try {
+      const r = await fetch("/api/radar/enrich", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "resolve_linkedin_match", params: { contactId: row.dbContactId, moved } }),
+      });
+      if (!r.ok) { const d = await r.json().catch(() => ({})); setError(d.error || "Failed to resolve"); return; }
+      setLinkedinResults((prev) => prev.map((x) => (x === row ? { ...x, uncertain: false, match: !moved } : x)));
+      setLinkedinSummary((prev) => prev && {
+        ...prev,
+        uncertain: prev.uncertain - 1,
+        matched: prev.matched + (moved ? 0 : 1),
+        mismatched: prev.mismatched + (moved ? 1 : 0),
+      });
+    } catch {
+      setError("Failed to resolve");
     }
   };
 
@@ -3915,13 +3943,16 @@ function ValidateSection() {
                       <div className="flex items-center gap-4 text-[12.5px] flex-wrap">
                         <span className="text-[#059669]">✓ {linkedinSummary.matched} same company</span>
                         <span className="text-red-500">✗ {linkedinSummary.mismatched} different company (marked moved)</span>
+                        {linkedinSummary.uncertain > 0 && (
+                          <span className="text-[#B45309]">? {linkedinSummary.uncertain} uncertain — needs review</span>
+                        )}
                         <span className="text-[var(--hm-accent)]">+ {linkedinSummary.created} new contact(s) created</span>
                         <span className="text-[var(--hm-text-tertiary)]">— {linkedinSummary.notFound} profile(s) not found</span>
                         <button
                           onClick={() => downloadCSV(linkedinResults.map((r) => ({
                             first_name: r.firstName, last_name: r.lastName, linkedin_url: r.linkedinUrl,
                             current_company: r.company, db_company: r.dbCompany,
-                            status: r.error ? "not found" : r.match === true ? "same company" : r.match === false ? "different company (marked moved)" : r.created ? "created" : "no db match",
+                            status: r.error ? "not found" : r.uncertain ? "uncertain — needs review" : r.match === true ? "same company" : r.match === false ? "different company (marked moved)" : r.created ? "created" : "no db match",
                             ...(linkedinScrapeMode === "email" ? { email: r.email } : {}),
                           })), `radar_linkedin_check_${today()}.csv`)}
                           className="hm-btn hm-btn-secondary ml-auto"
@@ -3953,6 +3984,13 @@ function ValidateSection() {
                                 <td className="px-3 py-2 border-b border-[var(--hm-border-light)]">{r.dbCompany || "—"}</td>
                                 <td className="px-3 py-2 border-b border-[var(--hm-border-light)]">
                                   {r.error ? <span className="text-[var(--hm-text-tertiary)]" title={r.error}>Not found</span>
+                                    : r.uncertain ? (
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-[#B45309] font-medium whitespace-nowrap">? Possible match — review</span>
+                                        <button onClick={() => resolveLinkedinMatch(r, false)} className="hm-btn hm-btn-secondary" style={{ height: 22, padding: "0 8px", fontSize: 10.5 }}>Same</button>
+                                        <button onClick={() => resolveLinkedinMatch(r, true)} className="hm-btn" style={{ height: 22, padding: "0 8px", fontSize: 10.5, background: "#FEE2E2", color: "#DC2626" }}>Moved</button>
+                                      </div>
+                                    )
                                     : r.match === true ? <span className="text-[#059669] font-medium">✓ Same</span>
                                     : r.match === false ? <span className="text-red-500 font-medium">✗ Different — marked moved</span>
                                     : r.created ? <span className="text-[var(--hm-accent)] font-medium">+ Created</span>
