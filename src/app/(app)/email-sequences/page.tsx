@@ -263,10 +263,11 @@ export default function EmailSequencesPage() {
 
   /* ── Generate ─────────────────────────────────────────────────────────── */
 
-  const generateSequence = async (p: Prospect | null, m: "single" | "template"): Promise<ProspectResult | null> => {
+  const generateSequence = async (p: Prospect | null, m: "single" | "template", signal?: AbortSignal): Promise<ProspectResult | null> => {
     const res = await fetch("/api/email-sequences", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      signal,
       body: JSON.stringify({
         prospect: p,
         mode: m,
@@ -295,16 +296,24 @@ export default function EmailSequencesPage() {
     return { prospect: data.prospect, sequence: data.sequence };
   };
 
+  const generationAbortRef = useRef<AbortController | null>(null);
+
+  const stopGeneration = () => {
+    generationAbortRef.current?.abort();
+  };
+
   const handleGenerate = async () => {
     setGenerating(true);
     setError("");
     setResults([]);
     setExpandedResult(0);
+    const controller = new AbortController();
+    generationAbortRef.current = controller;
 
     try {
       if (mode === "template") {
         setProgress("Generating email sequence template...");
-        const result = await generateSequence(null, "template");
+        const result = await generateSequence(null, "template", controller.signal);
         if (result) setResults([result]);
       } else if (mode === "single") {
         if (!prospect.name && !prospect.company) {
@@ -313,7 +322,7 @@ export default function EmailSequencesPage() {
           return;
         }
         setProgress(`Researching ${prospect.company || prospect.name} and generating sequence...`);
-        const result = await generateSequence(prospect, "single");
+        const result = await generateSequence(prospect, "single", controller.signal);
         if (result) setResults([result]);
       } else {
         if (csvProspects.length === 0) {
@@ -323,12 +332,14 @@ export default function EmailSequencesPage() {
         }
         const allResults: ProspectResult[] = [];
         for (let i = 0; i < csvProspects.length; i++) {
+          if (controller.signal.aborted) break;
           const p = csvProspects[i];
           setProgress(`Generating ${i + 1}/${csvProspects.length}: ${p.company || p.name}...`);
           try {
-            const result = await generateSequence(p, "single");
+            const result = await generateSequence(p, "single", controller.signal);
             if (result) allResults.push(result);
           } catch (e) {
+            if (controller.signal.aborted) break;
             allResults.push({
               prospect: p,
               sequence: { emails: [], sequenceStrategy: `Error: ${(e as Error).message}`, bestPractices: [] },
@@ -338,10 +349,11 @@ export default function EmailSequencesPage() {
         setResults(allResults);
       }
     } catch (e) {
-      setError((e as Error).message || "Something went wrong");
+      if (!controller.signal.aborted) setError((e as Error).message || "Something went wrong");
     } finally {
       setGenerating(false);
       setProgress("");
+      generationAbortRef.current = null;
     }
   };
 
@@ -974,6 +986,14 @@ export default function EmailSequencesPage() {
                 </>
               )}
             </button>
+            {generating && (
+              <button onClick={stopGeneration} className={btnSecondary}>
+                <span className="flex items-center gap-1.5">
+                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><rect x="3" y="3" width="10" height="10" rx="1.5" fill="currentColor" /></svg>
+                  Stop
+                </span>
+              </button>
+            )}
             {generating && progress && (
               <span className="text-[12px] text-[var(--hm-text-tertiary)]">{progress}</span>
             )}
