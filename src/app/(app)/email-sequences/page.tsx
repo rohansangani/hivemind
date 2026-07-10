@@ -138,6 +138,7 @@ export default function EmailSequencesPage() {
   const [error, setError] = useState("");
   const [results, setResults] = useState<ProspectResult[]>([]);
   const [expandedResult, setExpandedResult] = useState<number>(0);
+  const [prospectSearch, setProspectSearch] = useState("");
   const [expandedEmail, setExpandedEmail] = useState<string | null>(null);
   const [editingEmail, setEditingEmail] = useState<string | null>(null);
   const [editBuffer, setEditBuffer] = useState({ subject: "", body: "" });
@@ -295,6 +296,7 @@ export default function EmailSequencesPage() {
     setError("");
     setResults([]);
     setExpandedResult(0);
+    setProspectSearch("");
     const controller = new AbortController();
     generationAbortRef.current = controller;
 
@@ -450,7 +452,7 @@ export default function EmailSequencesPage() {
         <div>
           {/* Top bar */}
           <div className="flex items-center gap-3 mb-5">
-            <button onClick={() => { setResults([]); setExpandedResult(0); }} className={btnSecondary}>
+            <button onClick={() => { setResults([]); setExpandedResult(0); setProspectSearch(""); }} className={btnSecondary}>
               <span className="flex items-center gap-1.5">
                 <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M10 2L6 8l4 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
                 New Sequence
@@ -510,20 +512,57 @@ export default function EmailSequencesPage() {
             );
           })()}
 
-          {/* Prospect tabs (bulk mode) */}
-          {results.length > 1 && (
-            <div className="flex gap-1.5 mb-4 overflow-x-auto pb-1">
-              {results.map((r, i) => (
-                <button
-                  key={i}
-                  onClick={() => { setExpandedResult(i); setExpandedEmail(null); }}
-                  className={`shrink-0 h-[32px] px-3 rounded-lg text-[12px] font-medium transition-colors ${expandedResult === i ? "bg-[#4361ee] text-white" : "bg-[var(--hm-bg-secondary)] text-[var(--hm-text-secondary)] hover:bg-[var(--hm-bg-tertiary)]"}`}
-                >
-                  {r.prospect?.name || r.prospect?.company || `Prospect ${i + 1}`}
-                </button>
-              ))}
-            </div>
-          )}
+          {/* Prospect list (bulk mode) — a searchable, scrollable list instead of a flat tab
+              strip, since a tab strip stops being usable once a CSV has more than a handful of
+              rows (e.g. a 1,000-row bulk upload). */}
+          {results.length > 1 && (() => {
+            const q = prospectSearch.trim().toLowerCase();
+            const filtered = results
+              .map((r, i) => ({ r, i }))
+              .filter(({ r }) => !q || [r.prospect?.name, r.prospect?.company, r.prospect?.email].some(v => (v || "").toLowerCase().includes(q)));
+            return (
+              <div className="mb-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <input
+                    type="text"
+                    value={prospectSearch}
+                    onChange={e => setProspectSearch(e.target.value)}
+                    placeholder={`Search ${results.length} prospects by name, company, or email…`}
+                    className={inputCls}
+                    style={{ maxWidth: 340 }}
+                  />
+                  <span className="text-[12px] text-[var(--hm-text-tertiary)] whitespace-nowrap">
+                    {filtered.length}/{results.length} shown
+                  </span>
+                </div>
+                <div className="border border-[var(--hm-border)] rounded-lg max-h-[280px] overflow-y-auto">
+                  {filtered.length === 0 ? (
+                    <div className="p-4 text-center text-[12px] text-[var(--hm-text-tertiary)]">No matches</div>
+                  ) : (
+                    filtered.map(({ r, i }) => {
+                      const failed = r.sequence.emails.length === 0;
+                      return (
+                        <button
+                          key={i}
+                          onClick={() => { setExpandedResult(i); setExpandedEmail(null); }}
+                          className={`w-full flex items-center gap-3 px-3 py-2 text-left text-[12.5px] border-b border-[var(--hm-border)] last:border-b-0 transition-colors ${expandedResult === i ? "bg-[#4361ee]/10" : "hover:bg-[var(--hm-bg-secondary)]"}`}
+                        >
+                          <span className="min-w-0 flex-[1.2] truncate font-medium text-[var(--hm-text-primary)]">
+                            {r.prospect?.name || `Prospect ${i + 1}`}
+                          </span>
+                          <span className="min-w-0 flex-1 truncate text-[var(--hm-text-tertiary)]">{r.prospect?.company || ""}</span>
+                          <span className="min-w-0 flex-[1.4] truncate text-[var(--hm-text-tertiary)]">{r.prospect?.email || ""}</span>
+                          <span className={`shrink-0 text-[11px] font-medium ${failed ? "text-red-500" : "text-[#059669]"}`}>
+                            {failed ? "✗ error" : "✓ ready"}
+                          </span>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Active result */}
           {(() => {
