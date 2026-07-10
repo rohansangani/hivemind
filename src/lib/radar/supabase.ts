@@ -175,11 +175,30 @@ async function getCustomRolePermissions(organizationId: string, roleSlug: string
 }
 
 /**
- * Guard for radar API routes. Verifies the hivemind JWT, then checks the
- * user's EFFECTIVE radar permission — their role's default (owner/admin get
+ * A user's EFFECTIVE radar permission — their role's default (owner/admin get
  * it automatically; everyone else defaults to none) merged with any personal
- * override an owner/admin granted from their Team profile. Returns the actor
- * on success, or a NextResponse to return immediately on failure.
+ * override an owner/admin granted from their Team profile, or a custom org
+ * role's own permissions. Shared by requireRadarAccess (API route gate) and
+ * Ask Halo (gates whether the Radar contacts tools are even offered to a
+ * given user — see src/app/api/assistant/route.ts).
+ */
+export async function getRadarAccessLevel(userId: string, role: string, organizationId: string): Promise<"none" | "view" | "edit"> {
+  const [customPermissions, customRolePermissions] = await Promise.all([
+    getCustomPermissions(userId),
+    getCustomRolePermissions(organizationId, role),
+  ]);
+  const effective = getEffectivePermissions(
+    role,
+    customPermissions,
+    customRolePermissions ? { [role]: customRolePermissions } : undefined,
+  );
+  return (effective.radar as "none" | "view" | "edit" | undefined) ?? "none";
+}
+
+/**
+ * Guard for radar API routes. Verifies the hivemind JWT, then checks the
+ * user's EFFECTIVE radar permission via getRadarAccessLevel. Returns the
+ * actor on success, or a NextResponse to return immediately on failure.
  *
  * `minLevel` defaults to "view". Radar's "view" tier is intentionally
  * restricted to just the Dashboard + Export tabs (see radar/page.tsx) — so
@@ -210,16 +229,8 @@ export async function requireRadarAccess(
   if (!actor) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
   const orgId = actor.organizationId ?? decoded.orgId;
-  const [customPermissions, customRolePermissions] = await Promise.all([
-    getCustomPermissions(decoded.userId),
-    getCustomRolePermissions(orgId, actor.role),
-  ]);
-  const effective = getEffectivePermissions(
-    actor.role,
-    customPermissions,
-    customRolePermissions ? { [actor.role]: customRolePermissions } : undefined,
-  );
-  if (!hasModuleAccess(effective, "radar", minLevel)) {
+  const level = await getRadarAccessLevel(decoded.userId, actor.role, orgId);
+  if (!hasModuleAccess({ radar: level }, "radar", minLevel)) {
     return NextResponse.json({ error: "You don't have access to Radar" }, { status: 403 });
   }
 

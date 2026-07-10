@@ -12,6 +12,7 @@ import { logTokenUsage, extractAnthropicUsage } from "@/lib/tokenTracking";
 import { ensureFeatureRegistered } from "@/lib/featureBootstrap";
 import { recordSignal } from "@/lib/signalCapture";
 import { countContacts, exportContactsCsv, logContactExport } from "@/lib/radar/contactExport";
+import { getRadarAccessLevel } from "@/lib/radar/supabase";
 import pg from "pg";
 
 // ─────────────────────────────────────────────────────────
@@ -108,6 +109,7 @@ async function callClaudeWithTools(
   apiKey: string,
   system: string,
   messages: Array<{ role: string; content: string | AnthropicContentBlock[] }>,
+  tools: typeof RADAR_TOOLS,
   maxTokens = 2048
 ): Promise<{ content: AnthropicContentBlock[]; stopReason: string; usage: { inputTokens: number; outputTokens: number } | null }> {
   const controller = new AbortController();
@@ -118,7 +120,9 @@ async function callClaudeWithTools(
     res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: maxTokens, system, messages, tools: RADAR_TOOLS }),
+      body: JSON.stringify(tools.length
+        ? { model: "claude-sonnet-4-6", max_tokens: maxTokens, system, messages, tools }
+        : { model: "claude-sonnet-4-6", max_tokens: maxTokens, system, messages }),
       signal: controller.signal,
     });
   } finally {
@@ -428,6 +432,16 @@ export async function POST(req: NextRequest) {
     let assistantReply = "";
     let exportDownload: { filename: string; csv: string } | undefined;
 
+    // ── Radar access gate for the search_radar_contacts / export_radar_contacts_csv tools ──
+    // Only offered to users who actually have Radar access themselves (view or edit) — this
+    // mirrors the same permission every Radar API route already enforces, so Halo can't reach
+    // contacts data a user wouldn't otherwise be allowed to see.
+    const actorUser = await db.user.findUnique({ where: { id: decoded.userId }, select: { role: true, organizationId: true } });
+    const radarLevel = actorUser
+      ? await getRadarAccessLevel(decoded.userId, actorUser.role, actorUser.organizationId ?? decoded.orgId)
+      : "none";
+    const hasRadarAccess = radarLevel === "view" || radarLevel === "edit";
+
     if (apiKey) {
       try {
         // ── Retrieve grounded knowledge ───────────────────
@@ -470,6 +484,19 @@ export async function POST(req: NextRequest) {
         const intentInstructions = getIntentInstructions(intent, entities);
         const responseInstructions = getGroundedResponseInstructions(intent, knowledge.orgName);
 
+        const radarToolInstructions = hasRadarAccess
+          ? `
+
+RADAR CONTACTS (search_radar_contacts / export_radar_contacts_csv tools):
+- You have direct access to Radar, the prospecting contacts database, via two tools.
+- When the user wants to find, count, or export contacts/leads, translate their request into filters using the ICP/persona/product/industry knowledge above (e.g. "our ideal customers in D2C haircare" → vertical: D2C, industry: something matching the known ICP) — ask a clarifying question instead of guessing if the request is genuinely ambiguous.
+- ALWAYS call search_radar_contacts first. Report the exact count back to the user in plain language and explicitly ask them to confirm before exporting anything.
+- ONLY call export_radar_contacts_csv after the user has clearly confirmed in a later message (e.g. "yes", "export it", "send me the csv") — never export on the same turn as the first search, even if the request sounded like it wanted a file immediately.
+- Do not mention these tools by name to the user — just talk about "searching Radar" / "the contacts database" naturally.`
+          : `
+
+RADAR CONTACTS: This user does not have Radar access. If they ask you to find/export contacts or leads, tell them they need Radar access first (an owner or admin can grant it from their Team profile) — do not attempt to answer from any other data source.`;
+
         const systemPrompt = buildGroundedSystemPrompt(
           "HiveMind AI, an intelligent marketing assistant",
           knowledge,
@@ -482,14 +509,7 @@ CONVERSATION BEHAVIOR:
 - Think step-by-step: first identify what knowledge base items are most relevant, then compose your answer from those items only
 - Do not repeat context the user already established in this conversation
 - If this is a follow-up question, build on prior answers without re-introducing facts
-- End with 2–3 *Suggested follow-ups:* in italics that help the user go deeper into what's in the knowledge base
-
-RADAR CONTACTS (search_radar_contacts / export_radar_contacts_csv tools):
-- You have direct access to Radar, the prospecting contacts database, via two tools.
-- When the user wants to find, count, or export contacts/leads, translate their request into filters using the ICP/persona/product/industry knowledge above (e.g. "our ideal customers in D2C haircare" → vertical: D2C, industry: something matching the known ICP) — ask a clarifying question instead of guessing if the request is genuinely ambiguous.
-- ALWAYS call search_radar_contacts first. Report the exact count back to the user in plain language and explicitly ask them to confirm before exporting anything.
-- ONLY call export_radar_contacts_csv after the user has clearly confirmed in a later message (e.g. "yes", "export it", "send me the csv") — never export on the same turn as the first search, even if the request sounded like it wanted a file immediately.
-- Do not mention these tools by name to the user — just talk about "searching Radar" / "the contacts database" naturally.`
+- End with 2–3 *Suggested follow-ups:* in italics that help the user go deeper into what's in the knowledge base${radarToolInstructions}`
         );
 
         // ── Build message history with memory compression ─
@@ -509,9 +529,10 @@ RADAR CONTACTS (search_radar_contacts / export_radar_contacts_csv tools):
         // as a runaway backstop; existing KB-only conversations are completely unaffected since
         // tools are additive (Claude only invokes them when relevant, tool_choice is left "auto").
         const toolLoopMessages: Array<{ role: string; content: string | AnthropicContentBlock[] }> = claudeMessages;
+        const offeredTools = hasRadarAccess ? RADAR_TOOLS : [];
         let totalInputTokens = 0, totalOutputTokens = 0;
         for (let iteration = 0; iteration < 4; iteration++) {
-          const result = await callClaudeWithTools(apiKey, systemPrompt, toolLoopMessages, 2048);
+          const result = await callClaudeWithTools(apiKey, systemPrompt, toolLoopMessages, offeredTools, 2048);
           if (result.usage) { totalInputTokens += result.usage.inputTokens; totalOutputTokens += result.usage.outputTokens; }
 
           const textBlocks = result.content.filter((b) => b.type === "text");
