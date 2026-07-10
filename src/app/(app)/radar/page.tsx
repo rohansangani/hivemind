@@ -2912,6 +2912,7 @@ function ValidateSection() {
   // Job history
   const [jobs, setJobs] = useState<ValidateJob[]>([]);
   const [jobsLoading, setJobsLoading] = useState(false);
+  const [openingJobId, setOpeningJobId] = useState<number | null>(null);
 
   const call = async (body: Record<string, unknown>) => {
     const r = await fetch("/api/radar/validate", {
@@ -3041,6 +3042,29 @@ function ValidateSection() {
     } finally {
       setLinkedinBusy(false);
       setLinkedinProgress(null);
+    }
+  };
+
+  const loadLinkedinCsv = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setError("");
+    try {
+      const text = await f.text();
+      // Loose parse: any cell that looks like a LinkedIn URL, whether the CSV has a header row,
+      // a "linkedin url" column among others, or is just a bare one-per-line list.
+      const cells = text.split(/\r?\n/).flatMap((line) => line.split(",")).map((c) => c.trim().replace(/^"|"$/g, ""));
+      const values = cells.filter((c) => c && /linkedin\.com\/in\//i.test(c));
+      if (!values.length) { setError("No LinkedIn profile URLs found in that CSV."); return; }
+      setLinkedinUrlsText((prev) => {
+        const existing = prev.split(/[\n,]+/).map((u) => u.trim()).filter(Boolean);
+        const merged = [...new Set([...existing, ...values])];
+        return merged.join("\n");
+      });
+    } catch (e2) {
+      setError((e2 as Error).message);
+    } finally {
+      e.target.value = "";
     }
   };
 
@@ -3428,6 +3452,7 @@ function ValidateSection() {
   const openJob = async (jid: number) => {
     setError("");
     setBusy(true);
+    setOpeningJobId(jid);
     try {
       const d = await call({ action: "get_job", jobId: jid });
       setJobId(jid);
@@ -3440,15 +3465,18 @@ function ValidateSection() {
       // re-check the box every single time they revisit (autoRefresh is plain component state,
       // so it resets to false on any remount: page reload, tab switch away and back, etc).
       setAutoRefresh(status === "sent");
-      setView("current");
       // Pull live status from Instantly right away instead of showing whatever bounce_status
       // happened to be in the DB from the last check (could be 15+ minutes stale) and making
-      // the user click "Check bounces" themselves just to see where things actually stand.
+      // the user click "Check bounces" themselves just to see where things actually stand. For a
+      // big job this pagination can take several seconds — the "Opening…" button state above
+      // covers that wait, so switching views only happens once there's something to show.
       if (status === "sent") await runCheck(jid);
+      setView("current");
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setBusy(false);
+      setOpeningJobId(null);
     }
   };
 
@@ -3511,8 +3539,11 @@ function ValidateSection() {
                       <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]"><ValidateJobStatusPill status={j.status} pendingCount={j.pending_count} resolvedAt={j.resolved_at} /></td>
                       <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text-tertiary)] whitespace-nowrap">{fmtDateTimeIST(j.created_at)}</td>
                       <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)] text-right whitespace-nowrap">
-                        <button onClick={() => openJob(j.id)} className="text-[12px] text-[var(--hm-accent)] mr-3">Open</button>
-                        <button onClick={() => deleteJob(j.id)} className="text-[12px] text-red-500">Delete</button>
+                        <button onClick={() => openJob(j.id)} disabled={openingJobId !== null} className="text-[12px] text-[var(--hm-accent)] mr-3 disabled:opacity-50 inline-flex items-center gap-1.5">
+                          {openingJobId === j.id && <span className="w-2.5 h-2.5 border-2 border-current/30 border-t-current rounded-full animate-spin" />}
+                          {openingJobId === j.id ? "Opening…" : "Open"}
+                        </button>
+                        <button onClick={() => deleteJob(j.id)} disabled={openingJobId !== null} className="text-[12px] text-red-500 disabled:opacity-50">Delete</button>
                       </td>
                     </tr>
                   ))}
@@ -3598,6 +3629,10 @@ function ValidateSection() {
                         placeholder={"https://www.linkedin.com/in/johndoe\nhttps://www.linkedin.com/in/janedoe"}
                         style={{ minHeight: 120 }}
                       />
+                      <label className="hm-btn hm-btn-secondary cursor-pointer mt-2 inline-flex" style={{ height: 32, padding: "0 12px", fontSize: 12 }}>
+                        ⬆ Upload CSV of LinkedIn URLs
+                        <input type="file" accept=".csv,text/csv" onChange={loadLinkedinCsv} style={{ display: "none" }} />
+                      </label>
                     </div>
                     <div>
                       <p className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5">Mode</p>
