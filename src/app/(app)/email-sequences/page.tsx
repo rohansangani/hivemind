@@ -477,9 +477,21 @@ export default function EmailSequencesPage() {
                   <option value="">— Select mailbox tag —</option>
                   {mailboxTags.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
                 </select>
-                <button onClick={sendCampaign} disabled={sending || !mailboxTag} className={btnPrimary} style={{ opacity: sending || !mailboxTag ? 0.6 : 1 }}>
-                  {sending ? "Creating…" : `Create campaign for ${sendableProspects.length} prospect${sendableProspects.length !== 1 ? "s" : ""}`}
+                <button onClick={sendCampaign} disabled={sending || !mailboxTag} className={btnPrimary + " flex items-center gap-2"} style={{ opacity: sending || !mailboxTag ? 0.6 : 1 }}>
+                  {sending ? (
+                    <>
+                      <svg className="animate-spin" width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="white" strokeWidth="2" opacity="0.3"/><path d="M14 8a6 6 0 00-6-6" stroke="white" strokeWidth="2" strokeLinecap="round"/></svg>
+                      Creating campaign…
+                    </>
+                  ) : (
+                    `Create campaign for ${sendableProspects.length} prospect${sendableProspects.length !== 1 ? "s" : ""}`
+                  )}
                 </button>
+                {sending && (
+                  <span className="text-[12px] text-[var(--hm-text-tertiary)]">
+                    Creating the campaign in Instantly and adding {sendableProspects.length} lead{sendableProspects.length !== 1 ? "s" : ""} — this can take up to a minute, don&apos;t close this tab.
+                  </span>
+                )}
                 {sendError && <span className="text-[12px] text-red-500">{sendError}</span>}
                 {sendResult && (
                   <span className="text-[12px] text-[#059669]">
