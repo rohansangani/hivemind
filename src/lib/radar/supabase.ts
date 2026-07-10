@@ -282,3 +282,76 @@ export async function updateRow(
   if (!rows.length) throw new Error("Record not found");
   return rows[0];
 }
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Filters a client-supplied id list down to well-formed UUIDs, so it's safe to splice into a
+ * PostgREST `id=in.(...)` filter without any of them containing filter-breaking characters. */
+function sanitizeIds(ids: unknown): string[] {
+  if (!Array.isArray(ids)) return [];
+  return ids.filter((id): id is string => typeof id === "string" && UUID_RE.test(id));
+}
+
+/**
+ * Bulk soft-delete: flags rows as "marked_irrelevant" instead of actually
+ * deleting them. This is the only "delete" a radar:edit user (who isn't an
+ * owner/admin) ever gets — real removal is a separate, admin-only step (see
+ * `deleteMarkedIrrelevant`). Flagged rows are excluded from every normal
+ * browse/export query by default.
+ */
+export async function setMarkedIrrelevant(
+  table: "accounts" | "contacts",
+  ids: unknown,
+  irrelevant: boolean,
+  actorEmail: string,
+): Promise<number> {
+  if (!RADAR_SUPABASE_URL || !RADAR_SUPABASE_SERVICE_KEY) {
+    throw new Error("Radar Supabase service key is not configured");
+  }
+  const safeIds = sanitizeIds(ids);
+  if (!safeIds.length) throw new Error("No valid record ids provided");
+
+  const fields = irrelevant
+    ? { marked_irrelevant: true, marked_irrelevant_by: actorEmail, marked_irrelevant_at: new Date().toISOString() }
+    : { marked_irrelevant: false, marked_irrelevant_by: null, marked_irrelevant_at: null };
+
+  const filter = `id=in.(${safeIds.join(",")})`;
+  const r = await fetch(`${RADAR_SUPABASE_URL}/rest/v1/${table}?${filter}`, {
+    method: "PATCH",
+    headers: serviceHeaders({ Prefer: "return=representation" }),
+    body: JSON.stringify(fields),
+  });
+  if (!r.ok) {
+    const body = await r.text().catch(() => "");
+    throw new Error(`Radar Supabase bulk update failed (${r.status}): ${body || "no details"}`);
+  }
+  const rows = (await r.json()) as Record<string, unknown>[];
+  return rows.length;
+}
+
+/**
+ * Permanent delete — owner/admin only (enforced by the caller checking
+ * `access.role`, not just the radar edit level, since a regular radar:edit
+ * grant should never reach this). Only ever deletes rows already flagged
+ * `marked_irrelevant = true`, so this can't be used to bypass the soft-delete
+ * step even if a route forgot to gate on role.
+ */
+export async function deleteMarkedIrrelevant(table: "accounts" | "contacts", ids: unknown): Promise<number> {
+  if (!RADAR_SUPABASE_URL || !RADAR_SUPABASE_SERVICE_KEY) {
+    throw new Error("Radar Supabase service key is not configured");
+  }
+  const safeIds = sanitizeIds(ids);
+  if (!safeIds.length) throw new Error("No valid record ids provided");
+
+  const filter = `id=in.(${safeIds.join(",")})&marked_irrelevant=eq.true`;
+  const r = await fetch(`${RADAR_SUPABASE_URL}/rest/v1/${table}?${filter}`, {
+    method: "DELETE",
+    headers: serviceHeaders({ Prefer: "return=representation" }),
+  });
+  if (!r.ok) {
+    const body = await r.text().catch(() => "");
+    throw new Error(`Radar Supabase delete failed (${r.status}): ${body || "no details"}`);
+  }
+  const rows = (await r.json()) as Record<string, unknown>[];
+  return rows.length;
+}

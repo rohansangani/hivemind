@@ -500,6 +500,7 @@ function DataTable<T extends { id: string }>({
   booleanFilters,
   onRowClick,
   refreshToken,
+  extraBody,
 }: {
   endpoint: string;
   columns: Column<T>[];
@@ -515,6 +516,9 @@ function DataTable<T extends { id: string }>({
   /** Bump this (e.g. a counter) to force a refetch of the current page/filters — used after an
    * edit-panel save so the table reflects the new values without losing pagination/search state. */
   refreshToken?: number;
+  /** Extra fields merged into the request body as-is (not shown as a filter chip) — e.g. an
+   * admin-only "includeIrrelevant" toggle owned by the parent section. */
+  extraBody?: Record<string, unknown>;
 }) {
   const [rows, setRows] = useState<T[]>([]);
   const [total, setTotal] = useState(0);
@@ -566,6 +570,7 @@ function DataTable<T extends { id: string }>({
   }, [search]);
 
   const filtersKey = JSON.stringify(filters);
+  const extraBodyKey = JSON.stringify(extraBody ?? {});
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -573,7 +578,7 @@ function DataTable<T extends { id: string }>({
     fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ search: term, ...filters, page, limit: PAGE_SIZE }),
+      body: JSON.stringify({ search: term, ...filters, ...extraBody, page, limit: PAGE_SIZE }),
     })
       .then(async (r) => {
         if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Request failed");
@@ -585,7 +590,8 @@ function DataTable<T extends { id: string }>({
       .catch((e) => { if (!cancelled) setError(e.message); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [endpoint, term, filtersKey, page, refreshToken]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [endpoint, term, filtersKey, page, refreshToken, extraBodyKey]);
 
   const from = total === 0 ? 0 : page * PAGE_SIZE + 1;
   const to = Math.min((page + 1) * PAGE_SIZE, total);
@@ -994,9 +1000,54 @@ function EditRecordPanel<T extends { id: string }>({
   );
 }
 
+/**
+ * Shared "mark irrelevant" / permanent-delete actions for Accounts and Contacts.
+ * Marking is the only "delete" a radar:edit user gets — flagged rows drop out of
+ * every normal browse/export. Permanent delete is owner/admin only, and only
+ * ever targets rows already flagged (enforced server-side too).
+ */
+function useIrrelevantActions(table: "accounts" | "contacts", onDone: () => void) {
+  const [busy, setBusy] = useState(false);
+  const call = async (action: "mark_irrelevant" | "delete_irrelevant", body: Record<string, unknown>) => {
+    setBusy(true);
+    try {
+      const r = await fetch(`/api/radar/${table}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, ...body }),
+      });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        alert(d.error || "Action failed");
+        return;
+      }
+      onDone();
+    } catch {
+      alert("Action failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return {
+    busy,
+    markIrrelevant: (ids: string[], clear: () => void) =>
+      call("mark_irrelevant", { ids, irrelevant: true }).then(clear),
+    unmark: (ids: string[], clear: () => void) =>
+      call("mark_irrelevant", { ids, irrelevant: false }).then(clear),
+    deleteForever: (ids: string[], clear: () => void) => {
+      if (!confirm(`Permanently delete ${ids.length} record(s)? This cannot be undone.`)) return Promise.resolve();
+      return call("delete_irrelevant", { ids }).then(clear);
+    },
+  };
+}
+
 function AccountsSection() {
+  const user = useUser();
+  const isAdmin = user?.role === "owner" || user?.role === "admin";
   const [editAccount, setEditAccount] = useState<AccountRow | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
+  const [showIrrelevant, setShowIrrelevant] = useState(false);
+  const { markIrrelevant, unmark, deleteForever } = useIrrelevantActions("accounts", () => setRefreshToken((t) => t + 1));
   const cols: Column<AccountRow>[] = [
     {
       key: "edit",
@@ -1062,6 +1113,14 @@ function AccountsSection() {
   const [openAccount, setOpenAccount] = useState<AccountRow | null>(null);
   return (
     <>
+      {isAdmin && (
+        <div className="flex justify-end mb-2">
+          <label className="flex items-center gap-1.5 text-[12.5px] text-[var(--hm-text-secondary)] cursor-pointer select-none">
+            <input type="checkbox" checked={showIrrelevant} onChange={(e) => setShowIrrelevant(e.target.checked)} />
+            Show irrelevant records
+          </label>
+        </div>
+      )}
       <DataTable<AccountRow>
         endpoint="/api/radar/accounts"
         columns={cols}
@@ -1069,14 +1128,33 @@ function AccountsSection() {
         emptyLabel="No accounts match your filters."
         onRowClick={setOpenAccount}
         refreshToken={refreshToken}
+        extraBody={{ includeIrrelevant: showIrrelevant }}
         bulkActions={(rows, clear) => (
-          <button
-            onClick={() => { downloadCSV(rows, `radar_accounts_${today()}.csv`); clear(); }}
-            className="hm-btn hm-btn-primary"
-            style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}
-          >
-            Export CSV
-          </button>
+          <>
+            <button
+              onClick={() => { downloadCSV(rows, `radar_accounts_${today()}.csv`); clear(); }}
+              className="hm-btn hm-btn-primary"
+              style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}
+            >
+              Export CSV
+            </button>
+            {showIrrelevant ? (
+              <>
+                <button onClick={() => unmark(rows.map((r) => r.id), clear)} className="hm-btn hm-btn-secondary" style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}>
+                  Unmark
+                </button>
+                {isAdmin && (
+                  <button onClick={() => deleteForever(rows.map((r) => r.id), clear)} className="hm-btn" style={{ height: 28, padding: "0 10px", fontSize: 11.5, background: "#FEE2E2", color: "#DC2626" }}>
+                    Delete permanently
+                  </button>
+                )}
+              </>
+            ) : (
+              <button onClick={() => markIrrelevant(rows.map((r) => r.id), clear)} className="hm-btn hm-btn-secondary" style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}>
+                Mark irrelevant
+              </button>
+            )}
+          </>
         )}
       />
       {openAccount && <AccountContactsPanel account={openAccount} onClose={() => setOpenAccount(null)} />}
@@ -1228,8 +1306,12 @@ function formatStatusBreakdown(byStatus: Record<string, number>): string {
 }
 
 function ContactsSection() {
+  const user = useUser();
+  const isAdmin = user?.role === "owner" || user?.role === "admin";
   const [editContact, setEditContact] = useState<ContactRow | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
+  const [showIrrelevant, setShowIrrelevant] = useState(false);
+  const { markIrrelevant, unmark, deleteForever } = useIrrelevantActions("contacts", () => setRefreshToken((t) => t + 1));
   const cols: Column<ContactRow>[] = [
     {
       key: "edit",
@@ -1278,6 +1360,14 @@ function ContactsSection() {
   ];
   return (
     <>
+      {isAdmin && (
+        <div className="flex justify-end mb-2">
+          <label className="flex items-center gap-1.5 text-[12.5px] text-[var(--hm-text-secondary)] cursor-pointer select-none">
+            <input type="checkbox" checked={showIrrelevant} onChange={(e) => setShowIrrelevant(e.target.checked)} />
+            Show irrelevant records
+          </label>
+        </div>
+      )}
       <DataTable<ContactRow>
         endpoint="/api/radar/contacts"
         columns={cols}
@@ -1285,14 +1375,33 @@ function ContactsSection() {
         emptyLabel="No contacts match your filters."
         booleanFilters={[{ key: "hasEmail", label: "Email not blank" }]}
         refreshToken={refreshToken}
+        extraBody={{ includeIrrelevant: showIrrelevant }}
         bulkActions={(rows, clear) => (
-          <button
-            onClick={() => { downloadCSV(rows, `radar_contacts_${today()}.csv`); clear(); }}
-            className="hm-btn hm-btn-primary"
-            style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}
-          >
-            Export CSV
-          </button>
+          <>
+            <button
+              onClick={() => { downloadCSV(rows, `radar_contacts_${today()}.csv`); clear(); }}
+              className="hm-btn hm-btn-primary"
+              style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}
+            >
+              Export CSV
+            </button>
+            {showIrrelevant ? (
+              <>
+                <button onClick={() => unmark(rows.map((r) => r.id), clear)} className="hm-btn hm-btn-secondary" style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}>
+                  Unmark
+                </button>
+                {isAdmin && (
+                  <button onClick={() => deleteForever(rows.map((r) => r.id), clear)} className="hm-btn" style={{ height: 28, padding: "0 10px", fontSize: 11.5, background: "#FEE2E2", color: "#DC2626" }}>
+                    Delete permanently
+                  </button>
+                )}
+              </>
+            ) : (
+              <button onClick={() => markIrrelevant(rows.map((r) => r.id), clear)} className="hm-btn hm-btn-secondary" style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}>
+                Mark irrelevant
+              </button>
+            )}
+          </>
         )}
       />
       {editContact && (

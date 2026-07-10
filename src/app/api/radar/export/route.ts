@@ -48,6 +48,8 @@ function buildContactQuery(filters: Record<string, unknown>): string {
   }
   // Only contacts with a non-blank email are exportable.
   q += `&email=not.is.null&email=neq.`;
+  // Records flagged as irrelevant are never included in an export.
+  q += `&marked_irrelevant=eq.false`;
   return q;
 }
 
@@ -64,6 +66,8 @@ function buildAccountQuery(filters: Record<string, unknown>): string {
     const s = encodeURIComponent(String(filters.search));
     q += `&or=(name.ilike.*${s}*,domain.ilike.*${s}*)`;
   }
+  // Records flagged as irrelevant are never included in an export.
+  q += `&marked_irrelevant=eq.false`;
   return q;
 }
 
