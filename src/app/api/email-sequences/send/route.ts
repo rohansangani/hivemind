@@ -78,7 +78,10 @@ export async function POST(req: NextRequest) {
       const day = parseDay(e.sendDelay);
       const prevDay = i === 0 ? day : parseDay(master[i - 1].sendDelay);
       const delay = i === 0 ? 0 : Math.max(1, day - prevDay);
-      return { type: "email", delay, variants: [{ subject: `{{step${i + 1}Subject}}`, body: `{{step${i + 1}Body}}` }] };
+      // {{accountSignature}} is Instantly's own built-in tag, resolved per sending mailbox at
+      // send time — it has to actually appear in the step body for Instantly to substitute it;
+      // it's not something we generate or pass per-lead.
+      return { type: "email", delay, variants: [{ subject: `{{step${i + 1}Subject}}`, body: `{{step${i + 1}Body}}\n\n{{accountSignature}}` }] };
     });
 
     const campaignBody = {
