@@ -345,19 +345,27 @@ export default function EmailSequencesPage() {
 
   const exportCSV = () => {
     if (results.length === 0) return;
-    const headers = ["Prospect Name", "Company", "Email #", "Send Day", "Subject", "Body", "Notes"];
-    const rows = results.flatMap(r =>
-      r.sequence.emails.map(e => [
-        r.prospect?.name || "Template",
-        r.prospect?.company || "",
-        String(e.emailNumber),
-        e.sendDelay,
-        `"${(e.subject || "").replace(/"/g, '""')}"`,
-        `"${(e.body || "").replace(/"/g, '""')}"`,
-        `"${(e.notes || "").replace(/"/g, '""')}"`,
-      ])
-    );
-    const csv = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
+    const cell = (v: string) => `"${(v || "").replace(/"/g, '""')}"`;
+    const maxEmails = Math.max(0, ...results.map(r => r.sequence.emails.length));
+    const headers = [
+      "First Name", "Last Name", "Email", "Company", "Subject Line",
+      ...Array.from({ length: maxEmails }, (_, i) => `Email ${i + 1}`),
+    ];
+    const rows = results.map(r => {
+      const nameParts = (r.prospect?.name || "").trim().split(/\s+/).filter(Boolean);
+      const firstName = nameParts[0] || "";
+      const lastName = nameParts.slice(1).join(" ");
+      const emails = r.sequence.emails;
+      return [
+        cell(firstName),
+        cell(lastName),
+        cell(r.prospect?.email || ""),
+        cell(r.prospect?.company || ""),
+        cell(emails[0]?.subject || ""),
+        ...Array.from({ length: maxEmails }, (_, i) => cell(emails[i]?.body || "")),
+      ];
+    });
+    const csv = [headers.map(cell).join(","), ...rows.map(r => r.join(","))].join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
