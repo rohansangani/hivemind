@@ -146,6 +146,13 @@ export async function POST(req: NextRequest) {
             phone: r.prospect!.phone || undefined,
             website: r.prospect!.website || undefined,
             custom_variables: customVariables,
+            // Same duplicate protection as Instantly's own manual CSV-import dialog ("Check for
+            // duplicates across Campaigns/Lists/The Workspace", all checked by default) — skips
+            // re-adding a lead that already exists anywhere in the workspace instead of only
+            // deduping within this one campaign (which the API already does automatically).
+            skip_if_in_workspace: true,
+            skip_if_in_campaign: true,
+            skip_if_in_list: true,
           }),
         }, decoded.orgId);
         if (lead?.id) added++; else failures.push(r.prospect!.email!);
