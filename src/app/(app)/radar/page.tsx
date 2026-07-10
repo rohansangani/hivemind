@@ -3907,7 +3907,7 @@ function ValidateSection() {
                       </select>
                       <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-1">Required. Used when a profile has no matching contact — the new contact and its account (if the profile has a company domain, needs the "+ email" mode) are created under this vertical.</p>
                     </div>
-                    <button onClick={runLinkedInCheck} disabled={linkedinBusy || !linkedinVertical} className="hm-btn hm-btn-primary w-full" style={{ height: 38, fontSize: 13 }}>
+                    <button onClick={runLinkedInCheck} disabled={linkedinBusy} className="hm-btn hm-btn-primary w-full" style={{ height: 38, fontSize: 13 }}>
                       {linkedinBusy ? `Checking… ${linkedinProgress?.done ?? 0}/${linkedinProgress?.total ?? 0}` : "Run check"}
                     </button>
 
