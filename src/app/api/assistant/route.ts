@@ -12,6 +12,7 @@ import { logTokenUsage, extractAnthropicUsage } from "@/lib/tokenTracking";
 import { ensureFeatureRegistered } from "@/lib/featureBootstrap";
 import { recordSignal } from "@/lib/signalCapture";
 import { countContacts, exportContactsCsv, logContactExport } from "@/lib/radar/contactExport";
+import { countAccounts, exportAccountsCsv, logAccountExport } from "@/lib/radar/accountExport";
 import { getRadarAccessLevel } from "@/lib/radar/supabase";
 import pg from "pg";
 
@@ -84,6 +85,17 @@ const RADAR_FILTER_PROPERTIES = {
   },
 } as const;
 
+const ACCOUNT_FILTER_PROPERTIES = {
+  vertical: { type: "string", enum: ["B2B", "D2C", "US"], description: "Radar's vertical bucket for the account." },
+  industry: { type: "string", description: "Exact industry value as stored in Radar (ask the user or infer from the org's ICP/knowledge-base context if unsure of exact wording)." },
+  subIndustry: { type: "string" },
+  accountSize: { type: "string" },
+  employeeRange: { type: "string", description: "Company employee-count bucket, exact value as stored in Radar." },
+  revenueRange: { type: "string" },
+  country: { type: "string" },
+  search: { type: "string", description: "Free-text search across the company's name and domain." },
+} as const;
+
 const RADAR_TOOLS = [
   {
     name: "search_radar_contacts",
@@ -100,6 +112,24 @@ const RADAR_TOOLS = [
       "explicitly confirmed (e.g. said \"yes\", \"export it\", \"download\") having already seen the count from " +
       "search_radar_contacts for the SAME filters in this conversation. Never call this on the first turn of a request.",
     input_schema: { type: "object", properties: RADAR_FILTER_PROPERTIES },
+  },
+  {
+    name: "search_radar_accounts",
+    description:
+      "Search Radar's ACCOUNTS database (real, deduplicated companies — one row per company, not per contact) " +
+      "by filters and return an EXACT match count. Use this whenever the user wants a company/account-level count " +
+      "or list (e.g. \"how many accounts\", \"which companies\", \"unique companies\") rather than a per-contact count " +
+      "— never approximate an account count from contacts. Always call this before export_radar_accounts_csv and " +
+      "report the count back to the user, asking them to confirm before exporting.",
+    input_schema: { type: "object", properties: ACCOUNT_FILTER_PROPERTIES },
+  },
+  {
+    name: "export_radar_accounts_csv",
+    description:
+      "Generate a downloadable CSV of accounts (companies) matching the given filters. ONLY call this after the " +
+      "user has explicitly confirmed, having already seen the count from search_radar_accounts for the SAME " +
+      "filters in this conversation.",
+    input_schema: { type: "object", properties: ACCOUNT_FILTER_PROPERTIES },
   },
 ];
 
@@ -147,24 +177,41 @@ function toRadarFilters(input: Record<string, unknown>): Record<string, unknown>
   return filters;
 }
 
+function toAccountFilters(input: Record<string, unknown>): Record<string, unknown> {
+  const filters: Record<string, unknown> = {};
+  for (const key of ["vertical", "industry", "subIndustry", "accountSize", "employeeRange", "revenueRange", "country", "search"]) {
+    if (input[key]) filters[key] = input[key];
+  }
+  return filters;
+}
+
 async function executeRadarTool(
   toolName: string,
   input: Record<string, unknown>,
   actorUserId: string
 ): Promise<{ toolResult: unknown; download?: { filename: string; csv: string } }> {
-  const filters = toRadarFilters(input);
-  const emailStatuses = input.emailStatuses;
-
   if (toolName === "search_radar_contacts") {
-    const count = await countContacts(filters, emailStatuses);
+    const count = await countContacts(toRadarFilters(input), input.emailStatuses);
     return { toolResult: { count } };
   }
   if (toolName === "export_radar_contacts_csv") {
-    const { csv, matched, exported, truncated } = await exportContactsCsv(filters, emailStatuses);
+    const { csv, matched, exported, truncated } = await exportContactsCsv(toRadarFilters(input), input.emailStatuses);
     if (exported > 0) await logContactExport(actorUserId, exported);
     return {
       toolResult: { matched, exported, truncated },
       download: exported > 0 ? { filename: `radar_contacts_halo_${Date.now()}.csv`, csv } : undefined,
+    };
+  }
+  if (toolName === "search_radar_accounts") {
+    const count = await countAccounts(toAccountFilters(input));
+    return { toolResult: { count } };
+  }
+  if (toolName === "export_radar_accounts_csv") {
+    const { csv, matched, exported, truncated } = await exportAccountsCsv(toAccountFilters(input));
+    if (exported > 0) await logAccountExport(actorUserId, exported);
+    return {
+      toolResult: { matched, exported, truncated },
+      download: exported > 0 ? { filename: `radar_accounts_halo_${Date.now()}.csv`, csv } : undefined,
     };
   }
   return { toolResult: { error: `Unknown tool: ${toolName}` } };
@@ -487,16 +534,18 @@ export async function POST(req: NextRequest) {
         const radarToolInstructions = hasRadarAccess
           ? `
 
-RADAR CONTACTS (search_radar_contacts / export_radar_contacts_csv tools):
-- You have direct access to Radar, the prospecting contacts database, via two tools.
-- When the user wants to find, count, or export contacts/leads, translate their request into filters using the ICP/persona/product/industry knowledge above (e.g. "our ideal customers in D2C haircare" → vertical: D2C, industry: something matching the known ICP) — ask a clarifying question instead of guessing if the request is genuinely ambiguous.
-- ALWAYS call search_radar_contacts first. Report the exact count back to the user in plain language and explicitly ask them to confirm before exporting anything.
-- ONLY call export_radar_contacts_csv after the user has clearly confirmed in a later message (e.g. "yes", "export it", "send me the csv") — never export on the same turn as the first search, even if the request sounded like it wanted a file immediately.
-- ALWAYS spell out every filter actually applied, not just the count — vertical, industry, title, country, company, and email status(es), one per line or a short bullet list. If the user didn't specify an email status, say explicitly that you defaulted to "safe to send" + "verified" only (Radar's exportable default) and that risky/invalid/unknown/unvalidated contacts are excluded unless they ask to include those too. This applies to both the count reply and the export confirmation — never report a bare number with no criteria shown.
-- Do not mention these tools by name to the user — just talk about "searching Radar" / "the contacts database" naturally.`
+RADAR CONTACTS & ACCOUNTS (search_radar_contacts/accounts, export_radar_contacts/accounts_csv tools):
+- You have direct access to Radar via four tools: two for CONTACTS (individual people) and two for ACCOUNTS (real, deduplicated companies — one row per company, not per contact).
+- If the user asks about companies/accounts specifically — "how many accounts", "which companies", "unique companies", a company/account-level count or export — use the ACCOUNTS tools. Never approximate an account-level answer by counting or deduplicating contacts yourself; Radar's accounts table is already the real deduplicated source, query it directly.
+- If the user asks about people/leads/contacts, use the CONTACTS tools.
+- When the user wants to find, count, or export either, translate their request into filters using the ICP/persona/product/industry knowledge above (e.g. "our ideal customers in D2C haircare" → vertical: D2C, industry: something matching the known ICP) — ask a clarifying question instead of guessing if the request is genuinely ambiguous.
+- ALWAYS call the matching search tool first (search_radar_contacts or search_radar_accounts). Report the exact count back to the user in plain language and explicitly ask them to confirm before exporting anything.
+- ONLY call the matching export tool after the user has clearly confirmed in a later message (e.g. "yes", "export it", "send me the csv") — never export on the same turn as the first search, even if the request sounded like it wanted a file immediately.
+- ALWAYS spell out every filter actually applied, not just the count — vertical, industry, and whichever of title/country/company/employee range/revenue range/account size/email status(es) were used, one per line or a short bullet list. For contacts, if the user didn't specify an email status, say explicitly that you defaulted to "safe to send" + "verified" only (Radar's exportable default) and that risky/invalid/unknown/unvalidated contacts are excluded unless they ask to include those too. This applies to both the count reply and the export confirmation — never report a bare number with no criteria shown.
+- Do not mention these tools by name to the user — just talk about "searching Radar" / "the accounts/contacts database" naturally.`
           : `
 
-RADAR CONTACTS: This user does not have Radar access. If they ask you to find/export contacts or leads, tell them they need Radar access first (an owner or admin can grant it from their Team profile) — do not attempt to answer from any other data source.`;
+RADAR: This user does not have Radar access. If they ask you to find/export contacts, leads, or accounts, tell them they need Radar access first (an owner or admin can grant it from their Team profile) — do not attempt to answer from any other data source.`;
 
         const systemPrompt = buildGroundedSystemPrompt(
           "HiveMind AI, an intelligent marketing assistant",
