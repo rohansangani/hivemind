@@ -9,6 +9,7 @@ import { retrieveRelevantKnowledge } from "@/lib/knowledgeRetrieval";
 import { buildGroundedSystemPrompt, getGroundedResponseInstructions } from "@/lib/groundingEngine";
 import { getAnthropicKey, AIKeyNotConfiguredError } from "@/lib/aiProvider";
 import { logTokenUsage, extractAnthropicUsage } from "@/lib/tokenTracking";
+import { countContacts, exportContactsCsv, logContactExport } from "@/lib/radar/contactExport";
 import pg from "pg";
 
 // ─────────────────────────────────────────────────────────
@@ -55,6 +56,112 @@ async function callClaude(
     throw new Error(`[${res.status}] ${msg}`);
   }
   return { text: data.content?.[0]?.text || "", usage: extractAnthropicUsage(data) };
+}
+
+// ─────────────────────────────────────────────────────────
+//  Radar contacts search/export — Ask Halo tool-use
+//
+//  Deliberately bypasses Radar's own requireRadarAccess role gate: Halo's
+//  access to the contacts database is intentional and org-wide (an explicit
+//  product decision), not tied to a user's individual radar:view/edit grant.
+// ─────────────────────────────────────────────────────────
+
+const RADAR_FILTER_PROPERTIES = {
+  vertical: { type: "string", enum: ["B2B", "D2C", "US"], description: "Radar's vertical bucket for the account/contact." },
+  industry: { type: "string", description: "Exact industry value as stored in Radar (ask the user or infer from the org's ICP/knowledge-base context if unsure of exact wording)." },
+  title: { type: "string", description: "Job title contains this text (case-insensitive), e.g. \"Director\" or \"VP Marketing\"." },
+  employeeRange: { type: "string", description: "Company employee-count bucket, exact value as stored in Radar." },
+  country: { type: "string" },
+  company: { type: "string", description: "Company name contains this text (case-insensitive)." },
+  search: { type: "string", description: "Free-text search across the contact's email/first name/last name." },
+  emailStatuses: {
+    type: "array",
+    items: { type: "string", enum: ["safe to send", "verified", "risky", "invalid", "unknown", "unvalidated"] },
+    description: "Which email validation statuses to include. Defaults to safe-to-send + verified if omitted — the same default the manual Export tab uses.",
+  },
+} as const;
+
+const RADAR_TOOLS = [
+  {
+    name: "search_radar_contacts",
+    description:
+      "Search Radar's contacts database by filters and return an EXACT match count — no CSV, just the number. " +
+      "Always call this first for any request to find/export contacts, and always report the count back to the " +
+      "user and ask them to confirm before ever calling export_radar_contacts_csv.",
+    input_schema: { type: "object", properties: RADAR_FILTER_PROPERTIES },
+  },
+  {
+    name: "export_radar_contacts_csv",
+    description:
+      "Generate a downloadable CSV of contacts matching the given filters. ONLY call this after the user has " +
+      "explicitly confirmed (e.g. said \"yes\", \"export it\", \"download\") having already seen the count from " +
+      "search_radar_contacts for the SAME filters in this conversation. Never call this on the first turn of a request.",
+    input_schema: { type: "object", properties: RADAR_FILTER_PROPERTIES },
+  },
+];
+
+type AnthropicContentBlock = Record<string, unknown> & { type: string };
+
+async function callClaudeWithTools(
+  apiKey: string,
+  system: string,
+  messages: Array<{ role: string; content: string | AnthropicContentBlock[] }>,
+  maxTokens = 2048
+): Promise<{ content: AnthropicContentBlock[]; stopReason: string; usage: { inputTokens: number; outputTokens: number } | null }> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 55_000);
+
+  let res: Response;
+  try {
+    res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: maxTokens, system, messages, tools: RADAR_TOOLS }),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+
+  const data = await res.json();
+  if (!res.ok) {
+    const msg = data.error?.message || "Claude API error";
+    throw new Error(`[${res.status}] ${msg}`);
+  }
+  return { content: data.content || [], stopReason: data.stop_reason, usage: extractAnthropicUsage(data) };
+}
+
+/** Pulls only the known filter keys out of a tool call's input, ignoring anything else Claude
+ * might include (defensive — input_schema isn't a hard runtime guarantee). */
+function toRadarFilters(input: Record<string, unknown>): Record<string, unknown> {
+  const filters: Record<string, unknown> = {};
+  for (const key of ["vertical", "industry", "title", "employeeRange", "country", "company", "search"]) {
+    if (input[key]) filters[key] = input[key];
+  }
+  return filters;
+}
+
+async function executeRadarTool(
+  toolName: string,
+  input: Record<string, unknown>,
+  actorUserId: string
+): Promise<{ toolResult: unknown; download?: { filename: string; csv: string } }> {
+  const filters = toRadarFilters(input);
+  const emailStatuses = input.emailStatuses;
+
+  if (toolName === "search_radar_contacts") {
+    const count = await countContacts(filters, emailStatuses);
+    return { toolResult: { count } };
+  }
+  if (toolName === "export_radar_contacts_csv") {
+    const { csv, matched, exported, truncated } = await exportContactsCsv(filters, emailStatuses);
+    if (exported > 0) await logContactExport(actorUserId, exported);
+    return {
+      toolResult: { matched, exported, truncated },
+      download: exported > 0 ? { filename: `radar_contacts_halo_${Date.now()}.csv`, csv } : undefined,
+    };
+  }
+  return { toolResult: { error: `Unknown tool: ${toolName}` } };
 }
 
 // ─────────────────────────────────────────────────────────
@@ -315,6 +422,7 @@ export async function POST(req: NextRequest) {
       }
     }
     let assistantReply = "";
+    let exportDownload: { filename: string; csv: string } | undefined;
 
     if (apiKey) {
       try {
@@ -369,7 +477,14 @@ CONVERSATION BEHAVIOR:
 - Think step-by-step: first identify what knowledge base items are most relevant, then compose your answer from those items only
 - Do not repeat context the user already established in this conversation
 - If this is a follow-up question, build on prior answers without re-introducing facts
-- End with 2–3 *Suggested follow-ups:* in italics that help the user go deeper into what's in the knowledge base`
+- End with 2–3 *Suggested follow-ups:* in italics that help the user go deeper into what's in the knowledge base
+
+RADAR CONTACTS (search_radar_contacts / export_radar_contacts_csv tools):
+- You have direct access to Radar, the prospecting contacts database, via two tools.
+- When the user wants to find, count, or export contacts/leads, translate their request into filters using the ICP/persona/product/industry knowledge above (e.g. "our ideal customers in D2C haircare" → vertical: D2C, industry: something matching the known ICP) — ask a clarifying question instead of guessing if the request is genuinely ambiguous.
+- ALWAYS call search_radar_contacts first. Report the exact count back to the user in plain language and explicitly ask them to confirm before exporting anything.
+- ONLY call export_radar_contacts_csv after the user has clearly confirmed in a later message (e.g. "yes", "export it", "send me the csv") — never export on the same turn as the first search, even if the request sounded like it wanted a file immediately.
+- Do not mention these tools by name to the user — just talk about "searching Radar" / "the contacts database" naturally.`
         );
 
         // ── Build message history with memory compression ─
@@ -383,13 +498,41 @@ CONVERSATION BEHAVIOR:
         for (const m of history) claudeMessages.push({ role: m.role, content: m.content });
         claudeMessages.push({ role: "user", content: message });
 
-        const mainResult = await callClaude(apiKey, systemPrompt, claudeMessages, 2048);
-        assistantReply = mainResult.text;
-        if (mainResult.usage) {
+        // ── Tool-use loop (search_radar_contacts / export_radar_contacts_csv) ─
+        // Most turns end after one call (stop_reason "end_turn", no tool_use blocks) — this only
+        // loops further when Claude actually asks to run a Radar tool. Capped at 4 round-trips
+        // as a runaway backstop; existing KB-only conversations are completely unaffected since
+        // tools are additive (Claude only invokes them when relevant, tool_choice is left "auto").
+        const toolLoopMessages: Array<{ role: string; content: string | AnthropicContentBlock[] }> = claudeMessages;
+        let totalInputTokens = 0, totalOutputTokens = 0;
+        for (let iteration = 0; iteration < 4; iteration++) {
+          const result = await callClaudeWithTools(apiKey, systemPrompt, toolLoopMessages, 2048);
+          if (result.usage) { totalInputTokens += result.usage.inputTokens; totalOutputTokens += result.usage.outputTokens; }
+
+          const textBlocks = result.content.filter((b) => b.type === "text");
+          assistantReply = textBlocks.map((b) => b.text as string).join("\n\n");
+
+          const toolUseBlocks = result.content.filter((b) => b.type === "tool_use");
+          if (result.stopReason !== "tool_use" || !toolUseBlocks.length) break;
+
+          toolLoopMessages.push({ role: "assistant", content: result.content });
+          const toolResultBlocks: AnthropicContentBlock[] = [];
+          for (const block of toolUseBlocks) {
+            const { toolResult, download: toolDownload } = await executeRadarTool(
+              block.name as string,
+              (block.input as Record<string, unknown>) || {},
+              decoded.userId
+            );
+            if (toolDownload) exportDownload = toolDownload;
+            toolResultBlocks.push({ type: "tool_result", tool_use_id: block.id as string, content: JSON.stringify(toolResult) });
+          }
+          toolLoopMessages.push({ role: "user", content: toolResultBlocks });
+        }
+        if (totalInputTokens || totalOutputTokens) {
           logTokenUsage({
             feature: "assistant",
-            inputTokens: mainResult.usage.inputTokens,
-            outputTokens: mainResult.usage.outputTokens,
+            inputTokens: totalInputTokens,
+            outputTokens: totalOutputTokens,
             organizationId: decoded.orgId,
             userId: decoded.userId,
           });
@@ -459,7 +602,7 @@ CONVERSATION BEHAVIOR:
 
     await db.conversation.update({ where: { id: convo.id }, data: { updatedAt: new Date() } });
 
-    return NextResponse.json({ reply: assistantReply, conversationId: convo.id, intent });
+    return NextResponse.json({ reply: assistantReply, conversationId: convo.id, intent, download: exportDownload });
   } catch (error) {
     console.error("Assistant POST error:", error);
     return NextResponse.json({ error: "Something went wrong" }, { status: 500 });
