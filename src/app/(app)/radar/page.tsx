@@ -3912,11 +3912,23 @@ function ValidateSection() {
                     </button>
 
                     {linkedinSummary && (
-                      <div className="flex gap-4 text-[12.5px] flex-wrap">
+                      <div className="flex items-center gap-4 text-[12.5px] flex-wrap">
                         <span className="text-[#059669]">✓ {linkedinSummary.matched} same company</span>
                         <span className="text-red-500">✗ {linkedinSummary.mismatched} different company (marked moved)</span>
                         <span className="text-[var(--hm-accent)]">+ {linkedinSummary.created} new contact(s) created</span>
                         <span className="text-[var(--hm-text-tertiary)]">— {linkedinSummary.notFound} profile(s) not found</span>
+                        <button
+                          onClick={() => downloadCSV(linkedinResults.map((r) => ({
+                            first_name: r.firstName, last_name: r.lastName, linkedin_url: r.linkedinUrl,
+                            current_company: r.company, db_company: r.dbCompany,
+                            status: r.error ? "not found" : r.match === true ? "same company" : r.match === false ? "different company (marked moved)" : r.created ? "created" : "no db match",
+                            ...(linkedinScrapeMode === "email" ? { email: r.email } : {}),
+                          })), `radar_linkedin_check_${today()}.csv`)}
+                          className="hm-btn hm-btn-secondary ml-auto"
+                          style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}
+                        >
+                          Export CSV
+                        </button>
                       </div>
                     )}
 
