@@ -112,14 +112,14 @@ export default function EmailSequencesPage() {
   // Sequence config
   const [emailCount, setEmailCount] = useState(3);
   const [tone, setTone] = useState("professional");
-  const [length, setLength] = useState("medium");
+  const [length, setLength] = useState("short");
   const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
   const [cta, setCta] = useState("meeting");
   const [customCta, setCustomCta] = useState("");
   const [senderName, setSenderName] = useState("");
   const [senderRole, setSenderRole] = useState("");
   const [objective, setObjective] = useState("");
-  const [subjectMode, setSubjectMode] = useState<"single" | "variant">("variant");
+  const [subjectMode, setSubjectMode] = useState<"single" | "variant">("single");
   const [singleSubject, setSingleSubject] = useState("");
   // Which Instantly merge tags (from your account's tag list) the generated copy should use
   // literally instead of writing the real value inline — e.g. "{{firstName}}" instead of "Priya".
