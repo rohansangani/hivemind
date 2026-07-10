@@ -118,6 +118,10 @@ export async function POST(req: NextRequest) {
             first_name: nameParts[0] || undefined,
             last_name: nameParts.slice(1).join(" ") || undefined,
             company_name: r.prospect!.company || undefined,
+            // Only sent when present so {{phone}}/{{website}} resolve for prospects that have
+            // them (e.g. from a CSV column mapped to those fields) without erroring on the rest.
+            phone: r.prospect!.phone || undefined,
+            website: r.prospect!.website || undefined,
             custom_variables: customVariables,
           }),
         });

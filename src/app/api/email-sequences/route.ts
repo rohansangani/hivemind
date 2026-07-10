@@ -39,7 +39,20 @@ interface SequenceConfig {
   /** Only used when subjectMode is "single" — if blank, the AI invents one subject and it's
    * still forced identical across every email below as a safety net. */
   singleSubject?: string;
+  /** Instantly merge tags (e.g. "firstName", "companyName") the copy should reference literally
+   * — "{{firstName}}" — instead of writing the prospect's real value inline. Anything not listed
+   * here keeps the existing behaviour of writing the actual value/placeholder directly. */
+  personalizationTags?: string[];
 }
+
+const PERSONALIZATION_TAG_LABELS: Record<string, string> = {
+  firstName: "the prospect's first name",
+  lastName: "the prospect's last name",
+  companyName: "the prospect's company name",
+  personalization: "an opening personalization/icebreaker line",
+  phone: "the prospect's phone number",
+  website: "the prospect's website",
+};
 
 async function scrapeProspectWebsite(website: string): Promise<string> {
   if (!website) return "";
@@ -210,6 +223,10 @@ SEQUENCE STRATEGY:
     : `Subject lines must be short (3-6 words), intriguing, never clickbaity, and distinct for each email in the sequence.`}
 - Never use "just following up", "touching base", "hope this finds you well", or other generic openers.
 - ${prospectContext ? "Reference SPECIFIC details from the prospect's website or role. Generic flattery like 'I love what your company is doing' is banned." : "Use clear placeholders like [specific metric], [relevant challenge] that prompt the user to fill in real details."}
+${config.personalizationTags?.length ? `
+MERGE TAGS (write these EXACT literal placeholders, verbatim, wherever the email would otherwise reference the corresponding detail — do NOT write the real value for these, and do NOT invent your own tag names):
+${config.personalizationTags.map((t) => `- Use the exact text "{{${t}}}" for ${PERSONALIZATION_TAG_LABELS[t] || t}`).join("\n")}
+Everything else not listed above should still use the real value/placeholder directly as normal.` : ""}
 
 Return a JSON response with this structure:
 {

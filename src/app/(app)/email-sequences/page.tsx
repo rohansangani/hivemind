@@ -58,6 +58,16 @@ const CTAS = [
   { id: "custom", label: "Custom CTA" },
 ];
 
+// Matches the merge tags in your Instantly account's own variable list.
+const PERSONALIZATION_TAGS = [
+  { id: "firstName", label: "First Name" },
+  { id: "lastName", label: "Last Name" },
+  { id: "companyName", label: "Company Name" },
+  { id: "personalization", label: "Personalization" },
+  { id: "phone", label: "Phone" },
+  { id: "website", label: "Website" },
+];
+
 const EMPTY_PROSPECT: Prospect = { name: "", company: "", website: "", title: "", email: "", industry: "" };
 
 /* ── CSV Parser ─────────────────────────────────────────────────────────── */
@@ -111,6 +121,12 @@ export default function EmailSequencesPage() {
   const [objective, setObjective] = useState("");
   const [subjectMode, setSubjectMode] = useState<"single" | "variant">("variant");
   const [singleSubject, setSingleSubject] = useState("");
+  // Which Instantly merge tags (from your account's tag list) the generated copy should use
+  // literally instead of writing the real value inline — e.g. "{{firstName}}" instead of "Priya".
+  // firstName/lastName/companyName/phone/website resolve automatically at send time since those
+  // are already sent as real lead fields; "personalization" has no source field from this app, so
+  // it'll appear literally in Instantly and needs resolving there if you use that tag elsewhere.
+  const [personalizationTags, setPersonalizationTags] = useState<string[]>([]);
 
   // Products from KB
   const [products, setProducts] = useState<string[]>([]);
@@ -250,6 +266,7 @@ export default function EmailSequencesPage() {
           objective,
           subjectMode,
           singleSubject: subjectMode === "single" ? singleSubject : undefined,
+          personalizationTags,
         },
       }),
     });
@@ -823,6 +840,31 @@ export default function EmailSequencesPage() {
                   onChange={e => setSingleSubject(e.target.value)}
                 />
               )}
+            </div>
+
+            {/* Personalization tags — which merge tags (from your Instantly account's tag list)
+                the copy should use literally instead of writing the real value inline */}
+            <div className="mb-4">
+              <label className={labelCls}>Personalization tags (optional)</label>
+              <p className="text-[11.5px] text-[var(--hm-text-tertiary)] mb-2">
+                Select any you want written as an Instantly merge tag (e.g. <code>{"{{firstName}}"}</code>) instead of the real value —
+                these resolve automatically when sent. Leave unselected to write the actual value directly, as before.
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {PERSONALIZATION_TAGS.map(t => {
+                  const active = personalizationTags.includes(t.id);
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => setPersonalizationTags(prev => active ? prev.filter(id => id !== t.id) : [...prev, t.id])}
+                      className={`h-[30px] px-3 rounded-lg text-[12px] transition-all ${active ? "bg-[#4361ee] text-white" : "border border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[#4361ee]/40"}`}
+                    >
+                      {t.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             {/* Sender info */}
