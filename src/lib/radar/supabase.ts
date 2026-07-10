@@ -185,10 +185,16 @@ async function getCustomRolePermissions(organizationId: string, roleSlug: string
  * Routes that write data (record editing) should pass "edit" explicitly —
  * until this was added, every radar route only ever checked "view", so a
  * view-only grant could technically reach write endpoints too.
+ *
+ * "export" is a lower tier than "view": it only satisfies routes that
+ * explicitly pass "export" (currently just the Export CSV route). A user
+ * with "export"-only access does NOT satisfy a "view" check, so they can't
+ * browse Accounts/Contacts/Validate/Job History — export access alone
+ * exposes nothing but the CSV download.
  */
 export async function requireRadarAccess(
   req: NextRequest,
-  minLevel: "view" | "edit" = "view",
+  minLevel: "export" | "view" | "edit" = "view",
 ): Promise<{ userId: string; orgId: string; role: string } | NextResponse> {
   const token = req.cookies.get("hm-token")?.value;
   if (!token) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
