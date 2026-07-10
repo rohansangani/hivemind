@@ -39,6 +39,15 @@ const SECTIONS: Array<{ id: SectionId; label: string; blurb: string }> = [
 export default function RadarPage() {
   const user = useUser();
   const [active, setActive] = useState<SectionId>("dashboard");
+  // Sections keep their local state (in-progress searches, uploads, filters, results) once
+  // opened — switching tabs hides them via CSS instead of unmounting, so e.g. a Check LinkedIn
+  // result isn't lost just from clicking over to Accounts and back. Tabs never opened still
+  // aren't mounted at all, so this doesn't add any upfront fetch cost for unvisited tabs.
+  const [visited, setVisited] = useState<Set<SectionId>>(() => new Set(["dashboard"]));
+  const goTo = (id: SectionId) => {
+    setActive(id);
+    setVisited((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
+  };
 
   const modulePermissions = (user?.modulePermissions ?? {}) as Record<string, "none" | "view" | "edit">;
   const canAccess = hasModuleAccess(modulePermissions, "radar", "view");
@@ -65,8 +74,6 @@ export default function RadarPage() {
     );
   }
 
-  const current = SECTIONS.find((s) => s.id === active)!;
-
   return (
     <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
@@ -86,7 +93,7 @@ export default function RadarPage() {
           {visibleSections.map((s) => (
             <button
               key={s.id}
-              onClick={() => setActive(s.id)}
+              onClick={() => goTo(s.id)}
               className={`px-3.5 py-1.5 text-[13px] rounded-lg whitespace-nowrap transition-colors ${
                 active === s.id
                   ? "bg-[var(--hm-surface)] text-[var(--hm-text)] font-medium shadow-[var(--hm-shadow-sm)]"
@@ -102,43 +109,43 @@ export default function RadarPage() {
       {/* ── Section body (scrollable, full width) ─────────────────── */}
       <div className="flex-1 overflow-auto px-4 md:px-7 py-6">
 
-        {/* ── Section body ───────────────────────────────────────── */}
-        {active === "dashboard" ? (
-          <RadarDashboard />
-        ) : active === "accounts" ? (
-          <AccountsSection />
-        ) : active === "contacts" ? (
-          <ContactsSection />
-        ) : active === "icp" ? (
-          <IcpBaseSection />
-        ) : active === "export" ? (
-          <ExportAndCheckSection />
-        ) : active === "upload" ? (
-          <UploadSection />
-        ) : active === "enrich" ? (
-          <EnrichSection />
-        ) : active === "validate" ? (
-          <ValidateSection />
-        ) : (
-          <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
-            <div className="px-5 py-4 border-b border-[var(--hm-border)]">
-              <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">{current.label}</h2>
-              <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">{current.blurb}</p>
-            </div>
-            <div className="px-5 py-16 flex flex-col items-center justify-center text-center gap-3">
-              <div className="w-11 h-11 rounded-xl bg-[var(--hm-accent-light)] flex items-center justify-center">
-                <svg width="20" height="20" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                  <circle cx="7" cy="7" r="4.5" stroke="var(--hm-accent)" strokeWidth="1.4" />
-                  <path d="M10.4 10.4L14 14" stroke="var(--hm-accent)" strokeWidth="1.4" strokeLinecap="round" />
-                </svg>
-              </div>
-              <p className="text-[13px] font-medium text-[var(--hm-text)]">{current.label} — coming soon</p>
-              <p className="text-[12px] text-[var(--hm-text-tertiary)] max-w-sm">
-                This section is scaffolded and ready. Data and actions will be connected in the next build phase.
-              </p>
-            </div>
+        {/* ── Section body ─────────────────────────────────────────
+            Every section visited this session stays mounted (hidden via CSS when not active)
+            instead of being torn down — so in-progress work like a Check LinkedIn result or an
+            Upload in flight survives switching tabs and back. Unvisited tabs still aren't
+            mounted at all, so this adds no upfront cost for tabs the user never opens. */}
+        {SECTIONS.filter((s) => visited.has(s.id)).map((s) => (
+          <div key={s.id} style={{ display: active === s.id ? "block" : "none" }}>
+            {s.id === "dashboard" ? <RadarDashboard />
+              : s.id === "accounts" ? <AccountsSection />
+              : s.id === "contacts" ? <ContactsSection />
+              : s.id === "icp" ? <IcpBaseSection />
+              : s.id === "export" ? <ExportAndCheckSection />
+              : s.id === "upload" ? <UploadSection />
+              : s.id === "enrich" ? <EnrichSection />
+              : s.id === "validate" ? <ValidateSection />
+              : (
+                <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
+                  <div className="px-5 py-4 border-b border-[var(--hm-border)]">
+                    <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">{s.label}</h2>
+                    <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">{s.blurb}</p>
+                  </div>
+                  <div className="px-5 py-16 flex flex-col items-center justify-center text-center gap-3">
+                    <div className="w-11 h-11 rounded-xl bg-[var(--hm-accent-light)] flex items-center justify-center">
+                      <svg width="20" height="20" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                        <circle cx="7" cy="7" r="4.5" stroke="var(--hm-accent)" strokeWidth="1.4" />
+                        <path d="M10.4 10.4L14 14" stroke="var(--hm-accent)" strokeWidth="1.4" strokeLinecap="round" />
+                      </svg>
+                    </div>
+                    <p className="text-[13px] font-medium text-[var(--hm-text)]">{s.label} — coming soon</p>
+                    <p className="text-[12px] text-[var(--hm-text-tertiary)] max-w-sm">
+                      This section is scaffolded and ready. Data and actions will be connected in the next build phase.
+                    </p>
+                  </div>
+                </div>
+              )}
           </div>
-        )}
+        ))}
 
       </div>
     </div>
