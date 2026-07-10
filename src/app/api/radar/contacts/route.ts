@@ -1,7 +1,41 @@
 import { NextRequest, NextResponse } from "next/server";
-import { selectFrom, requireRadarAccess, updateRow, setMarkedIrrelevant, deleteMarkedIrrelevant } from "@/lib/radar/supabase";
+import { selectFrom, requireRadarAccess, updateRow, setMarkedIrrelevant, deleteMarkedIrrelevant, fetchAllIds } from "@/lib/radar/supabase";
 
 const RADAR_ADMIN_ROLES = ["owner", "admin"];
+
+/** Builds the filter fragment (no `select=`/`order=`/pagination) shared by the list query and
+ * the "act on everything matching my filters" bulk actions below. Note this is evaluated
+ * against `contacts_view` (industry/employee_range/etc. are joined-in account fields that don't
+ * exist on the base `contacts` table), so mark/delete resolve ids via the view, then mutate the
+ * base table with those ids — never write straight through this filter. */
+function buildContactsFilter(body: Record<string, unknown>, role: string): string {
+  const { vertical, industry, subIndustry, employeeRange, revenueRange, company, title, emailStatus, country, search, hasEmail, accountId, includeIrrelevant } = body as Record<string, string | boolean | undefined>;
+  let query = "";
+  if (accountId) query += `&account_id=eq.${encodeURIComponent(String(accountId))}`;
+  if (vertical) query += `&vertical=eq.${encodeURIComponent(String(vertical))}`;
+  if (industry) query += `&industry=eq.${encodeURIComponent(String(industry))}`;
+  if (subIndustry) query += `&sub_industry=eq.${encodeURIComponent(String(subIndustry))}`;
+  if (employeeRange) query += `&employee_range=eq.${encodeURIComponent(String(employeeRange))}`;
+  if (revenueRange) query += `&revenue_range=eq.${encodeURIComponent(String(revenueRange))}`;
+  if (company) query += `&company_name=ilike.*${encodeURIComponent(String(company))}*`;
+  if (title) query += `&title=ilike.*${encodeURIComponent(String(title))}*`;
+  if (country) query += `&country=eq.${encodeURIComponent(String(country))}`;
+  if (emailStatus === "unvalidated") query += `&email_status=is.null`;
+  else if (emailStatus) query += `&email_status=eq.${encodeURIComponent(String(emailStatus))}`;
+  if (hasEmail === "true") query += `&email=not.is.null&email=neq.`;
+  if (search) {
+    const q = encodeURIComponent(String(search));
+    query += `&or=(email.ilike.*${q}*,first_name.ilike.*${q}*,last_name.ilike.*${q}*)`;
+  }
+  // Irrelevant-flagged rows are hidden from every normal browse — only an
+  // owner/admin reviewing the flagged set explicitly asks to see them.
+  if (includeIrrelevant && RADAR_ADMIN_ROLES.includes(role)) {
+    query += `&marked_irrelevant=eq.true`;
+  } else {
+    query += `&marked_irrelevant=eq.false`;
+  }
+  return query;
+}
 
 /**
  * Radar contacts list — paginated, searchable, filterable by vertical and
@@ -11,9 +45,11 @@ const RADAR_ADMIN_ROLES = ["owner", "admin"];
  * Also handles two bulk actions on the same endpoint (body.action):
  *  - "mark_irrelevant": any radar:edit user can flag/unflag rows as
  *    irrelevant — this is the only "delete" they get. Flagged rows are
- *    excluded from this list by default.
+ *    excluded from this list by default. Pass either `ids` (explicit
+ *    selection) or `allMatching: true` (act on every row matching the same
+ *    filters/search as the list query — "select all N matching filters").
  *  - "delete_irrelevant": owner/admin only — permanently removes rows
- *    already flagged irrelevant.
+ *    already flagged irrelevant. Same `ids` / `allMatching` shape.
  */
 export async function POST(req: NextRequest) {
   // Radar's "view" tier is restricted to Dashboard + Export only — browsing
@@ -26,7 +62,11 @@ export async function POST(req: NextRequest) {
 
     if (body.action === "mark_irrelevant") {
       const actor = await getActorEmail(access.userId);
-      const count = await setMarkedIrrelevant("contacts", body.ids, body.irrelevant !== false, actor ?? "unknown");
+      const irrelevant = body.irrelevant !== false;
+      const ids = body.allMatching
+        ? await fetchAllIds("contacts_view", buildContactsFilter(body, access.role).replace(/^&/, ""))
+        : body.ids;
+      const count = await setMarkedIrrelevant("contacts", ids, irrelevant, actor ?? "unknown");
       return NextResponse.json({ updated: count });
     }
 
@@ -34,36 +74,15 @@ export async function POST(req: NextRequest) {
       if (!RADAR_ADMIN_ROLES.includes(access.role)) {
         return NextResponse.json({ error: "Only an owner or admin can permanently delete records" }, { status: 403 });
       }
-      const count = await deleteMarkedIrrelevant("contacts", body.ids);
+      const ids = body.allMatching
+        ? await fetchAllIds("contacts_view", buildContactsFilter(body, access.role).replace(/^&/, ""))
+        : body.ids;
+      const count = await deleteMarkedIrrelevant("contacts", ids);
       return NextResponse.json({ deleted: count });
     }
 
-    const { vertical, industry, subIndustry, employeeRange, revenueRange, company, title, emailStatus, country, search, hasEmail, accountId, includeIrrelevant, page = 0, limit = 50 } = body;
-
-    let query = `select=*&order=first_name.asc`;
-    if (accountId) query += `&account_id=eq.${encodeURIComponent(accountId)}`;
-    if (vertical) query += `&vertical=eq.${encodeURIComponent(vertical)}`;
-    if (industry) query += `&industry=eq.${encodeURIComponent(industry)}`;
-    if (subIndustry) query += `&sub_industry=eq.${encodeURIComponent(subIndustry)}`;
-    if (employeeRange) query += `&employee_range=eq.${encodeURIComponent(employeeRange)}`;
-    if (revenueRange) query += `&revenue_range=eq.${encodeURIComponent(revenueRange)}`;
-    if (company) query += `&company_name=ilike.*${encodeURIComponent(company)}*`;
-    if (title) query += `&title=ilike.*${encodeURIComponent(title)}*`;
-    if (country) query += `&country=eq.${encodeURIComponent(country)}`;
-    if (emailStatus === "unvalidated") query += `&email_status=is.null`;
-    else if (emailStatus) query += `&email_status=eq.${encodeURIComponent(emailStatus)}`;
-    if (hasEmail === "true") query += `&email=not.is.null&email=neq.`;
-    if (search) {
-      const q = encodeURIComponent(search);
-      query += `&or=(email.ilike.*${q}*,first_name.ilike.*${q}*,last_name.ilike.*${q}*)`;
-    }
-    // Irrelevant-flagged rows are hidden from every normal browse — only an
-    // owner/admin reviewing the flagged set explicitly asks to see them.
-    if (includeIrrelevant && RADAR_ADMIN_ROLES.includes(access.role)) {
-      query += `&marked_irrelevant=eq.true`;
-    } else {
-      query += `&marked_irrelevant=eq.false`;
-    }
+    const { page = 0, limit = 50 } = body;
+    const query = `select=*&order=first_name.asc${buildContactsFilter(body, access.role)}`;
 
     const offset = page * limit;
     const { rows, total } = await selectFrom("contacts_view", query, { from: offset, to: offset + limit - 1 });
