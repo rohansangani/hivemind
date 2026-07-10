@@ -99,7 +99,10 @@ export async function POST(req: NextRequest) {
           name: "Business hours",
           timing: { from: "09:00", to: "18:00" },
           days: { 0: false, 1: true, 2: true, 3: true, 4: true, 5: true, 6: false }, // Sun=0..Sat=6
-          timezone: "America/New_York",
+          // Instantly's API rejects "America/New_York" outright (400: not in its allowed
+          // timezone enum) — confirmed via a live test call. "America/Detroit" observes the
+          // same Eastern Time rules and is the value Instantly's own existing campaigns use.
+          timezone: "America/Detroit",
         }],
       },
       sequences: [{ steps }],
