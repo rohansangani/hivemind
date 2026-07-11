@@ -107,6 +107,36 @@ export async function exportContactsCsv(
   return { csv: csvRows.join("\n"), matched: all.length, exported: csvRows.length - 1, truncated };
 }
 
+/** Raw contact rows (not CSV) for a filter + email-status combination, capped at `limit` — used
+ * by Email Sequences' "Load from Radar" source, which needs actual field values (name, company,
+ * title, etc.) to build prospects from, not a CSV string. */
+export async function fetchContactsForSequences(
+  filters: Record<string, unknown>,
+  emailStatuses: unknown,
+  limit: number,
+): Promise<{ rows: Record<string, unknown>[]; total: number }> {
+  const rawStatuses = normalizeEmailStatuses(emailStatuses);
+  const wantsUnvalidated = rawStatuses.includes("unvalidated");
+  const namedStatuses = new Set(rawStatuses.filter((s) => s !== "unvalidated").map((s) => s.toLowerCase().trim()));
+
+  const query = buildContactQuery(filters);
+  // Over-fetch a bit past `limit` since some rows get filtered out client-side below (email
+  // status / hubspot_excluded aren't expressible in buildContactQuery's base filter), then trim
+  // to the requested batch size.
+  const { rows: all } = await fetchAllPages("contacts_view", query);
+  const matched: Record<string, unknown>[] = [];
+  for (const c of all) {
+    if (matched.length >= limit * 3) break; // sanity cap on scan depth for a huge table
+    const status = String(c.email_status ?? "").toLowerCase().trim();
+    const ok = status === "" ? wantsUnvalidated : namedStatuses.has(status);
+    if (!ok) continue;
+    if (c.hubspot_excluded) continue;
+    matched.push(c);
+    if (matched.length >= limit) break;
+  }
+  return { rows: matched, total: matched.length };
+}
+
 /** Logs a real export (never the count-only preview) to RadarExportLog. Best-effort — a logging
  * failure must never block the caller from actually getting the CSV. */
 export async function logContactExport(userId: string, rowCount: number): Promise<void> {

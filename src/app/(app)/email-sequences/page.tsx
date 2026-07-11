@@ -97,7 +97,7 @@ function parseCSV(text: string): { headers: string[]; rows: string[][] } {
 
 export default function EmailSequencesPage() {
   // Mode
-  const [mode, setMode] = useState<"single" | "bulk" | "template">("single");
+  const [mode, setMode] = useState<"single" | "bulk" | "template" | "radar">("single");
 
   // Single prospect
   const [prospect, setProspect] = useState<Prospect>({ ...EMPTY_PROSPECT });
@@ -108,6 +108,17 @@ export default function EmailSequencesPage() {
   const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
   const [csvRows, setCsvRows] = useState<string[][]>([]);
   const [columnMap, setColumnMap] = useState<Record<string, string>>({});
+
+  // Load from Radar
+  const [radarProspects, setRadarProspects] = useState<Prospect[]>([]);
+  const [radarVertical, setRadarVertical] = useState("");
+  const [radarIndustry, setRadarIndustry] = useState("");
+  const [radarTitle, setRadarTitle] = useState("");
+  const [radarCountry, setRadarCountry] = useState("");
+  const [radarEmailStatuses, setRadarEmailStatuses] = useState<string[]>(["safe to send", "verified"]);
+  const [radarLimit, setRadarLimit] = useState(100);
+  const [radarLoading, setRadarLoading] = useState(false);
+  const [radarError, setRadarError] = useState("");
 
   // Sequence config
   const [emailCount, setEmailCount] = useState(3);
@@ -250,6 +261,34 @@ export default function EmailSequencesPage() {
     return p;
   }).filter(p => p.name || p.company || p.email);
 
+  /* ── Load from Radar ──────────────────────────────────────────────────── */
+
+  const loadRadarProspects = async () => {
+    setRadarLoading(true);
+    setRadarError("");
+    try {
+      const res = await fetch("/api/email-sequences/radar-contacts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          vertical: radarVertical || undefined,
+          industry: radarIndustry || undefined,
+          title: radarTitle || undefined,
+          country: radarCountry || undefined,
+          emailStatuses: radarEmailStatuses,
+          limit: radarLimit,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to load contacts from Radar");
+      setRadarProspects(data.prospects || []);
+    } catch (e) {
+      setRadarError((e as Error).message || "Failed to load contacts from Radar");
+    } finally {
+      setRadarLoading(false);
+    }
+  };
+
   /* ── Generate ─────────────────────────────────────────────────────────── */
 
   const generateSequence = async (p: Prospect | null, m: "single" | "template", signal?: AbortSignal): Promise<ProspectResult | null> => {
@@ -315,16 +354,19 @@ export default function EmailSequencesPage() {
         const result = await generateSequence(prospect, "single", controller.signal);
         if (result) setResults([result]);
       } else {
-        if (csvProspects.length === 0) {
-          setError("Upload a CSV with at least one prospect");
+        // "bulk" (CSV) and "radar" (loaded from Radar) share this same batch-generation loop —
+        // only where the prospect list comes from differs.
+        const batch = mode === "radar" ? radarProspects : csvProspects;
+        if (batch.length === 0) {
+          setError(mode === "radar" ? "Load contacts from Radar first" : "Upload a CSV with at least one prospect");
           setGenerating(false);
           return;
         }
         const allResults: ProspectResult[] = [];
-        for (let i = 0; i < csvProspects.length; i++) {
+        for (let i = 0; i < batch.length; i++) {
           if (controller.signal.aborted) break;
-          const p = csvProspects[i];
-          setProgress(`Generating ${i + 1}/${csvProspects.length}: ${p.company || p.name}...`);
+          const p = batch[i];
+          setProgress(`Generating ${i + 1}/${batch.length}: ${p.company || p.name}...`);
           try {
             const result = await generateSequence(p, "single", controller.signal);
             if (result) allResults.push(result);
@@ -675,10 +717,11 @@ export default function EmailSequencesPage() {
           {/* Mode selector */}
           <div className={cardCls}>
             <div className={labelCls + " mb-3"}>Mode</div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
               {([
                 { id: "single", label: "Single Prospect", desc: "Enter one prospect's details" },
                 { id: "bulk", label: "Bulk CSV", desc: "Upload a list of prospects" },
+                { id: "radar", label: "Load from Radar", desc: "Pull safe-to-send contacts directly from Radar" },
                 { id: "template", label: "Template", desc: "No prospect — generate templates" },
               ] as const).map(m => (
                 <button
@@ -776,6 +819,79 @@ export default function EmailSequencesPage() {
                       {csvProspects.length} prospect{csvProspects.length !== 1 ? "s" : ""} mapped — Preview: {csvProspects.slice(0, 3).map(p => p.name || p.company).join(", ")}{csvProspects.length > 3 ? ` +${csvProspects.length - 3} more` : ""}
                     </div>
                   )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Load from Radar */}
+          {mode === "radar" && (
+            <div className={cardCls}>
+              <div className={labelCls + " mb-3"}>Load Contacts from Radar</div>
+              <div className="grid grid-cols-2 gap-3 mb-3">
+                <div>
+                  <label className={labelCls}>Vertical</label>
+                  <input className={inputCls} placeholder="e.g. Logistics" value={radarVertical} onChange={e => setRadarVertical(e.target.value)} />
+                </div>
+                <div>
+                  <label className={labelCls}>Industry</label>
+                  <input className={inputCls} placeholder="e.g. E-commerce" value={radarIndustry} onChange={e => setRadarIndustry(e.target.value)} />
+                </div>
+                <div>
+                  <label className={labelCls}>Title contains</label>
+                  <input className={inputCls} placeholder="e.g. VP" value={radarTitle} onChange={e => setRadarTitle(e.target.value)} />
+                </div>
+                <div>
+                  <label className={labelCls}>Country</label>
+                  <input className={inputCls} placeholder="e.g. United States" value={radarCountry} onChange={e => setRadarCountry(e.target.value)} />
+                </div>
+              </div>
+
+              <div className="mb-3">
+                <label className={labelCls}>Email Status</label>
+                <div className="flex flex-wrap gap-2">
+                  {(["safe to send", "verified", "risky", "unvalidated"] as const).map(status => {
+                    const checked = radarEmailStatuses.includes(status);
+                    return (
+                      <button
+                        key={status}
+                        type="button"
+                        onClick={() => setRadarEmailStatuses(cur => checked ? cur.filter(s => s !== status) : [...cur, status])}
+                        className={`px-2.5 py-1 rounded-md border text-[12px] capitalize transition-all ${checked ? "border-[#4361ee] bg-[#4361ee]/5 text-[#4361ee]" : "border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[var(--hm-border-hover)]"}`}
+                      >
+                        {status}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex items-end gap-3 mb-3">
+                <div>
+                  <label className={labelCls}>Batch Size</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={1000}
+                    className={inputCls + " !w-[120px]"}
+                    value={radarLimit}
+                    onChange={e => setRadarLimit(Math.min(1000, Math.max(1, Number(e.target.value) || 1)))}
+                  />
+                </div>
+                <button
+                  onClick={loadRadarProspects}
+                  disabled={radarLoading}
+                  className="h-[36px] px-4 rounded-lg bg-[#4361ee] text-white text-[13px] font-medium hover:bg-[#4361ee]/90 disabled:opacity-50 transition-all"
+                >
+                  {radarLoading ? "Loading..." : "Load Contacts"}
+                </button>
+              </div>
+
+              {radarError && <div className="text-[12px] text-red-500 mb-2">{radarError}</div>}
+
+              {radarProspects.length > 0 && (
+                <div className="text-[11px] text-[var(--hm-text-tertiary)] p-2 rounded-md bg-[var(--hm-bg-secondary)]">
+                  {radarProspects.length} prospect{radarProspects.length !== 1 ? "s" : ""} loaded — Preview: {radarProspects.slice(0, 3).map(p => p.name || p.company).join(", ")}{radarProspects.length > 3 ? ` +${radarProspects.length - 3} more` : ""}
                 </div>
               )}
             </div>
@@ -977,7 +1093,7 @@ export default function EmailSequencesPage() {
               ) : (
                 <>
                   <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 12l1.5-4L12 2l2 2-6.5 6.5L4 12z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/></svg>
-                  Generate{mode === "bulk" && csvProspects.length > 0 ? ` (${csvProspects.length} prospects)` : " Sequence"}
+                  Generate{mode === "bulk" && csvProspects.length > 0 ? ` (${csvProspects.length} prospects)` : mode === "radar" && radarProspects.length > 0 ? ` (${radarProspects.length} prospects)` : " Sequence"}
                 </>
               )}
             </button>
