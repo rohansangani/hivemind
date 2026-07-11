@@ -249,13 +249,13 @@ export const EDITABLE_COLUMNS: Record<"accounts" | "contacts", string[]> = {
     "name", "domain", "vertical", "industry", "sub_industry", "account_size",
     "employee_range", "revenue_range", "company_location", "country", "linkedin_url",
     "sdr_owner", "parent_company", "track_order_page", "edd", "no_of_stores", "ebo", "mbo",
-    "shopify", "alt_names",
+    "shopify", "alt_names", "source",
   ],
   contacts: [
     "account_id", "first_name", "last_name", "full_name", "title", "company_name", "email",
     "email_status", "phone", "phone2", "location", "country", "linkedin_url", "vertical",
     "domain", "validated_company", "parent_company", "sdr_owner", "seniority_level",
-    "functional_level", "personal_email", "headline", "hubspot_excluded",
+    "functional_level", "personal_email", "headline", "hubspot_excluded", "source",
   ],
 };
 

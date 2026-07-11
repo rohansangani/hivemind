@@ -1040,6 +1040,7 @@ const ACCOUNT_EDIT_FIELDS: EditField[] = [
   { key: "mbo", label: "MBO" },
   { key: "shopify", label: "Shopify", type: "boolean" },
   { key: "alt_names", label: "Alt Names (comma-separated)", type: "list" },
+  { key: "source", label: "Source" },
 ];
 
 const CONTACT_EDIT_FIELDS: EditField[] = [
@@ -1065,6 +1066,7 @@ const CONTACT_EDIT_FIELDS: EditField[] = [
   { key: "personal_email", label: "Personal Email" },
   { key: "headline", label: "Headline" },
   { key: "hubspot_excluded", label: "HubSpot Excluded", type: "boolean" },
+  { key: "source", label: "Source" },
 ];
 
 /** Generic edit form for a single record — row-level "Edit" action shared by Accounts and
