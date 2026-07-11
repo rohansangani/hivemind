@@ -831,7 +831,12 @@ export default function EmailSequencesPage() {
               <div className="grid grid-cols-2 gap-3 mb-3">
                 <div>
                   <label className={labelCls}>Vertical</label>
-                  <input className={inputCls} placeholder="e.g. Logistics" value={radarVertical} onChange={e => setRadarVertical(e.target.value)} />
+                  <select className={inputCls} value={radarVertical} onChange={e => setRadarVertical(e.target.value)}>
+                    <option value="">All</option>
+                    <option value="B2B">B2B</option>
+                    <option value="D2C">D2C</option>
+                    <option value="US">US</option>
+                  </select>
                 </div>
                 <div>
                   <label className={labelCls}>Industry</label>
