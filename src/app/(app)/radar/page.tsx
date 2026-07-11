@@ -930,6 +930,7 @@ interface AccountRow {
   mbo: string | null;
   shopify: boolean | null;
   alt_names: string[] | null;
+  source: string | null;
   created_at: string | null;
   updated_at: string | null;
 }
@@ -1279,6 +1280,7 @@ function AccountsSection() {
     { key: "mbo", header: "MBO", render: (r) => <Cell value={r.mbo} /> },
     { key: "shopify", header: "Shopify", render: (r) => <YesNo v={r.shopify} /> },
     { key: "alt_names", header: "Alt Names", render: (r) => <Cell value={r.alt_names?.length ? r.alt_names.join(", ") : null} /> },
+    { key: "source", header: "Source", render: (r) => <Cell value={r.source} /> },
     { key: "created", header: "Created", className: "min-w-[190px] whitespace-nowrap", render: (r) => fmtDateTimeIST(r.created_at) },
     { key: "updated", header: "Updated", className: "min-w-[190px] whitespace-nowrap", render: (r) => fmtDateTimeIST(r.updated_at) },
   ];
@@ -1456,6 +1458,7 @@ interface ContactRow {
   linkedin_url: string | null;
   sdr_owner: string | null;
   parent_company: string | null;
+  source: string | null;
   created_at: string | null;
   updated_at: string | null;
 }
@@ -1533,6 +1536,7 @@ function ContactsSection() {
     { key: "country", header: "Country", render: (r) => <Cell value={r.country} /> },
     { key: "linkedin", header: "LinkedIn", render: (r) => r.linkedin_url ? <a href={linkedinHref(r.linkedin_url)} target="_blank" rel="noreferrer" className="text-[var(--hm-accent)]">Profile</a> : <span className="text-[var(--hm-text-tertiary)]">—</span> },
     { key: "sdr", header: "SDR Owner", render: (r) => <Cell value={r.sdr_owner} /> },
+    { key: "source", header: "Source", render: (r) => <Cell value={r.source} /> },
     { key: "created", header: "Created", className: "min-w-[190px] whitespace-nowrap", render: (r) => fmtDateTimeIST(r.created_at) },
     { key: "updated", header: "Updated", className: "min-w-[190px] whitespace-nowrap", render: (r) => fmtDateTimeIST(r.updated_at) },
   ];
