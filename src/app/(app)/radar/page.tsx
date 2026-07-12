@@ -3517,6 +3517,17 @@ function ValidateSection() {
   // before any request even fires, so without this the button just looks stuck for a few seconds.
   const [debounceCsvStage, setDebounceCsvStage] = useState<string | null>(null);
   const [instantlyCsvStage, setInstantlyCsvStage] = useState<string | null>(null);
+  // retest_job_start is a single blocking request (up to ~45s server-side) — there's no live
+  // processed/validated count to show mid-flight, so an elapsed-seconds ticker is the only real
+  // busy feedback available; without it the button just shows static "0 checked, 0 saved" the
+  // whole time, which reads as stuck rather than working.
+  const [debounceElapsed, setDebounceElapsed] = useState(0);
+  useEffect(() => {
+    if (!debounceBusy) { setDebounceElapsed(0); return; }
+    setDebounceElapsed(0);
+    const t = setInterval(() => setDebounceElapsed((s) => s + 1), 1000);
+    return () => clearInterval(t);
+  }, [debounceBusy]);
 
   // Skips Instantly entirely: runs these contacts straight through Debounce and writes
   // email_status/validated_at directly on the contacts row. No test-send, no candidates job.
@@ -4345,9 +4356,12 @@ function ValidateSection() {
                         className="hm-btn hm-btn-secondary w-full"
                         style={{ height: 34, fontSize: 12.5 }}
                       >
-                        {debounceBusy
-                          ? `Starting… ${debounceProgress?.processed ?? 0} checked, ${debounceProgress?.validated ?? 0} saved`
-                          : "Validate via Debounce (save directly, no send)"}
+                        {debounceBusy ? (
+                          <span className="inline-flex items-center gap-2">
+                            <span className="w-3 h-3 border-2 border-current/30 border-t-current rounded-full animate-spin" />
+                            Validating via Debounce… {debounceElapsed}s (can take up to a minute)
+                          </span>
+                        ) : "Validate via Debounce (save directly, no send)"}
                       </button>
                       <label className={`hm-btn hm-btn-secondary w-full cursor-pointer ${(debounceBusy || debounceCsvStage || !retestLabel.trim()) ? "opacity-50 pointer-events-none" : ""}`} style={{ height: 34, fontSize: 12.5 }}>
                         {debounceCsvStage ? (
