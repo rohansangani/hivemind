@@ -3522,8 +3522,10 @@ function ValidateSection() {
   }
   const [retestJobsList, setRetestJobsList] = useState<RetestJobRow[]>([]);
   const [retestJobsListLoading, setRetestJobsListLoading] = useState(false);
+  const [retestJobsListError, setRetestJobsListError] = useState("");
   const loadRetestJobsList = async () => {
     setRetestJobsListLoading(true);
+    setRetestJobsListError("");
     try {
       const r = await fetch("/api/radar/validate", {
         method: "POST",
@@ -3531,8 +3533,13 @@ function ValidateSection() {
         body: JSON.stringify({ action: "list_retest_jobs" }),
       });
       const d = await r.json().catch(() => ({}));
-      if (r.ok) setRetestJobsList(d.jobs || []);
-    } catch { /* ignore — non-critical list */ }
+      if (!r.ok) throw new Error(d.error || `Couldn't load recent jobs (${r.status})`);
+      setRetestJobsList(d.jobs || []);
+    } catch (e) {
+      // Previously swallowed silently — a real failure here looked identical to "nothing to
+      // show", which is exactly what made this list appear broken/invisible rather than erroring.
+      setRetestJobsListError((e as Error).message);
+    }
     setRetestJobsListLoading(false);
   };
   // Granular stage text for the two CSV-upload buttons below — read/parse/upload all happen
@@ -4424,14 +4431,20 @@ function ValidateSection() {
                         </button>
                       )}
 
-                      {retestJobsList.length > 0 && (
-                        <div className="pt-1">
-                          <div className="flex items-center justify-between mb-1">
-                            <p className="text-[11px] font-medium text-[var(--hm-text-tertiary)] uppercase tracking-wide">Recent Debounce jobs</p>
-                            <button onClick={loadRetestJobsList} disabled={retestJobsListLoading} className="text-[11px] text-[var(--hm-accent)]">
-                              {retestJobsListLoading ? "Refreshing…" : "Refresh"}
-                            </button>
-                          </div>
+                      <div className="pt-1">
+                        <div className="flex items-center justify-between mb-1">
+                          <p className="text-[11px] font-medium text-[var(--hm-text-tertiary)] uppercase tracking-wide">Recent Debounce jobs</p>
+                          <button onClick={loadRetestJobsList} disabled={retestJobsListLoading} className="text-[11px] text-[var(--hm-accent)]">
+                            {retestJobsListLoading ? "Refreshing…" : "Refresh"}
+                          </button>
+                        </div>
+                        {retestJobsListError ? (
+                          <p className="text-[11.5px] text-red-500">{retestJobsListError}</p>
+                        ) : retestJobsListLoading && !retestJobsList.length ? (
+                          <p className="text-[11.5px] text-[var(--hm-text-tertiary)]">Loading…</p>
+                        ) : !retestJobsList.length ? (
+                          <p className="text-[11.5px] text-[var(--hm-text-tertiary)]">No Debounce jobs yet.</p>
+                        ) : (
                           <div className="space-y-1 max-h-[160px] overflow-y-auto">
                             {retestJobsList.map((j) => (
                               <button
@@ -4447,8 +4460,8 @@ function ValidateSection() {
                               </button>
                             ))}
                           </div>
-                        </div>
-                      )}
+                        )}
+                      </div>
                       {debounceMsg && (
                         <p className={`text-[12px] ${debounceMsg.kind === "err" ? "text-red-500" : "text-[#059669]"}`}>{debounceMsg.text}</p>
                       )}
