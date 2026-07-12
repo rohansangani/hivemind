@@ -1998,7 +1998,7 @@ const DB_COLS: Record<UploadTable, Record<string, string>> = {
     account_size: "Account Size", vertical: "Vertical",
     track_order_page: "Track Order Page", edd: "EDD", no_of_stores: "No. of Stores",
     ebo: "EBO", mbo: "MBO", shopify: "Shopify",
-    parent_company: "Parent Company", sdr_owner: "SDR Owner",
+    parent_company: "Parent Company", sdr_owner: "SDR Owner", source: "Source",
   },
   contacts: {
     company_name: "Company Name",
@@ -2007,7 +2007,7 @@ const DB_COLS: Record<UploadTable, Record<string, string>> = {
     email: "Email", email_status: "Email Status", phone: "Phone Number 1",
     phone2: "Phone Number 2", domain: "Domain",
     country: "Country", vertical: "Vertical",
-    parent_company: "Parent Company", sdr_owner: "SDR Owner",
+    parent_company: "Parent Company", sdr_owner: "SDR Owner", source: "Source",
   },
   smart: {
     "a:name": "Company Name", "a:domain": "Company Website / Domain",
@@ -2018,7 +2018,7 @@ const DB_COLS: Record<UploadTable, Record<string, string>> = {
     "a:vertical": "Vertical", "a:track_order_page": "Track Order Page",
     "a:edd": "EDD", "a:no_of_stores": "No. of Stores",
     "a:ebo": "EBO", "a:mbo": "MBO", "a:shopify": "Shopify",
-    "a:parent_company": "Parent Company", "a:sdr_owner": "SDR Owner",
+    "a:parent_company": "Parent Company", "a:sdr_owner": "SDR Owner", "a:source": "Company Source",
     "c:company_name": "Contact's Company Name",
     "c:first_name": "First Name", "c:last_name": "Last Name", "c:full_name": "Full Name",
     "c:email": "Email", "c:email_status": "Email Status",
@@ -2026,7 +2026,7 @@ const DB_COLS: Record<UploadTable, Record<string, string>> = {
     "c:phone": "Phone 1", "c:phone2": "Phone 2",
     "c:country": "Contact Country", "c:location": "Contact Location",
     "c:vertical": "Contact Vertical",
-    "c:parent_company": "Contact Parent Company", "c:sdr_owner": "Contact SDR Owner",
+    "c:parent_company": "Contact Parent Company", "c:sdr_owner": "Contact SDR Owner", "c:source": "Contact Source",
   },
 };
 
@@ -2050,6 +2050,7 @@ const AUTO_MAP: Record<UploadTable, Record<string, string>> = {
     ebo: "ebo", mbo: "mbo", shopify: "shopify",
     "parent company": "parent_company",
     "sdr owner": "sdr_owner", owner: "sdr_owner",
+    source: "source",
   },
   contacts: {
     "company name": "company_name", company: "company_name",
@@ -2066,6 +2067,7 @@ const AUTO_MAP: Record<UploadTable, Record<string, string>> = {
     country: "country", vertical: "vertical",
     "parent company": "parent_company",
     "sdr owner": "sdr_owner", owner: "sdr_owner",
+    source: "source",
   },
   smart: {
     "company name": "a:name", company: "a:name", "account name": "a:name",
