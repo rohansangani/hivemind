@@ -3513,6 +3513,28 @@ function ValidateSection() {
   const [retestJobId, setRetestJobId] = useState<number | null>(null);
   const [retestJobDone, setRetestJobDone] = useState(false);
   const [statusChecking, setStatusChecking] = useState(false);
+  // retestJobId is plain component state — a page refresh loses track of it even though the
+  // job keeps running server-side via the 15-min cron. This list lets a refreshed page find and
+  // resume watching it instead of the job effectively vanishing from view.
+  interface RetestJobRow {
+    id: number; label: string; status: string; processed: number; validated: number;
+    skipped_fresh?: number; gave_up?: number; retrying?: number; created_at: string;
+  }
+  const [retestJobsList, setRetestJobsList] = useState<RetestJobRow[]>([]);
+  const [retestJobsListLoading, setRetestJobsListLoading] = useState(false);
+  const loadRetestJobsList = async () => {
+    setRetestJobsListLoading(true);
+    try {
+      const r = await fetch("/api/radar/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "list_retest_jobs" }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok) setRetestJobsList(d.jobs || []);
+    } catch { /* ignore — non-critical list */ }
+    setRetestJobsListLoading(false);
+  };
   // Granular stage text for the two CSV-upload buttons below — read/parse/upload all happen
   // before any request even fires, so without this the button just looks stuck for a few seconds.
   const [debounceCsvStage, setDebounceCsvStage] = useState<string | null>(null);
@@ -3574,6 +3596,7 @@ function ValidateSection() {
       setDebounceMsg({ kind: "err", text: (e as Error).message });
     } finally {
       setDebounceBusy(false);
+      loadRetestJobsList();
     }
   };
 
@@ -3615,14 +3638,16 @@ function ValidateSection() {
     }
   };
 
-  const checkRetestJobStatus = async () => {
-    if (!retestJobId) return;
+  const checkRetestJobStatus = async (jobIdOverride?: number) => {
+    const jid = jobIdOverride ?? retestJobId;
+    if (!jid) return;
+    setRetestJobId(jid);
     setStatusChecking(true);
     try {
       const r = await fetch("/api/radar/validate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "retest_job_status", jobId: retestJobId }),
+        body: JSON.stringify({ action: "retest_job_status", jobId: jid }),
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error || "Couldn't fetch job status");
@@ -3646,6 +3671,7 @@ function ValidateSection() {
       setDebounceMsg({ kind: "err", text: (e as Error).message });
     } finally {
       setStatusChecking(false);
+      loadRetestJobsList();
     }
   };
 
@@ -3852,6 +3878,11 @@ function ValidateSection() {
     if (phase === "candidates" && !tags.length) loadTags();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
+
+  useEffect(() => {
+    if (inputMode === "retest") loadRetestJobsList();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inputMode]);
 
   // Vertical is chosen once up front (Generate patterns / Retest DB Contacts both require it
   // before a job can even be created) and stored on the job itself — check() already auto-saves
@@ -4384,13 +4415,39 @@ function ValidateSection() {
                       </label>
                       {retestJobId != null && !retestJobDone && (
                         <button
-                          onClick={checkRetestJobStatus}
+                          onClick={() => checkRetestJobStatus()}
                           disabled={statusChecking}
                           className="hm-btn hm-btn-secondary w-full"
                           style={{ height: 30, fontSize: 12 }}
                         >
                           {statusChecking ? "Checking…" : `Check status — job #${retestJobId}`}
                         </button>
+                      )}
+
+                      {retestJobsList.length > 0 && (
+                        <div className="pt-1">
+                          <div className="flex items-center justify-between mb-1">
+                            <p className="text-[11px] font-medium text-[var(--hm-text-tertiary)] uppercase tracking-wide">Recent Debounce jobs</p>
+                            <button onClick={loadRetestJobsList} disabled={retestJobsListLoading} className="text-[11px] text-[var(--hm-accent)]">
+                              {retestJobsListLoading ? "Refreshing…" : "Refresh"}
+                            </button>
+                          </div>
+                          <div className="space-y-1 max-h-[160px] overflow-y-auto">
+                            {retestJobsList.map((j) => (
+                              <button
+                                key={j.id}
+                                onClick={() => checkRetestJobStatus(j.id)}
+                                disabled={statusChecking}
+                                className="w-full flex items-center justify-between text-left text-[11.5px] px-2 py-1.5 rounded-md bg-[var(--hm-bg-primary)] border border-[var(--hm-border)] hover:border-[var(--hm-accent)]/40"
+                              >
+                                <span className="truncate text-[var(--hm-text-secondary)]">#{j.id} {j.label || "Untitled"}</span>
+                                <span className={`shrink-0 ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium ${j.status === "done" ? "bg-[#DCFCE7] text-[#059669]" : j.status === "error" ? "bg-red-50 text-red-600" : "bg-[var(--hm-accent-light)] text-[var(--hm-accent)]"}`}>
+                                  {j.status === "done" ? `done — ${j.validated}/${j.processed}` : j.status === "error" ? "error" : `running — ${j.processed} checked`}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
                       )}
                       {debounceMsg && (
                         <p className={`text-[12px] ${debounceMsg.kind === "err" ? "text-red-500" : "text-[#059669]"}`}>{debounceMsg.text}</p>
