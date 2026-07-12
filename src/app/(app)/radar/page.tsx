@@ -3533,6 +3533,11 @@ function ValidateSection() {
       : ` — all ${skippedFresh.toLocaleString()} were already checked recently (within the freshness cooldown), so none were due for a re-check yet.`;
   };
 
+  // Contacts whose domain never responds to Debounce inside the timeout, 3 tries in a row —
+  // marked 'unknown' and left alone instead of being retried forever on every future run.
+  const gaveUpNote = (gaveUp: number) =>
+    gaveUp ? ` ${gaveUp.toLocaleString()} contact(s) gave up after repeated Debounce timeouts and were marked "unknown" instead of retried forever.` : "";
+
   const startDebounceJob = async (body: Record<string, unknown>, doneNote: string) => {
     setDebounceBusy(true);
     setDebounceMsg(null);
@@ -3550,10 +3555,10 @@ function ValidateSection() {
       setDebounceProgress({ processed: d.processed || 0, validated: d.validated || 0 });
       if (d.done) {
         setRetestJobDone(true);
-        setDebounceMsg({ kind: "ok", text: `Checked ${(d.processed || 0).toLocaleString()} ${doneNote} via Debounce, saved ${(d.validated || 0).toLocaleString()} status update(s) directly — done. Nothing sent via Instantly.${freshNote(d.skippedFresh || 0, d.validated || 0)}` });
+        setDebounceMsg({ kind: "ok", text: `Checked ${(d.processed || 0).toLocaleString()} ${doneNote} via Debounce, saved ${(d.validated || 0).toLocaleString()} status update(s) directly — done. Nothing sent via Instantly.${freshNote(d.skippedFresh || 0, d.validated || 0)}${gaveUpNote(d.gaveUp || 0)}` });
         countRetest();
       } else {
-        setDebounceMsg({ kind: "ok", text: `Started (job #${d.jobId}) — checked ${(d.processed || 0).toLocaleString()} so far.${freshNote(d.skippedFresh || 0, d.validated || 0)} This keeps running in the background every ~15 min even if you leave this page. Click "Check status" any time, or just come back later.` });
+        setDebounceMsg({ kind: "ok", text: `Started (job #${d.jobId}) — checked ${(d.processed || 0).toLocaleString()} so far.${freshNote(d.skippedFresh || 0, d.validated || 0)}${gaveUpNote(d.gaveUp || 0)} This keeps running in the background every ~15 min even if you leave this page. Click "Check status" any time, or just come back later.` });
       }
     } catch (e) {
       setDebounceMsg({ kind: "err", text: (e as Error).message });
@@ -3619,11 +3624,12 @@ function ValidateSection() {
         setDebounceMsg({ kind: "err", text: job.error || "Retest job failed." });
       } else {
         const skippedFresh = job.skipped_fresh || 0;
+        const gaveUp = job.gave_up || 0;
         setDebounceMsg({
           kind: "ok",
           text: done
-            ? `Checked ${(job.processed || 0).toLocaleString()} contact(s) via Debounce, saved ${(job.validated || 0).toLocaleString()} status update(s) — done.${freshNote(skippedFresh, job.validated || 0)}`
-            : `Still running — checked ${(job.processed || 0).toLocaleString()} so far.${freshNote(skippedFresh, job.validated || 0)} Check back again shortly.`,
+            ? `Checked ${(job.processed || 0).toLocaleString()} contact(s) via Debounce, saved ${(job.validated || 0).toLocaleString()} status update(s) — done.${freshNote(skippedFresh, job.validated || 0)}${gaveUpNote(gaveUp)}`
+            : `Still running — checked ${(job.processed || 0).toLocaleString()} so far.${freshNote(skippedFresh, job.validated || 0)}${gaveUpNote(gaveUp)} Check back again shortly.`,
         });
       }
       if (done) countRetest();
