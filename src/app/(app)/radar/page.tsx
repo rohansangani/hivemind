@@ -3561,7 +3561,7 @@ function ValidateSection() {
         body: JSON.stringify({ action: "retest_job_start", ...body }),
       });
       const d = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(d.error || "Debounce validation failed to start");
+      if (!r.ok) throw new Error(d.error || "Debounce validation failed to start (likely timed out) — try again, it usually picks up where it left off.");
       setRetestJobId(d.jobId ?? null);
       setDebounceProgress({ processed: d.processed || 0, validated: d.validated || 0 });
       if (d.done) {
@@ -4338,6 +4338,16 @@ function ValidateSection() {
                     <div className="text-[13px] font-semibold text-[var(--hm-accent)]">
                       {retestCounting ? "Counting…" : retestCount != null ? `${retestCount.toLocaleString()} contact(s) match` : "—"}
                     </div>
+
+                    {(() => {
+                      const missing: string[] = [];
+                      if (!retestLabel.trim()) missing.push("a job name");
+                      if (!retestStatuses.length) missing.push("at least one status to include");
+                      if (retestCount === 0) missing.push("contacts matching these filters (currently 0)");
+                      return missing.length ? (
+                        <p className="text-[11.5px] text-amber-600 dark:text-amber-400">Fill in {missing.join(" and ")} before running a job below.</p>
+                      ) : null;
+                    })()}
 
                     <button onClick={loadForRetest} disabled={busy || !retestStatuses.length || !retestCount || !retestLabel.trim() || !retestVertical} className="hm-btn hm-btn-primary w-full" style={{ height: 38, fontSize: 13 }}>
                       Load contacts (sends real test emails via Instantly)
