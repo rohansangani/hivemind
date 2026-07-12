@@ -4292,8 +4292,8 @@ function ValidateSection() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Vertical</label>
-                        <select value={retestVertical} onChange={(e) => setRetestVertical(e.target.value)} title="Required for the Instantly-send options below — filter-only for the Debounce ones">
-                          <option value="">All (Debounce-only — required to send via Instantly)</option>
+                        <select value={retestVertical} onChange={(e) => setRetestVertical(e.target.value)} title="Required to send via Instantly — filter-only for the Debounce options below">
+                          <option value="">All verticals</option>
                           <option value="B2B">B2B</option>
                           <option value="US">US</option>
                           <option value="D2C">D2C</option>
@@ -4312,6 +4312,9 @@ function ValidateSection() {
                     <button onClick={loadForRetest} disabled={busy || !retestStatuses.length || !retestCount || !retestLabel.trim() || !retestVertical} className="hm-btn hm-btn-primary w-full" style={{ height: 38, fontSize: 13 }}>
                       Load contacts (sends real test emails via Instantly)
                     </button>
+                    {!retestVertical && (
+                      <p className="text-[11.5px] text-[var(--hm-text-tertiary)] -mt-2">Pick a vertical above to send via Instantly — Debounce below works with "All verticals".</p>
+                    )}
 
                     <div className="rounded-lg border border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] p-3 space-y-2">
                       <p className="text-[12px] text-[var(--hm-text-secondary)]">
