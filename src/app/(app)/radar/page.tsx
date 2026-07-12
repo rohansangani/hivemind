@@ -3523,6 +3523,16 @@ function ValidateSection() {
   // Runs as a server-side job (retest_job_start) instead of a client-driven loop, so it keeps
   // going — via a 15-min cron tick — even if you navigate away or close this tab. Shared by
   // the filter-based retest button and the CSV-upload path below (exact email-list mode).
+  // Contacts within the freshness cooldown (checked within the last 14/30 days) are counted as
+  // "processed" but deliberately not re-validated — without this, a job that hits only fresh
+  // contacts shows "checked N, saved 0" with no explanation, which reads as broken.
+  const freshNote = (skippedFresh: number, validated: number) => {
+    if (!skippedFresh) return "";
+    return validated
+      ? ` (${skippedFresh.toLocaleString()} more already checked recently — skipped)`
+      : ` — all ${skippedFresh.toLocaleString()} were already checked recently (within the freshness cooldown), so none were due for a re-check yet.`;
+  };
+
   const startDebounceJob = async (body: Record<string, unknown>, doneNote: string) => {
     setDebounceBusy(true);
     setDebounceMsg(null);
@@ -3540,10 +3550,10 @@ function ValidateSection() {
       setDebounceProgress({ processed: d.processed || 0, validated: d.validated || 0 });
       if (d.done) {
         setRetestJobDone(true);
-        setDebounceMsg({ kind: "ok", text: `Checked ${(d.processed || 0).toLocaleString()} ${doneNote} via Debounce, saved ${(d.validated || 0).toLocaleString()} status update(s) directly — done. Nothing sent via Instantly.` });
+        setDebounceMsg({ kind: "ok", text: `Checked ${(d.processed || 0).toLocaleString()} ${doneNote} via Debounce, saved ${(d.validated || 0).toLocaleString()} status update(s) directly — done. Nothing sent via Instantly.${freshNote(d.skippedFresh || 0, d.validated || 0)}` });
         countRetest();
       } else {
-        setDebounceMsg({ kind: "ok", text: `Started (job #${d.jobId}) — checked ${(d.processed || 0).toLocaleString()} so far. This keeps running in the background every ~15 min even if you leave this page. Click "Check status" any time, or just come back later.` });
+        setDebounceMsg({ kind: "ok", text: `Started (job #${d.jobId}) — checked ${(d.processed || 0).toLocaleString()} so far.${freshNote(d.skippedFresh || 0, d.validated || 0)} This keeps running in the background every ~15 min even if you leave this page. Click "Check status" any time, or just come back later.` });
       }
     } catch (e) {
       setDebounceMsg({ kind: "err", text: (e as Error).message });
@@ -3608,11 +3618,12 @@ function ValidateSection() {
       if (job.status === "error") {
         setDebounceMsg({ kind: "err", text: job.error || "Retest job failed." });
       } else {
+        const skippedFresh = job.skipped_fresh || 0;
         setDebounceMsg({
           kind: "ok",
           text: done
-            ? `Checked ${(job.processed || 0).toLocaleString()} contact(s) via Debounce, saved ${(job.validated || 0).toLocaleString()} status update(s) — done.`
-            : `Still running — checked ${(job.processed || 0).toLocaleString()} so far. Check back again shortly.`,
+            ? `Checked ${(job.processed || 0).toLocaleString()} contact(s) via Debounce, saved ${(job.validated || 0).toLocaleString()} status update(s) — done.${freshNote(skippedFresh, job.validated || 0)}`
+            : `Still running — checked ${(job.processed || 0).toLocaleString()} so far.${freshNote(skippedFresh, job.validated || 0)} Check back again shortly.`,
         });
       }
       if (done) countRetest();
