@@ -815,7 +815,7 @@ export default function EmailSequencesPage() {
         <div>
           {/* Top bar */}
           <div className="flex items-center gap-3 mb-5">
-            <button onClick={() => { setResults([]); setExpandedResult(0); setProspectSearch(""); }} className={btnSecondary}>
+            <button onClick={startNewSequence} className={btnSecondary}>
               <span className="flex items-center gap-1.5">
                 <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M10 2L6 8l4 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
                 New Sequence
