@@ -477,7 +477,12 @@ export async function POST(req: NextRequest) {
       }
     }
     let assistantReply = "";
-    let exportDownload: { filename: string; csv: string } | undefined;
+    // Array, not a single value — a request Halo answers with multiple export calls in one turn
+    // (e.g. "export B2B, D2C, and US separately") previously overwrote this on every call, so
+    // only the LAST file actually reached the user while Halo told them they'd get all of them.
+    // Confirmed live: this is what caused the "you'll receive 3 separate CSV files" message to
+    // be outright wrong — only 1 ever actually downloaded.
+    const exportDownloads: Array<{ filename: string; csv: string }> = [];
 
     // ── Radar access gate for the search_radar_contacts / export_radar_contacts_csv tools ──
     // Only offered to users who actually have Radar access themselves (view or edit) — this
@@ -541,6 +546,7 @@ RADAR CONTACTS & ACCOUNTS (search_radar_contacts/accounts, export_radar_contacts
 - When the user wants to find, count, or export either, translate their request into filters using the ICP/persona/product/industry knowledge above (e.g. "our ideal customers in D2C haircare" → vertical: D2C, industry: something matching the known ICP) — ask a clarifying question instead of guessing if the request is genuinely ambiguous.
 - ALWAYS call the matching search tool first (search_radar_contacts or search_radar_accounts). Report the exact count back to the user in plain language and explicitly ask them to confirm before exporting anything.
 - ONLY call the matching export tool after the user has clearly confirmed in a later message (e.g. "yes", "export it", "send me the csv") — never export on the same turn as the first search, even if the request sounded like it wanted a file immediately.
+- If the user wants results split by a field (e.g. "export contacts grouped by vertical", "separately for B2B and D2C") — the exported CSV already includes vertical/industry/country as real columns on every row, so ONE export covers this; the user can filter/sort/pivot on that column themselves. Do NOT call the export tool multiple times (once per group value) unless the user explicitly says they need genuinely separate files (e.g. "give me 3 separate CSVs, one per vertical, so I can upload each to a different tool"). If they do ask for separate files, you may call the export tool more than once in the same turn — every file you generate this way is delivered to the user as its own download, so tell them exactly that ("here are your N files") — never tell them you can't merge files or ask them to copy-paste/combine anything themselves, that's never true.
 - ALWAYS spell out every filter actually applied, not just the count — vertical, industry, and whichever of title/country/company/employee range/revenue range/account size/email status(es) were used, one per line or a short bullet list. For contacts, if the user didn't specify an email status, say explicitly that you defaulted to "safe to send" + "verified" only (Radar's exportable default) and that risky/invalid/unknown/unvalidated contacts are excluded unless they ask to include those too. This applies to both the count reply and the export confirmation — never report a bare number with no criteria shown.
 - Do not mention these tools by name to the user — just talk about "searching Radar" / "the accounts/contacts database" naturally.`
           : `
@@ -599,7 +605,7 @@ CONVERSATION BEHAVIOR:
               (block.input as Record<string, unknown>) || {},
               decoded.userId
             );
-            if (toolDownload) exportDownload = toolDownload;
+            if (toolDownload) exportDownloads.push(toolDownload);
             toolResultBlocks.push({ type: "tool_result", tool_use_id: block.id as string, content: JSON.stringify(toolResult) });
           }
           toolLoopMessages.push({ role: "user", content: toolResultBlocks });
@@ -689,7 +695,14 @@ CONVERSATION BEHAVIOR:
       userId: decoded.userId,
     }).catch(() => {});
 
-    return NextResponse.json({ reply: assistantReply, conversationId: convo.id, intent, download: exportDownload });
+    return NextResponse.json({
+      reply: assistantReply,
+      conversationId: convo.id,
+      intent,
+      // `download` kept (first file) for older clients; `downloads` carries all of them.
+      download: exportDownloads[0],
+      downloads: exportDownloads.length ? exportDownloads : undefined,
+    });
   } catch (error) {
     console.error("Assistant POST error:", error);
     return NextResponse.json({ error: "Something went wrong" }, { status: 500 });
