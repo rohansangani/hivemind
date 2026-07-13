@@ -70,6 +70,33 @@ const PERSONALIZATION_TAGS = [
 
 const EMPTY_PROSPECT: Prospect = { name: "", company: "", website: "", title: "", email: "", industry: "" };
 
+const MODE_SHORT: Record<string, string> = { single: "Single", template: "Template", bulk: "Bulk CSV", radar: "Radar" };
+
+function timeAgo(date: string) {
+  const diff = Date.now() - new Date(date).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return mins + "m ago";
+  const hrs = Math.floor(diff / 3600000);
+  if (hrs < 24) return hrs + "h ago";
+  return Math.floor(diff / 86400000) + "d ago";
+}
+
+interface HistoryJobLike { id: string; label: string | null; mode: string; status: string; processed: number; total: number; createdAt: string; }
+
+function groupHistory<T extends HistoryJobLike>(items: T[]) {
+  const todayStart = new Date().setHours(0, 0, 0, 0);
+  const yesterdayStart = todayStart - 86400000;
+  const weekStart = todayStart - 6 * 86400000;
+  const groups: { label: string; items: T[] }[] = [
+    { label: "Today", items: items.filter(i => new Date(i.createdAt).getTime() >= todayStart) },
+    { label: "Yesterday", items: items.filter(i => { const t = new Date(i.createdAt).getTime(); return t >= yesterdayStart && t < todayStart; }) },
+    { label: "Last 7 days", items: items.filter(i => { const t = new Date(i.createdAt).getTime(); return t >= weekStart && t < yesterdayStart; }) },
+    { label: "Earlier", items: items.filter(i => new Date(i.createdAt).getTime() < weekStart) },
+  ];
+  return groups.filter(g => g.items.length > 0);
+}
+
 /* ── CSV Parser ─────────────────────────────────────────────────────────── */
 
 function parseCSV(text: string): { headers: string[]; rows: string[][] } {
@@ -219,12 +246,89 @@ export default function EmailSequencesPage() {
     jobPollRef.current = setInterval(poll, 8000);
   }, [loadRecentJobs]);
 
+  // History sidebar covers every mode (single/template/bulk/radar) — loaded once on mount, not
+  // gated to bulk/radar the way the in-context "Recent generation jobs" panel below is.
   useEffect(() => {
-    if (mode === "bulk" || mode === "radar") loadRecentJobs();
+    loadRecentJobs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode]);
+  }, []);
 
   useEffect(() => stopWatchingJob, []);
+
+  const startNewSequence = () => {
+    stopWatchingJob();
+    setActiveJobId(null);
+    setActiveJobStatus(null);
+    setResults([]);
+    setExpandedResult(0);
+    setProspectSearch("");
+    setError("");
+    setMode("single");
+    setProspect({ ...EMPTY_PROSPECT });
+  };
+
+  const loadHistoryJob = async (jobId: string) => {
+    if (jobId === activeJobId) return;
+    setError("");
+    try {
+      const r = await fetch("/api/email-sequences/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "status", jobId }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || "Couldn't load that generation");
+      const job = d.job as JobRow & { config?: Record<string, unknown>; prospects?: unknown[] };
+      stopWatchingJob();
+      setActiveJobId(jobId);
+      setActiveJobStatus(job);
+      setResults(job.results || []);
+      setExpandedResult(0);
+      setMode(job.mode === "bulk" || job.mode === "radar" || job.mode === "template" ? (job.mode as typeof mode) : "single");
+
+      const cfg = job.config as Partial<{
+        emailCount: number; tone: string; length: string; products: string[]; cta: string; customCta: string;
+        senderName: string; senderRole: string; objective: string; subjectMode: "single" | "variant";
+        singleSubject: string; personalizationTags: string[];
+      }> | undefined;
+      if (cfg) {
+        if (cfg.emailCount) setEmailCount(cfg.emailCount);
+        if (cfg.tone) setTone(cfg.tone);
+        if (cfg.length) setLength(cfg.length);
+        if (cfg.products) setSelectedProducts(cfg.products);
+        if (cfg.cta) setCta(cfg.cta);
+        if (cfg.customCta) setCustomCta(cfg.customCta);
+        if (cfg.senderName) setSenderName(cfg.senderName);
+        if (cfg.senderRole) setSenderRole(cfg.senderRole);
+        if (cfg.objective) setObjective(cfg.objective);
+        if (cfg.subjectMode) setSubjectMode(cfg.subjectMode);
+        if (cfg.singleSubject) setSingleSubject(cfg.singleSubject);
+        if (cfg.personalizationTags) setPersonalizationTags(cfg.personalizationTags);
+      }
+      if (job.mode === "single" && Array.isArray(job.prospects) && job.prospects[0]) {
+        setProspect(job.prospects[0] as Prospect);
+      }
+      if (job.status === "running") watchJob(jobId);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
+  const deleteHistoryJob = async (jobId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm("Delete this generation from history?")) return;
+    try {
+      await fetch("/api/email-sequences/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete", jobId }),
+      });
+      setRecentJobs((prev) => prev.filter((j) => j.id !== jobId));
+      if (jobId === activeJobId) startNewSequence();
+    } catch (e2) {
+      setError((e2 as Error).message);
+    }
+  };
 
   const [editBuffer, setEditBuffer] = useState({ subject: "", body: "" });
 
@@ -395,6 +499,10 @@ export default function EmailSequencesPage() {
       throw new Error("Invalid response from server");
     }
     if (!res.ok) throw new Error(data.error || "Generation failed");
+    if (data.jobId) {
+      setActiveJobId(data.jobId);
+      loadRecentJobs();
+    }
     return { prospect: data.prospect, sequence: data.sequence };
   };
 
@@ -568,8 +676,91 @@ export default function EmailSequencesPage() {
   const btnSecondary = "h-[34px] px-4 border border-[var(--hm-border)] rounded-lg text-[12px] text-[var(--hm-text-secondary)] hover:bg-[var(--hm-bg-secondary)] hover:border-[#4361ee]/40 transition-colors";
   const cardCls = "rounded-xl border border-[var(--hm-border)] bg-[var(--hm-bg-primary)] p-5";
 
+  const historyGroups = groupHistory(recentJobs);
+
   return (
-    <div className="flex-1 overflow-y-auto p-6"><div className="max-w-[1100px] mx-auto">
+    <div className="flex-1 flex overflow-hidden">
+      {/* ── History sidebar — hidden on mobile, visible from md, matching Content Generator/Halo ── */}
+      <div className="hidden md:flex w-[240px] flex-shrink-0 border-r border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] flex-col overflow-hidden">
+        <div className="p-4 flex-shrink-0">
+          <button
+            onClick={startNewSequence}
+            className="w-full h-9 rounded-xl bg-[#4361ee] text-white text-[12px] font-medium hover:opacity-90 transition-all flex items-center justify-center gap-2 shadow-sm"
+          >
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+              <path d="M4 12l1.5-4L12 2l2 2-6.5 6.5L4 12z" stroke="#fff" strokeWidth="1.3" />
+              <path d="M10.5 3.5l2 2" stroke="#fff" strokeWidth="1.3" />
+            </svg>
+            New sequence
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          {recentJobsLoading && recentJobs.length === 0 ? (
+            <div className="flex justify-center py-8">
+              <div className="w-4 h-4 border-2 border-[#4361ee]/30 border-t-[#4361ee] rounded-full animate-spin" />
+            </div>
+          ) : recentJobsError ? (
+            <p className="px-4 py-4 text-[11.5px] text-red-500">{recentJobsError}</p>
+          ) : recentJobs.length === 0 ? (
+            <div className="px-4 py-8 text-center">
+              <p className="text-[12px] text-[var(--hm-text-tertiary)]">No generations yet.</p>
+              <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-1">Your history will appear here.</p>
+            </div>
+          ) : (
+            <div className="pb-4">
+              {historyGroups.map(group => (
+                <div key={group.label}>
+                  <p className="px-4 pt-4 pb-1.5 text-[10px] uppercase tracking-wider font-semibold text-[var(--hm-text-tertiary)]">{group.label}</p>
+                  {group.items.map(item => {
+                    const isActive = item.id === activeJobId;
+                    return (
+                      <div key={item.id} className="relative group/item">
+                        <button
+                          onClick={() => loadHistoryJob(item.id)}
+                          className={
+                            "w-full text-left px-3 py-3 transition-colors border-l-2 mx-0 " +
+                            (isActive ? "bg-white border-[#4361ee] shadow-sm" : "hover:bg-white/60 border-transparent")
+                          }
+                        >
+                          <p className={"text-[12px] font-medium leading-snug mb-1.5 pr-6 " + (isActive ? "text-[#4361ee]" : "text-[var(--hm-text)]")}
+                            title={item.label || "Untitled"}
+                            style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                            {item.label || "Untitled"}
+                          </p>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className={"text-[10px] px-1.5 py-0.5 rounded-md font-medium " + (isActive ? "bg-[#4361ee]/10 text-[#4361ee]" : "bg-[var(--hm-border)] text-[var(--hm-text-tertiary)]")}>
+                              {MODE_SHORT[item.mode] || item.mode}
+                            </span>
+                            {item.status === "running" && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-md font-medium bg-[var(--hm-accent-light)] text-[var(--hm-accent)]">{item.processed}/{item.total}</span>
+                            )}
+                            {item.status === "error" && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-md font-medium bg-red-50 text-red-600">error</span>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-[var(--hm-text-tertiary)] mt-1.5">{timeAgo(item.createdAt)}</p>
+                        </button>
+                        <button
+                          onClick={(e) => deleteHistoryJob(item.id, e)}
+                          className="absolute top-2.5 right-2 opacity-0 group-hover/item:opacity-100 transition-opacity w-6 h-6 rounded-md flex items-center justify-center text-[var(--hm-text-tertiary)] hover:bg-red-50 hover:text-red-500"
+                          title="Delete"
+                        >
+                          <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
+                            <path d="M2 4h12M6 4V2.5a.5.5 0 01.5-.5h3a.5.5 0 01.5.5V4M5 4l.5 9h5L11 4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Main area ── */}
+      <div className="flex-1 overflow-y-auto p-6"><div className="max-w-[1100px] mx-auto">
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-[22px] font-semibold text-[var(--hm-text-primary)]">Email Sequences</h1>
@@ -1250,5 +1441,6 @@ export default function EmailSequencesPage() {
         </div>
       )}
     </div></div>
+    </div>
   );
 }
