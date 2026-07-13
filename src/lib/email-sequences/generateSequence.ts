@@ -101,6 +101,19 @@ export interface GenerateSequenceResult {
   prospect: Prospect | null;
 }
 
+/** Deterministic guarantee, not another model call: if an email that's supposed to carry a stat
+ * doesn't have one, splice a real one in directly. No LLM compliance involved, so it can't fail
+ * the way the free-recall prompt instruction sometimes did. Inserted as its own short paragraph
+ * right before the final paragraph (the CTA line), so the ask still lands last. */
+function insertStatIfMissing(body: string, stat: string): string {
+  if (body.includes("%")) return body; // already has a real stat, leave it alone
+  const sentence = /^[A-Z]/.test(stat) && /[.!?]$/.test(stat) ? stat : `Worth knowing: ${stat}.`;
+  const paragraphs = body.split(/\n\n+/);
+  if (paragraphs.length < 2) return `${body}\n\n${sentence}`;
+  paragraphs.splice(paragraphs.length - 1, 0, sentence);
+  return paragraphs.join("\n\n");
+}
+
 export async function generateSequenceForProspect({
   orgId, userId, prospect, config, mode,
 }: GenerateSequenceParams): Promise<GenerateSequenceResult> {
@@ -144,6 +157,14 @@ export async function generateSequenceForProspect({
   });
 
   const groundedContext = buildGroundedContext(knowledge);
+
+  // Handing the model a short, curated list of exact stats to pick FROM is far more reliable than
+  // asking it to notice and remember one while scanning the entire PRODUCT/SERVICE KNOWLEDGE
+  // block alongside a dozen other constraints — this is the same reason a dedicated
+  // stat-selection step outperforms asking one model call to search-and-write simultaneously.
+  const availableStats = [...new Set(
+    knowledge.items.filter(i => i.sourceType === "proof_point").map(i => i.title),
+  )];
 
   let prospectContext = "";
   if (mode === "single" && prospect) {
@@ -199,6 +220,9 @@ ${brandContext}
 PRODUCT/SERVICE KNOWLEDGE (use ONLY verified facts/metrics from here — never invent numbers or claims):
 ${groundedContext}
 
+${availableStats.length ? `AVAILABLE STATS — pick from THIS list specifically for the per-email stat requirement below (each is a real, verified number, use one verbatim, do not paraphrase away the number):
+${availableStats.map(s => `- ${s}`).join("\n")}
+` : ""}
 ${prospectContext ? `PROSPECT INFORMATION:\n${prospectContext}` : "MODE: Template (no specific prospect). Write emails with [First Name], [Company], [Title] placeholders. Make the template adaptable but still specific to the value proposition."}
 
 SEQUENCE CONFIGURATION:
@@ -230,7 +254,7 @@ ${config.emailCount === 3
 - Email 3: Social proof or different angle — approach from a new direction or reference relevant results. Optionally, if it fits naturally, write THIS email from the perspective of a curious end-customer of the prospect's own company rather than a vendor (e.g. "One question as someone who'd buy from [Company]..." followed by a pointed observation about their own customer experience) — a change of voice that breaks up an otherwise all-vendor sequence. Use this at most once in the sequence, only where it genuinely fits.
 - Email 4+: Follow-up with breakup energy, curiosity gaps, or a completely fresh angle.`}
 - Each email should work standalone but build upon the narrative arc, and each should hit a DIFFERENT pain angle/proof point than the others — never repeat the same angle twice in one sequence.
-- STATS PATTERN (this is how the proof points in the PRODUCT/SERVICE KNOWLEDGE section should actually be used): every email EXCEPT the opening hook and the final breakup email must include exactly ONE specific outcome stat — a percentage, conversion rate, or reduction number — that is directly, specifically tied to the pain point or mechanism THAT email is making, not a generic one reused across emails. Example of the pattern: an email about exchange friction cites the exchange-conversion percentage; a separate email about a branded tracking page cites the repeat-sale lift from that specific feature; a separate email about support load cites the specific support-ticket-reduction percentage. Do not default to org-wide reach numbers ("450+ brands", "50 million+ monthly shipments") as a stand-in for this — those describe scale, not an outcome, and only belong in the closing breakup email if anywhere, sparingly, never as the "stat" for a value email. SELF-CHECK before finalizing: for every email this rule applies to, scan its body text specifically for a digit character — if there is no percentage/number actually printed in that email's body (a phrase like "queries drop" or "conversion improves" with no number attached does NOT count), go back and add the real stat before finalizing your answer.
+- STATS PATTERN: every 2nd email in the sequence (email 2, email 4, email 6...) must include exactly ONE specific outcome stat, chosen from the AVAILABLE STATS list above — pick whichever one best matches the pain point or mechanism THAT specific email is making, not a generic one reused across emails, and not one you recall from elsewhere in the knowledge section instead of that list. Example of the pattern: an email about exchange friction cites the exchange-conversion percentage; a separate email about a branded tracking page cites the repeat-sale lift from that specific feature; a separate email about support load cites the specific support-ticket-reduction percentage. Do not default to org-wide reach numbers ("450+ brands", "50 million+ monthly shipments") as a stand-in for this — those describe scale, not an outcome, and belong in odd-numbered emails (especially the closing breakup) instead, sparingly, never as the "stat" for an even-numbered email.
 - Whenever you cite a proof point, use an EXACT specific number, percentage, or named customer/case study straight from the PRODUCT/SERVICE KNOWLEDGE section above. NEVER use vague-magnitude hedge words at all — this includes "significant(ly)", "substantial(ly)", "considerably", "meaningfully", "notably", "a noticeable improvement", "a meaningful difference", "a large/measurable/meaningful share", or any other word/phrase that implies size/impact without stating it. If you don't have a specific number for the point you want to make, pick a different proof point that does have one, or describe the concrete mechanism/outcome without any magnitude word at all.
 - Even within a short word budget, the required stat takes priority over scene-setting or extra color — cut a descriptive sentence before cutting the number.
 - ${config.subjectMode === "single"
@@ -325,6 +349,19 @@ Return ONLY valid JSON, no markdown or explanation.`;
   if (config.subjectMode === "single" && Array.isArray(parsed?.emails) && parsed.emails.length) {
     const sharedSubject = config.singleSubject || parsed.emails[0].subject;
     parsed.emails = parsed.emails.map((e: { subject: string }) => ({ ...e, subject: sharedSubject }));
+  }
+
+  // Guarantee, not a hope: every 2nd email (emailNumber 2, 4, 6...) gets a real stat spliced in
+  // directly if the model didn't already include one — deterministic, so it can't fail the way
+  // asking the model to remember was failing.
+  if (availableStats.length && Array.isArray(parsed?.emails)) {
+    let statCursor = 0;
+    parsed.emails = parsed.emails.map((email: { subject: string; body: string; emailNumber: number }) => {
+      if (email.emailNumber % 2 !== 0) return email;
+      const stat = availableStats[statCursor % availableStats.length];
+      statCursor++;
+      return { ...email, body: insertStatIfMissing(email.body, stat) };
+    });
   }
 
   recordSignal({
