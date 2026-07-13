@@ -145,6 +145,19 @@ model EmailSequenceJob {
   @@index([organizationId, status])
 }
 
+// Company-level web research (recent news + product type) is objective, public info about the
+// TARGET company, not tied to which org is running Email Sequences or which specific prospect
+// title/name is used — so this cache is global and keyed by the researched company/domain only,
+// reused across every org, batch, and future run for that same company.
+model WebsiteInsightCache {
+  id        String   @id @default(cuid())
+  key       String   @unique // "domain:acme.com" or "company:acme inc" — see websiteInsights.ts
+  insights  String
+  source    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model Account {
   id                String  @id @default(cuid())
   userId            String

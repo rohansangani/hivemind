@@ -169,3 +169,50 @@ export async function deriveWebsiteInsights(
 
   return { insights, source };
 }
+
+// Same identity a research call targets (subject = prospect.company || prospect.website) — a
+// domain is a more stable identifier than a company name (avoids "Acme" vs "Acme Inc" splitting
+// the cache), so it wins whenever a website is given.
+function cacheKey(prospect: Prospect): string {
+  const domain = (prospect.website || "").trim().toLowerCase()
+    .replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, "");
+  if (domain) return `domain:${domain}`;
+  const company = (prospect.company || "").trim().toLowerCase();
+  return company ? `company:${company}` : "";
+}
+
+const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // recent-news insights go stale; a week keeps them fresh enough
+
+/** Same as deriveWebsiteInsights, but backed by a global (cross-org, cross-batch, cross-run)
+ * cache keyed by the target company/domain — the research question ("what does this company
+ * sell", "what's newsworthy about them recently") doesn't depend on which prospect/org is asking,
+ * so two contacts at the same company (same batch or different batches, today or next month)
+ * reuse one research call instead of each re-running Claude web_search + Tavily from scratch. */
+export async function getWebsiteInsights(prospect: Prospect, anthropicApiKey: string): Promise<WebsiteInsightsResult> {
+  const key = cacheKey(prospect);
+  if (!key) return deriveWebsiteInsights(prospect, anthropicApiKey);
+
+  const { db } = await import("@/lib/db");
+  try {
+    const cached = await db.websiteInsightCache.findUnique({ where: { key } });
+    if (cached && Date.now() - cached.updatedAt.getTime() < CACHE_TTL_MS) {
+      return { insights: cached.insights, source: cached.source as WebsiteInsightsResult["source"] };
+    }
+  } catch {
+    // Cache read failure shouldn't block generation — fall through to a fresh lookup.
+  }
+
+  const result = await deriveWebsiteInsights(prospect, anthropicApiKey);
+  if (result.insights) {
+    try {
+      await db.websiteInsightCache.upsert({
+        where: { key },
+        create: { key, insights: result.insights, source: result.source },
+        update: { insights: result.insights, source: result.source },
+      });
+    } catch {
+      // Best-effort — a cache write failure must never fail the actual generation.
+    }
+  }
+  return result;
+}
