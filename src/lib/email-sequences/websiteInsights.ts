@@ -40,14 +40,15 @@ function extractSection(text: string, label: string): string {
 async function researchViaClaudeWebSearch(prospect: Prospect, apiKey: string): Promise<ClaudeResearch> {
   const identity = [prospect.company, prospect.website, prospect.title ? `(prospect title: ${prospect.title})` : ""]
     .filter(Boolean).join(" — ");
+  const currentYear = new Date().getFullYear();
   const prompt = `Research this company for cold-email personalization: ${identity}
 
 Search for two separate things:
-1. GENERAL INSIGHTS: 1-3 SPECIFIC, concrete details useful for personalizing a cold email — recent news, a product launch, funding, a distinctive detail about what they actually do, a hiring signal, or an operational detail relevant to their industry. Be concrete, not generic industry filler ("the retail industry is evolving" is useless).
-2. PRODUCT TYPE: the specific type of product(s) or service(s) this company actually sells — concrete enough to reference directly in an email (e.g. "a leather crossbody bag", "wireless noise-cancelling headphones", "a project management SaaS tool" — not just "apparel" or "software").
+1. GENERAL INSIGHTS: 1-3 SPECIFIC, concrete details useful for personalizing a cold email — recent news, a product launch, funding, a distinctive detail about what they actually do, a hiring signal, or an operational detail relevant to their industry. Be concrete, not generic industry filler ("the retail industry is evolving" is useless). RECENCY IS REQUIRED: only include details from ${currentYear} or the last few months — do NOT include something just because it's the most notable thing you found if it's actually old (e.g. a funding round or launch from ${currentYear - 2} or earlier). If you cannot find anything both specific AND recent, use the NONE marker below rather than reaching for stale information.
+2. PRODUCT TYPE: the specific type of product(s) or service(s) this company actually sells — concrete enough to reference directly in an email (e.g. "a leather crossbody bag", "wireless noise-cancelling headphones", "a project management SaaS tool" — not just "apparel" or "software"). This one does NOT need to be recent — what a company sells doesn't go stale the way news does.
 
 Respond in EXACTLY this format, nothing else:
-GENERAL_INSIGHTS: <the 1-3 details as plain sentences, or exactly "${NO_GENERAL_MARKER}" if you found nothing specific>
+GENERAL_INSIGHTS: <the 1-3 details as plain sentences, or exactly "${NO_GENERAL_MARKER}" if you found nothing both specific and recent>
 PRODUCT_TYPE: <the specific product/service type, or exactly "${NO_PRODUCT_MARKER}" if you couldn't determine one>`;
 
   const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -77,7 +78,7 @@ PRODUCT_TYPE: <the specific product/service type, or exactly "${NO_PRODUCT_MARKE
   };
 }
 
-async function tavilySearch(query: string, tavilyKey: string): Promise<string> {
+async function tavilySearch(query: string, tavilyKey: string, opts: { recentOnly?: boolean } = {}): Promise<string> {
   try {
     const res = await fetch("https://api.tavily.com/search", {
       method: "POST",
@@ -88,6 +89,10 @@ async function tavilySearch(query: string, tavilyKey: string): Promise<string> {
         max_results: 5,
         search_depth: "basic",
         include_answer: true,
+        // Product/category questions ("what does X sell") aren't time-sensitive, but general
+        // news/insight queries should stay recent — an old funding round or old launch is worse
+        // than nothing, since a prospect can tell when a "recent" reference is actually stale.
+        ...(opts.recentOnly ? { time_range: "year" } : {}),
       }),
       signal: AbortSignal.timeout(15000),
     });
@@ -131,7 +136,7 @@ export async function deriveWebsiteInsights(
   if (tavilyKey) {
     // Full fallback: Claude found nothing at all.
     if (!general && !productType) {
-      const tavilyResult = await tavilySearch(`${subject} recent news OR product launch OR funding OR hiring`, tavilyKey);
+      const tavilyResult = await tavilySearch(`${subject} recent news OR product launch OR funding OR hiring`, tavilyKey, { recentOnly: true });
       if (tavilyResult) {
         general = tavilyResult;
         usedTavily = true;
