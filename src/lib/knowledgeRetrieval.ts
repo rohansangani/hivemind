@@ -660,8 +660,18 @@ export async function retrieveRelevantKnowledge(
   const effectiveCompetitor = options?.targetCompetitor || entities.competitors[0] || null;
   const effectiveMarket = options?.targetMarket || entities.markets?.[0] || null;
 
-  // Deduplicate by name
-  const uniqueProducts = [...new Map(products.map(p => [p.name, p])).values()];
+  // Deduplicate by name, then apply the same hard vertical scoping used for case studies above —
+  // a "specific" product only applies to the markets it's linked to (e.g. Agentic Ally tagged
+  // India-only), so it shouldn't appear in the product knowledge surfaced for a US-targeted
+  // sequence just because it's the org's overall top-of-mind product.
+  const uniqueProductsAll = [...new Map(products.map(p => [p.name, p])).values()];
+  const uniqueProducts = targetMarketForFilter
+    ? uniqueProductsAll.filter(p => {
+        if (p.scope !== "specific") return true;
+        const marketNames = (p as typeof p & { markets?: Array<{ market: { name: string } }> }).markets?.map(pm => pm.market.name) || [];
+        return marketNames.length === 0 || marketNames.includes(targetMarketForFilter);
+      })
+    : uniqueProductsAll;
   const uniquePersonas = [...new Map(personas.map(p => [p.title, p])).values()];
   const uniqueCompetitors = [...new Map(competitors.map(c => [c.name, c])).values()];
 
