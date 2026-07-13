@@ -951,9 +951,23 @@ export async function retrieveRelevantKnowledge(
   }
 
   // ── Sort and cap ────────────────────────────────────────
-  const rankedItems = allItems
-    .sort((a, b) => b.relevanceScore - a.relevanceScore)
-    .slice(0, maxItems);
+  // Proof points are short, keyword-sparse one-liners ("62% reduction in WISMO queries") that
+  // score poorly against a generic query next to verbose content-analysis/learning entries — with
+  // hundreds of proof points competing for a shared maxItems budget, they can get crowded out of
+  // the context entirely even though they're exactly the concrete, quotable numbers outreach
+  // copy needs. Reserve a guaranteed minimum so the best few always survive regardless of how
+  // they score against everything else, the same way "no focus product" already guarantees every
+  // product gets listed rather than leaving that to open competition.
+  const MIN_PROOF_POINTS = 8;
+  const sortedAll = [...allItems].sort((a, b) => b.relevanceScore - a.relevanceScore);
+  const topProofPoints = sortedAll
+    .filter(i => i.sourceType === "proof_point")
+    .slice(0, MIN_PROOF_POINTS);
+  const guaranteedIds = new Set(topProofPoints.map(i => i.id));
+  const rankedItems = [
+    ...topProofPoints,
+    ...sortedAll.filter(i => !guaranteedIds.has(i.id)),
+  ].slice(0, maxItems);
 
   // ── Brand ───────────────────────────────────────────────
   const brand = brandProfile
