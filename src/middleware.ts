@@ -9,9 +9,9 @@ const SUPER_ADMIN_EMAILS = [
   "rohan.sangani@clickpost.ai",
 ];
 
-const SECRET = new TextEncoder().encode(
-  process.env.NEXTAUTH_SECRET || "fallback-secret"
-);
+// No fallback: with the secret missing, admin tokens would verify against a
+// publicly-known constant. An empty key makes every verification fail closed.
+const SECRET = new TextEncoder().encode(process.env.NEXTAUTH_SECRET || "");
 
 /**
  * Check whether the request targets the admin console — either via

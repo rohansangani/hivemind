@@ -15,7 +15,10 @@ import Anthropic from "@anthropic-ai/sdk";
 //  Encryption (AES-256-GCM)
 // ─────────────────────────────────────────────────────────
 
-const ENCRYPTION_KEY = process.env.AI_KEY_ENCRYPTION_SECRET || process.env.NEXTAUTH_SECRET || "fallback-encryption-key-change-me";
+// No hardcoded fallback — NEXTAUTH_SECRET is guaranteed at boot by
+// src/instrumentation.ts; an empty key here would only make decryption fail,
+// never silently encrypt with a publicly-known constant.
+const ENCRYPTION_KEY = process.env.AI_KEY_ENCRYPTION_SECRET || process.env.NEXTAUTH_SECRET || "";
 
 function deriveKey(secret: string): Buffer {
   return crypto.scryptSync(secret, "hivemind-ai-keys", 32);

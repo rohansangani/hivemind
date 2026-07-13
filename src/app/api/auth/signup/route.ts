@@ -42,22 +42,14 @@ export async function POST(req: NextRequest) {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    // Check if any org has claimed this email's domain
+    // Auto-join is only allowed for domains an org has EXPLICITLY claimed via
+    // allowedDomains. There used to be a fallback that joined the org of any
+    // existing user with the same email domain — on shared domains (gmail.com
+    // etc.) that let strangers silently into a workspace.
     const domain = email.split("@")[1].toLowerCase();
-    let matchingOrg = await db.organization.findFirst({
+    const matchingOrg = await db.organization.findFirst({
       where: { allowedDomains: { has: domain } },
     });
-
-    // Fallback: check if an existing user in any org shares this email domain
-    if (!matchingOrg) {
-      const peerUser = await db.user.findFirst({
-        where: { email: { endsWith: "@" + domain } },
-        select: { organizationId: true },
-      });
-      if (peerUser?.organizationId) {
-        matchingOrg = await db.organization.findUnique({ where: { id: peerUser.organizationId } });
-      }
-    }
 
     let org: { id: string; name: string };
     let user: { id: string; email: string; name: string | null; role: string; onboarded: boolean };

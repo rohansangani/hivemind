@@ -513,13 +513,17 @@ async function fetchCRMEntries(orgId: string, queryTokens: string[], rawQuery: s
   const allSearchTerms = [...new Set([...nameTokens, ...bigrams])].slice(0, 8);
 
   const [analytics, records] = await Promise.all([
-    // Always fetch summaries, Customer Intelligence, Notes — small fixed set
+    // Always fetch summaries, Customer Intelligence, Notes — bounded: the note
+    // batches run 10k+ chars each, and unbounded this fetched every one of them
+    // to be scored per request.
     db.knowledgeEntry.findMany({
       where: {
         organizationId: orgId,
         source: "hubspot",
         NOT: { OR: CRM_RECORD_PREFIXES },
       },
+      orderBy: { createdAt: "desc" },
+      take: 40,
     }),
     // Targeted: individual records whose title contains a query token or bigram.
     // Bigrams find "John Smith at So True" when searching "So True" (each word alone
@@ -591,9 +595,14 @@ export async function retrieveRelevantKnowledge(
       targetMarket: options?.targetMarket ?? entities.markets?.[0] ?? undefined,
       targetCompetitor: options?.targetCompetitor ?? entities.competitors?.[0] ?? undefined,
     }),
-    // Fetch ALL knowledge entries — proof points, messaging, custom entries, content analyses, corrections
+    // Fetch curated knowledge — proof points, messaging, custom entries, content
+    // analyses, corrections. HubSpot rows are EXCLUDED here: the CRM sync writes
+    // 165k+ contact/company records into this table, and without the filter they
+    // crowd curated knowledge out of the recent-200 window (measured: ~64% of the
+    // window was CRM rows, leaving ~25 of 4,900+ proof points reachable). CRM
+    // context comes from the dedicated fetchCRMEntries() below.
     db.knowledgeEntry.findMany({
-      where: { organizationId: orgId },
+      where: { organizationId: orgId, source: { not: "hubspot" } },
       orderBy: { createdAt: "desc" },
       take: 200,
     }),

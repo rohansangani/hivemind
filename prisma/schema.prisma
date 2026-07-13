@@ -261,6 +261,9 @@ model KnowledgeEntry {
   organization    Organization @relation(fields: [organizationId], references: [id])
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  @@index([organizationId, source, createdAt])
+  @@index([organizationId, category])
 }
 
 // ═══════════════════════════════════════
@@ -279,6 +282,8 @@ model Skill {
   organization    Organization @relation(fields: [organizationId], references: [id])
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  @@index([organizationId, isActive])
 }
 
 // ═══════════════════════════════════════
@@ -318,6 +323,9 @@ model ContentAsset {
   organization     Organization @relation(fields: [organizationId], references: [id])
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, fileHash])
 }
 
 // ═══════════════════════════════════════
@@ -341,6 +349,9 @@ model GeneratedContent {
   organizationId  String
   organization    Organization @relation(fields: [organizationId], references: [id])
   createdAt       DateTime @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([generatedById, createdAt])
 }
 
 // ═══════════════════════════════════════
@@ -355,6 +366,8 @@ model Conversation {
   messages  Message[]
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
+
+  @@index([userId, updatedAt])
 }
 
 model Message {
@@ -365,6 +378,8 @@ model Message {
   conversationId String
   conversation   Conversation @relation(fields: [conversationId], references: [id])
   createdAt      DateTime     @default(now())
+
+  @@index([conversationId, createdAt])
 }
 
 // ═══════════════════════════════════════
@@ -387,6 +402,8 @@ model IndustryInsight {
   organizationId  String
   organization    Organization @relation(fields: [organizationId], references: [id])
   createdAt       DateTime @default(now())
+
+  @@index([organizationId, createdAt])
 }
 
 model LearningLog {
@@ -401,6 +418,8 @@ model LearningLog {
   organizationId  String
   organization    Organization @relation(fields: [organizationId], references: [id])
   createdAt       DateTime @default(now())
+
+  @@index([organizationId, createdAt])
 }
 
 model KnowledgeDocument {

@@ -97,21 +97,12 @@ export async function GET(req: NextRequest) {
       orgId = user.organizationId!;
       role = user.role;
     } else {
-      // New user via Google — apply same domain-based org logic as signup
-      let matchingOrg = await db.organization.findFirst({
+      // New user via Google — same rule as signup: auto-join only orgs that
+      // EXPLICITLY claimed this domain via allowedDomains (the old peer-domain
+      // fallback let strangers on shared domains into a workspace).
+      const matchingOrg = await db.organization.findFirst({
         where: { allowedDomains: { has: domain } },
       });
-
-      // Fallback: check if an existing user in any org shares this email domain
-      if (!matchingOrg) {
-        const peerUser = await db.user.findFirst({
-          where: { email: { endsWith: "@" + domain } },
-          select: { organizationId: true },
-        });
-        if (peerUser?.organizationId) {
-          matchingOrg = await db.organization.findUnique({ where: { id: peerUser.organizationId } });
-        }
-      }
 
       let resultUser;
       let resultOrg;

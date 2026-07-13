@@ -81,10 +81,14 @@ export async function PUT(req: NextRequest) {
 
     if (section === "product_delete") {
       const { id } = body;
+      // Verify org ownership BEFORE touching join tables — they key on productId
+      // alone, so an unchecked id could strip another org's product associations.
+      const owned = await db.product.findFirst({ where: { id, organizationId: decoded.orgId }, select: { id: true } });
+      if (!owned) return NextResponse.json({ error: "Not found" }, { status: 404 });
       await db.productPersona.deleteMany({ where: { productId: id } });
       await db.productCompetitor.deleteMany({ where: { productId: id } });
       await db.productMarket.deleteMany({ where: { productId: id } });
-      await db.product.updateMany({ where: { bundleParentId: id }, data: { bundleParentId: null } });
+      await db.product.updateMany({ where: { bundleParentId: id, organizationId: decoded.orgId }, data: { bundleParentId: null } });
       await db.product.deleteMany({ where: { id, organizationId: decoded.orgId } });
       return NextResponse.json({ success: true });
     }
