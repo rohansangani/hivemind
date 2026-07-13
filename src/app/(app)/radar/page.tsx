@@ -4674,18 +4674,58 @@ function CheckDbSection() {
   const [error, setError] = useState("");
   const [result, setResult] = useState<CheckDbResult | null>(null);
 
+  // Set when a real multi-column CSV (not just a plain list of values) is uploaded — lets the
+  // user pick WHICH column to check, instead of the file's other columns (name, title, company)
+  // getting mixed into the values list. A single-column file/plain-text paste skips this
+  // entirely and just uses `text` directly, same as before.
+  const [csvFileName, setCsvFileName] = useState("");
+  const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
+  const [csvRows, setCsvRows] = useState<Record<string, string>[]>([]);
+  const [csvColumn, setCsvColumn] = useState("");
+
   const columnOptions = CHECK_DB_COLUMNS[table];
   const activeColumn = columnOptions.find((c) => c.id === column) || columnOptions[0];
 
-  const values = [
-    ...new Set(
-      text.split(/[\n,;]+/).map((v) => v.trim()).filter(Boolean),
-    ),
-  ];
+  // Keywords used to auto-guess which CSV header matches the column being checked — e.g. a file
+  // with a "LinkedIn Profile" header auto-maps when checking by LinkedIn URL.
+  const COLUMN_HEADER_HINTS: Record<string, string[]> = {
+    email: ["email", "e-mail"],
+    domain: ["domain", "website", "url"],
+    company_name: ["company", "account", "organization"],
+    name: ["company", "account", "name", "organization"],
+    phone: ["phone", "mobile", "tel"],
+    linkedin_url: ["linkedin"],
+  };
+
+  const guessCsvColumn = (headers: string[], checkColumn: string): string => {
+    const hints = COLUMN_HEADER_HINTS[checkColumn] || [];
+    const match = headers.find((h) => hints.some((hint) => h.toLowerCase().includes(hint)));
+    return match || headers[0] || "";
+  };
+
+  const clearCsv = () => {
+    setCsvFileName("");
+    setCsvHeaders([]);
+    setCsvRows([]);
+    setCsvColumn("");
+  };
+
+  const values = csvRows.length
+    ? [...new Set(csvRows.map((r) => (r[csvColumn] || "").trim()).filter(Boolean))]
+    : [...new Set(text.split(/[\n,;]+/).map((v) => v.trim()).filter(Boolean))];
 
   const switchTable = (t: "contacts" | "accounts") => {
     setTable(t);
-    setColumn(CHECK_DB_COLUMNS[t][0].id);
+    const firstCol = CHECK_DB_COLUMNS[t][0].id;
+    setColumn(firstCol);
+    if (csvHeaders.length) setCsvColumn(guessCsvColumn(csvHeaders, firstCol));
+    setResult(null);
+    setError("");
+  };
+
+  const switchColumn = (c: string) => {
+    setColumn(c);
+    if (csvHeaders.length) setCsvColumn(guessCsvColumn(csvHeaders, c));
     setResult(null);
     setError("");
   };
@@ -4696,8 +4736,18 @@ function CheckDbSection() {
     const reader = new FileReader();
     reader.onload = () => {
       const raw = String(reader.result || "");
-      // For email columns, only pull things that actually look like emails out of a pasted CSV
-      // (avoids picking up header/other-column noise); for everything else just split by line.
+      const { headers, rows } = parseCSV(raw);
+      // A real multi-column CSV (matching column headers, more than one field) needs mapping so
+      // the wrong column's values (name/title/company) don't leak into what gets checked.
+      if (headers.length > 1 && rows.length) {
+        setCsvFileName(f.name);
+        setCsvHeaders(headers);
+        setCsvRows(rows);
+        setCsvColumn(guessCsvColumn(headers, column));
+        setText("");
+        return;
+      }
+      // Single-column file or unstructured text paste — same behavior as before.
       const found = column === "email"
         ? raw.match(/[^\s,;"']+@[^\s,;"']+/g) || []
         : raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
@@ -4749,7 +4799,7 @@ function CheckDbSection() {
       <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
         <div className="px-5 py-4 border-b border-[var(--hm-border)]">
           <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Check values against the database</h2>
-          <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">Paste values (one per line) or upload a CSV — we&apos;ll show which already exist, by any column, in Contacts or Accounts.</p>
+          <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">Paste values (one per line) or upload a CSV — with a multi-column file, pick which column to check (e.g. just a LinkedIn URL column). We&apos;ll show which already exist, by any column, in Contacts or Accounts.</p>
         </div>
         <div className="px-5 py-5 space-y-3">
           <div className="flex items-center gap-3 flex-wrap">
@@ -4766,18 +4816,45 @@ function CheckDbSection() {
             </div>
             <select
               value={column}
-              onChange={(e) => { setColumn(e.target.value); setResult(null); setError(""); }}
+              onChange={(e) => switchColumn(e.target.value)}
               className="h-[34px] px-2.5 rounded-lg border border-[var(--hm-border)] bg-[var(--hm-bg-primary)] text-[12.5px]"
             >
               {columnOptions.map((c) => <option key={c.id} value={c.id}>Check by {c.label}</option>)}
             </select>
           </div>
-          <textarea
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder={activeColumn.placeholder}
-            style={{ minHeight: 120 }}
-          />
+
+          {csvHeaders.length > 1 ? (
+            <div className="rounded-lg border border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[12.5px] text-[var(--hm-text-secondary)] truncate">📄 {csvFileName} — {csvRows.length} row(s)</span>
+                <button onClick={clearCsv} className="text-[11.5px] text-red-500 hover:text-red-600 flex-shrink-0">Remove</button>
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-[12px] text-[var(--hm-text-tertiary)] flex-shrink-0">Which column has the {activeColumn.label.toLowerCase()}?</label>
+                <select
+                  value={csvColumn}
+                  onChange={(e) => { setCsvColumn(e.target.value); setResult(null); setError(""); }}
+                  className="h-[30px] px-2 rounded-md border border-[var(--hm-border)] bg-[var(--hm-bg-primary)] text-[12px] flex-1 min-w-0"
+                >
+                  {csvHeaders.map((h) => <option key={h} value={h}>{h}</option>)}
+                </select>
+              </div>
+              {csvColumn && (
+                <p className="text-[11px] text-[var(--hm-text-tertiary)]">
+                  Preview: {csvRows.slice(0, 3).map((r) => r[csvColumn]).filter(Boolean).join(", ") || "—"}
+                  {csvRows.length > 3 ? ` +${csvRows.length - 3} more` : ""}
+                </p>
+              )}
+            </div>
+          ) : (
+            <textarea
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder={activeColumn.placeholder}
+              style={{ minHeight: 120 }}
+            />
+          )}
+
           <div className="flex items-center gap-3 flex-wrap">
             <label className="hm-btn hm-btn-secondary cursor-pointer" style={{ height: 34, padding: "0 12px", fontSize: 12 }}>
               Upload CSV
