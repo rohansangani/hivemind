@@ -644,11 +644,11 @@ export default function EmailSequencesPage() {
         if (!r.ok) throw new Error(d.error || "Couldn't start the batch job");
         setActiveJobStatus(d.job);
         setResults(d.job.results || []);
+        loadRecentJobs();
         if (d.job.status === "running") {
           watchJob(d.job.id);
         } else {
           setActiveJobId(d.job.id);
-          loadRecentJobs();
         }
       }
     } catch (e) {
