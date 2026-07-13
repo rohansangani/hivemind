@@ -75,18 +75,79 @@ function normalizeEmailStatuses(emailStatuses: unknown): string[] {
   return Array.isArray(emailStatuses) && emailStatuses.length ? (emailStatuses as string[]) : DEFAULT_EMAIL_STATUSES;
 }
 
-/** Exact count for a filter + email-status combination — no CSV built. */
-export async function countContacts(filters: Record<string, unknown>, emailStatuses?: unknown): Promise<number> {
+/**
+ * General-purpose list-hygiene rule — "no more than N per account/domain/company", "just one
+ * per X" — rather than a single hardcoded "max per account" flag. Ask Halo populates `field`
+ * dynamically from whatever grouping the user actually describes in plain language, so this one
+ * primitive covers the whole family of these requests instead of needing a new flag per phrasing.
+ */
+export interface GroupCapConstraint {
+  /** Which column defines a "group" — account_id/company_name for "per account", domain for
+   * "per domain/company website", etc. Any real column on the row works. */
+  field: string;
+  /** Max rows to keep per distinct value of `field`. */
+  max: number;
+}
+
+const EMAIL_STATUS_QUALITY: Record<string, number> = {
+  "safe to send": 5, "verified": 4, "risky": 2, "unknown": 1, "invalid": 0,
+};
+
+/** Applies a group cap to an already-filtered row set. When a group has more than `max` rows,
+ * keeps the highest-quality ones first (by email_status: safe to send > verified > risky >
+ * unknown > invalid > unvalidated) rather than an arbitrary/first-seen order, so capping doesn't
+ * accidentally throw away the best-deliverable contact in favor of a worse one. */
+export function applyGroupCap(rows: Record<string, unknown>[], cap?: GroupCapConstraint): Record<string, unknown>[] {
+  if (!cap || !cap.field || !cap.max || cap.max < 1) return rows;
+  const ranked = [...rows].sort((a, b) => {
+    const qa = EMAIL_STATUS_QUALITY[String(a.email_status ?? "").toLowerCase().trim()] ?? -1;
+    const qb = EMAIL_STATUS_QUALITY[String(b.email_status ?? "").toLowerCase().trim()] ?? -1;
+    return qb - qa;
+  });
+  const seenCount = new Map<string, number>();
+  const kept: Record<string, unknown>[] = [];
+  for (const row of ranked) {
+    const key = String(row[cap.field] ?? "__no_group__");
+    const count = seenCount.get(key) ?? 0;
+    if (count >= cap.max) continue;
+    seenCount.set(key, count + 1);
+    kept.push(row);
+  }
+  return kept;
+}
+
+/** Exact count for a filter + email-status combination (+ optional group cap) — no CSV built. */
+export async function countContacts(
+  filters: Record<string, unknown>,
+  emailStatuses?: unknown,
+  groupCap?: GroupCapConstraint,
+): Promise<number> {
   const rawStatuses = normalizeEmailStatuses(emailStatuses);
+  // A group cap can't be expressed as a PostgREST filter (it depends on which OTHER rows exist in
+  // the result), so counting with one active means pulling real rows and capping client-side
+  // instead of a cheap COUNT-only query.
+  if (groupCap?.field && groupCap.max > 0) {
+    const wantsUnvalidated = rawStatuses.includes("unvalidated");
+    const namedStatuses = new Set(rawStatuses.filter((s) => s !== "unvalidated").map((s) => s.toLowerCase().trim()));
+    const query = buildContactQuery(filters);
+    const { rows: all } = await fetchAllPages("contacts_view", query);
+    const matched = all.filter((c) => {
+      const status = String(c.email_status ?? "").toLowerCase().trim();
+      const ok = status === "" ? wantsUnvalidated : namedStatuses.has(status);
+      return ok && !c.hubspot_excluded;
+    });
+    return applyGroupCap(matched, groupCap).length;
+  }
   const query = buildContactQuery(filters) + contactStatusFilter(rawStatuses) + "&hubspot_excluded=not.is.true";
   const { total } = await selectFrom("contacts_view", query, { from: 0, to: 0 });
   return total;
 }
 
-/** Builds the actual CSV for a filter + email-status combination. */
+/** Builds the actual CSV for a filter + email-status combination (+ optional group cap). */
 export async function exportContactsCsv(
   filters: Record<string, unknown>,
   emailStatuses?: unknown,
+  groupCap?: GroupCapConstraint,
 ): Promise<{ csv: string; matched: number; exported: number; truncated: boolean }> {
   const rawStatuses = normalizeEmailStatuses(emailStatuses);
   const wantsUnvalidated = rawStatuses.includes("unvalidated");
@@ -95,14 +156,15 @@ export async function exportContactsCsv(
   const query = buildContactQuery(filters);
   const { rows: all, truncated } = await fetchAllPages("contacts_view", query);
 
-  const csvRows = [CONTACT_EXPORT_LABELS.join(",")];
-  for (const c of all) {
+  let matched = all.filter((c) => {
     const status = String(c.email_status ?? "").toLowerCase().trim();
-    const matches = status === "" ? wantsUnvalidated : namedStatuses.has(status);
-    if (!matches) continue;
-    if (c.hubspot_excluded) continue;
-    csvRows.push(CONTACT_EXPORT_COLS.map((col) => csvCell(c[col])).join(","));
-  }
+    const ok = status === "" ? wantsUnvalidated : namedStatuses.has(status);
+    return ok && !c.hubspot_excluded;
+  });
+  matched = applyGroupCap(matched, groupCap);
+
+  const csvRows = [CONTACT_EXPORT_LABELS.join(",")];
+  for (const c of matched) csvRows.push(CONTACT_EXPORT_COLS.map((col) => csvCell(c[col])).join(","));
 
   return { csv: csvRows.join("\n"), matched: all.length, exported: csvRows.length - 1, truncated };
 }
