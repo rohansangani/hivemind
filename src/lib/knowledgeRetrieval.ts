@@ -960,8 +960,14 @@ export async function retrieveRelevantKnowledge(
   // product gets listed rather than leaving that to open competition.
   const MIN_PROOF_POINTS = 8;
   const sortedAll = [...allItems].sort((a, b) => b.relevanceScore - a.relevanceScore);
+  // Within the guaranteed slice, a PERCENTAGE outcome stat ("62% reduction...") is what outreach
+  // copy actually needs to quote — a store count, a day count, or a customer testimonial also
+  // contains a digit but isn't a citable outcome number, so "%" specifically goes first, then any
+  // other digit, then everything else.
+  const proofPointRank = (title: string) => (title.includes("%") ? 2 : /\d/.test(title) ? 1 : 0);
   const topProofPoints = sortedAll
     .filter(i => i.sourceType === "proof_point")
+    .sort((a, b) => proofPointRank(b.title) - proofPointRank(a.title))
     .slice(0, MIN_PROOF_POINTS);
   const guaranteedIds = new Set(topProofPoints.map(i => i.id));
   const rankedItems = [
