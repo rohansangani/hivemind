@@ -4646,32 +4646,68 @@ interface CheckDbResult {
   notFound: string[];
 }
 
+const CHECK_DB_TABLES = [
+  { id: "contacts", label: "Contacts" },
+  { id: "accounts", label: "Accounts" },
+] as const;
+
+const CHECK_DB_COLUMNS: Record<"contacts" | "accounts", Array<{ id: string; label: string; placeholder: string }>> = {
+  contacts: [
+    { id: "email", label: "Email", placeholder: "jane@company.com\njohn@company.com" },
+    { id: "domain", label: "Domain", placeholder: "company.com\nanothercompany.com" },
+    { id: "company_name", label: "Company Name", placeholder: "Acme Inc\nOther Co" },
+    { id: "phone", label: "Phone", placeholder: "+1 555 123 4567" },
+    { id: "linkedin_url", label: "LinkedIn URL", placeholder: "linkedin.com/in/janedoe" },
+  ],
+  accounts: [
+    { id: "name", label: "Company Name", placeholder: "Acme Inc\nOther Co" },
+    { id: "domain", label: "Domain", placeholder: "company.com\nanothercompany.com" },
+    { id: "linkedin_url", label: "LinkedIn URL", placeholder: "linkedin.com/company/acme" },
+  ],
+};
+
 function CheckDbSection() {
+  const [table, setTable] = useState<"contacts" | "accounts">("contacts");
+  const [column, setColumn] = useState("email");
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<CheckDbResult | null>(null);
 
-  const emails = [
+  const columnOptions = CHECK_DB_COLUMNS[table];
+  const activeColumn = columnOptions.find((c) => c.id === column) || columnOptions[0];
+
+  const values = [
     ...new Set(
-      text.split(/[\s,;]+/).map((e) => e.toLowerCase().trim()).filter((e) => e.includes("@")),
+      text.split(/[\n,;]+/).map((v) => v.trim()).filter(Boolean),
     ),
   ];
+
+  const switchTable = (t: "contacts" | "accounts") => {
+    setTable(t);
+    setColumn(CHECK_DB_COLUMNS[t][0].id);
+    setResult(null);
+    setError("");
+  };
 
   const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
     const reader = new FileReader();
     reader.onload = () => {
-      // Grab anything that looks like an email from the CSV/text.
-      const found = String(reader.result || "").match(/[^\s,;"']+@[^\s,;"']+/g) || [];
+      const raw = String(reader.result || "");
+      // For email columns, only pull things that actually look like emails out of a pasted CSV
+      // (avoids picking up header/other-column noise); for everything else just split by line.
+      const found = column === "email"
+        ? raw.match(/[^\s,;"']+@[^\s,;"']+/g) || []
+        : raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
       setText((prev) => (prev ? prev + "\n" : "") + found.join("\n"));
     };
     reader.readAsText(f);
   };
 
   const run = async () => {
-    if (!emails.length) return;
+    if (!values.length) return;
     setBusy(true);
     setError("");
     setResult(null);
@@ -4679,7 +4715,7 @@ function CheckDbSection() {
       const r = await fetch("/api/radar/check-db", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ emails }),
+        body: JSON.stringify({ values, column, table }),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || "Check failed");
@@ -4712,14 +4748,34 @@ function CheckDbSection() {
     <div className="space-y-5">
       <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
         <div className="px-5 py-4 border-b border-[var(--hm-border)]">
-          <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Check emails against the database</h2>
-          <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">Paste emails (one per line) or upload a CSV — we&apos;ll show which already exist.</p>
+          <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Check values against the database</h2>
+          <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">Paste values (one per line) or upload a CSV — we&apos;ll show which already exist, by any column, in Contacts or Accounts.</p>
         </div>
         <div className="px-5 py-5 space-y-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-1.5 rounded-lg border border-[var(--hm-border)] p-0.5">
+              {CHECK_DB_TABLES.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => switchTable(t.id)}
+                  className={`px-3 py-1.5 rounded-md text-[12.5px] font-medium transition-colors ${table === t.id ? "bg-[#4361ee] text-white" : "text-[var(--hm-text-secondary)] hover:bg-[var(--hm-bg-secondary)]"}`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            <select
+              value={column}
+              onChange={(e) => { setColumn(e.target.value); setResult(null); setError(""); }}
+              className="h-[34px] px-2.5 rounded-lg border border-[var(--hm-border)] bg-[var(--hm-bg-primary)] text-[12.5px]"
+            >
+              {columnOptions.map((c) => <option key={c.id} value={c.id}>Check by {c.label}</option>)}
+            </select>
+          </div>
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder={"jane@company.com\njohn@company.com"}
+            placeholder={activeColumn.placeholder}
             style={{ minHeight: 120 }}
           />
           <div className="flex items-center gap-3 flex-wrap">
@@ -4727,8 +4783,8 @@ function CheckDbSection() {
               Upload CSV
               <input type="file" accept=".csv,text/csv,.txt" onChange={onFile} style={{ display: "none" }} />
             </label>
-            <span className="text-[12px] text-[var(--hm-text-tertiary)]">{emails.length} valid email(s) detected</span>
-            <button onClick={run} disabled={busy || !emails.length} className="hm-btn hm-btn-primary ml-auto" style={{ height: 34, padding: "0 16px", fontSize: 12.5 }}>
+            <span className="text-[12px] text-[var(--hm-text-tertiary)]">{values.length} value(s) detected</span>
+            <button onClick={run} disabled={busy || !values.length} className="hm-btn hm-btn-primary ml-auto" style={{ height: 34, padding: "0 16px", fontSize: 12.5 }}>
               {busy ? "Checking…" : "Check DB"}
             </button>
           </div>
@@ -4748,7 +4804,7 @@ function CheckDbSection() {
             )}
           </div>
           {result.data.length === 0 ? (
-            <div className="py-12 text-center text-[13px] text-[var(--hm-text-tertiary)]">None of the {result.checked} emails were found in the database.</div>
+            <div className="py-12 text-center text-[13px] text-[var(--hm-text-tertiary)]">None of the {result.checked} value(s) were found in the database.</div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-[13px]">
