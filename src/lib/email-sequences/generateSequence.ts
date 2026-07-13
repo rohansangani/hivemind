@@ -114,6 +114,21 @@ function insertStatIfMissing(body: string, stat: string): string {
   return paragraphs.join("\n\n");
 }
 
+/** Deterministic guarantee: subject lines are the hook, stats belong in the body — strips any
+ * numeric token (91%, 450+, 3-day, etc.) and the punctuation immediately around it, then cleans
+ * up the resulting double spaces/stray leading-or-trailing punctuation. Leaves a plain subject
+ * with no digits rather than a hole where the number used to be. */
+function stripNumbersFromSubject(subject: string): string {
+  if (!/\d/.test(subject)) return subject;
+  const cleaned = subject
+    .replace(/[^\sa-zA-Z]*\d[\d.,%+-]*[a-zA-Z]{0,2}[^\sa-zA-Z]*\s*/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim()
+    .replace(/^[,.\-–—:;]+|[,.\-–—:;]+$/g, "")
+    .trim();
+  return cleaned ? cleaned.charAt(0).toUpperCase() + cleaned.slice(1) : cleaned;
+}
+
 export async function generateSequenceForProspect({
   orgId, userId, prospect, config, mode,
 }: GenerateSequenceParams): Promise<GenerateSequenceResult> {
@@ -259,7 +274,7 @@ ${config.emailCount === 3
 - Even within a short word budget, the required stat takes priority over scene-setting or extra color — cut a descriptive sentence before cutting the number.
 - ${config.subjectMode === "single"
     ? `Use exactly ONE subject line for every single email in the sequence — do not vary it between emails. ${config.singleSubject ? `Use this exact subject line, verbatim, for every email: "${config.singleSubject}"` : "Invent one short (3-6 words), intriguing, non-clickbaity subject and reuse it identically across every email."} This mimics replying in the same email thread rather than starting a new one each follow-up.`
-    : `Subject lines must be 3-8 words, hyper-specific to that email's actual angle — not generic ("Quick question" is banned) and never a bare unadorned label ("Shipping from Oklahoma City" alone, with no other flavor). Six style patterns to draw from:
+    : `Subject lines must be 3-8 words, hyper-specific to that email's actual angle — not generic ("Quick question" is banned) and never a bare unadorned label ("Shipping from Oklahoma City" alone, with no other flavor). NEVER include a number, percentage, or statistic in a subject line — no "92%", no "450+", no digit of any kind. Stats belong in the body only; the subject line's job is the hook, not the proof. Six style patterns to draw from:
   - Plain benefit/opportunity statement: "[Company]'s post-purchase opportunity", "Turning post-purchase into [wordplay on Company's name]"
   - Direct question: "Can exchanging a [Company] order be easier?", "Is [Company] wasting digital real estate?"
   - Provocative juxtaposition: "Why [Company]'s [pain area] isn't [their brand's stated identity/value] yet"
@@ -362,6 +377,16 @@ Return ONLY valid JSON, no markdown or explanation.`;
       statCursor++;
       return { ...email, body: insertStatIfMissing(email.body, stat) };
     });
+  }
+
+  // Guarantee, not a hope: strip any stray number/percentage out of a subject line — the
+  // "never cite a number in the subject" rule above is a compliance instruction, this is the
+  // deterministic backstop.
+  if (Array.isArray(parsed?.emails)) {
+    parsed.emails = parsed.emails.map((email: { subject: string; body: string }) => ({
+      ...email,
+      subject: stripNumbersFromSubject(email.subject),
+    }));
   }
 
   recordSignal({
