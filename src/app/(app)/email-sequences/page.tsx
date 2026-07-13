@@ -1356,10 +1356,23 @@ export default function EmailSequencesPage() {
             {verticals.length > 0 && (
               <div className="mb-4">
                 <label className={labelCls}>Vertical</label>
-                <select className={inputCls} value={vertical} onChange={e => setVertical(e.target.value)}>
-                  <option value="">All verticals (no specific targeting)</option>
-                  {verticals.map(v => <option key={v} value={v}>{v}</option>)}
-                </select>
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    onClick={() => setVertical("")}
+                    className={`h-[32px] px-3 rounded-lg text-[12px] transition-all ${vertical === "" ? "bg-[#4361ee] text-white" : "border border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[#4361ee]/40"}`}
+                  >
+                    All verticals
+                  </button>
+                  {verticals.map(v => (
+                    <button
+                      key={v}
+                      onClick={() => setVertical(v)}
+                      className={`h-[32px] px-3 rounded-lg text-[12px] transition-all ${vertical === v ? "bg-[#4361ee] text-white" : "border border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[#4361ee]/40"}`}
+                    >
+                      {v}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
 
