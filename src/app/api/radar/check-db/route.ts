@@ -27,17 +27,27 @@ const CONTACT_CHECK_COLUMNS: Record<string, { col: string; normalize: (v: string
   domain: { col: "domain", normalize: normalizeDomain },
   company_name: { col: "company_name", normalize: (v) => v.trim() },
   phone: { col: "phone", normalize: (v) => v.trim() },
-  linkedin_url: { col: "linkedin_url", normalize: (v) => v.trim() },
+  linkedin_url: { col: "linkedin_url", normalize: normalizeLinkedin },
 };
 
 const ACCOUNT_CHECK_COLUMNS: Record<string, { col: string; normalize: (v: string) => string }> = {
   name: { col: "name", normalize: (v) => v.trim() },
   domain: { col: "domain", normalize: normalizeDomain },
-  linkedin_url: { col: "linkedin_url", normalize: (v) => v.trim() },
+  linkedin_url: { col: "linkedin_url", normalize: normalizeLinkedin },
 };
 
 function normalizeDomain(v: string): string {
   return v.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, "");
+}
+
+// Same idea as normalizeDomain — bulk-scraped LinkedIn URL lists are rarely consistent about
+// http vs https, www, or a trailing slash. Note: this normalizes the QUERY input only, not the
+// stored column, so it only helps when the DB itself was already stored in this same lowercase/
+// no-protocol/no-trailing-slash shape (true for anything Radar's own Check LinkedIn flow wrote,
+// less certain for older bulk-uploaded rows) — a real fix for the remainder would need a
+// matching functional index + view column, out of scope for the timeout fix this was bundled with.
+function normalizeLinkedin(v: string): string {
+  return v.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/$/, "");
 }
 
 export async function POST(req: NextRequest) {
@@ -61,13 +71,19 @@ export async function POST(req: NextRequest) {
     const view = table === "accounts" ? "accounts" : "contacts_view";
     const cols = table === "accounts" ? ACCOUNT_COLS : CONTACT_COLS;
 
+    // Chunks run in parallel, not sequentially — with a real index on `col` this isn't strictly
+    // needed anymore, but it keeps large lists (700+ values) comfortably inside maxDuration even
+    // if a chunk is briefly slow, instead of every chunk's latency adding up one after another.
     const CHUNK = 200;
-    const rows: Record<string, unknown>[] = [];
-    for (let i = 0; i < values.length; i += CHUNK) {
-      const list = values.slice(i, i + CHUNK).map((v) => encodeURIComponent(v)).join(",");
-      const { rows: chunk } = await selectFrom(view, `select=${cols}&${col}=in.(${list})`);
-      rows.push(...(chunk as Record<string, unknown>[]));
-    }
+    const chunks: string[][] = [];
+    for (let i = 0; i < values.length; i += CHUNK) chunks.push(values.slice(i, i + CHUNK));
+    const chunkResults = await Promise.all(
+      chunks.map((chunk) => {
+        const list = chunk.map((v) => encodeURIComponent(v)).join(",");
+        return selectFrom(view, `select=${cols}&${col}=in.(${list})`);
+      }),
+    );
+    const rows: Record<string, unknown>[] = chunkResults.flatMap((r) => r.rows as Record<string, unknown>[]);
 
     const found = new Set(rows.map((r) => normalize(String(r[col] ?? ""))));
     const notFound = values.filter((v) => !found.has(v));
