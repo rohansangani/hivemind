@@ -183,10 +183,19 @@ export async function POST(req: NextRequest) {
       const jobs = await db.emailSequenceJob.findMany({
         where: { organizationId: decoded.orgId },
         orderBy: { createdAt: "desc" },
-        take: 20,
+        take: 50,
         select: { id: true, label: true, mode: true, status: true, processed: true, total: true, error: true, createdAt: true, updatedAt: true },
       });
       return NextResponse.json({ jobs });
+    }
+
+    if (action === "delete") {
+      const { jobId } = body as { jobId?: string };
+      if (!jobId) return NextResponse.json({ error: "No jobId" }, { status: 400 });
+      const job = await db.emailSequenceJob.findUnique({ where: { id: jobId }, select: { organizationId: true } });
+      if (!job || job.organizationId !== decoded.orgId) return NextResponse.json({ error: "Job not found" }, { status: 404 });
+      await db.emailSequenceJob.delete({ where: { id: jobId } });
+      return NextResponse.json({ ok: true });
     }
 
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });
