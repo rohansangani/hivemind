@@ -1518,36 +1518,37 @@ export default function EmailSequencesPage() {
             </div>
           )}
 
-          {(mode === "bulk" || mode === "radar") && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <p className="text-[11px] font-medium text-[var(--hm-text-tertiary)] uppercase tracking-wide">Recent generation jobs</p>
-                <button onClick={loadRecentJobs} disabled={recentJobsLoading} className="text-[11px] text-[var(--hm-accent)]">
-                  {recentJobsLoading ? "Refreshing..." : "Refresh"}
-                </button>
-              </div>
-              {recentJobsError ? (
-                <p className="text-[11.5px] text-red-500">{recentJobsError}</p>
-              ) : !recentJobs.length ? (
-                <p className="text-[11.5px] text-[var(--hm-text-tertiary)]">{recentJobsLoading ? "Loading..." : "No generation jobs yet."}</p>
-              ) : (
-                <div className="space-y-1 max-h-[180px] overflow-y-auto">
-                  {recentJobs.map((j) => (
-                    <button
-                      key={j.id}
-                      onClick={() => watchJob(j.id)}
-                      className={`w-full flex items-center justify-between text-left text-[11.5px] px-2 py-1.5 rounded-md border ${activeJobId === j.id ? "border-[var(--hm-accent)]" : "border-[var(--hm-border)]"} bg-[var(--hm-bg-primary)] hover:border-[var(--hm-accent)]/40`}
-                    >
-                      <span className="truncate text-[var(--hm-text-secondary)]">{j.label || "Untitled batch"}</span>
-                      <span className={`shrink-0 ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium ${j.status === "done" ? "bg-[#DCFCE7] text-[#059669]" : j.status === "error" ? "bg-red-50 text-red-600" : "bg-[var(--hm-accent-light)] text-[var(--hm-accent)]"}`}>
-                        {j.status === "done" ? `done — ${j.total}/${j.total}` : j.status === "error" ? "error" : `running — ${j.processed}/${j.total}`}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
+          {/* Shown regardless of mode tab — background jobs run independent of which tab is
+              currently selected, and this list (with per-item delete) is more detail than the
+              always-visible left sidebar shows inline. */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] font-medium text-[var(--hm-text-tertiary)] uppercase tracking-wide">Recent generation jobs</p>
+              <button onClick={loadRecentJobs} disabled={recentJobsLoading} className="text-[11px] text-[var(--hm-accent)]">
+                {recentJobsLoading ? "Refreshing..." : "Refresh"}
+              </button>
             </div>
-          )}
+            {recentJobsError ? (
+              <p className="text-[11.5px] text-red-500">{recentJobsError}</p>
+            ) : !recentJobs.length ? (
+              <p className="text-[11.5px] text-[var(--hm-text-tertiary)]">{recentJobsLoading ? "Loading..." : "No generation jobs yet."}</p>
+            ) : (
+              <div className="space-y-1 max-h-[180px] overflow-y-auto">
+                {recentJobs.map((j) => (
+                  <button
+                    key={j.id}
+                    onClick={() => watchJob(j.id)}
+                    className={`w-full flex items-center justify-between text-left text-[11.5px] px-2 py-1.5 rounded-md border ${activeJobId === j.id ? "border-[var(--hm-accent)]" : "border-[var(--hm-border)]"} bg-[var(--hm-bg-primary)] hover:border-[var(--hm-accent)]/40`}
+                  >
+                    <span className="truncate text-[var(--hm-text-secondary)]">{j.label || "Untitled batch"}</span>
+                    <span className={`shrink-0 ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium ${j.status === "done" ? "bg-[#DCFCE7] text-[#059669]" : j.status === "error" ? "bg-red-50 text-red-600" : j.status === "cancelled" ? "bg-[var(--hm-border)] text-[var(--hm-text-tertiary)]" : "bg-[var(--hm-accent-light)] text-[var(--hm-accent)]"}`}>
+                      {j.status === "done" ? `done — ${j.total}/${j.total}` : j.status === "error" ? "error" : j.status === "cancelled" ? `stopped — ${j.processed}/${j.total}` : `running — ${j.processed}/${j.total}`}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div></div>
