@@ -285,6 +285,13 @@ export default function SetupWizardPage() {
     }
     setStepErrors([]);
     if (currentStep < 5) {
+      // Persist progress on every step so closing the tab mid-wizard loses nothing
+      const result = await saveData(false);
+      if (!result.ok) {
+        setStepErrors([result.error || "Failed to save your progress. Please try again."]);
+        window.scrollTo(0, 0);
+        return;
+      }
       setCurrentStep(currentStep + 1);
       window.scrollTo(0, 0);
     } else {

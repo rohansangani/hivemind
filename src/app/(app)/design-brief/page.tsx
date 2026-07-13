@@ -155,8 +155,13 @@ function BriefView({ item, onDelete, onRegenerate, regenerating }: { item: Brief
 
   const handleDelete = async () => {
     setDeleting(true);
-    await fetch(`/api/design-brief/${item.id}`, { method: "DELETE" });
-    onDelete(item.id);
+    try {
+      const res = await fetch(`/api/design-brief/${item.id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Delete failed");
+      onDelete(item.id);
+    } catch {
+      setDeleting(false);
+    }
   };
 
   return (
@@ -316,8 +321,9 @@ export default function DesignBriefPage() {
   const loadBriefs = useCallback(async (cursor?: string) => {
     const url = cursor ? `/api/design-brief?cursor=${cursor}` : "/api/design-brief";
     const res = await fetch(url);
+    if (!res.ok) throw new Error(`Failed to load briefs (${res.status})`);
     const data = await res.json();
-    return data as { briefs: BriefItem[]; nextCursor: string | null };
+    return { briefs: data.briefs ?? [], nextCursor: data.nextCursor ?? null } as { briefs: BriefItem[]; nextCursor: string | null };
   }, []);
 
   useEffect(() => {
@@ -325,7 +331,10 @@ export default function DesignBriefPage() {
       setBriefs(d.briefs);
       setNextCursor(d.nextCursor);
       setBriefsLoading(false);
-    }).catch(() => setBriefsLoading(false));
+    }).catch(() => {
+      setError("Couldn't load your brief history — refresh to retry.");
+      setBriefsLoading(false);
+    });
   }, [loadBriefs]);
 
   const handleGenerate = async () => {
@@ -364,6 +373,8 @@ export default function DesignBriefPage() {
       const data = await res.json();
       if (!res.ok) { setError(data.error || "Failed to regenerate brief"); return; }
       const updated: BriefItem = { id: data.id, prompt: activeBrief.prompt, platform: data.brief.platform || null, format: data.brief.format || null, brief: data.brief, createdAt: data.createdAt };
+      // Remove the superseded brief server-side too, so history doesn't resurrect it on reload
+      fetch(`/api/design-brief/${activeBrief.id}`, { method: "DELETE" }).catch(() => {});
       setBriefs(prev => [updated, ...prev.filter(b => b.id !== activeBrief.id)]);
       setActiveBrief(updated);
     } catch {

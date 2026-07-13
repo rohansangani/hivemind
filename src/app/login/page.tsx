@@ -72,6 +72,7 @@ export default function LoginPage() {
   };
 
   const handleSubmit = useCallback(async () => {
+    if (loading) return;
     // Client-side validation
     const eErr = validateEmail(email);
     const pErr = validatePassword(password);
@@ -128,7 +129,7 @@ export default function LoginPage() {
       setLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, email, password, name, router]);
+  }, [tab, email, password, name, router, loading]);
 
   const validateNewPassword = (value: string) => {
     if (!value) return "Password is required";
@@ -178,10 +179,6 @@ export default function LoginPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resetToken, newPassword, confirmPassword, router]);
 
-  // Submit on Enter key from any field
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") handleSubmit();
-  };
 
   return (
     <div className="min-h-screen flex">
@@ -438,7 +435,7 @@ export default function LoginPage() {
                 placeholder="Your full name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                onKeyDown={handleKeyDown}
+
                 autoComplete="name"
                 className="w-full"
               />
@@ -458,7 +455,7 @@ export default function LoginPage() {
               value={email}
               onChange={(e) => { setEmail(e.target.value); if (emailError) setEmailError(""); }}
               onBlur={(e) => setEmailError(validateEmail(e.target.value))}
-              onKeyDown={handleKeyDown}
+
               autoComplete="email"
               className={`w-full${emailError ? " border-red-400 focus:border-red-400 focus:ring-red-200" : ""}`}
             />
@@ -482,7 +479,7 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => { setPassword(e.target.value); if (passwordError) setPasswordError(""); }}
                 onBlur={(e) => setPasswordError(validatePassword(e.target.value))}
-                onKeyDown={handleKeyDown}
+
                 autoComplete={tab === "signup" ? "new-password" : "current-password"}
                 className={`w-full pr-10${passwordError ? " border-red-400 focus:border-red-400 focus:ring-red-200" : ""}`}
               />

@@ -155,18 +155,23 @@ export default function Sidebar({ userName, userRole, customPermissions, orgRole
     return level === "view" || level === "edit";
   });
 
-  // Close mobile drawer on route change
-  useEffect(() => {
-    onClose?.();
-  }, [pathname]); // eslint-disable-line react-hooks/exhaustive-deps
-
   const getInitials = (name: string) =>
     name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
 
   const isActive = (href: string) =>
     pathname === href || (href !== "/dashboard" && pathname.startsWith(href + "/"));
 
-  const isMobile = !!onClose;
+  // The same Sidebar instance serves the mobile drawer and the desktop rail,
+  // so mobile-ness must come from the viewport, not from prop presence.
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    setIsMobile(mq.matches);
+    const onChange = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+
   const showLabels = !collapsed || isMobile;
 
   return (
