@@ -1436,32 +1436,35 @@ export default function EmailSequencesPage() {
             )}
           </div>
 
+          {/* Active job status + refresh — shown regardless of which mode tab is currently
+              selected, since a bulk/radar job keeps running in the background no matter which
+              tab you switch to and you should always be able to see/refresh it. */}
+          {activeJobStatus && (
+            <div className="p-3 rounded-lg bg-[var(--hm-bg-secondary)] border border-[var(--hm-border)] text-[12.5px] flex items-center justify-between gap-3">
+              {activeJobStatus.status === "running" ? (
+                <span className="flex items-center gap-2">
+                  <span className="w-3 h-3 border-2 border-current/30 border-t-current rounded-full animate-spin text-[var(--hm-accent)]" />
+                  Running in the background — {activeJobStatus.processed}/{activeJobStatus.total} done. Safe to close this tab or navigate away; it keeps going and picks back up here.
+                </span>
+              ) : activeJobStatus.status === "error" ? (
+                <span className="text-red-500">Job stopped: {activeJobStatus.error}</span>
+              ) : (
+                <span className="text-[#059669]">Done — {activeJobStatus.processed}/{activeJobStatus.total} generated.</span>
+              )}
+              {activeJobStatus.status === "running" && (
+                <button
+                  onClick={refreshActiveJob}
+                  disabled={jobRefreshing}
+                  className="shrink-0 text-[11px] font-medium text-[var(--hm-accent)] hover:underline disabled:opacity-50"
+                >
+                  {jobRefreshing ? "Refreshing..." : "Refresh"}
+                </button>
+              )}
+            </div>
+          )}
+
           {(mode === "bulk" || mode === "radar") && (
             <div className="space-y-2">
-              {activeJobStatus && (
-                <div className="p-3 rounded-lg bg-[var(--hm-bg-secondary)] border border-[var(--hm-border)] text-[12.5px] flex items-center justify-between gap-3">
-                  {activeJobStatus.status === "running" ? (
-                    <span className="flex items-center gap-2">
-                      <span className="w-3 h-3 border-2 border-current/30 border-t-current rounded-full animate-spin text-[var(--hm-accent)]" />
-                      Running in the background — {activeJobStatus.processed}/{activeJobStatus.total} done. Safe to close this tab or navigate away; it keeps going and picks back up here.
-                    </span>
-                  ) : activeJobStatus.status === "error" ? (
-                    <span className="text-red-500">Job stopped: {activeJobStatus.error}</span>
-                  ) : (
-                    <span className="text-[#059669]">Done — {activeJobStatus.processed}/{activeJobStatus.total} generated.</span>
-                  )}
-                  {activeJobStatus.status === "running" && (
-                    <button
-                      onClick={refreshActiveJob}
-                      disabled={jobRefreshing}
-                      className="shrink-0 text-[11px] font-medium text-[var(--hm-accent)] hover:underline disabled:opacity-50"
-                    >
-                      {jobRefreshing ? "Refreshing..." : "Refresh"}
-                    </button>
-                  )}
-                </div>
-              )}
-
               <div className="flex items-center justify-between">
                 <p className="text-[11px] font-medium text-[var(--hm-text-tertiary)] uppercase tracking-wide">Recent generation jobs</p>
                 <button onClick={loadRecentJobs} disabled={recentJobsLoading} className="text-[11px] text-[var(--hm-accent)]">
