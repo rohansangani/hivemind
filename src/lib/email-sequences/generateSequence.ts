@@ -205,7 +205,7 @@ SEQUENCE CONFIGURATION:
 - Number of emails: ${config.emailCount}
 - Email length: ${lengthGuide[config.length] || lengthGuide.medium} Count words — every one must earn its place.
 - Tone: ${toneGuide[config.tone] || toneGuide.professional}
-${config.vertical ? `- Target vertical: ${config.vertical} — every proof point, product mention, and framing below is scoped to this vertical specifically. Match its terminology and buying context (e.g. an India B2B/logistics buyer thinks in different terms than a US D2C ecom buyer) rather than writing generically across all verticals at once.\n` : ""}- Products/Services to highlight: ${config.products.join(", ") || (config.vertical ? products.map(p => p.name).join(", ") || "General company offering" : "General company offering")}
+${config.vertical ? `- Target vertical: ${config.vertical} — every proof point, product mention, and framing below is scoped to this vertical specifically. Match its terminology and buying context (e.g. an India B2B/logistics buyer thinks in different terms than a US D2C ecom buyer) rather than writing generically across all verticals at once.\n` : ""}- Products/Services to highlight: ${config.products.join(", ") || products.map(p => p.name).join(", ") || "General company offering"}
 - Primary CTA type: ${ctaGuide[config.cta] || config.cta}
 ${config.objective ? `- Campaign objective: ${config.objective}` : ""}
 
