@@ -19,6 +19,9 @@ interface Message {
    * Only ever present on freshly-sent messages this session (not persisted, so re-opening an
    * old conversation won't show a download button for a past export). */
   download?: { filename: string; csv: string };
+  /** Same as `download` but supports more than one file — e.g. the user asked for genuinely
+   * separate CSVs per group (one per vertical) rather than one combined export. */
+  downloads?: Array<{ filename: string; csv: string }>;
 }
 
 function downloadCsvString(csv: string, filename: string) {
@@ -118,7 +121,7 @@ export default function AssistantPage() {
       if (!res.ok) throw new Error(`Server error ${res.status}`);
       const data = await res.json();
       if (data.reply) {
-        setMessages((prev) => [...prev, { role: "assistant", content: data.reply, timestamp: Date.now(), download: data.download || undefined }]);
+        setMessages((prev) => [...prev, { role: "assistant", content: data.reply, timestamp: Date.now(), download: data.download || undefined, downloads: data.downloads || undefined }]);
         if (data.conversationId) {
           const isNew = !conversationId;
           setConversationId(data.conversationId);
@@ -557,7 +560,20 @@ export default function AssistantPage() {
                         <MarkdownRenderer content={msg.content} />
                       ) : msg.content}
                     </div>
-                    {msg.download && (
+                    {msg.downloads && msg.downloads.length > 0 ? (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {msg.downloads.map((d, di) => (
+                          <button
+                            key={di}
+                            onClick={() => downloadCsvString(d.csv, d.filename)}
+                            className="inline-flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5 rounded-lg border border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[#4361ee] hover:text-[#4361ee] transition-colors"
+                          >
+                            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 2v8m0 0l-3-3m3 3l3-3M3 13h10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                            Download CSV{msg.downloads!.length > 1 ? ` ${di + 1}` : ""}
+                          </button>
+                        ))}
+                      </div>
+                    ) : msg.download && (
                       <button
                         onClick={() => downloadCsvString(msg.download!.csv, msg.download!.filename)}
                         className="mt-2 inline-flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5 rounded-lg border border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[#4361ee] hover:text-[#4361ee] transition-colors"
