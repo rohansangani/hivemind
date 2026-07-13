@@ -194,6 +194,11 @@ export default function EmailSequencesPage() {
   const [recentJobsLoading, setRecentJobsLoading] = useState(false);
   const [recentJobsError, setRecentJobsError] = useState("");
   const jobPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [jobRefreshing, setJobRefreshing] = useState(false);
+  // Tracks which job the UI currently cares about so a status fetch that resolves after the user
+  // has already clicked "New sequence" (or switched to a different job) can be discarded instead
+  // of clobbering the reset state a few seconds later.
+  const activeJobIdRef = useRef<string | null>(null);
 
   const loadRecentJobs = useCallback(async () => {
     setRecentJobsLoading(true);
@@ -218,33 +223,45 @@ export default function EmailSequencesPage() {
     jobPollRef.current = null;
   };
 
+  // One-shot status fetch — no auto-poll. The user refreshes manually (button in the job status
+  // card) since bulk/radar batches can run up to an hour and constant polling wasn't wanted.
+  const fetchJobStatus = useCallback(async (jobId: string) => {
+    try {
+      const r = await fetch("/api/email-sequences/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "status", jobId }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || "Couldn't fetch job status");
+      // The user may have clicked "New sequence" or picked a different history item while this
+      // was in flight — discard a now-stale response instead of bouncing them back to it.
+      if (activeJobIdRef.current !== jobId) return;
+      const job: JobRow = d.job;
+      setActiveJobStatus(job);
+      if (Array.isArray(job.results)) setResults(job.results);
+      // Keep the sidebar's processed/total badge for this job in sync too — it only reflects
+      // whatever loadRecentJobs last fetched, so a lone activeJobStatus update wouldn't touch it.
+      setRecentJobs((prev) => prev.map((j) => (j.id === jobId ? { ...j, status: job.status, processed: job.processed, total: job.total } : j)));
+      if (job.status !== "running") loadRecentJobs();
+    } catch (e) {
+      if (activeJobIdRef.current === jobId) setError((e as Error).message);
+    }
+  }, [loadRecentJobs]);
+
   const watchJob = useCallback((jobId: string) => {
     stopWatchingJob();
+    activeJobIdRef.current = jobId;
     setActiveJobId(jobId);
-    const poll = async () => {
-      try {
-        const r = await fetch("/api/email-sequences/jobs", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "status", jobId }),
-        });
-        const d = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(d.error || "Couldn't fetch job status");
-        const job: JobRow = d.job;
-        setActiveJobStatus(job);
-        if (Array.isArray(job.results)) setResults(job.results);
-        if (job.status !== "running") {
-          stopWatchingJob();
-          loadRecentJobs();
-        }
-      } catch (e) {
-        setError((e as Error).message);
-        stopWatchingJob();
-      }
-    };
-    poll();
-    jobPollRef.current = setInterval(poll, 8000);
-  }, [loadRecentJobs]);
+    fetchJobStatus(jobId);
+  }, [fetchJobStatus]);
+
+  const refreshActiveJob = useCallback(async () => {
+    if (!activeJobId) return;
+    setJobRefreshing(true);
+    await fetchJobStatus(activeJobId);
+    setJobRefreshing(false);
+  }, [activeJobId, fetchJobStatus]);
 
   // History sidebar covers every mode (single/template/bulk/radar) — loaded once on mount, not
   // gated to bulk/radar the way the in-context "Recent generation jobs" panel below is.
@@ -257,6 +274,7 @@ export default function EmailSequencesPage() {
 
   const startNewSequence = () => {
     stopWatchingJob();
+    activeJobIdRef.current = null;
     setActiveJobId(null);
     setActiveJobStatus(null);
     setResults([]);
@@ -280,6 +298,7 @@ export default function EmailSequencesPage() {
       if (!r.ok) throw new Error(d.error || "Couldn't load that generation");
       const job = d.job as JobRow & { config?: Record<string, unknown>; prospects?: unknown[] };
       stopWatchingJob();
+      activeJobIdRef.current = jobId;
       setActiveJobId(jobId);
       setActiveJobStatus(job);
       setResults(job.results || []);
@@ -1396,7 +1415,7 @@ export default function EmailSequencesPage() {
           {(mode === "bulk" || mode === "radar") && (
             <div className="space-y-2">
               {activeJobStatus && (
-                <div className="p-3 rounded-lg bg-[var(--hm-bg-secondary)] border border-[var(--hm-border)] text-[12.5px]">
+                <div className="p-3 rounded-lg bg-[var(--hm-bg-secondary)] border border-[var(--hm-border)] text-[12.5px] flex items-center justify-between gap-3">
                   {activeJobStatus.status === "running" ? (
                     <span className="flex items-center gap-2">
                       <span className="w-3 h-3 border-2 border-current/30 border-t-current rounded-full animate-spin text-[var(--hm-accent)]" />
@@ -1406,6 +1425,15 @@ export default function EmailSequencesPage() {
                     <span className="text-red-500">Job stopped: {activeJobStatus.error}</span>
                   ) : (
                     <span className="text-[#059669]">Done — {activeJobStatus.processed}/{activeJobStatus.total} generated.</span>
+                  )}
+                  {activeJobStatus.status === "running" && (
+                    <button
+                      onClick={refreshActiveJob}
+                      disabled={jobRefreshing}
+                      className="shrink-0 text-[11px] font-medium text-[var(--hm-accent)] hover:underline disabled:opacity-50"
+                    >
+                      {jobRefreshing ? "Refreshing..." : "Refresh"}
+                    </button>
                   )}
                 </div>
               )}
