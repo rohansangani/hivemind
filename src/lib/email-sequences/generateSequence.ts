@@ -12,7 +12,7 @@ import { buildGroundedContext } from "@/lib/groundingEngine";
 import { resolveEntities } from "@/lib/intentEngine";
 import { recordSignal } from "@/lib/signalCapture";
 import { getVariationInstructions, fingerprintOutput } from "@/lib/variationEngine";
-import { deriveWebsiteInsights } from "@/lib/email-sequences/websiteInsights";
+import { getWebsiteInsights } from "@/lib/email-sequences/websiteInsights";
 
 export interface Prospect {
   name?: string;
@@ -133,7 +133,7 @@ export async function generateSequenceForProspect({
 
   let prospectContext = "";
   if (mode === "single" && prospect) {
-    const { insights } = await deriveWebsiteInsights(prospect, apiKey);
+    const { insights } = await getWebsiteInsights(prospect, apiKey);
     prospectContext = buildProspectContext(prospect, insights);
   }
 
