@@ -256,12 +256,36 @@ export default function EmailSequencesPage() {
     fetchJobStatus(jobId);
   }, [fetchJobStatus]);
 
+  // Kicks off a real continuation tick ("advance", up to ~100s of actual generation work) and, in
+  // parallel, polls the cheap read-only "status" action every 2.5s so the count visibly climbs
+  // in real time instead of the UI just sitting on a spinner for the whole tick.
   const refreshActiveJob = useCallback(async () => {
     if (!activeJobId) return;
+    const jobId = activeJobId;
     setJobRefreshing(true);
-    await fetchJobStatus(activeJobId);
-    setJobRefreshing(false);
-  }, [activeJobId, fetchJobStatus]);
+    const livePoll = setInterval(() => fetchJobStatus(jobId), 2500);
+    try {
+      const r = await fetch("/api/email-sequences/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "advance", jobId }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || "Couldn't advance job");
+      if (activeJobIdRef.current === jobId) {
+        const job: JobRow = d.job;
+        setActiveJobStatus(job);
+        if (Array.isArray(job.results)) setResults(job.results);
+        setRecentJobs((prev) => prev.map((j) => (j.id === jobId ? { ...j, status: job.status, processed: job.processed, total: job.total } : j)));
+        if (job.status !== "running") loadRecentJobs();
+      }
+    } catch (e) {
+      if (activeJobIdRef.current === jobId) setError((e as Error).message);
+    } finally {
+      clearInterval(livePoll);
+      setJobRefreshing(false);
+    }
+  }, [activeJobId, fetchJobStatus, loadRecentJobs]);
 
   // History sidebar covers every mode (single/template/bulk/radar) — loaded once on mount, not
   // gated to bulk/radar the way the in-context "Recent generation jobs" panel below is.

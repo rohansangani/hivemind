@@ -174,18 +174,26 @@ export async function POST(req: NextRequest) {
     if (action === "status") {
       const { jobId } = body as { jobId?: string };
       if (!jobId) return NextResponse.json({ error: "No jobId" }, { status: 400 });
+      // Cheap read only — never triggers generation itself, so the frontend can poll this every
+      // couple seconds during an "advance" call to show live progress without each poll queuing
+      // more work.
       const job = await db.emailSequenceJob.findUnique({ where: { id: jobId } });
       if (!job || job.organizationId !== decoded.orgId) return NextResponse.json({ error: "Job not found" }, { status: 404 });
-      // The user's own "Refresh" click is what drives a running job forward now, not just a
-      // read of wherever the cron last left it — the GitHub Actions cron this originally relied
-      // on doesn't reliably fire on schedule, so a manual refresh does a real continuation tick
-      // itself instead of returning stale progress.
-      if (job.status === "running") {
-        await continueJob(job as unknown as JobRow, CONTINUE_BUDGET_MS);
-        const fresh = await db.emailSequenceJob.findUnique({ where: { id: jobId } });
-        return NextResponse.json({ job: fresh });
-      }
       return NextResponse.json({ job });
+    }
+
+    // The user's own "Refresh" click is what drives a running job forward now, not just a read of
+    // wherever the cron last left it — the GitHub Actions cron this originally relied on doesn't
+    // reliably fire on schedule, so this does a real continuation tick (up to CONTINUE_BUDGET_MS
+    // of actual generation work) before returning the fresh count.
+    if (action === "advance") {
+      const { jobId } = body as { jobId?: string };
+      if (!jobId) return NextResponse.json({ error: "No jobId" }, { status: 400 });
+      const job = await db.emailSequenceJob.findUnique({ where: { id: jobId } });
+      if (!job || job.organizationId !== decoded.orgId) return NextResponse.json({ error: "Job not found" }, { status: 404 });
+      if (job.status === "running") await continueJob(job as unknown as JobRow, CONTINUE_BUDGET_MS);
+      const fresh = await db.emailSequenceJob.findUnique({ where: { id: jobId } });
+      return NextResponse.json({ job: fresh });
     }
 
     if (action === "list") {
