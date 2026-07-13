@@ -45,6 +45,12 @@ export interface SequenceConfig {
    * — "{{firstName}}" — instead of writing the prospect's real value inline. Anything not listed
    * here keeps the existing behaviour of writing the actual value/placeholder directly. */
   personalizationTags?: string[];
+  /** A Market name (e.g. "India Ecommerce Market", "North America Ecommerce") — orgs selling
+   * different product mixes into different verticals (ClickPost: India Ecom, India B2B, US, ...)
+   * use this to scope which products/knowledge get surfaced instead of pulling the entire
+   * org-wide catalog regardless of who's actually being targeted. Optional — omit to keep the
+   * old org-wide behavior. */
+  vertical?: string;
 }
 
 const PERSONALIZATION_TAG_LABELS: Record<string, string> = {
@@ -104,14 +110,21 @@ export async function generateSequenceForProspect({
 
   const apiKey = await getAnthropicKey(orgId);
 
-  const [org, brandProfile, products, allPersonas, allCompetitors, allMarkets] = await Promise.all([
+  const [org, brandProfile, allProducts, allPersonas, allCompetitors, allMarkets] = await Promise.all([
     db.organization.findUnique({ where: { id: orgId }, select: { name: true, description: true, industry: true, website: true } }),
     db.brandProfile.findFirst({ where: { organizationId: orgId } }),
-    db.product.findMany({ where: { organizationId: orgId } }),
+    db.product.findMany({ where: { organizationId: orgId }, include: { markets: { include: { market: true } } } }),
     db.persona.findMany({ where: { organizationId: orgId }, select: { title: true } }),
     db.competitor.findMany({ where: { organizationId: orgId }, select: { name: true } }),
     db.market.findMany({ where: { organizationId: orgId }, select: { name: true } }),
   ]);
+
+  // A "specific" product only applies to the markets it's linked to — a global product (or one
+  // with no market links at all) always applies. Scoping down to the selected vertical means the
+  // AI isn't handed an India B2B-only product to pitch a US ecom prospect, or vice versa.
+  const products = config.vertical
+    ? allProducts.filter(p => p.scope !== "specific" || p.markets.some(pm => pm.market.name === config.vertical))
+    : allProducts;
 
   const entities = resolveEntities(config.objective || config.products.join(" ") || org?.name || "", {
     products: products.map(p => p.name),
@@ -125,6 +138,7 @@ export async function generateSequenceForProspect({
 
   const knowledge = await retrieveRelevantKnowledge(orgId, config.objective || config.products.join(", ") || "outreach", entities, {
     targetProduct: config.products[0] || entities.products[0] || undefined,
+    targetMarket: config.vertical || undefined,
     searchDocuments: true,
     featureKey: "email_sequences",
   });
@@ -191,7 +205,7 @@ SEQUENCE CONFIGURATION:
 - Number of emails: ${config.emailCount}
 - Email length: ${lengthGuide[config.length] || lengthGuide.medium} Count words — every one must earn its place.
 - Tone: ${toneGuide[config.tone] || toneGuide.professional}
-- Products/Services to highlight: ${config.products.join(", ") || "General company offering"}
+${config.vertical ? `- Target vertical: ${config.vertical} — every proof point, product mention, and framing below is scoped to this vertical specifically. Match its terminology and buying context (e.g. an India B2B/logistics buyer thinks in different terms than a US D2C ecom buyer) rather than writing generically across all verticals at once.\n` : ""}- Products/Services to highlight: ${config.products.join(", ") || (config.vertical ? products.map(p => p.name).join(", ") || "General company offering" : "General company offering")}
 - Primary CTA type: ${ctaGuide[config.cta] || config.cta}
 ${config.objective ? `- Campaign objective: ${config.objective}` : ""}
 

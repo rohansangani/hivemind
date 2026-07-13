@@ -166,9 +166,18 @@ export default function EmailSequencesPage() {
   // it'll appear literally in Instantly and needs resolving there if you use that tag elsewhere.
   const [personalizationTags, setPersonalizationTags] = useState<string[]>([]);
 
-  // Products from KB
-  const [products, setProducts] = useState<string[]>([]);
+  // Products + verticals (Markets) from the KB — an org selling into multiple verticals (e.g.
+  // ClickPost: India Ecom, India B2B, US) has products scoped to specific markets, so picking a
+  // vertical narrows which products are even offered to the AI instead of handing it the entire
+  // org-wide catalog regardless of who's actually being targeted.
+  interface ProductMeta { name: string; scope: string; marketNames: string[] }
+  const [productMeta, setProductMeta] = useState<ProductMeta[]>([]);
+  const [verticals, setVerticals] = useState<string[]>([]);
+  const [vertical, setVertical] = useState("");
   const [productsLoaded, setProductsLoaded] = useState(false);
+  const products = productMeta
+    .filter(p => !vertical || p.scope !== "specific" || p.marketNames.includes(vertical))
+    .map(p => p.name);
 
   // Generation state
   const [generating, setGenerating] = useState(false);
@@ -361,7 +370,7 @@ export default function EmailSequencesPage() {
       const cfg = job.config as Partial<{
         emailCount: number; tone: string; length: string; products: string[]; cta: string; customCta: string;
         senderName: string; senderRole: string; objective: string; subjectMode: "single" | "variant";
-        singleSubject: string; personalizationTags: string[];
+        singleSubject: string; personalizationTags: string[]; vertical: string;
       }> | undefined;
       if (cfg) {
         if (cfg.emailCount) setEmailCount(cfg.emailCount);
@@ -376,6 +385,7 @@ export default function EmailSequencesPage() {
         if (cfg.subjectMode) setSubjectMode(cfg.subjectMode);
         if (cfg.singleSubject) setSingleSubject(cfg.singleSubject);
         if (cfg.personalizationTags) setPersonalizationTags(cfg.personalizationTags);
+        setVertical(cfg.vertical || "");
       }
       if (job.mode === "single" && Array.isArray(job.prospects) && job.prospects[0]) {
         setProspect(job.prospects[0] as Prospect);
@@ -415,15 +425,20 @@ export default function EmailSequencesPage() {
   // it again. On by default; uncheck to add every prospect regardless of existing duplicates.
   const [skipDuplicates, setSkipDuplicates] = useState(true);
 
-  // Load products from KB on mount
+  // Load products + verticals (Markets) from the KB on mount. Was previously reading
+  // `data.entries`, a field this endpoint has never actually returned — the product picker below
+  // has been silently empty this whole time regardless of how many products were configured.
   const loadProducts = useCallback(async () => {
     if (productsLoaded) return;
     try {
-      const res = await fetch("/api/knowledge?category=product");
+      const res = await fetch("/api/knowledge");
       if (res.ok) {
         const data = await res.json();
-        const names = (data.entries || []).map((e: { title: string }) => e.title);
-        setProducts(names);
+        const meta = (data.products || []).map((p: { name: string; scope: string; marketNames?: string[] }) => ({
+          name: p.name, scope: p.scope || "global", marketNames: p.marketNames || [],
+        }));
+        setProductMeta(meta);
+        setVerticals((data.markets || []).map((m: { name: string }) => m.name));
       }
     } catch { /* ignore */ }
     setProductsLoaded(true);
@@ -562,6 +577,7 @@ export default function EmailSequencesPage() {
           subjectMode,
           singleSubject: subjectMode === "single" ? singleSubject : undefined,
           personalizationTags,
+          vertical: vertical || undefined,
         },
       }),
     });
@@ -631,6 +647,7 @@ export default function EmailSequencesPage() {
               senderName, senderRole, objective, subjectMode,
               singleSubject: subjectMode === "single" ? singleSubject : undefined,
               personalizationTags,
+              vertical: vertical || undefined,
             },
             mode,
             label: `${mode === "radar" ? "Radar" : "CSV"} batch — ${new Date().toISOString().slice(0, 10)}`,
@@ -1345,6 +1362,29 @@ export default function EmailSequencesPage() {
                 <input className={inputCls + " mt-2"} placeholder="Describe your CTA..." value={customCta} onChange={e => setCustomCta(e.target.value)} />
               )}
             </div>
+
+            {/* Vertical — narrows which products (and knowledge) are even offered to the AI to
+                whatever's actually relevant to this vertical, instead of the entire org-wide
+                catalog regardless of who's being targeted. */}
+            {verticals.length > 0 && (
+              <div className="mb-4">
+                <label className={labelCls}>Vertical</label>
+                <select
+                  className={inputCls}
+                  value={vertical}
+                  onChange={e => {
+                    setVertical(e.target.value);
+                    setSelectedProducts(prev => prev.filter(p => {
+                      const meta = productMeta.find(m => m.name === p);
+                      return !e.target.value || !meta || meta.scope !== "specific" || meta.marketNames.includes(e.target.value);
+                    }));
+                  }}
+                >
+                  <option value="">All verticals (no specific targeting)</option>
+                  {verticals.map(v => <option key={v} value={v}>{v}</option>)}
+                </select>
+              </div>
+            )}
 
             {/* Products */}
             {products.length > 0 && (
