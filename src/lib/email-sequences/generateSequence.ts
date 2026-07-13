@@ -163,9 +163,9 @@ export async function generateSequenceForProspect({
   }
 
   const lengthGuide: Record<string, string> = {
-    short: "50-80 words per email. Very concise, punchy, every word counts.",
-    medium: "100-150 words per email. Clear and focused with enough room for personalization.",
-    long: "200-300 words per email. Detailed with room for storytelling and value props.",
+    short: "50-80 words per email. Very concise, punchy, every word counts — 3 short paragraphs of 1 sentence each, roughly 15-20 words per paragraph.",
+    medium: "100-150 words per email. Clear and focused with enough room for personalization — 4-5 short paragraphs of 1-2 sentences each, roughly 20-25 words per paragraph.",
+    long: "200-300 words per email. Detailed with room for storytelling and value props — 6-8 paragraphs of 1-2 sentences each, roughly 25-35 words per paragraph.",
   };
 
   const toneGuide: Record<string, string> = {
@@ -247,7 +247,7 @@ ${config.emailCount === 3
 - ${prospectContext ? "If the researched insights mention a specific product/service type the prospect's company sells, reference that concrete item directly somewhere in the sequence (e.g. name the actual kind of product, not just \"your products\" or \"the product experience\") — this is one of the strongest personalization levers available, so use it whenever it's present." : ""}
 - Never assume or state the prospect's own tech stack (their ecommerce platform, CMS, etc.) unless the prospect information above explicitly says so. Some of ${org?.name || "our"} products are named after a specific platform they integrate with (e.g. a platform-branded order-editing app) — you have no way of knowing if this particular prospect actually runs on that platform. When describing that capability, drop the platform name from the product's proper title and speak to the underlying capability itself, in ${org?.name || "our"}'s own terminology (e.g. describe it as an order-editing capability that lets customers self-serve changes before dispatch, not by the platform-specific product name).
 - Banned words, anywhere in subject or body: "synergy", "seamless", "robust", "leverage", "cutting-edge", "game-changing", "revolutionize"/"revolutionise", "holistic", "end-to-end".
-- Formatting: no em-dashes (—), no colons or semicolons, no hashtags, no bullet points in the body. Clean, human-typed sentences only. Keep paragraphs SHORT — 1-2 sentences each, roughly 12-15 words per paragraph, with a blank line between every paragraph. This is a scannable, punchy style, not dense blocks — aim for around 5 short paragraphs per email regardless of the overall word-count target below.
+- Formatting: no em-dashes (—), no colons or semicolons, no hashtags, no bullet points in the body. Clean, human-typed sentences only, short paragraphs with a blank line between each (see the paragraph count/length for this email's length tier above) — a scannable, punchy style, not dense blocks. The total word count for the tier above is the hard constraint; paragraph count/length is how you hit it, not a separate target to chase on top of it.
 - No signatures or sign-offs of any kind ("Best,", "Thanks,", a name, etc.) — end the email immediately after the CTA question.
 - No meta-labels or instructional tags in the output ("Hook:", "CTA:", "Subject:", etc.) — output only the finished, ready-to-send text.
 ${config.personalizationTags?.length ? `
