@@ -194,6 +194,8 @@ Write clearly and concisely. Be specific and opinionated — vague briefs are us
       orgId: decoded.orgId,
       signalType: "used",
       featureKey: "design_brief",
+      entityType: targetProduct ? "product" : targetPersona ? "persona" : undefined,
+      entityName: targetProduct || targetPersona || undefined,
       metadata: { format, topic, targetProduct: targetProduct || null },
       userId: decoded.userId,
     }).catch(() => {});

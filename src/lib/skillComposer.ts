@@ -37,7 +37,7 @@ export async function composeSkills(
   });
 
   if (v2Skills.length === 0) {
-    return fallbackToOldSkills(orgId);
+    return fallbackToOldSkills(orgId, context, maxSkills);
   }
 
   const featureDef = FEATURE_DEFINITIONS[context.featureKey];
@@ -166,12 +166,52 @@ export function formatSkillsBlock(skills: ComposedSkill[]): string {
   return lines.join("\n");
 }
 
-async function fallbackToOldSkills(orgId: string): Promise<ComposedSkill[]> {
+// Map legacy Skill categories to the V2 categories used in FEATURE_DEFINITIONS,
+// so the fallback can rank by feature relevance the same way the V2 path does.
+const OLD_CATEGORY_TO_V2: Record<string, string> = {
+  writing: "messaging",
+  brand_design: "brand",
+  brand_voice: "brand",
+  ai_behavior: "general",
+  seo_skills: "seo",
+  competition: "competitor",
+  audience: "persona",
+  positioning: "messaging",
+  terminology: "brand",
+};
+
+async function fallbackToOldSkills(
+  orgId: string,
+  context: CompositionContext,
+  maxSkills: number,
+): Promise<ComposedSkill[]> {
   const oldSkills = await db.skill.findMany({
     where: { organizationId: orgId, isActive: true },
   });
 
-  return oldSkills.map((s) => ({
+  const featureDef = FEATURE_DEFINITIONS[context.featureKey];
+  const relevantCategories = new Set<string>(featureDef?.skillCategories ?? []);
+  const contextTerms = [context.targetProduct, context.targetPersona, context.targetMarket, context.targetCompetitor, context.format]
+    .filter((t): t is string => !!t)
+    .map(t => t.toLowerCase());
+
+  // Rank old skills by feature-category relevance, name match against the
+  // generation context, and instruction brevity — then hard-cap at maxSkills.
+  // Dumping all skills unranked was injecting ~23k tokens of noise per call.
+  const scored = oldSkills.map(s => {
+    const v2Cat = OLD_CATEGORY_TO_V2[s.category?.toLowerCase() ?? ""] ?? s.category?.toLowerCase() ?? "general";
+    let score = 0;
+    if (relevantCategories.has(v2Cat)) score += 0.3;
+    if (s.linkedFeature === "synthesized") score += 0.2; // synthesized skills distill many learnings
+    const nameLower = `${s.name} ${s.description ?? ""}`.toLowerCase();
+    if (contextTerms.some(t => nameLower.includes(t))) score += 0.4;
+    if (s.instructions.length < 800) score += 0.05; // prefer focused skills at equal relevance
+    return { skill: s, score };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+
+  return scored.slice(0, maxSkills).map(({ skill: s }) => ({
     name: s.name,
     category: s.category,
     instructions: s.instructions,

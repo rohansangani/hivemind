@@ -83,10 +83,12 @@ async function refineEntitySkill(
   apiKey: string,
   group: SignalGroup,
 ): Promise<boolean> {
-  const positive = group.signals.filter(s => s.signalType === "feedback_positive" || s.signalType === "used").length;
+  // Only explicit user reactions move confidence — "used" fires automatically on
+  // every generation and would otherwise inflate confidence from mere usage.
+  const positive = group.signals.filter(s => s.signalType === "feedback_positive").length;
   const negative = group.signals.filter(s => s.signalType === "feedback_negative" || s.signalType === "discarded" || s.signalType === "regenerated").length;
   const total = positive + negative;
-  const confidence = total > 0 ? Math.min(1, positive / total) : 0.5;
+  const confidence = total > 0 ? positive / total : 0.5;
 
   const categoryMap: Record<string, SkillCategory> = {
     product: "product",

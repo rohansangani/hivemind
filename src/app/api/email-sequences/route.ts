@@ -301,6 +301,8 @@ Return ONLY valid JSON, no markdown or explanation.`;
       orgId: decoded.orgId,
       signalType: "used",
       featureKey: "email_sequences",
+      entityType: config.products[0] ? "product" : undefined,
+      entityName: config.products[0] || undefined,
       metadata: { mode, objective: config.objective || null },
       userId: decoded.userId,
     }).catch(() => {});

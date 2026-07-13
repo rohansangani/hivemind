@@ -10,8 +10,8 @@ import { analyzeSeo, type SeoAnalysis } from "@/lib/seoAnalyzer";
 interface OutputData {
   content: string;
   wordCount: number;
-  score: number;
-  scoreBreakdown: Record<string, number>;
+  score: number | null;
+  scoreBreakdown: Record<string, number> | null;
 }
 
 interface Suggestion {
@@ -33,7 +33,7 @@ interface HistoryItem {
   targetProduct: string | null;
   targetPersona: string | null;
   createdAt: string;
-  outputs: Record<string, { wordCount: number; score: number }>;
+  outputs: Record<string, { wordCount: number; score: number | null }>;
 }
 
 const FORMATS = [
@@ -970,7 +970,7 @@ export default function ContentGeneratorPage() {
                         <button key={f} onClick={() => { setActiveTab(f); setApplyError(null); setImproveError(null); setCopied(false); if (rightTab === "seo" && !SEO_FORMATS.includes(f)) setRightTab("suggestions"); }}
                           className={"px-4 py-2.5 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors " + (activeTab === f ? "font-semibold text-[#4361ee] border-[#4361ee] text-[12px]" : "text-[12px] text-[var(--hm-text-tertiary)] border-transparent hover:text-[var(--hm-text)]")}>
                           {FORMATS.find(x => x.id === f)?.label || f}
-                          {out && (
+                          {out && typeof out.score === "number" && (
                             <span className={"text-[10px] font-semibold px-2 py-0.5 rounded-full " + scorePillClass(out.score)}>
                               {out.score}%
                             </span>
@@ -1014,6 +1014,8 @@ export default function ContentGeneratorPage() {
                           content={outputs[activeTab].content}
                           featureKey="content_generator"
                           outputId={generatedId || undefined}
+                          entityType={targetProduct ? "product" : targetPersona ? "persona" : undefined}
+                          entityName={targetProduct || targetPersona || undefined}
                           onSave={(edited) => {
                             const wc = edited.split(/\s+/).filter(Boolean).length;
                             const updated = { ...outputs, [activeTab]: { ...outputs[activeTab], content: edited, wordCount: wc } };
@@ -1486,25 +1488,36 @@ export default function ContentGeneratorPage() {
                   {rightTab === "compliance" && (
                     <div className="flex-1 overflow-y-auto p-5 min-h-0">
                       <p className="text-[12px] font-medium mb-4">Brand compliance</p>
-                      <div className="text-center mb-5 pb-4 border-b border-[var(--hm-border)]">
-                        <div className="w-[72px] h-[72px] rounded-full flex items-center justify-center mx-auto mb-2" style={{ borderWidth: "3px", borderStyle: "solid", borderColor: outputs[activeTab].score >= 80 ? "#10b981" : "#f59e0b" }}>
-                          <span className={"text-[22px] font-medium " + scoreColor(outputs[activeTab].score)}>{outputs[activeTab].score}%</span>
-                        </div>
-                        <p className="text-[11px] text-[var(--hm-text-tertiary)]">{FORMATS.find(x => x.id === activeTab)?.label} score</p>
-                      </div>
-                      <div className="space-y-3">
-                        {Object.entries(outputs[activeTab].scoreBreakdown).map(([key, val]) => (
-                          <div key={key}>
-                            <div className="flex justify-between mb-1">
-                              <span className="text-[11px] text-[var(--hm-text-secondary)] capitalize">{key}</span>
-                              <span className={"text-[11px] font-medium " + scoreColor(val as number)}>{val as number}%</span>
+                      {typeof outputs[activeTab].score === "number" && outputs[activeTab].scoreBreakdown ? (
+                        <>
+                          <div className="text-center mb-5 pb-4 border-b border-[var(--hm-border)]">
+                            <div className="w-[72px] h-[72px] rounded-full flex items-center justify-center mx-auto mb-2" style={{ borderWidth: "3px", borderStyle: "solid", borderColor: (outputs[activeTab].score as number) >= 80 ? "#10b981" : "#f59e0b" }}>
+                              <span className={"text-[22px] font-medium " + scoreColor(outputs[activeTab].score as number)}>{outputs[activeTab].score}%</span>
                             </div>
-                            <div className="w-full h-[3px] rounded-full bg-[var(--hm-border)] overflow-hidden">
-                              <div className={"h-full rounded-full " + scoreBg(val as number)} style={{ width: (val as number) + "%" }} />
-                            </div>
+                            <p className="text-[11px] text-[var(--hm-text-tertiary)]">{FORMATS.find(x => x.id === activeTab)?.label} score</p>
                           </div>
-                        ))}
-                      </div>
+                          <div className="space-y-3">
+                            {Object.entries(outputs[activeTab].scoreBreakdown as Record<string, number>).map(([key, val]) => (
+                              <div key={key}>
+                                <div className="flex justify-between mb-1">
+                                  <span className="text-[11px] text-[var(--hm-text-secondary)] capitalize">{key}</span>
+                                  <span className={"text-[11px] font-medium " + scoreColor(val)}>{val}%</span>
+                                </div>
+                                <div className="w-full h-[3px] rounded-full bg-[var(--hm-border)] overflow-hidden">
+                                  <div className={"h-full rounded-full " + scoreBg(val)} style={{ width: val + "%" }} />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      ) : (
+                        <div className="text-center py-10">
+                          <p className="text-[12px] text-[var(--hm-text-secondary)] mb-1.5">Not scored</p>
+                          <p className="text-[11px] text-[var(--hm-text-tertiary)] leading-relaxed max-w-[220px] mx-auto">
+                            Brand scoring needs a configured brand profile. Set one up in Knowledge Base → Brand to score generated content.
+                          </p>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

@@ -9,7 +9,9 @@ export default defineConfig({
   },
   migrate: {
     async adapter() {
-      return new PrismaPg({ connectionString: process.env.DATABASE_URL! });
+      // Migrations need a direct (non-pooled) connection — pgbouncer breaks the
+      // advisory locks Prisma Migrate takes. Neon provides DATABASE_URL_UNPOOLED.
+      return new PrismaPg({ connectionString: process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL! });
     },
   },
 });

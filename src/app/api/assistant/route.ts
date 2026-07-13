@@ -683,6 +683,8 @@ CONVERSATION BEHAVIOR:
       signalType: "used",
       featureKey: "assistant",
       outputId: convo.id,
+      entityType: entities.products?.[0] ? "product" : entities.personas?.[0] ? "persona" : entities.competitors?.[0] ? "competitor" : undefined,
+      entityName: entities.products?.[0] || entities.personas?.[0] || entities.competitors?.[0] || undefined,
       metadata: { intent: intent || null },
       userId: decoded.userId,
     }).catch(() => {});

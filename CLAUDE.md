@@ -10,7 +10,7 @@ HiveMind is a multi-tenant AI marketing intelligence platform built for ClickPos
 
 ```bash
 npm run dev          # Start Next.js dev server
-npm run build        # prisma generate + prisma db push + next build
+npm run build        # prisma generate + prisma migrate deploy + next build
 npm run lint         # ESLint
 ```
 
@@ -18,8 +18,12 @@ There is no test suite configured. Verify changes by running the dev server and 
 
 **Database operations:**
 ```bash
-# Schema changes — push to Neon (requires DATABASE_URL)
-DATABASE_URL="..." npx prisma db push --accept-data-loss
+# Schema changes — create a migration (NEVER use `prisma db push` against Neon;
+# it force-reconciles schema and has destroyed production data before)
+npx prisma migrate dev --name <change-description>
+
+# Apply committed migrations (what the build runs; safe, replay-only)
+npx prisma migrate deploy
 
 # Generate Prisma client after schema changes
 npx prisma generate
@@ -27,6 +31,11 @@ npx prisma generate
 # Direct SQL access
 PGPASSWORD="..." psql -h <host> -U neondb_owner -d neondb
 ```
+
+Migrations live in `prisma/migrations/` (baselined from the live schema as `0_init`).
+Prisma Migrate needs a direct connection — `prisma.config.ts` prefers
+`DATABASE_URL_UNPOOLED` because Neon's pooled endpoint (pgbouncer) breaks the
+advisory locks Migrate takes. Both env vars exist locally and on Vercel.
 
 `.env.local` overrides `.env` — the dev server uses the Neon cloud database, not localhost.
 

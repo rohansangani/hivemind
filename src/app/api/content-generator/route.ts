@@ -11,6 +11,7 @@ import { logTokenUsage, extractAnthropicUsage } from "@/lib/tokenTracking";
 import { ensureFeatureRegistered } from "@/lib/featureBootstrap";
 import { recordSignal } from "@/lib/signalCapture";
 import { getVariationInstructions, fingerprintOutput } from "@/lib/variationEngine";
+import { scoreOutputsAgainstBrand, type BrandScore } from "@/lib/brandScoring";
 import jwt from "jsonwebtoken";
 
 export async function POST(req: NextRequest) {
@@ -91,7 +92,7 @@ export async function POST(req: NextRequest) {
     );
 
     // Generate content for all formats in parallel (was sequential — 3 formats × 40s = 120s → 504)
-    const outputs: Record<string, { content: string; wordCount: number; score: number; scoreBreakdown: Record<string, number> }> = {};
+    const outputs: Record<string, { content: string; wordCount: number; score: number | null; scoreBreakdown: Record<string, number> | null }> = {};
 
     const formatResults = await Promise.all(
       formats.map((format: string) =>
@@ -99,11 +100,26 @@ export async function POST(req: NextRequest) {
       )
     );
 
+    // Score all outputs against the brand profile in one AI call. If scoring
+    // fails or there's no brand profile, scores are null — the UI shows an
+    // honest "not scored" state instead of an invented number.
+    let brandScores: Record<string, BrandScore> | null = null;
+    try {
+      brandScores = await scoreOutputsAgainstBrand({
+        apiKey,
+        orgId: decoded.orgId,
+        userId: decoded.userId,
+        outputs: formats.map((format: string, i: number) => ({ key: format, content: formatResults[i] })),
+      });
+    } catch {
+      brandScores = null;
+    }
+
     for (let i = 0; i < formats.length; i++) {
       const content = formatResults[i];
       const wordCount = content.split(/\s+/).length;
-      const score = generateScore();
-      outputs[formats[i]] = { content, wordCount, score: score.overall, scoreBreakdown: score.breakdown };
+      const score = brandScores?.[formats[i]] ?? null;
+      outputs[formats[i]] = { content, wordCount, score: score?.overall ?? null, scoreBreakdown: score?.breakdown ?? null };
 
       // Fingerprint each output for future variation detection
       fingerprintOutput({
@@ -137,6 +153,8 @@ export async function POST(req: NextRequest) {
       signalType: "used",
       featureKey: "content_generator",
       outputId: saved.id,
+      entityType: effectiveProduct ? "product" : targetPersona ? "persona" : undefined,
+      entityName: effectiveProduct || targetPersona || undefined,
       metadata: { topic, formats, targetProduct: targetProduct || null, targetPersona: targetPersona || null },
       userId: decoded.userId,
     }).catch(() => {});
@@ -406,12 +424,3 @@ function generatePlaceholderContent(
   return templates[format] || `# ${topic}\n\nContent about ${topic} by ${company}.\n\nThis is a placeholder — connect your Anthropic API key in .env to generate real AI-powered content.`;
 }
 
-function generateScore(): { overall: number; breakdown: Record<string, number> } {
-  const voice = 80 + Math.floor(Math.random() * 18);
-  const terminology = 82 + Math.floor(Math.random() * 16);
-  const messaging = 75 + Math.floor(Math.random() * 20);
-  const personality = 78 + Math.floor(Math.random() * 18);
-  const completeness = 72 + Math.floor(Math.random() * 22);
-  const overall = Math.round((voice * 0.3 + terminology * 0.2 + messaging * 0.2 + personality * 0.15 + completeness * 0.15));
-  return { overall, breakdown: { voice, terminology, messaging, personality, completeness } };
-}

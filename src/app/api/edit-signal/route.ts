@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
       orgId: string;
     };
 
-    const { featureKey, outputId, original, edited, entityType, entityId } = await req.json();
+    const { featureKey, outputId, original, edited, entityType, entityId, entityName } = await req.json();
 
     if (!featureKey || !VALID_FEATURES.has(featureKey)) {
       return NextResponse.json({ error: "Invalid featureKey" }, { status: 400 });
@@ -43,6 +43,7 @@ export async function POST(req: NextRequest) {
       outputId: outputId || undefined,
       entityType: entityType || undefined,
       entityId: entityId || undefined,
+      entityName: entityName || undefined,
       metadata: {
         original: original.slice(0, 5000),
         edited: edited.slice(0, 5000),

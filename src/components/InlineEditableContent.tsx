@@ -8,6 +8,8 @@ interface InlineEditableContentProps {
   onSave: (edited: string) => void;
   featureKey: string;
   outputId?: string;
+  entityType?: "product" | "persona" | "market" | "competitor";
+  entityName?: string;
   disabled?: boolean;
 }
 
@@ -16,6 +18,8 @@ export default function InlineEditableContent({
   onSave,
   featureKey,
   outputId,
+  entityType,
+  entityName,
   disabled,
 }: InlineEditableContentProps) {
   const [editing, setEditing] = useState(false);
@@ -62,6 +66,8 @@ export default function InlineEditableContent({
         body: JSON.stringify({
           featureKey,
           outputId: outputId || null,
+          entityType: entityType || null,
+          entityName: entityName || null,
           original: originalRef.current,
           edited: trimmed,
         }),
