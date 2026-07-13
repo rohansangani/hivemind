@@ -1,4 +1,7 @@
-export const maxDuration = 120;
+// Raised from 120 — real "advance"/"continue" calls have run successfully past 100s in
+// production, confirming this project isn't capped at the Hobby-plan 60s ceiling. A longer
+// budget means fewer manual Refresh clicks (or cron ticks) needed to finish a batch.
+export const maxDuration = 280;
 
 import { NextRequest, NextResponse } from "next/server";
 import jwt from "jsonwebtoken";
@@ -30,9 +33,9 @@ import {
 const CRON_SECRET = "05eaf1e0b8f2c43db030e329da987ab6c9e6d425d3c3340c504e7dfaf40d2ea1";
 
 // A single prospect (web-search research + generation) can legitimately take 20-40s. Budgets
-// below leave real margin under this route's 120s ceiling.
-const START_BUDGET_MS = 90000;
-const CONTINUE_BUDGET_MS = 100000;
+// below leave real margin under this route's 280s ceiling.
+const START_BUDGET_MS = 250000;
+const CONTINUE_BUDGET_MS = 260000;
 const MAX_CONSECUTIVE_FAILS = 5;
 
 interface JobRow {

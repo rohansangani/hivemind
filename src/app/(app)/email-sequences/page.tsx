@@ -319,6 +319,20 @@ export default function EmailSequencesPage() {
     setJobCancelling(false);
   }, [activeJobId]);
 
+  // Auto-continue a running job for as long as this tab stays open — no manual clicking needed.
+  // Each refreshActiveJob() call ends by writing the fresh status back via setActiveJobStatus,
+  // which re-runs this effect; if the job is still "running" it fires again, self-chaining until
+  // done/error/cancelled. Works across any mode tab (the status card is shown everywhere) and
+  // resumes correctly if you switch away and back, since the effect just keeps re-checking
+  // current state — the manual Refresh button stays available the whole time as an alternative
+  // (e.g. to force an extra tick right when you return), it's just not required anymore.
+  useEffect(() => {
+    if (activeJobStatus?.status === "running" && !jobRefreshing && !jobCancelling) {
+      refreshActiveJob();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeJobStatus?.status, activeJobId, jobRefreshing, jobCancelling]);
+
   // History sidebar covers every mode (single/template/bulk/radar) — loaded once on mount, not
   // gated to bulk/radar the way the in-context "Recent generation jobs" panel below is.
   useEffect(() => {
