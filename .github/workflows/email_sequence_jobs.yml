@@ -1,0 +1,17 @@
+name: Hivemind — Continue Email Sequence Jobs
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  continue:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Continue any running bulk Email Sequences jobs
+        run: |
+          curl -sf -X POST https://hivemind.clickpost.io/api/email-sequences/jobs \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.EMAIL_SEQUENCE_CRON_SECRET }}" \
+            -d '{"action":"continue"}'

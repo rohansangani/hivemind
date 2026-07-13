@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 /* ── Types ──────────────────────────────────────────────────────────────── */
 
 interface Prospect {
@@ -152,6 +152,80 @@ export default function EmailSequencesPage() {
   const [prospectSearch, setProspectSearch] = useState("");
   const [expandedEmail, setExpandedEmail] = useState<string | null>(null);
   const [editingEmail, setEditingEmail] = useState<string | null>(null);
+
+  // Bulk/Radar generation runs as a server-side job (survives closing the tab, navigating
+  // elsewhere, or refreshing — a batch of a few hundred prospects can take up to an hour).
+  // Single/Template stay client-driven since those finish in one request.
+  interface JobRow {
+    id: string; label: string | null; mode: string; status: string;
+    processed: number; total: number; error: string | null;
+    results?: ProspectResult[]; createdAt: string; updatedAt: string;
+  }
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [activeJobStatus, setActiveJobStatus] = useState<JobRow | null>(null);
+  const [recentJobs, setRecentJobs] = useState<JobRow[]>([]);
+  const [recentJobsLoading, setRecentJobsLoading] = useState(false);
+  const [recentJobsError, setRecentJobsError] = useState("");
+  const jobPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const loadRecentJobs = useCallback(async () => {
+    setRecentJobsLoading(true);
+    setRecentJobsError("");
+    try {
+      const r = await fetch("/api/email-sequences/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "list" }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || `Couldn't load recent jobs (${r.status})`);
+      setRecentJobs(d.jobs || []);
+    } catch (e) {
+      setRecentJobsError((e as Error).message);
+    }
+    setRecentJobsLoading(false);
+  }, []);
+
+  const stopWatchingJob = () => {
+    if (jobPollRef.current) clearInterval(jobPollRef.current);
+    jobPollRef.current = null;
+  };
+
+  const watchJob = useCallback((jobId: string) => {
+    stopWatchingJob();
+    setActiveJobId(jobId);
+    const poll = async () => {
+      try {
+        const r = await fetch("/api/email-sequences/jobs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "status", jobId }),
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d.error || "Couldn't fetch job status");
+        const job: JobRow = d.job;
+        setActiveJobStatus(job);
+        if (Array.isArray(job.results)) setResults(job.results);
+        if (job.status !== "running") {
+          stopWatchingJob();
+          loadRecentJobs();
+        }
+      } catch (e) {
+        setError((e as Error).message);
+        stopWatchingJob();
+      }
+    };
+    poll();
+    jobPollRef.current = setInterval(poll, 8000);
+  }, [loadRecentJobs]);
+
+  useEffect(() => {
+    if (mode === "bulk" || mode === "radar") loadRecentJobs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
+
+  useEffect(() => stopWatchingJob, []);
+
   const [editBuffer, setEditBuffer] = useState({ subject: "", body: "" });
 
   // Send via Instantly
@@ -354,31 +428,44 @@ export default function EmailSequencesPage() {
         const result = await generateSequence(prospect, "single", controller.signal);
         if (result) setResults([result]);
       } else {
-        // "bulk" (CSV) and "radar" (loaded from Radar) share this same batch-generation loop —
-        // only where the prospect list comes from differs.
+        // "bulk" (CSV) and "radar" (loaded from Radar) share the same batch — only where the
+        // prospect list comes from differs. Runs as a server-side job (survives closing the tab,
+        // navigating elsewhere, or a refresh) instead of a client-driven loop, since a batch of a
+        // few hundred prospects can take up to an hour.
         const batch = mode === "radar" ? radarProspects : csvProspects;
         if (batch.length === 0) {
           setError(mode === "radar" ? "Load contacts from Radar first" : "Upload a CSV with at least one prospect");
           setGenerating(false);
           return;
         }
-        const allResults: ProspectResult[] = [];
-        for (let i = 0; i < batch.length; i++) {
-          if (controller.signal.aborted) break;
-          const p = batch[i];
-          setProgress(`Generating ${i + 1}/${batch.length}: ${p.company || p.name}...`);
-          try {
-            const result = await generateSequence(p, "single", controller.signal);
-            if (result) allResults.push(result);
-          } catch (e) {
-            if (controller.signal.aborted) break;
-            allResults.push({
-              prospect: p,
-              sequence: { emails: [], sequenceStrategy: `Error: ${(e as Error).message}`, bestPractices: [] },
-            });
-          }
+        setProgress(`Starting a background job for ${batch.length} prospect(s)...`);
+        const r = await fetch("/api/email-sequences/jobs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "start",
+            prospects: batch,
+            config: {
+              emailCount, tone, length, products: selectedProducts, cta,
+              customCta: cta === "custom" ? customCta : undefined,
+              senderName, senderRole, objective, subjectMode,
+              singleSubject: subjectMode === "single" ? singleSubject : undefined,
+              personalizationTags,
+            },
+            mode,
+            label: `${mode === "radar" ? "Radar" : "CSV"} batch — ${new Date().toISOString().slice(0, 10)}`,
+          }),
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d.error || "Couldn't start the batch job");
+        setActiveJobStatus(d.job);
+        setResults(d.job.results || []);
+        if (d.job.status === "running") {
+          watchJob(d.job.id);
+        } else {
+          setActiveJobId(d.job.id);
+          loadRecentJobs();
         }
-        setResults(allResults);
       }
     } catch (e) {
       if (!controller.signal.aborted) setError((e as Error).message || "Something went wrong");
@@ -1102,7 +1189,7 @@ export default function EmailSequencesPage() {
                 </>
               )}
             </button>
-            {generating && (
+            {generating && (mode === "single" || mode === "template") && (
               <button onClick={stopGeneration} className={btnSecondary}>
                 <span className="flex items-center gap-1.5">
                   <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><rect x="3" y="3" width="10" height="10" rx="1.5" fill="currentColor" /></svg>
@@ -1114,6 +1201,52 @@ export default function EmailSequencesPage() {
               <span className="text-[12px] text-[var(--hm-text-tertiary)]">{progress}</span>
             )}
           </div>
+
+          {(mode === "bulk" || mode === "radar") && (
+            <div className="space-y-2">
+              {activeJobStatus && (
+                <div className="p-3 rounded-lg bg-[var(--hm-bg-secondary)] border border-[var(--hm-border)] text-[12.5px]">
+                  {activeJobStatus.status === "running" ? (
+                    <span className="flex items-center gap-2">
+                      <span className="w-3 h-3 border-2 border-current/30 border-t-current rounded-full animate-spin text-[var(--hm-accent)]" />
+                      Running in the background — {activeJobStatus.processed}/{activeJobStatus.total} done. Safe to close this tab or navigate away; it keeps going and picks back up here.
+                    </span>
+                  ) : activeJobStatus.status === "error" ? (
+                    <span className="text-red-500">Job stopped: {activeJobStatus.error}</span>
+                  ) : (
+                    <span className="text-[#059669]">Done — {activeJobStatus.processed}/{activeJobStatus.total} generated.</span>
+                  )}
+                </div>
+              )}
+
+              <div className="flex items-center justify-between">
+                <p className="text-[11px] font-medium text-[var(--hm-text-tertiary)] uppercase tracking-wide">Recent generation jobs</p>
+                <button onClick={loadRecentJobs} disabled={recentJobsLoading} className="text-[11px] text-[var(--hm-accent)]">
+                  {recentJobsLoading ? "Refreshing..." : "Refresh"}
+                </button>
+              </div>
+              {recentJobsError ? (
+                <p className="text-[11.5px] text-red-500">{recentJobsError}</p>
+              ) : !recentJobs.length ? (
+                <p className="text-[11.5px] text-[var(--hm-text-tertiary)]">{recentJobsLoading ? "Loading..." : "No generation jobs yet."}</p>
+              ) : (
+                <div className="space-y-1 max-h-[180px] overflow-y-auto">
+                  {recentJobs.map((j) => (
+                    <button
+                      key={j.id}
+                      onClick={() => watchJob(j.id)}
+                      className={`w-full flex items-center justify-between text-left text-[11.5px] px-2 py-1.5 rounded-md border ${activeJobId === j.id ? "border-[var(--hm-accent)]" : "border-[var(--hm-border)]"} bg-[var(--hm-bg-primary)] hover:border-[var(--hm-accent)]/40`}
+                    >
+                      <span className="truncate text-[var(--hm-text-secondary)]">{j.label || "Untitled batch"}</span>
+                      <span className={`shrink-0 ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium ${j.status === "done" ? "bg-[#DCFCE7] text-[#059669]" : j.status === "error" ? "bg-red-50 text-red-600" : "bg-[var(--hm-accent-light)] text-[var(--hm-accent)]"}`}>
+                        {j.status === "done" ? `done — ${j.total}/${j.total}` : j.status === "error" ? "error" : `running — ${j.processed}/${j.total}`}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div></div>

@@ -13,34 +13,34 @@ datasource db {
 // ═══════════════════════════════════════
 
 model Organization {
-  id          String   @id @default(cuid())
-  name        String
-  website     String?
-  industry    String?
-  subIndustry String?
-  description String?
-  size        String?
-  hqCity      String?
-  hqCountry   String?
-  yearFounded Int?
-  mission     String?
-  vision      String?
-  allowedDomains          String[]  @default([])
-  setupComplete           Boolean   @default(false)
-  insightLastRefreshedAt  DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                     String    @id @default(cuid())
+  name                   String
+  website                String?
+  industry               String?
+  subIndustry            String?
+  description            String?
+  size                   String?
+  hqCity                 String?
+  hqCountry              String?
+  yearFounded            Int?
+  mission                String?
+  vision                 String?
+  allowedDomains         String[]  @default([])
+  setupComplete          Boolean   @default(false)
+  insightLastRefreshedAt DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
-  users            User[]
-  products         Product[]
-  markets          Market[]
-  personas         Persona[]
-  competitors      Competitor[]
-  brandProfile     BrandProfile?
-  skills           Skill[]
-  contentAssets    ContentAsset[]
-  contentPieces    GeneratedContent[]
-  designBriefs     DesignBrief[]
+  users              User[]
+  products           Product[]
+  markets            Market[]
+  personas           Persona[]
+  competitors        Competitor[]
+  brandProfile       BrandProfile?
+  skills             Skill[]
+  contentAssets      ContentAsset[]
+  contentPieces      GeneratedContent[]
+  designBriefs       DesignBrief[]
   insights           IndustryInsight[]
   learningLogs       LearningLog[]
   knowledgeEntries   KnowledgeEntry[]
@@ -56,33 +56,34 @@ model Organization {
 }
 
 model User {
-  id             String    @id @default(cuid())
-  email          String    @unique
-  name           String?
-  password       String?
-  image          String?
-  role           String    @default("others")
-  department     String?
-  jobTitle       String?
-  jobRole        String?
-  onboarded           Boolean   @default(false)
-  mustResetPassword   Boolean   @default(false)
-  inviteStatus   String?
-  inviteToken    String?   @unique
-  lastActiveAt   DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  id                String    @id @default(cuid())
+  email             String    @unique
+  name              String?
+  password          String?
+  image             String?
+  role              String    @default("others")
+  department        String?
+  jobTitle          String?
+  jobRole           String?
+  onboarded         Boolean   @default(false)
+  mustResetPassword Boolean   @default(false)
+  inviteStatus      String?
+  inviteToken       String?   @unique
+  lastActiveAt      DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   organizationId String?
   organization   Organization? @relation(fields: [organizationId], references: [id])
 
-  contentAssets    ContentAsset[]
-  generatedContent GeneratedContent[]
-  conversations    Conversation[]
-  designBriefs     DesignBrief[]
-  tourProgress     TourProgress[]
-  radarExportLogs  RadarExportLog[]
+  contentAssets     ContentAsset[]
+  generatedContent  GeneratedContent[]
+  conversations     Conversation[]
+  designBriefs      DesignBrief[]
+  tourProgress      TourProgress[]
+  radarExportLogs   RadarExportLog[]
   radarActivityLogs RadarActivityLog[]
+  emailSequenceJobs EmailSequenceJob[]
 }
 
 // Tracks who exported what from Radar (Accounts/Contacts CSV download), and when — the export
@@ -107,13 +108,41 @@ model RadarExportLog {
 model RadarActivityLog {
   id        String   @id @default(cuid())
   userId    String
-  action    String   // e.g. "edit_contact", "mark_irrelevant_accounts", "delete_contacts", "validate_send", "linkedin_check"
-  summary   String   // human-readable one-liner shown in the Logs tab
+  action    String // e.g. "edit_contact", "mark_irrelevant_accounts", "delete_contacts", "validate_send", "linkedin_check"
+  summary   String // human-readable one-liner shown in the Logs tab
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id])
 
   @@index([createdAt])
+}
+
+// A bulk/CSV/Radar Email Sequences generation run — one prospect can take 10-20+ seconds
+// (web-search research + generation), so a few-hundred-row batch can run well past an hour.
+// This makes that survive closing the tab/navigating away/refreshing: the batch runs
+// server-side, resuming via a periodic cron tick (see the "continue" action in
+// /api/email-sequences/jobs) instead of depending on one browser tab staying open and
+// on-page the whole time, the way the original client-driven loop did.
+model EmailSequenceJob {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String
+  label          String?
+  mode           String // "bulk" | "radar" — which source tab started this job
+  status         String   @default("running") // running | done | error
+  prospects      Json // Prospect[] — the full batch, fixed at start time
+  config         Json // SequenceConfig used for every prospect in this batch
+  results        Json     @default("[]") // ProspectResult[] — accumulates as rows complete
+  processed      Int      @default(0)
+  total          Int
+  failCount      Int      @default(0) // consecutive continuation failures — see MAX_CONSECUTIVE_FAILS
+  error          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([organizationId, status])
 }
 
 model Account {
@@ -145,35 +174,35 @@ model Session {
 // ═══════════════════════════════════════
 
 model Market {
-  id             String   @id @default(cuid())
+  id             String          @id @default(cuid())
   name           String
-  type           String   @default("primary")
+  type           String          @default("primary")
   notes          String?
   organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id])
+  organization   Organization    @relation(fields: [organizationId], references: [id])
   products       ProductMarket[]
-  createdAt      DateTime @default(now())
+  createdAt      DateTime        @default(now())
 }
 
 model Product {
-  id              String   @id @default(cuid())
-  name            String
-  description     String?
-  category        String?
-  classification  String?
-  scope           String   @default("global")
-  features        String[]
-  useCases        String?
-  bundleParentId  String?
-  bundleParent    Product?  @relation("ProductBundle", fields: [bundleParentId], references: [id])
-  bundleChildren  Product[] @relation("ProductBundle")
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id])
-  markets         ProductMarket[]
-  personas        ProductPersona[]
-  competitors     ProductCompetitor[]
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id             String              @id @default(cuid())
+  name           String
+  description    String?
+  category       String?
+  classification String?
+  scope          String              @default("global")
+  features       String[]
+  useCases       String?
+  bundleParentId String?
+  bundleParent   Product?            @relation("ProductBundle", fields: [bundleParentId], references: [id])
+  bundleChildren Product[]           @relation("ProductBundle")
+  organizationId String
+  organization   Organization        @relation(fields: [organizationId], references: [id])
+  markets        ProductMarket[]
+  personas       ProductPersona[]
+  competitors    ProductCompetitor[]
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
 }
 
 model ProductMarket {
@@ -181,6 +210,7 @@ model ProductMarket {
   marketId  String
   product   Product @relation(fields: [productId], references: [id])
   market    Market  @relation(fields: [marketId], references: [id])
+
   @@id([productId, marketId])
 }
 
@@ -189,6 +219,7 @@ model ProductPersona {
   personaId String
   product   Product @relation(fields: [productId], references: [id])
   persona   Persona @relation(fields: [personaId], references: [id])
+
   @@id([productId, personaId])
 }
 
@@ -197,70 +228,71 @@ model ProductCompetitor {
   competitorId String
   product      Product    @relation(fields: [productId], references: [id])
   competitor   Competitor @relation(fields: [competitorId], references: [id])
+
   @@id([productId, competitorId])
 }
 
 model Persona {
-  id              String   @id @default(cuid())
-  title           String
-  department      String?
-  seniority       String?
-  kras            String[]
-  kpis            String[]
-  painPoints      String?
-  howWeHelp       String?
-  contentPrefs    String[]
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id])
-  products        ProductPersona[]
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id             String           @id @default(cuid())
+  title          String
+  department     String?
+  seniority      String?
+  kras           String[]
+  kpis           String[]
+  painPoints     String?
+  howWeHelp      String?
+  contentPrefs   String[]
+  organizationId String
+  organization   Organization     @relation(fields: [organizationId], references: [id])
+  products       ProductPersona[]
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
 }
 
 model Competitor {
-  id              String   @id @default(cuid())
-  name            String
-  website         String?
-  marketOverlap   String[]
-  positioning     String?
-  differentiator  String?
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id])
-  products        ProductCompetitor[]
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id             String              @id @default(cuid())
+  name           String
+  website        String?
+  marketOverlap  String[]
+  positioning    String?
+  differentiator String?
+  organizationId String
+  organization   Organization        @relation(fields: [organizationId], references: [id])
+  products       ProductCompetitor[]
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
 }
 
 model BrandProfile {
-  id               String   @id @default(cuid())
+  id               String       @id @default(cuid())
   traits           String[]
   archetype        String?
-  toneFormal       Int      @default(30)
-  toneTechnical    Int      @default(25)
-  toneSerious      Int      @default(35)
-  toneCorporate    Int      @default(45)
+  toneFormal       Int          @default(30)
+  toneTechnical    Int          @default(25)
+  toneSerious      Int          @default(35)
+  toneCorporate    Int          @default(45)
   voiceDescription String?
   wordsWeUse       String[]
   wordsWeAvoid     String[]
   competitiveMoat  String?
-  organizationId   String   @unique
+  organizationId   String       @unique
   organization     Organization @relation(fields: [organizationId], references: [id])
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
 }
 
 model KnowledgeEntry {
-  id              String   @id @default(cuid())
-  category        String
-  title           String
-  content         String
-  source          String   @default("wizard")
-  isAIGenerated   Boolean  @default(false)
-  isApproved      Boolean  @default(true)
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id])
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id             String       @id @default(cuid())
+  category       String
+  title          String
+  content        String
+  source         String       @default("wizard")
+  isAIGenerated  Boolean      @default(false)
+  isApproved     Boolean      @default(true)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   @@index([organizationId, source, createdAt])
   @@index([organizationId, category])
@@ -271,17 +303,17 @@ model KnowledgeEntry {
 // ═══════════════════════════════════════
 
 model Skill {
-  id              String   @id @default(cuid())
-  name            String
-  category        String
-  linkedFeature   String
-  instructions    String
-  description     String?
-  isActive        Boolean  @default(true)
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id])
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id             String       @id @default(cuid())
+  name           String
+  category       String
+  linkedFeature  String
+  instructions   String
+  description    String?
+  isActive       Boolean      @default(true)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   @@index([organizationId, isActive])
 }
@@ -291,38 +323,38 @@ model Skill {
 // ═══════════════════════════════════════
 
 model ContentAsset {
-  id               String   @id @default(cuid())
-  name             String
-  fileName         String?
-  fileUrl          String?
-  fileType         String?
-  fileSize         Int?
-  fileHash         String?
-  contentType      String?
-  linkedUrl        String?
-  sourceUrl        String?
-  productTags      String[]
-  marketTags       String[]
-  personaTags      String[]
-  competitorTags   String[]
-  customTags       String[]
-  brandScore       Float?
-  scoreVoice       Float?
-  scoreTerminology Float?
-  scoreMessaging   Float?
-  scorePersonality Float?
-  scoreCompleteness Float?
-  scoreSuggestions  String[]
-  scoreStatus      String   @default("pending")
-  intelligenceStatus String @default("pending") // "pending" | "extracting" | "done" | "failed"
-  analyzedAt       DateTime?
-  aiSummary        String?
-  uploadedById     String
-  uploadedBy       User     @relation(fields: [uploadedById], references: [id])
-  organizationId   String
-  organization     Organization @relation(fields: [organizationId], references: [id])
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id                 String       @id @default(cuid())
+  name               String
+  fileName           String?
+  fileUrl            String?
+  fileType           String?
+  fileSize           Int?
+  fileHash           String?
+  contentType        String?
+  linkedUrl          String?
+  sourceUrl          String?
+  productTags        String[]
+  marketTags         String[]
+  personaTags        String[]
+  competitorTags     String[]
+  customTags         String[]
+  brandScore         Float?
+  scoreVoice         Float?
+  scoreTerminology   Float?
+  scoreMessaging     Float?
+  scorePersonality   Float?
+  scoreCompleteness  Float?
+  scoreSuggestions   String[]
+  scoreStatus        String       @default("pending")
+  intelligenceStatus String       @default("pending") // "pending" | "extracting" | "done" | "failed"
+  analyzedAt         DateTime?
+  aiSummary          String?
+  uploadedById       String
+  uploadedBy         User         @relation(fields: [uploadedById], references: [id])
+  organizationId     String
+  organization       Organization @relation(fields: [organizationId], references: [id])
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
 
   @@index([organizationId, createdAt])
   @@index([organizationId, fileHash])
@@ -333,7 +365,7 @@ model ContentAsset {
 // ═══════════════════════════════════════
 
 model GeneratedContent {
-  id              String   @id @default(cuid())
+  id              String       @id @default(cuid())
   topic           String
   formats         String[]
   targetProduct   String?
@@ -343,12 +375,12 @@ model GeneratedContent {
   toneOverride    String?
   keyPoints       String?
   referenceAssets String[]
-  outputs         Json     @default("{}")
+  outputs         Json         @default("{}")
   generatedById   String
-  generatedBy     User     @relation(fields: [generatedById], references: [id])
+  generatedBy     User         @relation(fields: [generatedById], references: [id])
   organizationId  String
   organization    Organization @relation(fields: [organizationId], references: [id])
-  createdAt       DateTime @default(now())
+  createdAt       DateTime     @default(now())
 
   @@index([organizationId, createdAt])
   @@index([generatedById, createdAt])
@@ -387,53 +419,53 @@ model Message {
 // ═══════════════════════════════════════
 
 model IndustryInsight {
-  id              String   @id @default(cuid())
-  signalType      String
-  priority        String   @default("medium")
-  relevanceScore  Int      @default(50)
-  title           String
-  summary         String
-  sourceUrl       String?
-  sourceName      String?
-  takeaway        String?
-  tags            String[]
-  addedToKB       Boolean  @default(false)
-  kbCategories    String[]
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id])
-  createdAt       DateTime @default(now())
+  id             String       @id @default(cuid())
+  signalType     String
+  priority       String       @default("medium")
+  relevanceScore Int          @default(50)
+  title          String
+  summary        String
+  sourceUrl      String?
+  sourceName     String?
+  takeaway       String?
+  tags           String[]
+  addedToKB      Boolean      @default(false)
+  kbCategories   String[]
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  createdAt      DateTime     @default(now())
 
   @@index([organizationId, createdAt])
 }
 
 model LearningLog {
-  id              String   @id @default(cuid())
-  sourceType      String
-  title           String
-  summary         String
-  takeaway        String?
-  kbCategories    String[]
-  tags            String[]
+  id               String       @id @default(cuid())
+  sourceType       String
+  title            String
+  summary          String
+  takeaway         String?
+  kbCategories     String[]
+  tags             String[]
   sourceDocumentId String?
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id])
-  createdAt       DateTime @default(now())
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id])
+  createdAt        DateTime     @default(now())
 
   @@index([organizationId, createdAt])
 }
 
 model KnowledgeDocument {
-  id              String   @id @default(cuid())
-  name            String
-  fileName        String
-  fileUrl         String
-  fileType        String
-  fileSize        Int?
-  status          String   @default("processing")
-  learningsCount  Int      @default(0)
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id])
-  createdAt       DateTime @default(now())
+  id             String       @id @default(cuid())
+  name           String
+  fileName       String
+  fileUrl        String
+  fileType       String
+  fileSize       Int?
+  status         String       @default("processing")
+  learningsCount Int          @default(0)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  createdAt      DateTime     @default(now())
 }
 
 // ═══════════════════════════════════════
@@ -441,17 +473,17 @@ model KnowledgeDocument {
 // ═══════════════════════════════════════
 
 model TokenUsageLog {
-  id             String   @id @default(cuid())
-  feature        String   // "assistant" | "content_generator" | "design_brief" | "seo" | "brand_review" | "content_analysis" | "knowledge" | "industry_insights" | "setup_wizard"
-  model          String   @default("claude-sonnet-4-6")
-  provider       String   @default("anthropic")
-  inputTokens    Int      @default(0)
-  outputTokens   Int      @default(0)
-  totalTokens    Int      @default(0)
+  id             String       @id @default(cuid())
+  feature        String // "assistant" | "content_generator" | "design_brief" | "seo" | "brand_review" | "content_analysis" | "knowledge" | "industry_insights" | "setup_wizard"
+  model          String       @default("claude-sonnet-4-6")
+  provider       String       @default("anthropic")
+  inputTokens    Int          @default(0)
+  outputTokens   Int          @default(0)
+  totalTokens    Int          @default(0)
   userId         String?
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id])
-  createdAt      DateTime @default(now())
+  createdAt      DateTime     @default(now())
 
   @@index([organizationId, createdAt])
   @@index([organizationId, feature])
@@ -462,16 +494,16 @@ model TokenUsageLog {
 // ═══════════════════════════════════════
 
 model AIProviderConfig {
-  id             String   @id @default(cuid())
-  provider       String   // "anthropic" | "openai" | "google"
-  encryptedKey   String   // AES-256-GCM encrypted API key
-  keyHint        String?  // last 4 chars for display, e.g. "...xK9m"
-  isActive       Boolean  @default(true)
-  modelOverride  String?  // optional default model override
+  id             String       @id @default(cuid())
+  provider       String // "anthropic" | "openai" | "google"
+  encryptedKey   String // AES-256-GCM encrypted API key
+  keyHint        String? // last 4 chars for display, e.g. "...xK9m"
+  isActive       Boolean      @default(true)
+  modelOverride  String? // optional default model override
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id])
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   @@unique([organizationId, provider])
 }
@@ -481,20 +513,20 @@ model AIProviderConfig {
 // ═══════════════════════════════════════
 
 model Integration {
-  id            String    @id @default(cuid())
-  type          String    // "hubspot"
-  portalId      String?
-  accessToken   String?
-  refreshToken  String?
-  expiresAt     DateTime?
-  syncStatus    String    @default("idle") // "idle" | "syncing" | "error"
-  lastSyncAt    DateTime?
-  lastSyncError String?
-  metadata      Json      @default("{}")
+  id             String       @id @default(cuid())
+  type           String // "hubspot"
+  portalId       String?
+  accessToken    String?
+  refreshToken   String?
+  expiresAt      DateTime?
+  syncStatus     String       @default("idle") // "idle" | "syncing" | "error"
+  lastSyncAt     DateTime?
+  lastSyncError  String?
+  metadata       Json         @default("{}")
   organizationId String
-  organization  Organization @relation(fields: [organizationId], references: [id])
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   @@unique([organizationId, type])
 }
@@ -504,16 +536,16 @@ model Integration {
 // ═══════════════════════════════════════
 
 model DesignBrief {
-  id             String   @id @default(cuid())
+  id             String       @id @default(cuid())
   prompt         String
   platform       String?
   format         String?
-  brief          Json     @default("{}")
+  brief          Json         @default("{}")
   createdById    String
-  createdBy      User     @relation(fields: [createdById], references: [id])
+  createdBy      User         @relation(fields: [createdById], references: [id])
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id])
-  createdAt      DateTime @default(now())
+  createdAt      DateTime     @default(now())
 }
 
 // ═══════════════════════════════════════
@@ -521,19 +553,19 @@ model DesignBrief {
 // ═══════════════════════════════════════
 
 model CustomRole {
-  id              String   @id @default(cuid())
-  name            String
-  slug            String
-  description     String?
-  color           String   @default("#6B7280")
-  rank            Int      @default(1)
-  permissions     Json     @default("{}")
-  kbPermissions   Json     @default("{}")
-  isBuiltIn       Boolean  @default(false)
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id])
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id             String       @id @default(cuid())
+  name           String
+  slug           String
+  description    String?
+  color          String       @default("#6B7280")
+  rank           Int          @default(1)
+  permissions    Json         @default("{}")
+  kbPermissions  Json         @default("{}")
+  isBuiltIn      Boolean      @default(false)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   @@unique([organizationId, slug])
 }
@@ -543,13 +575,13 @@ model CustomRole {
 // ═══════════════════════════════════════
 
 model TourProgress {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   tourId      String
-  status      String   @default("pending") // "pending" | "completed" | "dismissed"
+  status      String    @default("pending") // "pending" | "completed" | "dismissed"
   completedAt DateTime?
   userId      String
-  user        User     @relation(fields: [userId], references: [id])
-  createdAt   DateTime @default(now())
+  user        User      @relation(fields: [userId], references: [id])
+  createdAt   DateTime  @default(now())
 
   @@unique([userId, tourId])
 }
@@ -559,34 +591,34 @@ model TourProgress {
 // ═══════════════════════════════════════
 
 model SkillV2 {
-  id              String   @id @default(cuid())
-  name            String
-  instructions    String
-  description     String?
-  version         Int      @default(1)
+  id           String  @id @default(cuid())
+  name         String
+  instructions String
+  description  String?
+  version      Int     @default(1)
 
-  scope           String   // "entity" | "feature" | "global"
-  category        String   // brand | product | persona | competitor | market | messaging | proof_point | industry | seo | general | format | tone
+  scope    String // "entity" | "feature" | "global"
+  category String // brand | product | persona | competitor | market | messaging | proof_point | industry | seo | general | format | tone
 
-  entityType      String?  // "product" | "persona" | "market" | "competitor"
-  entityId        String?
+  entityType String? // "product" | "persona" | "market" | "competitor"
+  entityId   String?
 
-  featureKey      String?  // "content_generator" | "assistant" | "email_sequences" | "design_brief" | "brand_review" | "content_review" | "industry_insights" | "asset_analysis"
+  featureKey String? // "content_generator" | "assistant" | "email_sequences" | "design_brief" | "brand_review" | "content_review" | "industry_insights" | "asset_analysis"
 
-  isActive        Boolean  @default(true)
-  isSynthesized   Boolean  @default(false)
-  confidence      Float    @default(0.5)
-  sourceCount     Int      @default(0)
+  isActive      Boolean @default(true)
+  isSynthesized Boolean @default(false)
+  confidence    Float   @default(0.5)
+  sourceCount   Int     @default(0)
 
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id])
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
 
-  parentSkillId   String?
-  parentSkill     SkillV2?  @relation("SkillVersions", fields: [parentSkillId], references: [id])
-  childVersions   SkillV2[] @relation("SkillVersions")
+  parentSkillId String?
+  parentSkill   SkillV2?  @relation("SkillVersions", fields: [parentSkillId], references: [id])
+  childVersions SkillV2[] @relation("SkillVersions")
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([organizationId, scope, category])
   @@index([organizationId, featureKey])
@@ -594,51 +626,51 @@ model SkillV2 {
 }
 
 model FeatureRegistry {
-  id              String   @id @default(cuid())
+  id              String       @id @default(cuid())
   key             String
   name            String
   description     String?
   skillCategories String[]
-  isActive        Boolean  @default(true)
+  isActive        Boolean      @default(true)
   organizationId  String
   organization    Organization @relation(fields: [organizationId], references: [id])
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
 
   @@unique([organizationId, key])
 }
 
 model UsageSignal {
-  id              String   @id @default(cuid())
-  signalType      String   // "feedback_positive" | "feedback_negative" | "edit" | "used" | "discarded" | "regenerated"
-  featureKey      String
-  outputId        String?
-  entityType      String?
-  entityId        String?
-  metadata        Json     @default("{}")
-  userId          String?
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id])
-  createdAt       DateTime @default(now())
+  id             String       @id @default(cuid())
+  signalType     String // "feedback_positive" | "feedback_negative" | "edit" | "used" | "discarded" | "regenerated"
+  featureKey     String
+  outputId       String?
+  entityType     String?
+  entityId       String?
+  metadata       Json         @default("{}")
+  userId         String?
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  createdAt      DateTime     @default(now())
 
   @@index([organizationId, featureKey, createdAt])
   @@index([organizationId, signalType])
 }
 
 model OutputFingerprint {
-  id              String   @id @default(cuid())
+  id              String       @id @default(cuid())
   featureKey      String
   format          String?
   entityType      String?
   entityId        String?
   structureHash   String
   openingPattern  String?
-  headingPatterns String[] @default([])
+  headingPatterns String[]     @default([])
   ctaPattern      String?
   outputId        String?
   organizationId  String
   organization    Organization @relation(fields: [organizationId], references: [id])
-  createdAt       DateTime @default(now())
+  createdAt       DateTime     @default(now())
 
   @@index([organizationId, featureKey, format, createdAt])
 }
