@@ -846,6 +846,45 @@ export default function EmailSequencesPage() {
         <p className="text-[13px] text-[var(--hm-text-secondary)] mt-1">Generate hyper-personalised outreach email sequences powered by your knowledge base</p>
       </div>
 
+      {/* Active job status + refresh/stop — hoisted above the results/form split so it's visible
+          regardless of which view is showing. It used to live only inside the form view, which
+          made it disappear entirely as soon as a job had any results (i.e. almost immediately),
+          since that flips the page into the results view instead. */}
+      {activeJobStatus && (
+        <div className="mb-4 p-3 rounded-lg bg-[var(--hm-bg-secondary)] border border-[var(--hm-border)] text-[12.5px] flex items-center justify-between gap-3">
+          {activeJobStatus.status === "running" ? (
+            <span className="flex items-center gap-2">
+              <span className="w-3 h-3 border-2 border-current/30 border-t-current rounded-full animate-spin text-[var(--hm-accent)]" />
+              Running in the background — {activeJobStatus.processed}/{activeJobStatus.total} done. Safe to close this tab or navigate away; it keeps going and picks back up here.
+            </span>
+          ) : activeJobStatus.status === "error" ? (
+            <span className="text-red-500">Job stopped: {activeJobStatus.error}</span>
+          ) : activeJobStatus.status === "cancelled" ? (
+            <span className="text-[var(--hm-text-tertiary)]">Stopped — {activeJobStatus.processed}/{activeJobStatus.total} generated before you stopped it.</span>
+          ) : (
+            <span className="text-[#059669]">Done — {activeJobStatus.processed}/{activeJobStatus.total} generated.</span>
+          )}
+          {activeJobStatus.status === "running" && (
+            <span className="shrink-0 flex items-center gap-3">
+              <button
+                onClick={refreshActiveJob}
+                disabled={jobRefreshing || jobCancelling}
+                className="text-[11px] font-medium text-[var(--hm-accent)] hover:underline disabled:opacity-50"
+              >
+                {jobRefreshing ? "Refreshing..." : "Refresh"}
+              </button>
+              <button
+                onClick={cancelActiveJob}
+                disabled={jobRefreshing || jobCancelling}
+                className="text-[11px] font-medium text-red-500 hover:underline disabled:opacity-50"
+              >
+                {jobCancelling ? "Stopping..." : "Stop"}
+              </button>
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Results view */}
       {results.length > 0 ? (
         <div>
@@ -1480,43 +1519,6 @@ export default function EmailSequencesPage() {
             )}
           </div>
 
-          {/* Active job status + refresh — shown regardless of which mode tab is currently
-              selected, since a bulk/radar job keeps running in the background no matter which
-              tab you switch to and you should always be able to see/refresh it. */}
-          {activeJobStatus && (
-            <div className="p-3 rounded-lg bg-[var(--hm-bg-secondary)] border border-[var(--hm-border)] text-[12.5px] flex items-center justify-between gap-3">
-              {activeJobStatus.status === "running" ? (
-                <span className="flex items-center gap-2">
-                  <span className="w-3 h-3 border-2 border-current/30 border-t-current rounded-full animate-spin text-[var(--hm-accent)]" />
-                  Running in the background — {activeJobStatus.processed}/{activeJobStatus.total} done. Safe to close this tab or navigate away; it keeps going and picks back up here.
-                </span>
-              ) : activeJobStatus.status === "error" ? (
-                <span className="text-red-500">Job stopped: {activeJobStatus.error}</span>
-              ) : activeJobStatus.status === "cancelled" ? (
-                <span className="text-[var(--hm-text-tertiary)]">Stopped — {activeJobStatus.processed}/{activeJobStatus.total} generated before you stopped it.</span>
-              ) : (
-                <span className="text-[#059669]">Done — {activeJobStatus.processed}/{activeJobStatus.total} generated.</span>
-              )}
-              {activeJobStatus.status === "running" && (
-                <span className="shrink-0 flex items-center gap-3">
-                  <button
-                    onClick={refreshActiveJob}
-                    disabled={jobRefreshing || jobCancelling}
-                    className="text-[11px] font-medium text-[var(--hm-accent)] hover:underline disabled:opacity-50"
-                  >
-                    {jobRefreshing ? "Refreshing..." : "Refresh"}
-                  </button>
-                  <button
-                    onClick={cancelActiveJob}
-                    disabled={jobRefreshing || jobCancelling}
-                    className="text-[11px] font-medium text-red-500 hover:underline disabled:opacity-50"
-                  >
-                    {jobCancelling ? "Stopping..." : "Stop"}
-                  </button>
-                </span>
-              )}
-            </div>
-          )}
 
           {/* Shown regardless of mode tab — background jobs run independent of which tab is
               currently selected, and this list (with per-item delete) is more detail than the
