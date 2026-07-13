@@ -96,8 +96,9 @@ export async function fingerprintOutput(params: FingerprintParams): Promise<void
     await db.outputFingerprint.deleteMany({
       where: { organizationId: params.orgId, createdAt: { lt: cutoff } },
     });
-  } catch {
-    // Non-critical
+  } catch (e) {
+    // Non-critical, but logged — the fingerprint table sat empty and nobody knew.
+    console.error("fingerprintOutput failed:", e instanceof Error ? e.message : e);
   }
 }
 

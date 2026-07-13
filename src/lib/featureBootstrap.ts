@@ -21,7 +21,8 @@ export async function ensureFeatureRegistered(orgId: string, featureKey: Feature
       },
       update: {},
     });
-  } catch {
-    // Non-critical — swallow errors silently
+  } catch (e) {
+    // Non-critical, but logged — silent failures hide dead subsystems.
+    console.error(`ensureFeatureRegistered(${featureKey}) failed:`, e instanceof Error ? e.message : e);
   }
 }

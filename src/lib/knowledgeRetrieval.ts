@@ -320,7 +320,8 @@ async function searchDocumentFiles(
     return items
       .sort((a, b) => b.relevanceScore - a.relevanceScore)
       .slice(0, maxExcerpts);
-  } catch {
+  } catch (e) {
+    console.error("searchDocumentFiles failed:", e instanceof Error ? e.message : e);
     return [];
   }
 }
@@ -401,7 +402,10 @@ async function liveHubSpotSearch(
       if (!res.ok) return [];
       const data = await res.json();
       return data.results || [];
-    } catch { return []; }
+    } catch (e) {
+      console.error("liveHubSpotSearch failed:", e instanceof Error ? e.message : e);
+      return [];
+    }
   }
 
   await Promise.allSettled([

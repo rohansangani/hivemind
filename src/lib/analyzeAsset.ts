@@ -50,15 +50,19 @@ async function extractTextFromUrl(url: string, ext: string, contentType?: string
     return $.text().replace(/\s+/g, " ").trim().slice(0, limit);
   }
   if (["docx", "pptx", "xlsx"].includes(ext)) {
+    // OOXML containers are deflate-compressed ZIPs — reading the raw bytes as
+    // UTF-8 (the old approach) produced mojibake, not document text. Parse properly.
     const docLimit = contentType === "report" ? 60000 : 10000;
     const buf = await fetchBuf(url);
-    return buf
-      .toString("utf-8", 0, Math.min(buf.length, contentType === "report" ? 100000 : 25000))
-      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, " ")
-      .replace(/<[^>]+>/g, " ")
-      .replace(/\s+/g, " ")
-      .trim()
-      .slice(0, docLimit);
+    try {
+      const { parseOffice } = await import("officeparser");
+      const ast = await parseOffice(buf);
+      const { value } = await ast.to("text");
+      return (value || "").replace(/\s+/g, " ").trim().slice(0, docLimit);
+    } catch (e) {
+      console.error(`Office extraction failed for .${ext}:`, e instanceof Error ? e.message : e);
+      return "";
+    }
   }
   return "";
 }

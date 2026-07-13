@@ -140,31 +140,6 @@ function extractTopics(message: string): string[] {
     .slice(0, 10);
 }
 
-// Score how relevant a knowledge section is to the query (0–1)
-export function scoreRelevance(text: string, topics: string[], entities: QueryEntities): number {
-  if (!text) return 0;
-  const lower = text.toLowerCase();
-  let score = 0;
-
-  for (const t of topics) {
-    if (lower.includes(t.toLowerCase())) score += 0.1;
-  }
-  for (const p of entities.products) {
-    if (lower.includes(p.toLowerCase())) score += 0.3;
-  }
-  for (const p of entities.personas) {
-    if (lower.includes(p.toLowerCase())) score += 0.3;
-  }
-  for (const c of entities.competitors) {
-    if (lower.includes(c.toLowerCase())) score += 0.3;
-  }
-  for (const m of (entities.markets || [])) {
-    if (lower.includes(m.toLowerCase())) score += 0.25;
-  }
-
-  return Math.min(score, 1);
-}
-
 export function getIntentInstructions(intent: Intent, entities: QueryEntities): string {
   const entityCtx = [
     entities.products.length > 0 && `Products in scope: **${entities.products.join(", ")}**`,

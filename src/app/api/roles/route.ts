@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import jwt from "jsonwebtoken";
-import { hasPermission } from "@/lib/permissions";
+import { currentUserHasPermission } from "@/lib/authz";
 import { ROLE_DEFAULT_PERMISSIONS, KB_TAB_PERMISSIONS, MODULES } from "@/lib/modules";
 
 const BUILT_IN_ROLES = [
@@ -66,8 +66,8 @@ export async function POST(req: NextRequest) {
   try {
     const token = req.cookies.get("hm-token")?.value;
     if (!token) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-    const decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as { orgId: string; role?: string };
-    if (!hasPermission(decoded.role || "others", "manage_settings")) {
+    const decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as { userId: string; orgId: string; role?: string };
+    if (!(await currentUserHasPermission(decoded.userId, "manage_settings"))) {
       return NextResponse.json({ error: "Only admins can manage roles" }, { status: 403 });
     }
 

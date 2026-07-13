@@ -6,7 +6,7 @@ import { db } from "@/lib/db";
 import jwt from "jsonwebtoken";
 import { classifyIntent, resolveEntities, getIntentInstructions } from "@/lib/intentEngine";
 import { retrieveRelevantKnowledge } from "@/lib/knowledgeRetrieval";
-import { buildGroundedSystemPrompt, getGroundedResponseInstructions } from "@/lib/groundingEngine";
+import { buildGroundedSystemPrompt } from "@/lib/groundingEngine";
 import { getAnthropicKey, AIKeyNotConfiguredError } from "@/lib/aiProvider";
 import { logTokenUsage, extractAnthropicUsage } from "@/lib/tokenTracking";
 import { ensureFeatureRegistered } from "@/lib/featureBootstrap";
@@ -528,8 +528,11 @@ export async function POST(req: NextRequest) {
             };
 
         // ── Build grounded system prompt ──────────────────
+        // Per-intent response FORMAT only. Citation/grounding discipline is NOT
+        // repeated here — it's already enforced by the GROUNDING CONTRACT (RULE 2
+        // mandatory citation, RULE 5 knowledge gaps) inside buildGroundedSystemPrompt.
+        // A second citation contract here previously conflicted with the format one.
         const intentInstructions = getIntentInstructions(intent, entities);
-        const responseInstructions = getGroundedResponseInstructions(intent, knowledge.orgName);
 
         const radarToolInstructions = hasRadarAccess
           ? `
@@ -552,8 +555,6 @@ RADAR: This user does not have Radar access. If they ask you to find/export cont
           knowledge,
           intent,
           `${intentInstructions}
-
-${responseInstructions}
 
 CONVERSATION BEHAVIOR:
 - Think step-by-step: first identify what knowledge base items are most relevant, then compose your answer from those items only

@@ -9,22 +9,27 @@ const globalForPrisma = globalThis as unknown as {
 function createPrismaClient() {
   const pool = new pg.Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : undefined,
+    // Verify the server certificate in production. Neon presents a
+    // publicly-trusted cert, so this succeeds — the old `rejectUnauthorized:
+    // false` silently accepted any cert (MITM exposure) for no benefit.
+    ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: true } : undefined,
   });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const adapter = new PrismaPg(pool as any);
   return new PrismaClient({ adapter });
 }
 
-// In dev, stale clients (created before `prisma generate`) won't have new models.
-// Detect by checking for a recently added model and recreate if missing.
-function getOrCreateClient(): PrismaClient {
-  const cached = globalForPrisma.prisma;
-  if (cached && "knowledgeDocument" in cached) return cached;
-  // Cached client is stale or missing — create a fresh one
-  const client = createPrismaClient();
-  globalForPrisma.prisma = client;
-  return client;
-}
+// Standard Next.js singleton: cache on globalThis ONLY in dev so Fast Refresh
+// reuses one client (and one pool) across reloads instead of leaking a new pool
+// per edit. In production each lambda instance gets its own module-scoped client.
+//
+// The previous "staleness detection" hack recreated the client whenever a
+// sentinel model was missing — but it abandoned the old pg.Pool without closing
+// it (a connection leak), and the sentinel rotted as new models were added. The
+// honest fix for "new model missing after `prisma generate`" is to restart the
+// dev server.
+export const db = globalForPrisma.prisma ?? createPrismaClient();
 
-export const db = getOrCreateClient();
+if (process.env.NODE_ENV !== "production") {
+  globalForPrisma.prisma = db;
+}

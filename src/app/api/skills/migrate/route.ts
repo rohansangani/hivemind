@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import jwt from "jsonwebtoken";
-import { hasPermission } from "@/lib/permissions";
+import { currentUserHasPermission } from "@/lib/authz";
 import { KB_CATEGORY_ALIASES, type SkillCategory, SKILL_CATEGORIES } from "@/lib/skillSystem";
 
 export async function POST(req: NextRequest) {
@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
       role?: string;
     };
 
-    if (!hasPermission(decoded.role || "viewer", "manage_settings")) {
+    if (!(await currentUserHasPermission(decoded.userId, "manage_settings"))) {
       return NextResponse.json({ error: "Admin access required" }, { status: 403 });
     }
 

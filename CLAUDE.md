@@ -64,12 +64,9 @@ Five standard roles: `owner > admin > marketing > sales > others`. Custom roles 
 ### AI Context Pipeline
 Content generation and the assistant use a multi-layer context system:
 
-1. **`contextEngine.ts`** — `buildContextPrompt(orgId, options)` assembles organizational knowledge (products, markets, personas, competitors, brand profile, learnings, proof points) into a structured prompt. Relevance-scored when `queryMessage` + `queryEntities` are provided.
-2. **`intentEngine.ts`** — Extracts entities (products, personas, competitors, markets, topics) from user queries for relevance scoring.
-3. **`knowledgeRetrieval.ts`** — Text search against the knowledge base, returns skills + entries.
-4. **`groundingEngine.ts`** — Adds source citations to AI responses.
-
-`includeSkills` defaults to `false` in `buildContextPrompt` — skills are fetched but not injected unless explicitly requested.
+1. **`intentEngine.ts`** — Classifies query intent and extracts entities (products, personas, competitors, markets, topics) from user queries; supplies per-intent response-format instructions (`getIntentInstructions`).
+2. **`knowledgeRetrieval.ts`** — `retrieveRelevantKnowledge(orgId, query, entities, options)` is the single entry point: text search against the knowledge base (HubSpot CRM rows excluded from the curated window; live CRM lookup handled separately), composes skills via `skillComposer`, and returns the assembled `RetrievedKnowledge`.
+3. **`groundingEngine.ts`** — `buildGroundedSystemPrompt(...)` assembles the final system prompt with the grounding contract (mandatory citations, no parametric hallucination, knowledge-gap honesty).
 
 ### AI Provider / BYOK (`src/lib/aiProvider.ts`)
 Each workspace stores their own encrypted API keys (AES-256-GCM). `getAnthropicKey(orgId)` fetches and decrypts the key. No shared fallback key — workspaces must configure their own via Settings.

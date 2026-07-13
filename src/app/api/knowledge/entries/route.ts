@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import jwt from "jsonwebtoken";
-import { hasPermission } from "@/lib/permissions";
+import { currentUserHasPermission } from "@/lib/authz";
 
 /**
  * Custom Knowledge Entries CRUD
@@ -18,6 +18,7 @@ export async function GET(req: NextRequest) {
     if (!token) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
     const decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as {
+      userId: string;
       orgId: string;
       role?: string;
     };
@@ -44,11 +45,12 @@ export async function POST(req: NextRequest) {
     if (!token) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
     const decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as {
+      userId: string;
       orgId: string;
       role?: string;
     };
 
-    if (!hasPermission(decoded.role || "viewer", "manage_knowledge")) {
+    if (!(await currentUserHasPermission(decoded.userId, "manage_knowledge"))) {
       return NextResponse.json({ error: "You don't have permission to add knowledge entries" }, { status: 403 });
     }
 
@@ -85,11 +87,12 @@ export async function PUT(req: NextRequest) {
     if (!token) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
     const decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as {
+      userId: string;
       orgId: string;
       role?: string;
     };
 
-    if (!hasPermission(decoded.role || "viewer", "manage_knowledge")) {
+    if (!(await currentUserHasPermission(decoded.userId, "manage_knowledge"))) {
       return NextResponse.json({ error: "You don't have permission to edit knowledge entries" }, { status: 403 });
     }
 
@@ -130,11 +133,12 @@ export async function DELETE(req: NextRequest) {
     if (!token) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
     const decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as {
+      userId: string;
       orgId: string;
       role?: string;
     };
 
-    if (!hasPermission(decoded.role || "viewer", "manage_knowledge")) {
+    if (!(await currentUserHasPermission(decoded.userId, "manage_knowledge"))) {
       return NextResponse.json({ error: "You don't have permission to delete knowledge entries" }, { status: 403 });
     }
 
