@@ -196,6 +196,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ job: fresh });
     }
 
+    // Stops a running batch for good — config (tone/products/CTA/etc.) is fixed at job creation
+    // and can't be edited mid-run, so "I want to change the messaging" means stop this job and
+    // start a fresh one, not pause-and-resume. Rows already generated stay in `results` as-is;
+    // "cancelled" is terminal like done/error so no cron tick or manual refresh will ever pick
+    // this job back up.
+    if (action === "cancel") {
+      const { jobId } = body as { jobId?: string };
+      if (!jobId) return NextResponse.json({ error: "No jobId" }, { status: 400 });
+      const job = await db.emailSequenceJob.findUnique({ where: { id: jobId }, select: { organizationId: true, status: true } });
+      if (!job || job.organizationId !== decoded.orgId) return NextResponse.json({ error: "Job not found" }, { status: 404 });
+      if (job.status !== "running") return NextResponse.json({ error: "Job isn't running" }, { status: 400 });
+      const fresh = await db.emailSequenceJob.update({ where: { id: jobId }, data: { status: "cancelled" } });
+      return NextResponse.json({ job: fresh });
+    }
+
     if (action === "list") {
       const jobs = await db.emailSequenceJob.findMany({
         where: { organizationId: decoded.orgId },
