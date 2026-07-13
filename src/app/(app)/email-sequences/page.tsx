@@ -287,6 +287,35 @@ export default function EmailSequencesPage() {
     }
   }, [activeJobId, fetchJobStatus, loadRecentJobs]);
 
+  const [jobCancelling, setJobCancelling] = useState(false);
+
+  // Stops a running batch for good — config is fixed at job creation, so "change the messaging"
+  // means stop this job and start a fresh one rather than pause/resume. Already-generated rows
+  // stay visible; nothing will ever advance this job again afterward.
+  const cancelActiveJob = useCallback(async () => {
+    if (!activeJobId) return;
+    if (!confirm("Stop this batch? Rows already generated stay as-is, but no more will be generated for this job.")) return;
+    const jobId = activeJobId;
+    setJobCancelling(true);
+    try {
+      const r = await fetch("/api/email-sequences/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "cancel", jobId }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || "Couldn't stop job");
+      if (activeJobIdRef.current === jobId) {
+        const job: JobRow = d.job;
+        setActiveJobStatus(job);
+        setRecentJobs((prev) => prev.map((j) => (j.id === jobId ? { ...j, status: job.status } : j)));
+      }
+    } catch (e) {
+      if (activeJobIdRef.current === jobId) setError((e as Error).message);
+    }
+    setJobCancelling(false);
+  }, [activeJobId]);
+
   // History sidebar covers every mode (single/template/bulk/radar) — loaded once on mount, not
   // gated to bulk/radar the way the in-context "Recent generation jobs" panel below is.
   useEffect(() => {
@@ -779,6 +808,9 @@ export default function EmailSequencesPage() {
                             )}
                             {item.status === "error" && (
                               <span className="text-[10px] px-1.5 py-0.5 rounded-md font-medium bg-red-50 text-red-600">error</span>
+                            )}
+                            {item.status === "cancelled" && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-md font-medium bg-[var(--hm-border)] text-[var(--hm-text-tertiary)]">stopped — {item.processed}/{item.total}</span>
                             )}
                           </div>
                           <p className="text-[10px] text-[var(--hm-text-tertiary)] mt-1.5">{timeAgo(item.createdAt)}</p>
@@ -1448,17 +1480,28 @@ export default function EmailSequencesPage() {
                 </span>
               ) : activeJobStatus.status === "error" ? (
                 <span className="text-red-500">Job stopped: {activeJobStatus.error}</span>
+              ) : activeJobStatus.status === "cancelled" ? (
+                <span className="text-[var(--hm-text-tertiary)]">Stopped — {activeJobStatus.processed}/{activeJobStatus.total} generated before you stopped it.</span>
               ) : (
                 <span className="text-[#059669]">Done — {activeJobStatus.processed}/{activeJobStatus.total} generated.</span>
               )}
               {activeJobStatus.status === "running" && (
-                <button
-                  onClick={refreshActiveJob}
-                  disabled={jobRefreshing}
-                  className="shrink-0 text-[11px] font-medium text-[var(--hm-accent)] hover:underline disabled:opacity-50"
-                >
-                  {jobRefreshing ? "Refreshing..." : "Refresh"}
-                </button>
+                <span className="shrink-0 flex items-center gap-3">
+                  <button
+                    onClick={refreshActiveJob}
+                    disabled={jobRefreshing || jobCancelling}
+                    className="text-[11px] font-medium text-[var(--hm-accent)] hover:underline disabled:opacity-50"
+                  >
+                    {jobRefreshing ? "Refreshing..." : "Refresh"}
+                  </button>
+                  <button
+                    onClick={cancelActiveJob}
+                    disabled={jobRefreshing || jobCancelling}
+                    className="text-[11px] font-medium text-red-500 hover:underline disabled:opacity-50"
+                  >
+                    {jobCancelling ? "Stopping..." : "Stop"}
+                  </button>
+                </span>
               )}
             </div>
           )}
