@@ -11,7 +11,6 @@ import { resolveEntities } from "@/lib/intentEngine";
 import { ensureFeatureRegistered } from "@/lib/featureBootstrap";
 import { recordSignal } from "@/lib/signalCapture";
 import { getVariationInstructions, fingerprintOutput } from "@/lib/variationEngine";
-import { deriveWebsiteInsights } from "@/lib/email-sequences/websiteInsights";
 
 interface Prospect {
   name?: string;
@@ -55,7 +54,31 @@ const PERSONALIZATION_TAG_LABELS: Record<string, string> = {
   website: "the prospect's website",
 };
 
-function buildProspectContext(prospect: Prospect, websiteInsights: string): string {
+async function scrapeProspectWebsite(website: string): Promise<string> {
+  if (!website) return "";
+  const url = website.startsWith("http") ? website : "https://" + website;
+  try {
+    const res = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; HiveMind/1.0)" },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return "";
+    const html = await res.text();
+    const text = html
+      .replace(/<script[\s\S]*?<\/script>/gi, "")
+      .replace(/<style[\s\S]*?<\/style>/gi, "")
+      .replace(/<nav[\s\S]*?<\/nav>/gi, "")
+      .replace(/<footer[\s\S]*?<\/footer>/gi, "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    return text.slice(0, 4000);
+  } catch {
+    return "";
+  }
+}
+
+function buildProspectContext(prospect: Prospect, websiteContent: string): string {
   const parts: string[] = [];
   if (prospect.name) parts.push(`Name: ${prospect.name}`);
   if (prospect.title) parts.push(`Title/Role: ${prospect.title}`);
@@ -67,8 +90,8 @@ function buildProspectContext(prospect: Prospect, websiteInsights: string): stri
       parts.push(`${k}: ${v}`);
     }
   });
-  if (websiteInsights) {
-    parts.push(`\nRESEARCHED PERSONALIZATION INSIGHTS:\n${websiteInsights}`);
+  if (websiteContent) {
+    parts.push(`\nPROSPECT COMPANY WEBSITE CONTENT:\n${websiteContent}`);
   }
   return parts.join("\n");
 }
@@ -127,8 +150,8 @@ export async function POST(req: NextRequest) {
 
     let prospectContext = "";
     if (mode === "single" && prospect) {
-      const { insights } = await deriveWebsiteInsights(prospect, apiKey);
-      prospectContext = buildProspectContext(prospect, insights);
+      const websiteContent = prospect.website ? await scrapeProspectWebsite(prospect.website) : "";
+      prospectContext = buildProspectContext(prospect, websiteContent);
     }
 
     let brandContext = "";
@@ -168,7 +191,7 @@ export async function POST(req: NextRequest) {
 
     const variationInstructions = await getVariationInstructions({ orgId: decoded.orgId, featureKey: "email_sequences" });
 
-    const prompt = `You are an elite B2B cold email copywriter who crafts hyper-personalised outreach sequences that get responses. You write emails that sound human, specific, and valuable — never generic or spammy. Senior operators should feel like this came from someone who understands their world, not a vendor trying to close a deal.
+    const prompt = `You are an elite B2B cold email copywriter who crafts hyper-personalised outreach sequences that get responses. You write emails that sound human, specific, and valuable — never generic or spammy.
 ${variationInstructions ? `\n${variationInstructions}\n` : ""}
 SENDER CONTEXT:
 Company: ${org?.name || "Unknown"} — ${org?.description || ""}
@@ -176,46 +199,30 @@ Industry: ${org?.industry || "Not specified"}
 ${config.senderName ? `Sender: ${config.senderName}${config.senderRole ? `, ${config.senderRole}` : ""}` : ""}
 ${brandContext}
 
-PRODUCT/SERVICE KNOWLEDGE (use ONLY verified facts/metrics from here — never invent numbers or claims):
+PRODUCT/SERVICE KNOWLEDGE:
 ${groundedContext}
 
 ${prospectContext ? `PROSPECT INFORMATION:\n${prospectContext}` : "MODE: Template (no specific prospect). Write emails with [First Name], [Company], [Title] placeholders. Make the template adaptable but still specific to the value proposition."}
 
 SEQUENCE CONFIGURATION:
 - Number of emails: ${config.emailCount}
-- Email length: ${lengthGuide[config.length] || lengthGuide.medium} Count words — every one must earn its place.
+- Email length: ${lengthGuide[config.length] || lengthGuide.medium}
 - Tone: ${toneGuide[config.tone] || toneGuide.professional}
 - Products/Services to highlight: ${config.products.join(", ") || "General company offering"}
-- Primary CTA type: ${ctaGuide[config.cta] || config.cta}
+- Primary CTA: ${ctaGuide[config.cta] || config.cta}
 ${config.objective ? `- Campaign objective: ${config.objective}` : ""}
 
-REASON BEFORE WRITING EACH EMAIL (do this silently — never output your reasoning, only the final email):
-1. Signal read: what does the prospect's title/role imply about their daily pressure? What does the prospect information (and any researched insights) tell you that's specific to THEM, not their industry in general?
-2. Pain + seniority read: pick ONE primary pain angle this email should hit, using this seniority guide —
-   - Founder/CEO/Owner: frame around business-level risk — revenue, margin, growth, or reputation exposure.
-   - COO/CFO/CTO/other C-suite: frame around operational cost, efficiency, or scale/risk exposure in their specific function.
-   - VP/Head of [X]: frame around their department's specific metric or workflow pain.
-   - Director/Manager: frame around the day-to-day operational friction their team feels.
-   - Individual contributor / other: frame around a concrete task-level frustration.
-   Use the product/service knowledge above to pick the ONE most relevant proof point for that pain — frame it as a benchmark ("companies at your scale typically see X") rather than a bare product claim where possible.
-3. Objection pre-empt: what's the most likely one-line objection from this persona, and how can the email defuse it in passing without sounding defensive?
-4. CTA calibration: phrase the ask (of the type: ${ctaGuide[config.cta] || config.cta}) to match seniority — C-suite gets a short, strategic-conversation framing; VP/Head gets an offer to share specific benchmarks/an ops review; Director/Manager/IC gets a concrete, low-friction ask (quick walkthrough, short demo).
-
-SEQUENCE STRATEGY (the narrative arc across the whole sequence):
-- Email 1: Opening — hook with a specific, relevant insight about the prospect or their industry. Lead with value, not a pitch. Never mention your own company/product in the first sentence.
+SEQUENCE STRATEGY:
+- Email 1: Opening — hook with a specific, relevant insight about the prospect or their industry. Lead with value, not a pitch.
 - Email 2: Value — share a concrete proof point, case study reference, or insight that demonstrates relevance.
 - Email 3: Social proof or different angle — approach from a new direction or reference relevant results.
 - Email 4+: Follow-up with breakup energy, curiosity gaps, or a completely fresh angle.
-- Each email should work standalone but build upon the narrative arc, and each should hit a DIFFERENT pain angle/proof point than the others — never repeat the same angle twice in one sequence.
+- Each email should work standalone but build upon the narrative arc.
 - ${config.subjectMode === "single"
     ? `Use exactly ONE subject line for every single email in the sequence — do not vary it between emails. ${config.singleSubject ? `Use this exact subject line, verbatim, for every email: "${config.singleSubject}"` : "Invent one short (3-6 words), intriguing, non-clickbaity subject and reuse it identically across every email."} This mimics replying in the same email thread rather than starting a new one each follow-up.`
-    : `Subject lines must be short (3-6 words), cheeky and hyper-specific to that email's actual angle — not generic ("Quick question" is banned). Reference a real detail about the prospect/company where possible (e.g. a subject built around their specific product, a recent event, or the exact pain angle that email hits). Each subject must be distinct and must match its own email's content, not just the sequence's general theme.`}
-- Never use "just following up", "touching base", "hope this finds you well", "I wanted to reach out", "I came across your profile/company", "My name is", or other generic openers.
-- ${prospectContext ? "The first sentence of every email must contain a specific, researched observation about the prospect or their business — not generic flattery like 'I love what your company is doing'." : "Use clear placeholders like [specific metric], [relevant challenge] that prompt the user to fill in real details."}
-- Banned words, anywhere in subject or body: "synergy", "seamless", "robust", "leverage", "cutting-edge", "game-changing", "revolutionize"/"revolutionise", "holistic", "end-to-end".
-- Formatting: no em-dashes (—), no colons or semicolons, no hashtags, no bullet points in the body. Clean, human-typed sentences and paragraphs only, with natural line breaks between the opener/body/CTA.
-- No signatures or sign-offs of any kind ("Best,", "Thanks,", a name, etc.) — end the email immediately after the CTA question.
-- No meta-labels or instructional tags in the output ("Hook:", "CTA:", "Subject:", etc.) — output only the finished, ready-to-send text.
+    : `Subject lines must be short (3-6 words), intriguing, never clickbaity, and distinct for each email in the sequence.`}
+- Never use "just following up", "touching base", "hope this finds you well", or other generic openers.
+- ${prospectContext ? "Reference SPECIFIC details from the prospect's website or role. Generic flattery like 'I love what your company is doing' is banned." : "Use clear placeholders like [specific metric], [relevant challenge] that prompt the user to fill in real details."}
 ${config.personalizationTags?.length ? `
 MERGE TAGS (write these EXACT literal placeholders, verbatim, wherever the email would otherwise reference the corresponding detail — do NOT write the real value for these, and do NOT invent your own tag names):
 ${config.personalizationTags.map((t) => `- Use the exact text "{{${t}}}" for ${PERSONALIZATION_TAG_LABELS[t] || t}`).join("\n")}
@@ -294,8 +301,6 @@ Return ONLY valid JSON, no markdown or explanation.`;
       orgId: decoded.orgId,
       signalType: "used",
       featureKey: "email_sequences",
-      entityType: config.products[0] ? "product" : undefined,
-      entityName: config.products[0] || undefined,
       metadata: { mode, objective: config.objective || null },
       userId: decoded.userId,
     }).catch(() => {});
