@@ -623,14 +623,36 @@ export async function retrieveRelevantKnowledge(
     }),
   ]);
 
+  // Hard vertical filter (not just a scoring boost) — a case study/asset explicitly tagged to
+  // one market (e.g. the CaratLane case study tagged "India Retail Operations (Omnichannel)")
+  // must never surface for a different targeted vertical (e.g. a US prospect), regardless of how
+  // strong its proof points otherwise are. Untagged assets/entries have no known vertical, so they
+  // stay includable rather than being excluded on a guess.
+  const targetMarketForFilter = options?.targetMarket ?? entities.markets?.[0] ?? null;
+  const assetMarketTags = new Map<string, string[]>(
+    contentAssets.map(a => [a.id, (a.marketTags as string[] | null) || []]),
+  );
+  const matchesTargetVertical = (assetId: string | null | undefined): boolean => {
+    if (!targetMarketForFilter || !assetId) return true;
+    const tags = assetMarketTags.get(assetId);
+    if (!tags || tags.length === 0) return true;
+    return tags.includes(targetMarketForFilter);
+  };
+  const contentAssetsForVertical = targetMarketForFilter
+    ? contentAssets.filter(a => matchesTargetVertical(a.id))
+    : contentAssets;
+
   // Split knowledge entries by category
   const proofPoints = allKnowledgeEntries.filter(e => e.category === "proof_points");
   const messagingPatterns = allKnowledgeEntries.filter(e => e.category === "messaging_patterns");
   const customEntries = allKnowledgeEntries.filter(e =>
     !["proof_points", "messaging_patterns", "content_analysis"].includes(e.category) &&
-    e.source !== "hubspot"
+    e.source !== "hubspot" &&
+    matchesTargetVertical(e.source) // brand_review entries store their source ContentAsset's id here
   );
-  const contentAnalysisEntries = allKnowledgeEntries.filter(e => e.category === "content_analysis");
+  const contentAnalysisEntries = allKnowledgeEntries.filter(e =>
+    e.category === "content_analysis" && matchesTargetVertical(e.source)
+  );
 
   // ── Resolve focus entities ──────────────────────────────
   const effectiveProduct = options?.targetProduct || entities.products[0] || null;
@@ -781,7 +803,7 @@ export async function retrieveRelevantKnowledge(
 
   // Content assets (case studies, white papers, etc.) — summaries from analyzed assets
   // Apply content-type-aware boosting: if the query asks about metrics, case studies get extra boost, etc.
-  for (const asset of contentAssets) {
+  for (const asset of contentAssetsForVertical) {
     const allTags = [...(asset.productTags as string[] || []), ...(asset.marketTags as string[] || []), ...(asset.personaTags as string[] || []), ...(asset.customTags as string[] || [])];
     const text = `${asset.name}${asset.contentType ? ` (${asset.contentType})` : ""}: ${asset.aiSummary || ""}${allTags.length ? `. Tags: ${allTags.join(", ")}` : ""}`;
     const baseBoost = 0.12;
