@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useUser } from "@/lib/UserContext";
 import { hasModuleAccess } from "@/lib/modules";
 
@@ -3282,12 +3282,140 @@ function ValidateSection() {
   const [linkedinScrapeMode, setLinkedinScrapeMode] = useState<"basic" | "email">("basic");
   const [linkedinVertical, setLinkedinVertical] = useState("");
   const [linkedinBusy, setLinkedinBusy] = useState(false);
-  const [linkedinProgress, setLinkedinProgress] = useState<{ done: number; total: number } | null>(null);
   const [linkedinResults, setLinkedinResults] = useState<LinkedInCheckRow[]>([]);
   const [linkedinSummary, setLinkedinSummary] = useState<{ matched: number; mismatched: number; notFound: number; created: number; uncertain: number } | null>(null);
   // Which uncertain rows currently have a Same/Moved resolve in flight — keyed by dbContactId
   // so the buttons show a busy state instead of looking like nothing happened on click.
   const [resolvingContactIds, setResolvingContactIds] = useState<Set<string>>(new Set());
+
+  // Check LinkedIn now runs as a server-side job (each chunk is a real paid Apify call, so a
+  // few-hundred-URL run can take a while) — survives closing the tab, has a Stop button, and
+  // keeps a history so past runs can be revisited/downloaded later. Mirrors Email Sequences'
+  // job pattern.
+  interface LinkedinJobRow {
+    id: string; label: string | null; status: string; processed: number; total: number;
+    matched: number; mismatched: number; notFound: number; created: number; uncertain: number;
+    error: string | null; createdAt: string; updatedAt: string; results?: LinkedInCheckRow[];
+  }
+  const [activeLinkedinJobId, setActiveLinkedinJobId] = useState<string | null>(null);
+  const [activeLinkedinJob, setActiveLinkedinJob] = useState<LinkedinJobRow | null>(null);
+  const [linkedinJobRefreshing, setLinkedinJobRefreshing] = useState(false);
+  const [linkedinJobCancelling, setLinkedinJobCancelling] = useState(false);
+  const [recentLinkedinJobs, setRecentLinkedinJobs] = useState<LinkedinJobRow[]>([]);
+  const [recentLinkedinJobsLoading, setRecentLinkedinJobsLoading] = useState(false);
+  const activeLinkedinJobIdRef = useRef<string | null>(null);
+
+  const linkedinJobCall = async (body: Record<string, unknown>) => {
+    const r = await fetch("/api/radar/linkedin-jobs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || "Request failed");
+    return d;
+  };
+
+  const loadRecentLinkedinJobs = useCallback(async () => {
+    setRecentLinkedinJobsLoading(true);
+    try {
+      const d = await linkedinJobCall({ action: "list" });
+      setRecentLinkedinJobs(d.jobs || []);
+    } catch { /* ignore */ }
+    setRecentLinkedinJobsLoading(false);
+  }, []);
+
+  useEffect(() => { loadRecentLinkedinJobs(); }, [loadRecentLinkedinJobs]);
+
+  const fetchLinkedinJobStatus = useCallback(async (jobId: string) => {
+    try {
+      const d = await linkedinJobCall({ action: "status", jobId });
+      if (activeLinkedinJobIdRef.current !== jobId) return; // stale — user navigated away
+      const job: LinkedinJobRow = d.job;
+      setActiveLinkedinJob(job);
+      if (Array.isArray(job.results)) setLinkedinResults(job.results);
+      setLinkedinSummary({ matched: job.matched, mismatched: job.mismatched, notFound: job.notFound, created: job.created, uncertain: job.uncertain });
+      setRecentLinkedinJobs((prev) => prev.map((j) => (j.id === jobId ? { ...j, ...job, results: undefined } : j)));
+      if (job.status !== "running") loadRecentLinkedinJobs();
+    } catch (e) {
+      if (activeLinkedinJobIdRef.current === jobId) setError((e as Error).message);
+    }
+  }, [loadRecentLinkedinJobs]);
+
+  const watchLinkedinJob = useCallback((jobId: string) => {
+    activeLinkedinJobIdRef.current = jobId;
+    setActiveLinkedinJobId(jobId);
+    fetchLinkedinJobStatus(jobId);
+  }, [fetchLinkedinJobStatus]);
+
+  // Kicks off a real continuation tick ("advance", up to ~260s of real Apify calls) and, in
+  // parallel, polls the cheap read-only "status" action every 2.5s so the count visibly climbs
+  // in real time instead of the UI just sitting on a spinner for the whole tick.
+  const refreshLinkedinJob = useCallback(async () => {
+    if (!activeLinkedinJobId) return;
+    const jobId = activeLinkedinJobId;
+    setLinkedinJobRefreshing(true);
+    const livePoll = setInterval(() => fetchLinkedinJobStatus(jobId), 2500);
+    try {
+      const d = await linkedinJobCall({ action: "advance", jobId });
+      if (activeLinkedinJobIdRef.current === jobId) {
+        const job: LinkedinJobRow = d.job;
+        setActiveLinkedinJob(job);
+        if (Array.isArray(job.results)) setLinkedinResults(job.results);
+        setLinkedinSummary({ matched: job.matched, mismatched: job.mismatched, notFound: job.notFound, created: job.created, uncertain: job.uncertain });
+        setRecentLinkedinJobs((prev) => prev.map((j) => (j.id === jobId ? { ...j, ...job, results: undefined } : j)));
+        if (job.status !== "running") loadRecentLinkedinJobs();
+      }
+    } catch (e) {
+      if (activeLinkedinJobIdRef.current === jobId) setError((e as Error).message);
+    } finally {
+      clearInterval(livePoll);
+      setLinkedinJobRefreshing(false);
+    }
+  }, [activeLinkedinJobId, fetchLinkedinJobStatus, loadRecentLinkedinJobs]);
+
+  // Auto-continue while this tab stays open — no manual clicking needed, same as Email Sequences.
+  useEffect(() => {
+    if (activeLinkedinJob?.status === "running" && !linkedinJobRefreshing && !linkedinJobCancelling) {
+      refreshLinkedinJob();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeLinkedinJob?.status, activeLinkedinJobId, linkedinJobRefreshing, linkedinJobCancelling]);
+
+  const cancelLinkedinJob = useCallback(async () => {
+    if (!activeLinkedinJobId) return;
+    if (!confirm("Stop this LinkedIn check? Profiles already checked stay as results, but no more will run.")) return;
+    const jobId = activeLinkedinJobId;
+    setLinkedinJobCancelling(true);
+    try {
+      const d = await linkedinJobCall({ action: "cancel", jobId });
+      if (activeLinkedinJobIdRef.current === jobId) {
+        setActiveLinkedinJob(d.job);
+        setRecentLinkedinJobs((prev) => prev.map((j) => (j.id === jobId ? { ...j, status: d.job.status } : j)));
+      }
+    } catch (e) {
+      if (activeLinkedinJobIdRef.current === jobId) setError((e as Error).message);
+    }
+    setLinkedinJobCancelling(false);
+  }, [activeLinkedinJobId]);
+
+  const deleteLinkedinJob = async (jobId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm("Delete this LinkedIn check from history?")) return;
+    try {
+      await linkedinJobCall({ action: "delete", jobId });
+      setRecentLinkedinJobs((prev) => prev.filter((j) => j.id !== jobId));
+      if (jobId === activeLinkedinJobId) {
+        activeLinkedinJobIdRef.current = null;
+        setActiveLinkedinJobId(null);
+        setActiveLinkedinJob(null);
+        setLinkedinResults([]);
+        setLinkedinSummary(null);
+      }
+    } catch (e2) {
+      setError((e2 as Error).message);
+    }
+  };
 
   // Send controls
   const [tags, setTags] = useState<InstantlyTag[]>([]);
@@ -3405,34 +3533,20 @@ function ValidateSection() {
     setLinkedinBusy(true);
     setLinkedinResults([]);
     setLinkedinSummary(null);
-    const CHUNK = 15;
-    let matched = 0, mismatched = 0, notFound = 0, created = 0, uncertain = 0;
-    const allRows: LinkedInCheckRow[] = [];
     try {
-      for (let i = 0; i < urls.length; i += CHUNK) {
-        const batch = urls.slice(i, i + CHUNK);
-        setLinkedinProgress({ done: i, total: urls.length });
-        const r = await fetch("/api/radar/enrich", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "check_linkedin", params: { urls: batch, mode: linkedinScrapeMode, vertical: linkedinVertical } }),
-        });
-        const d = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(d.error || "LinkedIn check failed");
-        allRows.push(...(d.results || []));
-        matched += d.matched || 0;
-        mismatched += d.mismatched || 0;
-        notFound += d.notFound || 0;
-        created += d.created || 0;
-        uncertain += d.uncertain || 0;
-        setLinkedinResults([...allRows]);
-      }
-      setLinkedinSummary({ matched, mismatched, notFound, created, uncertain });
+      const d = await linkedinJobCall({
+        action: "start",
+        urls,
+        scrapeMode: linkedinScrapeMode,
+        vertical: linkedinVertical,
+        label: `LinkedIn check — ${new Date().toISOString().slice(0, 10)}`,
+      });
+      watchLinkedinJob(d.job.id);
+      loadRecentLinkedinJobs();
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setLinkedinBusy(false);
-      setLinkedinProgress(null);
     }
   };
 
@@ -4145,8 +4259,81 @@ function ValidateSection() {
                       <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-1">Required. Used when a profile has no matching contact — the new contact and its account (if the profile has a company domain, needs the "+ email" mode) are created under this vertical.</p>
                     </div>
                     <button onClick={runLinkedInCheck} disabled={linkedinBusy} className="hm-btn hm-btn-primary w-full" style={{ height: 38, fontSize: 13 }}>
-                      {linkedinBusy ? `Checking… ${linkedinProgress?.done ?? 0}/${linkedinProgress?.total ?? 0}` : "Run check"}
+                      {linkedinBusy ? "Starting…" : "Run check"}
                     </button>
+
+                    {/* Active job status + Refresh/Stop — runs server-side now (each chunk is a
+                        real paid Apify call), so it survives closing this tab. */}
+                    {activeLinkedinJob && (
+                      <div className="p-3 rounded-lg bg-[var(--hm-bg-secondary)] border border-[var(--hm-border)] text-[12.5px] flex items-center justify-between gap-3">
+                        {activeLinkedinJob.status === "running" ? (
+                          <span className="flex items-center gap-2">
+                            <span className="w-3 h-3 border-2 border-current/30 border-t-current rounded-full animate-spin text-[var(--hm-accent)]" />
+                            Running — {activeLinkedinJob.processed}/{activeLinkedinJob.total} checked. Safe to close this tab; it keeps going and picks back up here.
+                          </span>
+                        ) : activeLinkedinJob.status === "error" ? (
+                          <span className="text-red-500">Job stopped: {activeLinkedinJob.error}</span>
+                        ) : activeLinkedinJob.status === "cancelled" ? (
+                          <span className="text-[var(--hm-text-tertiary)]">Stopped — {activeLinkedinJob.processed}/{activeLinkedinJob.total} checked before you stopped it.</span>
+                        ) : (
+                          <span className="text-[#059669]">Done — {activeLinkedinJob.processed}/{activeLinkedinJob.total} checked.</span>
+                        )}
+                        {activeLinkedinJob.status === "running" && (
+                          <span className="shrink-0 flex items-center gap-3">
+                            <button
+                              onClick={refreshLinkedinJob}
+                              disabled={linkedinJobRefreshing || linkedinJobCancelling}
+                              className="text-[11px] font-medium text-[var(--hm-accent)] hover:underline disabled:opacity-50"
+                            >
+                              {linkedinJobRefreshing ? "Refreshing..." : "Refresh"}
+                            </button>
+                            <button
+                              onClick={cancelLinkedinJob}
+                              disabled={linkedinJobRefreshing || linkedinJobCancelling}
+                              className="text-[11px] font-medium text-red-500 hover:underline disabled:opacity-50"
+                            >
+                              {linkedinJobCancelling ? "Stopping..." : "Stop"}
+                            </button>
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Recent LinkedIn checks — revisit or download results from a past run. */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <p className="text-[11px] font-medium text-[var(--hm-text-tertiary)] uppercase tracking-wide">Recent LinkedIn checks</p>
+                        <button onClick={loadRecentLinkedinJobs} disabled={recentLinkedinJobsLoading} className="text-[11px] text-[var(--hm-accent)]">
+                          {recentLinkedinJobsLoading ? "Refreshing..." : "Refresh"}
+                        </button>
+                      </div>
+                      {!recentLinkedinJobs.length ? (
+                        <p className="text-[11.5px] text-[var(--hm-text-tertiary)]">{recentLinkedinJobsLoading ? "Loading..." : "No LinkedIn checks yet."}</p>
+                      ) : (
+                        <div className="space-y-1 max-h-[180px] overflow-y-auto">
+                          {recentLinkedinJobs.map((j) => (
+                            <div key={j.id} className="relative group/item">
+                              <button
+                                onClick={() => watchLinkedinJob(j.id)}
+                                className={`w-full flex items-center justify-between text-left text-[11.5px] px-2 py-1.5 rounded-md border ${activeLinkedinJobId === j.id ? "border-[var(--hm-accent)]" : "border-[var(--hm-border)]"} bg-[var(--hm-bg-primary)] hover:border-[var(--hm-accent)]/40 pr-7`}
+                              >
+                                <span className="truncate text-[var(--hm-text-secondary)]">{j.label || "Untitled check"}</span>
+                                <span className={`shrink-0 ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium ${j.status === "done" ? "bg-[#DCFCE7] text-[#059669]" : j.status === "error" ? "bg-red-50 text-red-600" : j.status === "cancelled" ? "bg-[var(--hm-border)] text-[var(--hm-text-tertiary)]" : "bg-[var(--hm-accent-light)] text-[var(--hm-accent)]"}`}>
+                                  {j.status === "done" ? `done — ${j.total}/${j.total}` : j.status === "error" ? "error" : j.status === "cancelled" ? `stopped — ${j.processed}/${j.total}` : `running — ${j.processed}/${j.total}`}
+                                </span>
+                              </button>
+                              <button
+                                onClick={(e) => deleteLinkedinJob(j.id, e)}
+                                className="absolute top-1.5 right-1.5 opacity-0 group-hover/item:opacity-100 transition-opacity w-5 h-5 rounded flex items-center justify-center text-[var(--hm-text-tertiary)] hover:bg-red-50 hover:text-red-500"
+                                title="Delete"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
 
                     {linkedinSummary && (
                       <div className="flex items-center gap-4 text-[12.5px] flex-wrap">
