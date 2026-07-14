@@ -84,6 +84,7 @@ model User {
   radarExportLogs   RadarExportLog[]
   radarActivityLogs RadarActivityLog[]
   emailSequenceJobs EmailSequenceJob[]
+  linkedinCheckJobs LinkedinCheckJob[]
 }
 
 // Tracks who exported what from Radar (Accounts/Contacts CSV download), and when — the export
@@ -136,6 +137,37 @@ model EmailSequenceJob {
   processed      Int      @default(0)
   total          Int
   failCount      Int      @default(0) // consecutive continuation failures — see MAX_CONSECUTIVE_FAILS
+  error          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([organizationId, status])
+}
+
+// Check LinkedIn (Radar) — each chunk is a real paid Apify call, so a few-hundred-URL run can
+// take a while. This makes it survive closing the tab/navigating away, gives a Stop button, and
+// keeps a history of past runs so results can be downloaded later — mirrors EmailSequenceJob's
+// pattern (checkpoint after every chunk, resumable via "advance", cancellable).
+model LinkedinCheckJob {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String
+  label          String?
+  status         String   @default("running") // running | done | cancelled | error
+  urls           Json // string[] — full input list, fixed at start time
+  scrapeMode     String // "basic" | "email"
+  vertical       String
+  results        Json     @default("[]") // LinkedInCheckRow[] — accumulates as chunks complete
+  processed      Int      @default(0)
+  total          Int
+  matched        Int      @default(0)
+  mismatched     Int      @default(0)
+  notFound       Int      @default(0)
+  created        Int      @default(0)
+  uncertain      Int      @default(0)
+  failCount      Int      @default(0) // consecutive chunk failures — see MAX_CONSECUTIVE_FAILS
   error          String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
