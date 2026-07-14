@@ -129,6 +129,18 @@ function stripNumbersFromSubject(subject: string): string {
   return cleaned ? cleaned.charAt(0).toUpperCase() + cleaned.slice(1) : cleaned;
 }
 
+/** Deterministic guarantee: n8n's subjects name the company in nearly every case, and the
+ * prompt-only instruction for this wasn't holding reliably (confirmed: 0/4 subjects in a real
+ * batch still named the company after the instruction shipped). Prepend the company reference
+ * whenever it's genuinely absent — a plain "Company — subject" lead-in is a real, common cold-
+ * email convention, not just a fallback-looking patch. */
+function ensureCompanyInSubject(subject: string, companyRef: string): string {
+  if (!companyRef) return subject;
+  const bareName = companyRef.replace(/[{}]/g, "");
+  if (subject.toLowerCase().includes(bareName.toLowerCase())) return subject;
+  return `${companyRef} — ${subject}`;
+}
+
 export async function generateSequenceForProspect({
   orgId, userId, prospect, config, mode,
 }: GenerateSequenceParams): Promise<GenerateSequenceResult> {
@@ -382,13 +394,16 @@ Return ONLY valid JSON, no markdown or explanation.`;
     });
   }
 
-  // Guarantee, not a hope: strip any stray number/percentage out of a subject line — the
-  // "never cite a number in the subject" rule above is a compliance instruction, this is the
-  // deterministic backstop.
+  // Guarantee, not a hope: strip any stray number/percentage, then make sure the company name is
+  // actually in there — both are compliance instructions above, these are the deterministic
+  // backstops (confirmed necessary: a real batch still had 0/4 subjects naming the company).
+  const companyRef = config.personalizationTags?.includes("companyName")
+    ? "{{companyName}}"
+    : (mode === "single" && prospect?.company) || "[Company]";
   if (Array.isArray(parsed?.emails)) {
     parsed.emails = parsed.emails.map((email: { subject: string; body: string }) => ({
       ...email,
-      subject: stripNumbersFromSubject(email.subject),
+      subject: ensureCompanyInSubject(stripNumbersFromSubject(email.subject), companyRef),
     }));
   }
 
