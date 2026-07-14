@@ -217,20 +217,20 @@ export async function generateSequenceForProspect({
   };
 
   const toneGuide: Record<string, string> = {
-    professional: "Professional and polished. Business-appropriate language.",
-    casual: "Casual and conversational. Like writing to a colleague.",
-    friendly: "Warm and friendly. Approachable without being too informal.",
-    urgent: "Direct and urgent. Create a sense of time-sensitivity without being pushy.",
-    consultative: "Advisory and consultative. Position as a helpful expert.",
-    witty: "Smart and witty. Use humor sparingly but memorably.",
+    professional: "Professional and polished. Business-appropriate language, measured sentence rhythm, no contractions-heavy phrasing. Example register: \"Would a 20-minute call make sense to walk through this?\"",
+    casual: "Casual and conversational, like messaging a colleague you know reasonably well. Use contractions freely (don't, that's, you'd), shorter sentences, and everyday phrasing instead of business-speak. Example register: \"Quick one — got 15 minutes to jump on a call?\" NOT \"Would it be worth scheduling a brief conversation?\"",
+    friendly: "Warm and approachable without going informal-casual — think a helpful peer, not a colleague texting. Softer framing than professional (more \"would love to\", \"happy to\"), still full sentences. Example register: \"Would love to hop on a quick call if that's useful?\"",
+    urgent: "Direct and time-pressured — every email must contain an explicit time/urgency marker (\"before [specific event/deadline]\", \"this week\", \"while this window is open\") tied to something real from the prospect's context (a launch, a season, a growth signal), not a generic scarcity trick. Shorter sentences than professional, action-first phrasing. Example register: \"Worth 15 minutes this week before the holiday rush hits?\" NOT the same soft \"whenever works\" close professional/friendly use.",
+    consultative: "Advisory, like a subject-matter expert sharing an observation, not a vendor pitching. Lead with a benchmark or pattern observation (\"Brands at this stage typically...\") before any ask. Example register: \"Worth comparing notes on how similar brands are approaching this?\"",
+    witty: "Genuinely light and clever — actually use a pun, a wry aside, or a playful turn of phrase at least once per email (on the company name, the product category, or the situation), not just a slightly warmer version of professional. Example register: \"Your returns page and I need to have a word.\" A witty-tone email that reads identically to a professional one has failed this instruction.",
   };
 
   const ctaGuide: Record<string, string> = {
-    meeting: "Ask for a meeting or call",
-    demo: "Offer a product demo",
-    trial: "Invite to try a free trial",
-    reply: "Ask for a simple reply to start a conversation",
-    resource: "Share a valuable resource (guide, case study, report)",
+    meeting: "Ask for a meeting or call — the ask must use the word \"call\" or \"meeting\"/\"conversation\" explicitly (e.g. \"Worth a 20-minute call?\").",
+    demo: "Offer a product demo — the ask must explicitly say \"demo\" (e.g. \"Worth a quick demo?\", \"Happy to walk you through a demo\"), not a generic call/conversation. This must read differently from a plain meeting ask.",
+    trial: "Invite them to try it — the ask must explicitly reference a \"free trial\" or \"trying it out\" (e.g. \"Worth spinning up a free trial?\"), not a call.",
+    reply: "Ask for a simple reply, NOT a call/meeting/demo of any kind — the ask must be answerable by just replying to the email (e.g. \"Worth a reply if this is relevant?\"), never \"worth a call\".",
+    resource: "Offer to share a specific resource (a guide, case study, or report) by name — the ask must reference sending/sharing that material (e.g. \"Want me to send over the case study?\"), not a call.",
     custom: config.customCta || "Custom CTA",
   };
 
