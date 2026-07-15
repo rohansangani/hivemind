@@ -3207,6 +3207,7 @@ interface ValidateCandidate {
   source: string;
   selected: boolean;
   bounce_status: "pending" | "valid" | "bounced" | null;
+  debounce_status?: "safe to send" | "risky" | "invalid" | "unknown" | null;
 }
 
 interface LinkedInCheckRow {
@@ -3264,6 +3265,8 @@ function ValidateSection() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [progressLabel, setProgressLabel] = useState("");
+  const [patternDebounceBusy, setPatternDebounceBusy] = useState(false);
+  const [patternDebounceProgress, setPatternDebounceProgress] = useState<string | null>(null);
   const [checkResult, setCheckResult] = useState<{ bounced: number; valid: number; pending: number; allResolved: boolean } | null>(null);
   const [savedCount, setSavedCount] = useState(0);
   const [savedInvalidCount, setSavedInvalidCount] = useState(0);
@@ -3947,6 +3950,38 @@ function ValidateSection() {
       setError((e as Error).message);
     } finally {
       setBusy(false);
+    }
+  };
+
+  // Alternative to send() — verifies the currently-selected candidates via Debounce instead of
+  // hitting real inboxes through Instantly, so results can be exported without any real send.
+  // Runs alongside the existing Send-via-Instantly flow, not in place of it.
+  const debounceVerify = async () => {
+    const selectedCount = candidates.filter((c) => c.selected).length;
+    if (!selectedCount || !jobId) return;
+    setPatternDebounceBusy(true);
+    setError("");
+    try {
+      let offset = 0;
+      let done = false;
+      while (!done) {
+        const d = await call({ action: "debounce_check_candidates", jobId, offset });
+        done = !!d.done;
+        offset = d.nextOffset ?? offset;
+        setPatternDebounceProgress(done ? null : `Verifying via Debounce — ${offset}/${d.total ?? selectedCount}`);
+        if (done) {
+          const byId = new Map<number, ValidateCandidate>((d.results || []).map((c: ValidateCandidate) => [c.id, c]));
+          setCandidates((prev) => prev.map((c) => {
+            const fresh = byId.get(c.id);
+            return fresh ? { ...c, debounce_status: fresh.debounce_status } : c;
+          }));
+        }
+      }
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setPatternDebounceBusy(false);
+      setPatternDebounceProgress(null);
     }
   };
 
@@ -4690,6 +4725,7 @@ function ValidateSection() {
                         first_name: c.first_name, last_name: c.last_name, domain: c.domain,
                         email: c.pattern_email, pattern_type: c.pattern_type, confidence: c.confidence ?? "",
                         source: c.source, selected: c.selected, bounce_status: c.bounce_status ?? "pending",
+                        debounce_status: c.debounce_status ?? "",
                       })),
                       `validate_job_${jobId ?? "export"}_${today()}.csv`,
                     )}
@@ -4736,10 +4772,21 @@ function ValidateSection() {
                     <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Body</label>
                     <input type="text" value={emailBody} onChange={(e) => setEmailBody(e.target.value)} />
                   </div>
-                  <div className="sm:col-span-3">
+                  <div className="sm:col-span-3 flex items-center gap-3 flex-wrap">
                     <button onClick={send} disabled={busy || !selectedCount || !mailboxTag} className="hm-btn hm-btn-primary" style={{ height: 34, padding: "0 16px", fontSize: 12.5 }}>
                       {busy ? "Sending…" : `Send ${selectedCount} via Instantly`}
                     </button>
+                    <span className="text-[11.5px] text-[var(--hm-text-tertiary)]">or</span>
+                    <button
+                      onClick={debounceVerify}
+                      disabled={patternDebounceBusy || !selectedCount}
+                      className="hm-btn hm-btn-secondary"
+                      style={{ height: 34, padding: "0 16px", fontSize: 12.5 }}
+                      title="Verifies selected patterns via Debounce instead — no real send, results export as CSV"
+                    >
+                      {patternDebounceBusy ? "Verifying…" : `Verify ${selectedCount} via Debounce`}
+                    </button>
+                    {patternDebounceProgress && <span className="text-[11.5px] text-[var(--hm-text-tertiary)]">{patternDebounceProgress}</span>}
                   </div>
                 </div>
               )}
@@ -4777,7 +4824,7 @@ function ValidateSection() {
                             <input type="checkbox" checked={candidates.length > 0 && candidates.every((c) => c.selected)} onChange={toggleAllCandidates} />
                           </th>
                         )}
-                        {["Person", "Email", "Type", "Confidence", "Source", "Status"].map((h) => (
+                        {["Person", "Email", "Type", "Confidence", "Source", "Status", "Debounce"].map((h) => (
                           <th key={h} className="text-left text-[11px] font-semibold uppercase tracking-wide text-[var(--hm-text-tertiary)] px-4 py-2.5 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] whitespace-nowrap">{h}</th>
                         ))}
                       </tr>
@@ -4808,6 +4855,13 @@ function ValidateSection() {
                             {c.bounce_status === "valid" ? <span className="text-[#059669]">✓ valid</span>
                               : c.bounce_status === "bounced" ? <span className="text-red-500">✗ bounced</span>
                               : phase === "sent" ? <span className="text-[var(--hm-text-tertiary)]">… pending</span>
+                              : <span className="text-[var(--hm-text-tertiary)]">—</span>}
+                          </td>
+                          <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">
+                            {c.debounce_status === "safe to send" ? <span className="text-[#059669]">✓ safe</span>
+                              : c.debounce_status === "invalid" ? <span className="text-red-500">✗ invalid</span>
+                              : c.debounce_status === "risky" ? <span className="text-[#F59E0B]">⚠ risky</span>
+                              : c.debounce_status === "unknown" ? <span className="text-[var(--hm-text-tertiary)]">? unknown</span>
                               : <span className="text-[var(--hm-text-tertiary)]">—</span>}
                           </td>
                         </tr>
