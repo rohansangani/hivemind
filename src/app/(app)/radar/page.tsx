@@ -3500,7 +3500,13 @@ function ValidateSection() {
     try {
       let jid: number | null = null;
       let offset = 0;
-      for (let guard = 0; guard < 20; guard++) {
+      // Mirrors validate.js's own per-request CHUNK (15/person in AI mode, 300 in mechanical-only) —
+      // sized off the actual row count instead of a fixed guard, so a big list doesn't silently stop
+      // partway through (previously capped at 20 chunks = 300 people in AI mode, with no error surfaced).
+      const chunkSize = useAI ? 15 : 300;
+      const maxIterations = Math.ceil(people.length / chunkSize) + 2;
+      let finished = false;
+      for (let guard = 0; guard < maxIterations; guard++) {
         const d = await call({ action: "generate", rows: people, useAI, jobId: jid, offset, label: patternsLabel.trim(), vertical: patternsVertical });
         jid = d.jobId;
         if (d.done) {
@@ -3509,10 +3515,14 @@ function ValidateSection() {
           // mode) instead of forcing everything on — matches radar's own reference UI behavior.
           setCandidates((d.candidates || []).map((c: ValidateCandidate) => ({ ...c, selected: !!c.selected })));
           setPhase("candidates");
+          finished = true;
           break;
         }
         offset = d.nextOffset;
         setProgressLabel(`Generating… ${offset}/${d.totalPeople} people`);
+      }
+      if (!finished) {
+        setError(`Only got through ${offset}/${people.length} people before stopping unexpectedly (jobId ${jid}) — this shouldn't normally happen; try again with a smaller batch or report it.`);
       }
     } catch (e) {
       setError((e as Error).message);
