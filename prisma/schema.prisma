@@ -97,7 +97,7 @@ model RadarExportLog {
   rowCount  Int
   createdAt DateTime @default(now())
 
-  user User @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([createdAt])
 }
@@ -113,7 +113,7 @@ model RadarActivityLog {
   summary   String // human-readable one-liner shown in the Logs tab
   createdAt DateTime @default(now())
 
-  user User @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([createdAt])
 }
@@ -141,7 +141,7 @@ model EmailSequenceJob {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  user User @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([organizationId, status])
 }
@@ -172,7 +172,7 @@ model LinkedinCheckJob {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  user User @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([organizationId, status])
 }
@@ -395,7 +395,7 @@ model ContentAsset {
   analyzedAt         DateTime?
   aiSummary          String?
   uploadedById       String
-  uploadedBy         User         @relation(fields: [uploadedById], references: [id])
+  uploadedBy         User         @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
   organizationId     String
   organization       Organization @relation(fields: [organizationId], references: [id])
   createdAt          DateTime     @default(now())
@@ -422,7 +422,7 @@ model GeneratedContent {
   referenceAssets String[]
   outputs         Json         @default("{}")
   generatedById   String
-  generatedBy     User         @relation(fields: [generatedById], references: [id])
+  generatedBy     User         @relation(fields: [generatedById], references: [id], onDelete: Cascade)
   organizationId  String
   organization    Organization @relation(fields: [organizationId], references: [id])
   createdAt       DateTime     @default(now())
@@ -439,7 +439,7 @@ model Conversation {
   id        String    @id @default(cuid())
   title     String?
   userId    String
-  user      User      @relation(fields: [userId], references: [id])
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages  Message[]
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -453,7 +453,7 @@ model Message {
   content        String
   citations      Json?
   conversationId String
-  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   createdAt      DateTime     @default(now())
 
   @@index([conversationId, createdAt])
@@ -587,7 +587,7 @@ model DesignBrief {
   format         String?
   brief          Json         @default("{}")
   createdById    String
-  createdBy      User         @relation(fields: [createdById], references: [id])
+  createdBy      User         @relation(fields: [createdById], references: [id], onDelete: Cascade)
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id])
   createdAt      DateTime     @default(now())
@@ -625,7 +625,7 @@ model TourProgress {
   status      String    @default("pending") // "pending" | "completed" | "dismissed"
   completedAt DateTime?
   userId      String
-  user        User      @relation(fields: [userId], references: [id])
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt   DateTime  @default(now())
 
   @@unique([userId, tourId])

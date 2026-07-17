@@ -95,25 +95,23 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     return NextResponse.json({ error: "Cannot remove a user with a higher role" }, { status: 403 });
   }
 
-  // Use raw SQL transaction to delete in FK-safe order
-  const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+  // All User-owned relations declare onDelete: Cascade, so a single delete
+  // removes the user and every dependent row atomically. This replaces a
+  // hand-maintained FK-order delete list that silently rotted whenever a new
+  // User-referencing table was added (which is exactly what broke removal).
   try {
-    await pool.query("BEGIN");
-    // Messages → Conversations → GeneratedContent → ContentAsset → UserPermission → User
-    await pool.query(`DELETE FROM "Message" WHERE "conversationId" IN (SELECT id FROM "Conversation" WHERE "userId" = $1)`, [id]);
-    await pool.query(`DELETE FROM "Conversation" WHERE "userId" = $1`, [id]);
-    await pool.query(`DELETE FROM "GeneratedContent" WHERE "generatedById" = $1`, [id]);
-    await pool.query(`DELETE FROM "ContentAsset" WHERE "uploadedById" = $1`, [id]);
-    // UserPermission may not exist yet — ignore error
-    await pool.query(`DELETE FROM "UserPermission" WHERE "userId" = $1`, [id]).catch(() => {});
-    await pool.query(`DELETE FROM "User" WHERE id = $1`, [id]);
-    await pool.query("COMMIT");
+    // UserPermission is a raw table (not a Prisma model), so it isn't covered by
+    // the schema cascade — clear it best-effort first.
+    const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+    try {
+      await pool.query(`DELETE FROM "UserPermission" WHERE "userId" = $1`, [id]).catch(() => {});
+    } finally {
+      await pool.end();
+    }
+    await db.user.delete({ where: { id } });
     return NextResponse.json({ success: true });
   } catch (err) {
-    await pool.query("ROLLBACK");
     console.error("Delete user error:", err);
     return NextResponse.json({ error: "Failed to remove user" }, { status: 500 });
-  } finally {
-    await pool.end();
   }
 }
