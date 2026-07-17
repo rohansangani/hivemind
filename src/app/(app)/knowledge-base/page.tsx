@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { upload } from "@vercel/blob/client";
 import { useUser } from "@/lib/UserContext";
+import ModuleTour from "@/components/ModuleTour";
 
 interface Skill { id: string; name: string; category: string; linkedFeature: string; description: string; instructions: string; isActive: boolean; }
 interface Product { id: string; name: string; description: string; classification: string; scope: string; features: string[]; category: string; marketNames: string[]; personaNames: string[]; competitorNames: string[]; bundleParentId: string | null; }
@@ -477,6 +478,7 @@ export default function KnowledgeBasePage() {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
+        <ModuleTour moduleId="knowledge-base" />
         <div className="px-7 py-4 bg-white border-b border-[var(--hm-border)] flex items-center justify-between" style={{ boxShadow: "var(--hm-shadow-xs)" }}>
           <div><h1 className="text-[22px] font-semibold leading-tight">Knowledge base</h1><p className="text-[12px] text-[var(--hm-text-tertiary)] mt-0.5">Company intelligence · skills · learning</p></div>
           {saved && <div className="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 border border-green-200 text-green-700 rounded-lg text-[12px] font-medium animate-fade-in-fast"><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5l3 3 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>{saved}</div>}
@@ -490,7 +492,7 @@ export default function KnowledgeBasePage() {
             { id: "learning" as const, l: "Learning log", b: logs.length > 0 ? String(logs.length) : null },
             { id: "custom" as const, l: "Custom knowledge", b: customEntries.length > 0 ? String(customEntries.length) : null },
           ] as Array<{ id: typeof tab; l: string; b?: string | null }>).map(t => (
-            <button key={t.id} onClick={() => setTab(t.id)} className={"px-4 py-2.5 text-[12px] border-b-2 flex items-center gap-1.5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#4361ee] " + (tab === t.id ? "font-medium text-[#4361ee] border-[#4361ee]" : "text-[var(--hm-text-tertiary)] border-transparent hover:text-[var(--hm-text)] hover:bg-[var(--hm-bg-secondary)]")}>{t.l}{t.b && <span className={"text-[9px] px-1.5 py-0.5 rounded-md " + (t.b === "✓" ? "bg-emerald-500 text-white" : "bg-[#4361ee] text-white")}>{t.b}</span>}</button>
+            <button key={t.id} data-tour={`kb-tab-${t.id}`} onClick={() => setTab(t.id)} className={"px-4 py-2.5 text-[12px] border-b-2 flex items-center gap-1.5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#4361ee] " + (tab === t.id ? "font-medium text-[#4361ee] border-[#4361ee]" : "text-[var(--hm-text-tertiary)] border-transparent hover:text-[var(--hm-text)] hover:bg-[var(--hm-bg-secondary)]")}>{t.l}{t.b && <span className={"text-[9px] px-1.5 py-0.5 rounded-md " + (t.b === "✓" ? "bg-emerald-500 text-white" : "bg-[#4361ee] text-white")}>{t.b}</span>}</button>
           ))}
         </div>
         <div className={tab === "skills" ? "flex-1 overflow-hidden flex flex-col" : "flex-1 overflow-y-auto p-7"}>

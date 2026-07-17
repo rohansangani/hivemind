@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useUser } from "@/lib/UserContext";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
+import ModuleTour from "@/components/ModuleTour";
 
 const MAX_CHARS = 2000;
 const CONVOS_PER_PAGE = 20;
@@ -355,6 +356,7 @@ export default function AssistantPage() {
 
   return (
     <div className="flex-1 flex bg-white overflow-hidden">
+      <ModuleTour moduleId="assistant" />
       {/* ── Conversations sidebar ── */}
       <div className="w-[260px] border-r border-[var(--hm-border)] bg-[#fafafa] flex flex-col flex-shrink-0">
 
@@ -370,6 +372,7 @@ export default function AssistantPage() {
             </div>
             <button
               onClick={startNew}
+              data-tour="asst-new"
               aria-label="New conversation"
               className="w-7 h-7 rounded-lg flex items-center justify-center text-[var(--hm-text-tertiary)] hover:bg-[var(--hm-border)] hover:text-[#4361ee] transition-all"
             >
@@ -667,7 +670,7 @@ export default function AssistantPage() {
               ))}
             </div>
           )}
-          <div className="border border-[var(--hm-border)] rounded-2xl focus-within:border-[#4361ee] focus-within:shadow-[0_0_0_3px_rgba(67,97,238,0.1)] transition-all bg-white" style={{ boxShadow: "var(--hm-shadow-sm)" }}>
+          <div data-tour="asst-input" className="border border-[var(--hm-border)] rounded-2xl focus-within:border-[#4361ee] focus-within:shadow-[0_0_0_3px_rgba(67,97,238,0.1)] transition-all bg-white" style={{ boxShadow: "var(--hm-shadow-sm)" }}>
             <div className="flex items-end gap-3 py-3 px-4">
               <textarea
                 ref={inputRef}

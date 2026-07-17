@@ -119,8 +119,152 @@ export const TOURS: TourDef[] = [
   },
 ];
 
+// ─────────────────────────────────────────────────────────
+//  Level-2 tours — per-module deep dives.
+//  Fire on a user's FIRST visit to each module (see ModuleTour),
+//  anchored to elements INSIDE the page rather than the sidebar.
+//  Id convention: "module-<moduleId>" — the layout's auto-trigger
+//  only fires "feature-" tours, so these never collide with it.
+// ─────────────────────────────────────────────────────────
+
+export const MODULE_TOURS: TourDef[] = [
+  {
+    id: "module-content-generator",
+    name: "Content Generator",
+    description: "How to generate on-brand content",
+    version: 1,
+    steps: [
+      {
+        target: "[data-tour='cg-topic']",
+        title: "Start with a topic",
+        description: "Describe what you want to create — an angle, an announcement, a theme. The more specific, the sharper the output.",
+        position: "bottom",
+      },
+      {
+        target: "[data-tour='cg-formats']",
+        title: "Pick your formats",
+        description: "Choose one or more output formats — blog, LinkedIn, email, ad copy, and more. Each is generated in parallel, tuned to that channel.",
+        position: "top",
+      },
+      {
+        target: "[data-tour='cg-params']",
+        title: "Add context (optional)",
+        description: "Target a specific product, persona, market, or competitor, set the tone, key points, or word count. This grounds the content in the right part of your knowledge base.",
+        position: "bottom",
+      },
+      {
+        target: "[data-tour='cg-websearch']",
+        title: "Web search",
+        description: "Toggle this on to pull in real-time context from the web alongside your knowledge base.",
+        position: "top",
+      },
+      {
+        target: "[data-tour='cg-generate']",
+        title: "Generate — then refine",
+        description: "After generating, each format opens in its own tab where you can edit inline, apply AI suggestions, chat to improve it, check SEO, see its brand score, and spin off a design brief.",
+        position: "top",
+      },
+    ],
+  },
+  {
+    id: "module-knowledge-base",
+    name: "Knowledge Base",
+    description: "The brain that grounds every AI feature",
+    version: 1,
+    steps: [
+      {
+        target: "[data-tour='kb-tab-overview']",
+        title: "Overview",
+        description: "A snapshot of everything HiveMind knows — your products, personas, markets, and competitors at a glance.",
+        position: "bottom",
+      },
+      {
+        target: "[data-tour='kb-tab-brand_style']",
+        title: "Brand style",
+        description: "Your colours, typography, logos, and voice. Every generated piece and design brief is held to what you set here.",
+        position: "bottom",
+      },
+      {
+        target: "[data-tour='kb-tab-documents']",
+        title: "Documents",
+        description: "Upload source documents. HiveMind extracts facts and proof points from them into the knowledge base automatically.",
+        position: "bottom",
+      },
+      {
+        target: "[data-tour='kb-tab-skills']",
+        title: "Skills",
+        description: "The instructions the AI follows — synthesised from your learnings and editable by you. This is what makes the output sound like your org.",
+        position: "bottom",
+      },
+      {
+        target: "[data-tour='kb-tab-learning']",
+        title: "Learning log",
+        description: "A running record of what HiveMind has learned from your documents, edits, and feedback over time.",
+        position: "bottom",
+      },
+      {
+        target: "[data-tour='kb-tab-custom']",
+        title: "Custom knowledge",
+        description: "Add free-form facts, corrections, or guidelines directly — they flow straight into every AI prompt.",
+        position: "bottom",
+      },
+    ],
+  },
+  {
+    id: "module-content-library",
+    name: "Asset Library",
+    description: "Where your content assets live and get scored",
+    version: 1,
+    steps: [
+      {
+        target: "[data-tour='lib-upload']",
+        title: "Upload assets",
+        description: "Add PDFs, decks, docs, and images. Each upload is analysed by AI for intelligence and scored against your brand.",
+        position: "bottom",
+      },
+      {
+        target: "[data-tour='lib-search']",
+        title: "Search & filter",
+        description: "Find assets by name or tag, and filter by type, product, market, score, or analysis status.",
+        position: "bottom",
+      },
+      {
+        target: "[data-tour='lib-grid']",
+        title: "Your assets",
+        description: "Every asset shows its brand score and analysis status. Click one to see the full AI intelligence extraction and dimension-by-dimension brand review.",
+        position: "top",
+      },
+    ],
+  },
+  {
+    id: "module-assistant",
+    name: "Ask Halo",
+    description: "Your grounded AI marketing assistant",
+    version: 1,
+    steps: [
+      {
+        target: "[data-tour='asst-new']",
+        title: "Start a conversation",
+        description: "Begin a new chat any time. Past conversations are saved in the sidebar so you can pick them back up.",
+        position: "right",
+      },
+      {
+        target: "[data-tour='asst-input']",
+        title: "Ask anything about your org",
+        description: "Questions about your products, competitors, or market — answered from your actual knowledge base, with sources cited. Every answer is grounded, never made up.",
+        position: "top",
+      },
+    ],
+  },
+];
+
 export function getToursForRole(role: string): TourDef[] {
   return TOURS.filter(t => !t.roles || t.roles.includes(role));
+}
+
+/** Look up a Level-2 module tour by its moduleId (the part after "module-"). */
+export function getModuleTour(moduleId: string): TourDef | undefined {
+  return MODULE_TOURS.find(t => t.id === `module-${moduleId}`);
 }
 
 export function getPendingTours(allTours: TourDef[], completedTourIds: string[]): TourDef[] {

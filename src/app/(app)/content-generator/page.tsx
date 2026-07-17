@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { useUser } from "@/lib/UserContext";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
 import InlineEditableContent from "@/components/InlineEditableContent";
+import ModuleTour from "@/components/ModuleTour";
 import { analyzeSeo, type SeoAnalysis } from "@/lib/seoAnalyzer";
 
 interface OutputData {
@@ -595,6 +596,7 @@ export default function ContentGeneratorPage() {
 
   return (
     <div className="flex-1 flex bg-[var(--hm-bg-tertiary)] overflow-hidden">
+      <ModuleTour moduleId="content-generator" />
       {/* ── History sidebar — hidden on mobile, visible from md ── */}
       <div className="hidden md:flex w-[240px] flex-shrink-0 border-r border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] flex-col overflow-hidden">
         {/* New button */}
@@ -745,7 +747,7 @@ export default function ContentGeneratorPage() {
                 )}
 
                 {/* Topic input */}
-                <div className="mb-6">
+                <div className="mb-6" data-tour="cg-topic">
                   <label className="block text-[13px] text-[var(--hm-text-secondary)] mb-2 font-medium">
                     What do you want to create? <span className="text-red-500 ml-0.5" aria-label="required">*</span>
                   </label>
@@ -754,7 +756,7 @@ export default function ContentGeneratorPage() {
                 </div>
 
                 {/* Format selection */}
-                <div className="mb-6">
+                <div className="mb-6" data-tour="cg-formats">
                   <label className="block text-[13px] text-[var(--hm-text-secondary)] mb-2 font-medium">
                     Output formats <span className="text-red-500 ml-0.5" aria-label="required">*</span>
                     <span className="font-normal text-[var(--hm-text-tertiary)] text-[11px] ml-1">— select one or more</span>
@@ -800,7 +802,7 @@ export default function ContentGeneratorPage() {
                 </div>
 
                 {/* Parameters */}
-                <div className="mb-6">
+                <div className="mb-6" data-tour="cg-params">
                   {!showParams ? (
                     <button
                       onClick={() => setShowParams(true)}
@@ -913,6 +915,7 @@ export default function ContentGeneratorPage() {
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
                   <button
                     type="button"
+                    data-tour="cg-websearch"
                     onClick={() => setWebSearch(v => !v)}
                     title={webSearch ? "Web search on — real-time context will be included" : "Enable web search for real-time context"}
                     className={"h-[46px] px-4 rounded-lg border text-[12px] font-medium flex items-center gap-2 transition-all flex-shrink-0 " +
@@ -929,6 +932,7 @@ export default function ContentGeneratorPage() {
                     {webSearch ? "Web on" : "Web search"}
                   </button>
                   <button onClick={handleGenerate} disabled={generating || !topic.trim() || selectedFormats.length === 0 || (selectedFormats.includes("custom") && !customFormatLabel.trim())}
+                    data-tour="cg-generate"
                     aria-label="Generate content"
                     className="h-[46px] w-full sm:w-auto px-8 bg-[#4361ee] text-white rounded-lg text-[14px] font-medium hover:opacity-90 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
                     {generating

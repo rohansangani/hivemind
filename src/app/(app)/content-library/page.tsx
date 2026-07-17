@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { upload } from "@vercel/blob/client";
 import { useUser } from "@/lib/UserContext";
+import ModuleTour from "@/components/ModuleTour";
 
 interface Asset {
   id: string; name: string; fileName: string; fileUrl: string | null; fileType: string; fileSize: number | null;
@@ -369,6 +370,7 @@ export default function ContentLibraryPage() {
 
   return (
     <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <ModuleTour moduleId="content-library" />
 
         <div className="px-4 md:px-7 py-4 bg-white border-b border-[var(--hm-border)] flex flex-wrap items-center justify-between gap-3" style={{ boxShadow: "var(--hm-shadow-xs)" }}>
           <div className="min-w-0">
@@ -390,7 +392,7 @@ export default function ContentLibraryPage() {
                 )}
               </button>
             )}
-            <button onClick={() => setShowUpload(true)} className="h-[34px] w-full sm:w-auto px-4 bg-[#4361ee] text-white rounded-lg text-[12px] font-medium flex items-center justify-center gap-1.5 hover:opacity-90 active:opacity-100 active:scale-95 transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-2 flex-shrink-0" style={{ boxShadow: "0 1px 2px rgba(67,97,238,0.3)" }}>
+            <button data-tour="lib-upload" onClick={() => setShowUpload(true)} className="h-[34px] w-full sm:w-auto px-4 bg-[#4361ee] text-white rounded-lg text-[12px] font-medium flex items-center justify-center gap-1.5 hover:opacity-90 active:opacity-100 active:scale-95 transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-2 flex-shrink-0" style={{ boxShadow: "0 1px 2px rgba(67,97,238,0.3)" }}>
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 2v8M5 4l3-3 3 3" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /><path d="M2 13h12" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" /></svg>
               Upload files
             </button>
@@ -435,7 +437,7 @@ export default function ContentLibraryPage() {
         </div>
 
         <div className="px-4 md:px-7 py-3 bg-white border-b border-[var(--hm-border)] flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2 flex-1 min-w-0 overflow-x-auto">
+          <div className="flex items-center gap-2 flex-1 min-w-0 overflow-x-auto" data-tour="lib-search">
             <div className="relative flex-1 max-w-[240px]">
               <svg width="13" height="13" viewBox="0 0 16 16" fill="none" style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)", zIndex: 1 }}><circle cx="6.5" cy="6.5" r="5" stroke="#999" strokeWidth="1.1" /><path d="M14 14l-3-3" stroke="#999" strokeWidth="1.1" strokeLinecap="round" /></svg>
               <input type="text" placeholder="Search files, tags..." value={search} onChange={(e) => setSearch(e.target.value)} className="search-input" />
@@ -456,7 +458,7 @@ export default function ContentLibraryPage() {
         <div className="flex-1 flex min-h-0 overflow-hidden">
 
           {/* Main scrollable area */}
-          <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4 md:p-7">
+          <div ref={scrollContainerRef} data-tour="lib-grid" className="flex-1 overflow-y-auto p-4 md:p-7">
 
             {/* Upload */}
             {showUpload && (
