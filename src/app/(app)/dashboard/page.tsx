@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useUser } from "@/lib/UserContext";
 import { normalizeRole } from "@/lib/permissions";
+import ModuleTour from "@/components/ModuleTour";
 
 interface DashboardData {
   stats: {
@@ -167,8 +168,9 @@ export default function DashboardPage() {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
+      <ModuleTour moduleId="dashboard" />
       {/* ── Header ───────────────────────────────────────── */}
-      <div className="px-4 md:px-7 py-4 bg-white border-b border-[var(--hm-border)] flex items-center justify-between gap-3" style={{ boxShadow: "var(--hm-shadow-xs)" }}>
+      <div data-tour="dash-header" className="px-4 md:px-7 py-4 bg-white border-b border-[var(--hm-border)] flex items-center justify-between gap-3" style={{ boxShadow: "var(--hm-shadow-xs)" }}>
         <div className="min-w-0">
           <h1 className="text-[18px] md:text-[22px] font-semibold leading-tight truncate">{greeting()}, {user!.name?.split(" ")[0]}</h1>
           <p className="text-[12px] text-[var(--hm-text-tertiary)] mt-0.5 hidden sm:block">
@@ -178,6 +180,7 @@ export default function DashboardPage() {
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           <button
+            data-tour="dash-refresh"
             onClick={() => fetchDashboard(true)} disabled={refreshing || loading}
             aria-label="Refresh dashboard" title="Refresh dashboard"
             className="w-[34px] h-[34px] rounded-lg border border-[var(--hm-border)] flex items-center justify-center hover:bg-[var(--hm-bg-secondary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex-shrink-0"
@@ -206,7 +209,7 @@ export default function DashboardPage() {
         )}
 
         {/* ── Quick Actions ──────────────────────────────── */}
-        <div className={`grid grid-cols-1 ${quickActions.length >= 3 ? "sm:grid-cols-3" : quickActions.length === 2 ? "sm:grid-cols-2" : "sm:grid-cols-1 max-w-md"} gap-3 mb-6`}>
+        <div data-tour="dash-quick-actions" className={`grid grid-cols-1 ${quickActions.length >= 3 ? "sm:grid-cols-3" : quickActions.length === 2 ? "sm:grid-cols-2" : "sm:grid-cols-1 max-w-md"} gap-3 mb-6`}>
           {quickActions.map((a) => {
             const isHovered = hoveredCard === a.label;
             return (
@@ -233,7 +236,7 @@ export default function DashboardPage() {
         </div>
 
         {/* ── Stat Cards ─────────────────────────────────── */}
-        {statCards.length > 0 && <div className={`grid grid-cols-2 sm:grid-cols-3 ${statCards.length > 4 ? "lg:grid-cols-6" : statCards.length > 2 ? "lg:grid-cols-5" : "lg:grid-cols-2"} gap-3 mb-6`}>
+        {statCards.length > 0 && <div data-tour="dash-stats" className={`grid grid-cols-2 sm:grid-cols-3 ${statCards.length > 4 ? "lg:grid-cols-6" : statCards.length > 2 ? "lg:grid-cols-5" : "lg:grid-cols-2"} gap-3 mb-6`}>
           {loading
             ? Array.from({ length: statCards.length || 4 }).map((_, i) => <StatCardSkeleton key={i} />)
             : statCards.map((card) => (

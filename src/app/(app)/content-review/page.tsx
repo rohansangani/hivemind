@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import ModuleTour from "@/components/ModuleTour";
 
 interface Issue {
   type: "error" | "warning" | "suggestion";
@@ -117,6 +118,7 @@ export default function ContentReviewPage() {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
+      <ModuleTour moduleId="content-review" />
       <div className="px-7 py-4 bg-white border-b border-[var(--hm-border)] flex items-center justify-between" style={{ boxShadow: "var(--hm-shadow-xs)" }}>
         <div>
           <h1 className="text-[22px] font-semibold leading-tight">Content Review</h1>
@@ -134,6 +136,7 @@ export default function ContentReviewPage() {
                   <h3 className="text-[14px] font-medium">Paste your content</h3>
                   <div className="flex items-center gap-3">
                     <select
+                      data-tour="cr-type"
                       value={contentType}
                       onChange={e => setContentType(e.target.value)}
                       className="text-[12px] h-8 px-3 border border-[var(--hm-border)] rounded-lg bg-white focus:ring-2 focus:ring-[#4361ee] focus:border-[#4361ee] outline-none"
@@ -145,6 +148,7 @@ export default function ContentReviewPage() {
                 </div>
 
                 <textarea
+                  data-tour="cr-content"
                   value={content}
                   onChange={e => setContent(e.target.value)}
                   placeholder="Paste your blog post, LinkedIn update, email copy, or any marketing content here..."
@@ -166,6 +170,7 @@ export default function ContentReviewPage() {
                     <span className="text-[11px] text-[var(--hm-text-tertiary)]">Review takes 15–30 seconds depending on content length</span>
                   </div>
                   <button
+                    data-tour="cr-run"
                     onClick={runReview}
                     disabled={reviewing || wordCount < 10}
                     className="h-9 px-6 bg-gradient-to-r from-[#4361ee] to-[#7c3aed] text-white rounded-lg text-[13px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
@@ -183,7 +188,7 @@ export default function ContentReviewPage() {
               </div>
 
               {/* What gets checked */}
-              <div className="mt-5 grid grid-cols-3 gap-3">
+              <div data-tour="cr-checks" className="mt-5 grid grid-cols-3 gap-3">
                 {[
                   { icon: "Aa", title: "Grammar & Style", desc: "Spelling, punctuation, sentence structure, tense consistency" },
                   { icon: "♥", title: "Brand Alignment", desc: "Tone, voice, terminology match against your brand profile" },

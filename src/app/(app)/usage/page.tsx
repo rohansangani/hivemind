@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useUser } from "@/lib/UserContext";
+import ModuleTour from "@/components/ModuleTour";
 
 /* ── Feature label map (mirrors server-side FEATURE_LABELS) ─────────── */
 const FEATURE_LABELS: Record<string, string> = {
@@ -109,9 +110,10 @@ export default function UsagePage() {
   return (
     <div className="flex-1 overflow-auto">
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+        <ModuleTour moduleId="usage" />
 
         {/* ── Header ─────────────────────────────────────────────── */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div data-tour="usage-header" className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-[20px] font-semibold text-[var(--hm-text)]">Token Usage</h1>
             <p className="text-[13px] text-[var(--hm-text-secondary)] mt-0.5">
@@ -120,7 +122,7 @@ export default function UsagePage() {
           </div>
 
           {/* Range toggle */}
-          <div className="flex rounded-lg border border-[var(--hm-border)] overflow-hidden">
+          <div data-tour="usage-range" className="flex rounded-lg border border-[var(--hm-border)] overflow-hidden">
             {(["7d", "30d", "90d"] as Range[]).map((r) => (
               <button
                 key={r}
@@ -153,7 +155,7 @@ export default function UsagePage() {
         {data && !loading && (
           <>
             {/* ── Summary Cards ───────────────────────────────────── */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div data-tour="usage-stats" className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               {[
                 { label: "Total Tokens", value: fmt(data.totals.totalTokens), sub: `${fmt(data.totals.inputTokens)} in / ${fmt(data.totals.outputTokens)} out` },
                 { label: "API Calls", value: data.totals.totalCalls.toLocaleString(), sub: `${range === "7d" ? "7" : range === "30d" ? "30" : "90"}-day total` },
@@ -172,7 +174,7 @@ export default function UsagePage() {
             </div>
 
             {/* ── Daily Usage Chart ───────────────────────────────── */}
-            <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-bg)] p-5">
+            <div data-tour="usage-chart" className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-bg)] p-5">
               <h2 className="text-[14px] font-semibold text-[var(--hm-text)] mb-4">Daily Token Usage</h2>
               {data.daily.length === 0 ? (
                 <p className="text-[13px] text-[var(--hm-text-tertiary)] text-center py-10">No usage data for this period.</p>
@@ -256,7 +258,7 @@ export default function UsagePage() {
             </div>
 
             {/* ── Feature Breakdown Table ──────────────────────────── */}
-            <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-bg)] overflow-hidden">
+            <div data-tour="usage-table" className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-bg)] overflow-hidden">
               <div className="px-5 py-4 border-b border-[var(--hm-border)]">
                 <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Usage by Feature</h2>
               </div>

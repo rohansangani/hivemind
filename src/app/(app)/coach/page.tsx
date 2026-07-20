@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useUser } from "@/lib/UserContext";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
+import ModuleTour from "@/components/ModuleTour";
 
 interface LessonSummary {
   id: string;
@@ -270,10 +271,11 @@ export default function CoachPage() {
   // ── Main view ─────────────────────────────────────────────────────────────
   return (
     <div className="flex-1 overflow-y-auto bg-[var(--hm-bg-tertiary)]">
+      <ModuleTour moduleId="coach" />
       <div className="max-w-[900px] mx-auto p-6 md:p-8">
         {/* Header */}
         <div className="flex items-start justify-between mb-6 flex-wrap gap-3">
-          <div>
+          <div data-tour="coach-header">
             <h1 className="text-[24px] font-semibold text-[var(--hm-text)]">Coach</h1>
             <p className="text-[13px] text-[var(--hm-text-tertiary)] mt-0.5">Structured onboarding, grounded in your knowledge base.</p>
           </div>
@@ -290,7 +292,7 @@ export default function CoachPage() {
 
         {/* Tabs (admins get Team readiness + Enrollment) */}
         {canViewTeam && (
-          <div className="flex gap-1 mb-6 border-b border-[var(--hm-border)]">
+          <div data-tour="coach-tabs" className="flex gap-1 mb-6 border-b border-[var(--hm-border)]">
             {(["learn", "team", "enroll"] as const).map(t => (
               <button key={t} onClick={() => setTab(t)}
                 className={"px-4 py-2.5 text-[13px] font-medium border-b-2 transition-colors " + (tab === t ? "border-[#4361ee] text-[#4361ee]" : "border-transparent text-[var(--hm-text-tertiary)] hover:text-[var(--hm-text)]")}>
@@ -367,7 +369,7 @@ export default function CoachPage() {
           /* My learning */
           <>
             {/* Readiness banner */}
-            <div className="bg-white rounded-xl border border-[var(--hm-border)] p-5 mb-6 flex items-center gap-5">
+            <div data-tour="coach-readiness" className="bg-white rounded-xl border border-[var(--hm-border)] p-5 mb-6 flex items-center gap-5">
               {(() => {
                 const s = data.readiness, r = 26, circ = 2 * Math.PI * r, fill = circ - (s / 100) * circ;
                 const col = s >= 80 ? "#10b981" : s >= 40 ? "#f59e0b" : "#4361ee";
@@ -388,7 +390,7 @@ export default function CoachPage() {
             </div>
 
             {/* Modules */}
-            <div className="space-y-6">
+            <div data-tour="coach-modules" className="space-y-6">
               {data.modules.map(m => (
                 <div key={m.id}>
                   <div className="mb-2.5">

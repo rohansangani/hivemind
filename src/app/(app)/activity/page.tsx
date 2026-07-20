@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useUser } from "@/lib/UserContext";
 import { hasPermission } from "@/lib/permissions";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
+import ModuleTour from "@/components/ModuleTour";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -759,8 +760,10 @@ export default function ActivityPage() {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
+      <ModuleTour moduleId="activity" />
       {/* Header */}
       <div
+        data-tour="act-header"
         className="px-7 py-4 border-b border-[var(--hm-border)] flex items-center justify-between flex-shrink-0"
         style={{ background: "var(--hm-bg)", boxShadow: "var(--hm-shadow-xs)" }}
       >
@@ -773,7 +776,7 @@ export default function ActivityPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 px-7 pt-4 pb-0 flex-shrink-0 border-b border-[var(--hm-border)]" style={{ background: "var(--hm-bg)" }}>
+      <div data-tour="act-tabs" className="flex gap-1 px-7 pt-4 pb-0 flex-shrink-0 border-b border-[var(--hm-border)]" style={{ background: "var(--hm-bg)" }}>
         {([
           { id: "content", label: "Generated Content", icon: (
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
@@ -811,7 +814,7 @@ export default function ActivityPage() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-7">
+      <div data-tour="act-content" className="flex-1 overflow-y-auto p-7">
         {tab === "content" && <ContentTab />}
         {tab === "conversations" && <ConversationsTab />}
         {tab === "briefs" && <DesignBriefsTab />}

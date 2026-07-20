@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import ModuleTour from "@/components/ModuleTour";
 import { useUser } from "@/lib/UserContext";
 
 export default function SettingsPage() {
@@ -525,7 +526,9 @@ export default function SettingsPage() {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
+      <ModuleTour moduleId="settings" />
       <div
+        data-tour="set-header"
         className="flex items-center justify-between border-b border-[var(--hm-border)] bg-white px-7 py-4"
         style={{ boxShadow: "var(--hm-shadow-xs)" }}
       >
@@ -537,7 +540,7 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      <div className="flex border-b border-[var(--hm-border)] bg-white px-7">
+      <div data-tour="set-tabs" className="flex border-b border-[var(--hm-border)] bg-white px-7">
         {(
           [
             { id: "general", label: "General" },
@@ -550,6 +553,7 @@ export default function SettingsPage() {
         ).map((t) => (
           <button
             key={t.id}
+            data-tour={`set-tab-${t.id}`}
             onClick={() => setTab(t.id)}
             className={
               "border-b-2 px-4 py-2.5 text-[12px] transition-colors " +
@@ -583,7 +587,7 @@ export default function SettingsPage() {
               <p className="mb-4 text-[12px] text-[var(--hm-text-tertiary)]">
                 Your organisation name and website shown across the product.
               </p>
-              <div className="mb-3 space-y-4 rounded-xl border border-[var(--hm-border)] bg-white p-5">
+              <div data-tour="set-workspace" className="mb-3 space-y-4 rounded-xl border border-[var(--hm-border)] bg-white p-5">
                 <div>
                   <label className="mb-1.5 block text-[12px] font-medium text-[var(--hm-text-secondary)]">
                     Workspace name

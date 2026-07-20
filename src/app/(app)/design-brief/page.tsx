@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useUser } from "@/lib/UserContext";
+import ModuleTour from "@/components/ModuleTour";
 
 interface BriefOutput {
   platform: string;
@@ -403,6 +404,7 @@ export default function DesignBriefPage() {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
+      <ModuleTour moduleId="design-brief" />
       {/* Header */}
       <div className="px-7 py-4 bg-white border-b border-[var(--hm-border)] flex items-center justify-between" style={{ boxShadow: "var(--hm-shadow-xs)" }}>
         <div>
@@ -420,7 +422,7 @@ export default function DesignBriefPage() {
 
       <div className="flex-1 flex min-h-0 overflow-hidden">
         {/* Left sidebar — history */}
-        <div className="w-[260px] shrink-0 border-r border-[var(--hm-border)] bg-white flex flex-col overflow-hidden">
+        <div data-tour="db-history" className="w-[260px] shrink-0 border-r border-[var(--hm-border)] bg-white flex flex-col overflow-hidden">
           <div className="px-4 py-3 border-b border-[var(--hm-border)]">
             <p className="text-[11px] font-semibold text-[var(--hm-text-secondary)] uppercase tracking-wide">History</p>
           </div>
@@ -495,6 +497,7 @@ export default function DesignBriefPage() {
                 </div>
 
                 <textarea
+                  data-tour="db-input"
                   ref={textareaRef}
                   value={prompt}
                   onChange={e => setPrompt(e.target.value)}
@@ -512,6 +515,7 @@ export default function DesignBriefPage() {
                 <div className="flex items-center justify-between mt-3">
                   <p className="text-[10px] text-[var(--hm-text-tertiary)]">⌘ + Enter to generate</p>
                   <button
+                    data-tour="db-generate"
                     onClick={handleGenerate}
                     disabled={generating || !prompt.trim()}
                     className="flex items-center gap-2 h-[38px] px-5 bg-gradient-to-r from-[#4361ee] to-[#7c3aed] text-white rounded-xl text-[13px] font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
@@ -534,7 +538,7 @@ export default function DesignBriefPage() {
               </div>
 
               {/* Examples / hints */}
-              <div className="mt-5 grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <div data-tour="db-examples" className="mt-5 grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {[
                   { label: "LinkedIn ad", example: "LinkedIn single image ad for our enterprise product, targeting VP-level buyers, professional and confident tone" },
                   { label: "LinkedIn carousel", example: "LinkedIn carousel (5 slides, 1:1) breaking down our top 3 product benefits for enterprise buyers — bold, data-driven, swipe-worthy" },

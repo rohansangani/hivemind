@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import ModuleTour from "@/components/ModuleTour";
 import { useUser } from "@/lib/UserContext";
 import { ROLE_META, hasPermission, canManageUser, getCustomRoleMeta } from "@/lib/permissions";
 import { MODULES, ROLE_DEFAULT_PERMISSIONS, getEffectivePermissions } from "@/lib/modules";
@@ -736,8 +737,9 @@ export default function TeamPage() {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
+        <ModuleTour moduleId="team" />
         {/* Header */}
-        <div className="px-7 py-4 border-b border-[var(--hm-border)] flex items-center justify-between flex-shrink-0" style={{ background: "var(--hm-bg)", boxShadow: "var(--hm-shadow-xs)" }}>
+        <div data-tour="team-header" className="px-7 py-4 border-b border-[var(--hm-border)] flex items-center justify-between flex-shrink-0" style={{ background: "var(--hm-bg)", boxShadow: "var(--hm-shadow-xs)" }}>
           <div>
             <p className="text-[22px] font-semibold leading-tight" style={{ color: "var(--hm-text)" }}>Team</p>
             <p className="text-[12px] mt-0.5" style={{ color: "var(--hm-text-tertiary)" }}>
@@ -747,7 +749,7 @@ export default function TeamPage() {
             </p>
           </div>
           {canManage && (
-            <button onClick={() => setEditTarget("new")}
+            <button data-tour="team-invite" onClick={() => setEditTarget("new")}
               className="h-[34px] px-4 text-white rounded-lg text-[12px] font-medium flex items-center gap-1.5 hover:opacity-90"
               style={{ background: "var(--hm-accent)" }}>
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 3v10M3 8h10" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" /></svg>
@@ -758,7 +760,7 @@ export default function TeamPage() {
 
         <div className="flex-1 overflow-y-auto p-7">
           {/* Stats */}
-          <div className="grid grid-cols-4 gap-3 mb-6">
+          <div data-tour="team-stats" className="grid grid-cols-4 gap-3 mb-6">
             {[
               { label: "Active members", value: members.filter(m => m.inviteStatus !== "pending").length, color: "var(--hm-text)" },
               { label: "Owners & admins", value: members.filter(m => m.role === "owner" || m.role === "admin").length, color: ROLE_META.admin.color },
@@ -774,7 +776,7 @@ export default function TeamPage() {
           </div>
 
           {/* Members table */}
-          <div className="rounded-xl border border-[var(--hm-border)] overflow-hidden" style={{ background: "var(--hm-bg)" }}>
+          <div data-tour="team-members" className="rounded-xl border border-[var(--hm-border)] overflow-hidden" style={{ background: "var(--hm-bg)" }}>
             {/* Search bar */}
             <div className="px-5 py-3 border-b border-[var(--hm-border)] flex items-center gap-3">
               <div className="relative max-w-[280px] flex-1">

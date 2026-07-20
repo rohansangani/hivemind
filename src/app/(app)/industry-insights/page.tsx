@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useUser } from "@/lib/UserContext";
+import ModuleTour from "@/components/ModuleTour";
 
 interface Insight {
   id: string;
@@ -359,6 +360,7 @@ export default function IndustryInsightsPage() {
 
   return (
     <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <ModuleTour moduleId="industry-insights" />
 
       {/* FIX #2 — 429 cooldown toast */}
       {cooldownToast && (
@@ -394,7 +396,7 @@ export default function IndustryInsightsPage() {
 
       {/* Header */}
       <div className="px-7 py-4 bg-white border-b border-[var(--hm-border)] flex items-center justify-between gap-4" style={{ boxShadow: "var(--hm-shadow-xs)" }}>
-        <div>
+        <div data-tour="ii-header">
           <p className="text-[22px] font-semibold leading-tight">Industry insights</p>
           <p className="text-[12px] text-[var(--hm-text-tertiary)] mt-0.5">
             AI-curated intelligence · up to 90 days · {filtered.length} insight{filtered.length !== 1 ? "s" : ""}
@@ -411,6 +413,7 @@ export default function IndustryInsightsPage() {
             <div className="flex items-center gap-2">
             {/* FIX #1 — refresh button with clear label, recognisable circular-arrow icon, and spinner during load */}
             <button
+              data-tour="ii-refresh"
               onClick={handleRefresh}
               disabled={refreshing || isCoolingDown}
               title={isCoolingDown ? `Next refresh available in ${nextRefreshLabel}` : "Fetch the latest intelligence for your markets"}
@@ -484,7 +487,7 @@ export default function IndustryInsightsPage() {
       </div>
 
       {/* Filter bar */}
-      <div className="px-7 py-3 bg-white border-b border-[var(--hm-border)] flex items-center gap-3 flex-wrap">
+      <div data-tour="ii-filters" className="px-7 py-3 bg-white border-b border-[var(--hm-border)] flex items-center gap-3 flex-wrap">
 
         {/* Search */}
         <div className="relative flex-shrink-0" style={{ width: 240 }}>
@@ -646,7 +649,7 @@ export default function IndustryInsightsPage() {
       )}
 
       {/* Body */}
-      <div className="flex-1 overflow-y-auto p-7">
+      <div data-tour="ii-feed" className="flex-1 overflow-y-auto p-7">
         {/* FIX #7 — skeleton cards while loading instead of a plain spinner */}
         {loading ? (
           <div className="space-y-3">

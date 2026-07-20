@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
+import ModuleTour from "@/components/ModuleTour";
 /* ── Types ──────────────────────────────────────────────────────────────── */
 
 interface Prospect {
@@ -770,6 +771,7 @@ export default function EmailSequencesPage() {
 
   return (
     <div className="flex-1 flex overflow-hidden">
+      <ModuleTour moduleId="email-sequences" />
       {/* ── History sidebar — hidden on mobile, visible from md, matching Content Generator/Halo ── */}
       <div className="hidden md:flex w-[240px] flex-shrink-0 border-r border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] flex-col overflow-hidden">
         <div className="p-4 flex-shrink-0">
@@ -1125,7 +1127,7 @@ export default function EmailSequencesPage() {
         /* ── Input view ─────────────────────────────────────────────────── */
         <div className="space-y-5">
           {/* Mode selector */}
-          <div className={cardCls}>
+          <div data-tour="es-mode" className={cardCls}>
             <div className={labelCls + " mb-3"}>Mode</div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
               {([
@@ -1148,7 +1150,7 @@ export default function EmailSequencesPage() {
 
           {/* Single prospect form */}
           {mode === "single" && (
-            <div className={cardCls}>
+            <div data-tour="es-prospect" className={cardCls}>
               <div className={labelCls + " mb-3"}>Prospect Details</div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -1332,7 +1334,7 @@ export default function EmailSequencesPage() {
           )}
 
           {/* Sequence Configuration */}
-          <div className={cardCls}>
+          <div data-tour="es-config" className={cardCls}>
             <div className={labelCls + " mb-3"}>Sequence Configuration</div>
 
             {/* Email count */}
@@ -1507,7 +1509,7 @@ export default function EmailSequencesPage() {
 
           {/* Generate button */}
           <div className="flex items-center gap-3">
-            <button onClick={handleGenerate} disabled={generating} className={btnPrimary + " flex items-center gap-2"}>
+            <button data-tour="es-generate" onClick={handleGenerate} disabled={generating} className={btnPrimary + " flex items-center gap-2"}>
               {generating ? (
                 <>
                   <svg className="animate-spin" width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="white" strokeWidth="2" opacity="0.3"/><path d="M14 8a6 6 0 00-6-6" stroke="white" strokeWidth="2" strokeLinecap="round"/></svg>
