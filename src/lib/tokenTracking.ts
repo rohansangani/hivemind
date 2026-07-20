@@ -18,7 +18,8 @@ export type AIFeature =
   | "industry_insights"
   | "setup_wizard"
   | "skills"
-  | "email_sequences";
+  | "email_sequences"
+  | "coach";
 
 export const FEATURE_LABELS: Record<AIFeature, string> = {
   assistant: "AI Assistant",
@@ -32,6 +33,7 @@ export const FEATURE_LABELS: Record<AIFeature, string> = {
   setup_wizard: "Setup Wizard",
   skills: "Skills Engine",
   email_sequences: "Email Sequences",
+  coach: "HiveMind Coach",
 };
 
 export interface TokenUsageData {

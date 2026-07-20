@@ -53,6 +53,7 @@ model Organization {
   featureRegistries  FeatureRegistry[]
   usageSignals       UsageSignal[]
   outputFingerprints OutputFingerprint[]
+  coachTracks        CoachTrack[]
 }
 
 model User {
@@ -85,6 +86,7 @@ model User {
   radarActivityLogs RadarActivityLog[]
   emailSequenceJobs EmailSequenceJob[]
   linkedinCheckJobs LinkedinCheckJob[]
+  coachProgress     CoachProgress[]
 }
 
 // Tracks who exported what from Radar (Accounts/Contacts CSV download), and when — the export
@@ -718,4 +720,96 @@ model OutputFingerprint {
   createdAt       DateTime     @default(now())
 
   @@index([organizationId, featureKey, format, createdAt])
+}
+
+// ═══════════════════════════════════════
+// HIVEMIND COACH — employee onboarding / enablement
+//
+// A curriculum auto-composed from the knowledge base: Track → Module → Lesson →
+// Question. Reference materials for a lesson are derived LIVE from Asset Library
+// tags (via entityType/entityId), never stored, so they can't go stale. Per-user
+// CoachProgress tracks scores and completion. All FKs cascade on delete.
+// ═══════════════════════════════════════
+
+model CoachTrack {
+  id             String        @id @default(cuid())
+  key            String        // e.g. "gtm-foundation"
+  name           String
+  description    String?
+  targetRole     String?       // null = everyone
+  order          Int           @default(0)
+  isActive       Boolean       @default(true)
+  isGenerated    Boolean       @default(true)
+  organizationId String
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  modules        CoachModule[]
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([organizationId, order])
+}
+
+model CoachModule {
+  id          String        @id @default(cuid())
+  trackId     String
+  track       CoachTrack    @relation(fields: [trackId], references: [id], onDelete: Cascade)
+  domain      String        // "company" | "markets" | "products" | "use_cases" | "customers" | "competitors"
+  name        String
+  description String?
+  order       Int           @default(0)
+  lessons     CoachLesson[]
+
+  @@index([trackId, order])
+}
+
+model CoachLesson {
+  id           String          @id @default(cuid())
+  moduleId     String
+  module       CoachModule     @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  title        String
+  whyItMatters String?
+  keyPoints    String          // markdown
+  entityType   String?         // "product" | "persona" | "market" | "competitor" — for live reference-material lookup
+  entityName   String?         // matched against Asset Library tag arrays
+  order        Int             @default(0)
+  questions    CoachQuestion[]
+  progress     CoachProgress[]
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  @@index([moduleId, order])
+}
+
+model CoachQuestion {
+  id             String      @id @default(cuid())
+  lessonId       String
+  lesson         CoachLesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  type           String      // "mcq" | "short"
+  prompt         String
+  options        Json        @default("[]") // string[] for mcq
+  correctIndex   Int?        // mcq correct option index
+  expectedAnswer String?     // short-answer: grounded expected answer / rubric (never sent to the client)
+  explanation    String?
+  order          Int         @default(0)
+
+  @@index([lessonId, order])
+}
+
+model CoachProgress {
+  id             String      @id @default(cuid())
+  userId         String
+  user           User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lessonId       String
+  lesson         CoachLesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  status         String      @default("not_started") // "not_started" | "in_progress" | "completed"
+  score          Int?        // best score 0-100
+  attempts       Int         @default(0)
+  lastAnswers    Json?       // last submission, for review
+  completedAt    DateTime?
+  organizationId String
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@unique([userId, lessonId])
+  @@index([organizationId, userId])
 }

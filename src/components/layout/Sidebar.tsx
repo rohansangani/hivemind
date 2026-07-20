@@ -21,6 +21,7 @@ const MODULE_ROUTES: Array<{ moduleId: string; href: string; label: string; icon
   { moduleId: "industry_insights",  href: "/industry-insights", label: "Industry Insights",  icon: "insights" },
   { moduleId: "content_library",    href: "/content-library",   label: "Asset Library",      icon: "library" },
   { moduleId: "ai_assistant",       href: "/assistant",         label: "Ask Halo",           icon: "assistant" },
+  { moduleId: "coach",              href: "/coach",             label: "Coach",              icon: "coach" },
   { moduleId: "content_generator",  href: "/content-generator", label: "Content Generator",  icon: "generator" },
   { moduleId: "content_review",     href: "/content-review",    label: "Content Review",     icon: "review" },
   { moduleId: "email_sequences",   href: "/email-sequences",   label: "Email Sequences",    icon: "email" },
@@ -49,6 +50,12 @@ function NavIcon({ icon, active }: { icon: string; active: boolean }) {
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
         <path d="M2 12V4a2 2 0 012-2h8a2 2 0 012 2v5a2 2 0 01-2 2H5l-3 3z" stroke={c} strokeWidth={w} strokeLinejoin="round" />
         <path d="M6 6h4M6 8.5h2" stroke={c} strokeWidth="1.1" strokeLinecap="round" />
+      </svg>
+    );
+    case "coach": return (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path d="M8 2l6 3-6 3-6-3 6-3z" stroke={c} strokeWidth={w} strokeLinejoin="round" />
+        <path d="M4 6.5V10c0 1 1.8 2 4 2s4-1 4-2V6.5" stroke={c} strokeWidth={w} strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     );
     case "radar": return (
