@@ -114,6 +114,9 @@ QUESTION RULES:
 - Generate a number of questions scaled to how much this lesson covers: a thin lesson → about 5 questions; a rich lesson with lots of facts → up to 10. Use your judgement between 5 and 10.
 - Spread questions across the lesson's sections so the whole lesson is tested, not just one part.
 - Options must be plausible and distinct; exactly one is correct. Base everything strictly on the provided facts.
+- Questions must test DURABLE KNOWLEDGE ABOUT THE SUBJECT (the company, product, market, customer, or competitor) — the kind of thing a new employee genuinely needs to know.
+- Each question MUST be answerable on its own, without having seen any specific internal document. NEVER reference a specific deck, case study, one-pager, file, or asset by name.
+- NEVER ask about the quality, tone, brand alignment, archetype-embodiment, or "gaps" of any internal material, and never quiz on critiques, QA notes, or brand-review commentary. Those are opinions about documents, not durable knowledge about the company.
 Write in a clear, direct teaching voice. Do NOT repeatedly refer to "new joiners", "new employees", "newcomers", or "you as a new hire" — teach the material directly.`;
 
 async function generateLesson(
@@ -129,6 +132,8 @@ async function generateLesson(
   const prompt = `You are an expert enablement lead writing an IN-DEPTH onboarding lesson about ${orgName}. Earlier lessons were too superficial — go one to two levels deeper: explain how things actually work, why they matter, and how the pieces connect. Write for an intelligent reader who knows nothing about ${orgName} specifically, in a direct teaching voice.
 
 LESSON TOPIC: ${title}
+
+SCOPE: Teach durable knowledge about the SUBJECT itself — what ${orgName} is, what its products/markets/customers/competitors are, how they work, and how it wins. The provided material may include internal sales decks, case studies, audits, brand-review notes, or QA commentary. Treat those ONLY as a source of factual claims about the subject; IGNORE any critique, opinion, tone/brand assessment, or "gap" analysis of the documents themselves. Never teach or test the reader on the quality of internal materials or on any specific named document — a learner has never seen those files.
 
 VERIFIED FACTS (use ONLY these — synthesise and explain them, but never add outside facts):
 ${factBlock}
@@ -306,7 +311,7 @@ export async function generateCurriculum(orgId: string, apiKey: string, userId?:
       if (txt) parts.push(`--- Excerpt from "${a.name}" ---\n${txt}`);
     }
     if (parts.length) {
-      s.factBlock += `\n\nSOURCE MATERIAL (verbatim excerpts from uploaded documents — the most detailed facts available; prioritise and explain these):\n${parts.join("\n\n").slice(0, 7000)}`;
+      s.factBlock += `\n\nSOURCE MATERIAL (verbatim excerpts from uploaded documents — mine these for DURABLE FACTS about the subject only; ignore any critique, tone/brand assessment, QA notes, or commentary about the documents themselves):\n${parts.join("\n\n").slice(0, 7000)}`;
     }
   }
 
