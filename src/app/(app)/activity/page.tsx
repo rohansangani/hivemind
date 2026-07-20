@@ -737,12 +737,88 @@ function DesignBriefsTab() {
   );
 }
 
+// ── All Activity tab — unified cross-module feed ─────────────────────────────────
+
+interface FeedEvent { id: string; module: string; action: string; title: string; user: string | null; at: string; href: string; }
+
+const MODULE_COLOR: Record<string, string> = {
+  "Content Generator": "#4361ee",
+  "Ask Halo": "#7c3aed",
+  "Design Brief": "#db2777",
+  "Asset Library": "#0891b2",
+  "Email Sequences": "#ea580c",
+  "Industry Insights": "#16a34a",
+  "Coach": "#9333ea",
+  "Knowledge Base": "#ca8a04",
+};
+
+function AllActivityTab() {
+  const router = useRouter();
+  const [events, setEvents] = useState<FeedEvent[] | null>(null);
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    fetch("/api/activity/feed")
+      .then(r => r.json())
+      .then(d => { setEvents(d.events || []); setCounts(d.counts || {}); })
+      .catch(() => setEvents([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <div className="flex justify-center py-16"><div className="w-6 h-6 border-2 border-[var(--hm-accent)]/30 border-t-[var(--hm-accent)] rounded-full animate-spin" /></div>;
+  if (!events || events.length === 0) return <p className="text-center text-[13px] py-12" style={{ color: "var(--hm-text-tertiary)" }}>No activity across your modules yet.</p>;
+
+  const countEntries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+
+  return (
+    <div>
+      {/* Per-module summary (last 30 days) */}
+      {countEntries.length > 0 && (
+        <div className="flex flex-wrap gap-2 mb-5">
+          {countEntries.map(([mod, n]) => (
+            <div key={mod} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border" style={{ borderColor: "var(--hm-border)", background: "var(--hm-bg)" }}>
+              <span className="w-2 h-2 rounded-full" style={{ background: MODULE_COLOR[mod] || "#94a3b8" }} />
+              <span className="text-[11px] font-medium" style={{ color: "var(--hm-text)" }}>{mod}</span>
+              <span className="text-[11px]" style={{ color: "var(--hm-text-tertiary)" }}>{n}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Unified timeline */}
+      <div className="rounded-xl border overflow-hidden" style={{ borderColor: "var(--hm-border)", background: "var(--hm-bg)" }}>
+        {events.map((e, i) => (
+          <button
+            key={e.id}
+            onClick={() => router.push(e.href)}
+            className="w-full flex items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-[var(--hm-bg-secondary)]"
+            style={{ borderTop: i > 0 ? "1px solid var(--hm-border)" : "none" }}
+          >
+            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: MODULE_COLOR[e.module] || "#94a3b8" }} />
+            <div className="min-w-0 flex-1">
+              <p className="text-[13px] truncate" style={{ color: "var(--hm-text)" }}>
+                <span className="font-medium">{e.user || e.module}</span>
+                <span style={{ color: "var(--hm-text-tertiary)" }}> {e.action} · </span>
+                {e.title}
+              </p>
+              <p className="text-[11px] mt-0.5" style={{ color: "var(--hm-text-tertiary)" }}>{e.module}</p>
+            </div>
+            <span className="text-[11px] flex-shrink-0" style={{ color: "var(--hm-text-tertiary)" }}>{timeAgo(e.at)}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Main page ──────────────────────────────────────────────────────────────────
 
 export default function ActivityPage() {
   const user = useUser();
   const router = useRouter();
-  const [tab, setTab] = useState<"content" | "conversations" | "briefs">("content");
+  const [tab, setTab] = useState<"all" | "content" | "conversations" | "briefs">("all");
 
   useEffect(() => {
     if (user && !hasPermission(user.role, "manage_team")) {
@@ -770,7 +846,7 @@ export default function ActivityPage() {
         <div>
           <p className="text-[22px] font-semibold leading-tight" style={{ color: "var(--hm-text)" }}>Activity</p>
           <p className="text-[12px] mt-0.5" style={{ color: "var(--hm-text-tertiary)" }}>
-            All content generated and chat conversations across your team
+            Everything your team is doing across every module
           </p>
         </div>
       </div>
@@ -778,6 +854,11 @@ export default function ActivityPage() {
       {/* Tabs */}
       <div data-tour="act-tabs" className="flex gap-1 px-7 pt-4 pb-0 flex-shrink-0 border-b border-[var(--hm-border)]" style={{ background: "var(--hm-bg)" }}>
         {([
+          { id: "all", label: "All Activity", icon: (
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <path d="M2 8h2.5l1.5-4 3 8 1.5-4H14" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          )},
           { id: "content", label: "Generated Content", icon: (
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
               <path d="M4 12l1.5-4L12 2l2 2-6.5 6.5L4 12z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
@@ -815,6 +896,7 @@ export default function ActivityPage() {
 
       {/* Content */}
       <div data-tour="act-content" className="flex-1 overflow-y-auto p-7">
+        {tab === "all" && <AllActivityTab />}
         {tab === "content" && <ContentTab />}
         {tab === "conversations" && <ConversationsTab />}
         {tab === "briefs" && <DesignBriefsTab />}
