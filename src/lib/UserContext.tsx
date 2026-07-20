@@ -12,6 +12,8 @@ export interface AppUser {
    * custom org role) + any personal override. Computed server-side in
    * /api/auth/me so the client never has to re-derive custom-role state. */
   modulePermissions?: Record<string, string>;
+  /** True if this user has been enrolled in Coach (opt-in per user). */
+  coachEnrolled?: boolean;
 }
 
 export const UserContext = createContext<AppUser | null>(null);

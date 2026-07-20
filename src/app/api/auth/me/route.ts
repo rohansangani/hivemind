@@ -73,6 +73,10 @@ export async function GET(req: NextRequest) {
       customRolePermissions ? { [user.role]: customRolePermissions } : undefined,
     );
 
+    // Coach is opt-in per user — an enrolled user sees the module even though the
+    // role default is "none". Admins/owners always own it (coach perm "edit").
+    const coachEnrolled = !!(await db.coachEnrollment.findUnique({ where: { userId: user.id }, select: { id: true } }));
+
     return NextResponse.json({
       user: {
         id: user.id,
@@ -86,6 +90,7 @@ export async function GET(req: NextRequest) {
         organization: user.organization,
         customPermissions,
         modulePermissions,
+        coachEnrolled,
       },
     });
   } catch {

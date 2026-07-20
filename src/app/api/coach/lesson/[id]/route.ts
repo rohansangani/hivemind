@@ -5,6 +5,7 @@ import jwt from "jsonwebtoken";
 import { db } from "@/lib/db";
 import { getAnthropicKey, AIKeyNotConfiguredError } from "@/lib/aiProvider";
 import { gradeMcq, gradeShortAnswer, PASS_THRESHOLD } from "@/lib/coach";
+import { hasCoachAccess } from "@/lib/authz";
 
 function auth(req: NextRequest): { userId: string; orgId: string } | null {
   const token = req.cookies.get("hm-token")?.value;
@@ -40,6 +41,7 @@ async function loadOwnedLesson(lessonId: string, orgId: string) {
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const decoded = auth(req);
   if (!decoded) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  if (!(await hasCoachAccess(decoded.userId))) return NextResponse.json({ error: "Not enrolled in Coach" }, { status: 403 });
   const { id } = await params;
 
   const lesson = await loadOwnedLesson(id, decoded.orgId);
@@ -87,6 +89,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const decoded = auth(req);
   if (!decoded) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  if (!(await hasCoachAccess(decoded.userId))) return NextResponse.json({ error: "Not enrolled in Coach" }, { status: 403 });
   const { id } = await params;
 
   const lesson = await loadOwnedLesson(id, decoded.orgId);

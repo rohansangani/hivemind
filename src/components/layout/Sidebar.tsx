@@ -11,6 +11,7 @@ interface SidebarProps {
   userRole: string;
   customPermissions?: Record<string, string> | null;
   orgRolePerms?: Record<string, Record<string, string>>;
+  coachEnrolled?: boolean;
   onClose?: () => void;
   onStartTour?: () => void;
 }
@@ -136,7 +137,7 @@ function NavIcon({ icon, active }: { icon: string; active: boolean }) {
   }
 }
 
-export default function Sidebar({ userName, userRole, customPermissions, orgRolePerms, onClose, onStartTour }: SidebarProps) {
+export default function Sidebar({ userName, userRole, customPermissions, orgRolePerms, coachEnrolled, onClose, onStartTour }: SidebarProps) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
 
@@ -148,6 +149,8 @@ export default function Sidebar({ userName, userRole, customPermissions, orgRole
 
   // Filter nav items based on module access (view or edit)
   const visibleNavItems = MODULE_ROUTES.filter(item => {
+    // Coach is opt-in: enrolled users see it even though their role default is "none".
+    if (item.moduleId === "coach" && coachEnrolled) return true;
     const level = effectivePerms[item.moduleId] ?? "none";
     return level === "view" || level === "edit";
   });

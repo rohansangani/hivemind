@@ -25,7 +25,9 @@ interface TrackData {
   readiness: number;
   totalLessons: number;
   completedLessons: number;
+  notEnrolled?: boolean;
 }
+interface EnrollMember { id: string; name: string | null; email: string; role: string; enrolled: boolean; }
 interface Question { id: string; type: "mcq" | "short"; prompt: string; options: string[]; }
 interface Reference { id: string; name: string; contentType: string | null; fileUrl: string | null; sourceUrl: string | null; }
 interface LessonDetail {
@@ -50,7 +52,10 @@ export default function CoachPage() {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
-  const [tab, setTab] = useState<"learn" | "team">("learn");
+  const [tab, setTab] = useState<"learn" | "team" | "enroll">("learn");
+  const [enrollMembers, setEnrollMembers] = useState<EnrollMember[] | null>(null);
+  const [enrollLoading, setEnrollLoading] = useState(false);
+  const [savingUser, setSavingUser] = useState<string | null>(null);
 
   const [activeLessonId, setActiveLessonId] = useState<string | null>(null);
   const [lesson, setLesson] = useState<LessonDetail | null>(null);
@@ -73,6 +78,26 @@ export default function CoachPage() {
     setTeamLoading(true);
     fetch("/api/coach/progress").then(r => r.json()).then(d => setTeam(d.team || [])).catch(() => setTeam([])).finally(() => setTeamLoading(false));
   }, [tab, canViewTeam, team]);
+
+  useEffect(() => {
+    if (tab !== "enroll" || !canViewTeam || enrollMembers) return;
+    setEnrollLoading(true);
+    fetch("/api/coach/enroll").then(r => r.json()).then(d => setEnrollMembers(d.members || [])).catch(() => setEnrollMembers([])).finally(() => setEnrollLoading(false));
+  }, [tab, canViewTeam, enrollMembers]);
+
+  const toggleEnroll = async (userId: string, enrolled: boolean) => {
+    setSavingUser(userId);
+    // optimistic
+    setEnrollMembers(prev => prev ? prev.map(m => m.id === userId ? { ...m, enrolled } : m) : prev);
+    try {
+      const res = await fetch("/api/coach/enroll", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId, enrolled }) });
+      if (!res.ok) setEnrollMembers(prev => prev ? prev.map(m => m.id === userId ? { ...m, enrolled: !enrolled } : m) : prev);
+    } catch {
+      setEnrollMembers(prev => prev ? prev.map(m => m.id === userId ? { ...m, enrolled: !enrolled } : m) : prev);
+    } finally {
+      setSavingUser(null);
+    }
+  };
 
   const openLesson = async (id: string) => {
     setActiveLessonId(id);
@@ -263,13 +288,13 @@ export default function CoachPage() {
 
         {genError && <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-[12px] text-red-600">{genError}</div>}
 
-        {/* Tabs */}
-        {canViewTeam && data?.track && (
+        {/* Tabs (admins get Team readiness + Enrollment) */}
+        {canViewTeam && (
           <div className="flex gap-1 mb-6 border-b border-[var(--hm-border)]">
-            {(["learn", "team"] as const).map(t => (
+            {(["learn", "team", "enroll"] as const).map(t => (
               <button key={t} onClick={() => setTab(t)}
                 className={"px-4 py-2.5 text-[13px] font-medium border-b-2 transition-colors " + (tab === t ? "border-[#4361ee] text-[#4361ee]" : "border-transparent text-[var(--hm-text-tertiary)] hover:text-[var(--hm-text)]")}>
-                {t === "learn" ? "My learning" : "Team readiness"}
+                {t === "learn" ? "My learning" : t === "team" ? "Team readiness" : "Enrollment"}
               </button>
             ))}
           </div>
@@ -277,16 +302,30 @@ export default function CoachPage() {
 
         {loading ? (
           <div className="flex justify-center py-20"><div className="w-6 h-6 border-2 border-[#4361ee]/30 border-t-[#4361ee] rounded-full animate-spin" /></div>
-        ) : !data?.track ? (
-          <div className="text-center py-16">
-            <div className="w-14 h-14 rounded-full bg-gradient-to-br from-[#4361ee] to-[#7c3aed] flex items-center justify-center mx-auto mb-4">
-              <svg width="24" height="24" viewBox="0 0 16 16" fill="none"><path d="M8 2l6 3-6 3-6-3 6-3z" stroke="#fff" strokeWidth="1.2" strokeLinejoin="round" /><path d="M4 6.5V10c0 1 1.8 2 4 2s4-1 4-2V6.5" stroke="#fff" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        ) : tab === "enroll" && canViewTeam ? (
+          /* Enrollment (admins) */
+          enrollLoading ? (
+            <div className="flex justify-center py-16"><div className="w-6 h-6 border-2 border-[#4361ee]/30 border-t-[#4361ee] rounded-full animate-spin" /></div>
+          ) : (
+            <div>
+              <p className="text-[12px] text-[var(--hm-text-tertiary)] mb-3">Choose who gets access to Coach. Only enrolled people (and admins) see the learning experience.</p>
+              <div className="bg-white rounded-xl border border-[var(--hm-border)] overflow-hidden">
+                {(enrollMembers || []).map((m, i) => (
+                  <div key={m.id} className={"flex items-center gap-4 px-4 py-3 " + (i > 0 ? "border-t border-[var(--hm-border)]" : "")}>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] font-medium text-[var(--hm-text)] truncate">{m.name || m.email}</p>
+                      <p className="text-[11px] text-[var(--hm-text-tertiary)] capitalize">{m.role} · {m.email}</p>
+                    </div>
+                    <button onClick={() => toggleEnroll(m.id, !m.enrolled)} disabled={savingUser === m.id}
+                      className={"h-[30px] px-3.5 rounded-lg text-[12px] font-medium transition-all disabled:opacity-50 " + (m.enrolled ? "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100" : "bg-[#4361ee] text-white hover:opacity-90")}>
+                      {savingUser === m.id ? "…" : m.enrolled ? "Enrolled ✓" : "Enroll"}
+                    </button>
+                  </div>
+                ))}
+                {(enrollMembers || []).length === 0 && <p className="text-center text-[12px] text-[var(--hm-text-tertiary)] py-8">No team members yet.</p>}
+              </div>
             </div>
-            <p className="text-[16px] font-semibold text-[var(--hm-text)] mb-1">No curriculum yet</p>
-            <p className="text-[13px] text-[var(--hm-text-tertiary)] max-w-[380px] mx-auto leading-relaxed">
-              {canGenerate ? "Generate a curriculum from your knowledge base — products, personas, markets, and competitors become guided lessons with knowledge checks." : "Your admin hasn't set up the onboarding curriculum yet. Check back soon."}
-            </p>
-          </div>
+          )
         ) : tab === "team" && canViewTeam ? (
           /* Team readiness */
           teamLoading ? (
@@ -309,6 +348,21 @@ export default function CoachPage() {
               {(team || []).length === 0 && <p className="text-center text-[12px] text-[var(--hm-text-tertiary)] py-8">No team members yet.</p>}
             </div>
           )
+        ) : data?.notEnrolled ? (
+          <div className="text-center py-16">
+            <p className="text-[16px] font-semibold text-[var(--hm-text)] mb-1">You&apos;re not enrolled in Coach</p>
+            <p className="text-[13px] text-[var(--hm-text-tertiary)] max-w-[380px] mx-auto leading-relaxed">Ask an admin to enrol you and your onboarding curriculum will appear here.</p>
+          </div>
+        ) : !data?.track ? (
+          <div className="text-center py-16">
+            <div className="w-14 h-14 rounded-full bg-gradient-to-br from-[#4361ee] to-[#7c3aed] flex items-center justify-center mx-auto mb-4">
+              <svg width="24" height="24" viewBox="0 0 16 16" fill="none"><path d="M8 2l6 3-6 3-6-3 6-3z" stroke="#fff" strokeWidth="1.2" strokeLinejoin="round" /><path d="M4 6.5V10c0 1 1.8 2 4 2s4-1 4-2V6.5" stroke="#fff" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            </div>
+            <p className="text-[16px] font-semibold text-[var(--hm-text)] mb-1">No curriculum yet</p>
+            <p className="text-[13px] text-[var(--hm-text-tertiary)] max-w-[380px] mx-auto leading-relaxed">
+              {canGenerate ? "Generate a curriculum from your knowledge base — products, personas, markets, and competitors become guided lessons with knowledge checks." : "Your admin hasn't set up the onboarding curriculum yet. Check back soon."}
+            </p>
+          </div>
         ) : (
           /* My learning */
           <>

@@ -26,3 +26,15 @@ export async function currentUserHasPermission(userId: string, permission: Permi
   if (!role) return false;
   return hasPermission(role, permission);
 }
+
+/** Coach ownership (generate / enroll / team dashboard) — owner & admin only. */
+export async function canManageCoach(userId: string): Promise<boolean> {
+  return currentUserHasPermission(userId, "manage_team");
+}
+
+/** Coach learning access — an enrolled user, or an admin/owner who owns the module. */
+export async function hasCoachAccess(userId: string): Promise<boolean> {
+  const enrolled = await db.coachEnrollment.findUnique({ where: { userId }, select: { id: true } });
+  if (enrolled) return true;
+  return canManageCoach(userId);
+}

@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import jwt from "jsonwebtoken";
 import { db } from "@/lib/db";
 import { getAnthropicKey, AIKeyNotConfiguredError } from "@/lib/aiProvider";
-import { currentUserHasPermission } from "@/lib/authz";
+import { currentUserHasPermission, hasCoachAccess } from "@/lib/authz";
 import { generateCurriculum } from "@/lib/coach";
 
 function auth(req: NextRequest): { userId: string; orgId: string } | null {
@@ -21,6 +21,11 @@ function auth(req: NextRequest): { userId: string; orgId: string } | null {
 export async function GET(req: NextRequest) {
   const decoded = auth(req);
   if (!decoded) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+
+  // Opt-in: only enrolled users (or admins who own the module) get the curriculum.
+  if (!(await hasCoachAccess(decoded.userId))) {
+    return NextResponse.json({ track: null, modules: [], readiness: 0, notEnrolled: true });
+  }
 
   const track = await db.coachTrack.findFirst({
     where: { organizationId: decoded.orgId, isActive: true },

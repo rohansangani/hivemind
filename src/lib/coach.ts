@@ -10,6 +10,7 @@
 
 import { db } from "@/lib/db";
 import { extractAnthropicUsage, logTokenUsage } from "@/lib/tokenTracking";
+import { extractSourceText } from "@/lib/extractText";
 
 // ─────────────────────────────────────────────────────────
 //  Domains — the fixed module structure of the GTM track
@@ -101,15 +102,19 @@ function parseJsonBlock<T>(text: string): T | null {
 // connect the entity to who it serves / how it wins, and surface the non-obvious.
 const LESSON_SHAPE = `Return ONLY valid JSON (no markdown fences) with this exact shape:
 {
-  "whyItMatters": "2-3 sentences on why a new joiner must deeply understand this and what it unlocks in their job",
-  "keyPoints": "A substantial markdown lesson (aim 300-500 words) organised under these ## headings, each with real depth — multiple sentences or detailed bullets, not one-liners:\\n## Overview — what it is and where it fits in the bigger picture\\n## How it works — the mechanism, components, or capabilities explained so a newcomer actually understands them (the 'how' and 'why', not just the 'what')\\n## Who it's for & when it applies — the personas, markets, and use cases it connects to, drawn from the related-entity facts\\n## Proof & positioning — specific stats/proof points and how we differentiate from alternatives\\n## What people get wrong — the non-obvious points, nuances, or common misconceptions a new joiner should internalise\\nGo DEEP, not broad. Explain reasoning and connections between facts. Use ONLY the provided facts — never invent numbers, names, or claims, but DO synthesise and explain the relationships between the facts you're given.",
+  "whyItMatters": "2-3 sentences on why this topic matters and what understanding it unlocks",
+  "keyPoints": "A substantial markdown lesson (aim 350-600 words) organised under these ## headings, each with real depth — multiple sentences or detailed bullets, not one-liners:\\n## Overview — what it is and where it fits in the bigger picture\\n## How it works — the mechanism, components, or capabilities explained so the reader actually understands them (the 'how' and 'why', not just the 'what')\\n## Who it's for & when it applies — the personas, markets, and use cases it connects to, drawn from the related-entity facts\\n## Proof & positioning — specific stats/proof points and how we differentiate from alternatives\\n## What to remember — the non-obvious points, nuances, or common misconceptions worth internalising\\nGo DEEP, not broad. Explain reasoning and connections between facts. Use ONLY the provided facts — never invent numbers, names, or claims, but DO synthesise and explain the relationships between the facts you're given.",
   "questions": [
-    { "type": "mcq", "prompt": "A question testing understanding of HOW or WHY, not just recall", "options": ["A","B","C","D"], "correctIndex": 0, "explanation": "why this is correct and why the others aren't" },
-    { "type": "mcq", "prompt": "A scenario/application question", "options": ["A","B","C","D"], "correctIndex": 2, "explanation": "..." },
-    { "type": "short", "prompt": "An open question requiring the learner to explain, connect, or apply — e.g. 'when would you position X over Y, and why?'", "expectedAnswer": "The grounded, detailed correct answer a grader compares against", "explanation": "what a strong answer includes" }
+    { "type": "mcq", "prompt": "A short, clear question", "options": ["A","B","C","D"], "correctIndex": 0, "explanation": "why this is correct" }
   ]
 }
-Generate exactly 3 questions: 2 mcq + 1 short. Questions must probe depth (application, reasoning, trade-offs) — not surface recall. MCQ options must be plausible and close; exactly one correct. Base everything strictly on the provided facts.`;
+QUESTION RULES:
+- ALL questions are multiple-choice ("mcq") with exactly 4 options and exactly one correct answer. Never use any other type.
+- Keep each question SHORT and plain — one sentence, no long scenarios or preambles.
+- Generate a number of questions scaled to how much this lesson covers: a thin lesson → about 5 questions; a rich lesson with lots of facts → up to 10. Use your judgement between 5 and 10.
+- Spread questions across the lesson's sections so the whole lesson is tested, not just one part.
+- Options must be plausible and distinct; exactly one is correct. Base everything strictly on the provided facts.
+Write in a clear, direct teaching voice. Do NOT repeatedly refer to "new joiners", "new employees", "newcomers", or "you as a new hire" — teach the material directly.`;
 
 async function generateLesson(
   apiKey: string,
@@ -121,7 +126,7 @@ async function generateLesson(
   entityType: GeneratedLesson["entityType"],
   entityName: string | undefined,
 ): Promise<GeneratedLesson | null> {
-  const prompt = `You are an expert enablement lead writing an IN-DEPTH onboarding lesson for a new employee at ${orgName}. New joiners have complained lessons are too superficial — go one to two levels deeper: explain how things actually work, why they matter, and how the pieces connect. Assume an intelligent newcomer who knows nothing about ${orgName} specifically.
+  const prompt = `You are an expert enablement lead writing an IN-DEPTH onboarding lesson about ${orgName}. Earlier lessons were too superficial — go one to two levels deeper: explain how things actually work, why they matter, and how the pieces connect. Write for an intelligent reader who knows nothing about ${orgName} specifically, in a direct teaching voice.
 
 LESSON TOPIC: ${title}
 
@@ -135,15 +140,16 @@ ${LESSON_SHAPE}`;
     if (usage) logTokenUsage({ feature: "coach", inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, organizationId: orgId, userId });
     const parsed = parseJsonBlock<{ whyItMatters: string; keyPoints: string; questions: GeneratedQuestion[] }>(text);
     if (!parsed || !parsed.keyPoints || !Array.isArray(parsed.questions)) return null;
-    // Sanitise questions
-    const questions = parsed.questions.filter(q => q.prompt && (q.type === "mcq" || q.type === "short")).map(q => ({
-      type: q.type,
-      prompt: q.prompt,
-      options: q.type === "mcq" ? (Array.isArray(q.options) ? q.options.slice(0, 6) : []) : undefined,
-      correctIndex: q.type === "mcq" ? (typeof q.correctIndex === "number" ? q.correctIndex : 0) : undefined,
-      expectedAnswer: q.type === "short" ? (q.expectedAnswer || "") : undefined,
-      explanation: q.explanation || undefined,
-    }));
+    // Sanitise — all questions are MCQ with 4 valid options and one correct index.
+    const questions = parsed.questions
+      .filter(q => q.prompt && q.type === "mcq" && Array.isArray(q.options) && q.options.length >= 2)
+      .slice(0, 10)
+      .map(q => {
+        const options = (q.options ?? []).slice(0, 6);
+        const ci = typeof q.correctIndex === "number" && q.correctIndex >= 0 && q.correctIndex < options.length ? q.correctIndex : 0;
+        return { type: "mcq" as const, prompt: q.prompt, options, correctIndex: ci, expectedAnswer: undefined, explanation: q.explanation || undefined };
+      });
+    if (questions.length === 0) return null;
     return {
       title,
       whyItMatters: parsed.whyItMatters || "",
@@ -175,7 +181,7 @@ export async function generateCurriculum(orgId: string, apiKey: string, userId?:
     db.competitor.findMany({ where: { organizationId: orgId }, take: MAX_LESSONS_PER_DOMAIN, include: { products: { include: { product: { select: { name: true } } } } } }),
     db.knowledgeEntry.findMany({ where: { organizationId: orgId, category: "proof_points" }, select: { title: true, content: true }, take: 120 }),
     db.knowledgeEntry.findMany({ where: { organizationId: orgId, category: "messaging_patterns" }, select: { title: true, content: true }, take: 40 }),
-    db.contentAsset.findMany({ where: { organizationId: orgId, aiSummary: { not: null } }, select: { name: true, aiSummary: true, contentType: true, productTags: true, personaTags: true, competitorTags: true, marketTags: true }, take: 60 }),
+    db.contentAsset.findMany({ where: { organizationId: orgId }, select: { name: true, aiSummary: true, contentType: true, fileUrl: true, fileType: true, productTags: true, personaTags: true, competitorTags: true, marketTags: true }, take: 80 }),
   ]);
 
   const orgName = org?.name || "the company";
@@ -275,6 +281,33 @@ export async function generateCurriculum(orgId: string, apiKey: string, userId?:
         assetsFor(c.name, "competitorTags").length && `Reference material insights:\n${assetsFor(c.name, "competitorTags").join("\n")}`,
       ].filter(Boolean).join("\n"),
     });
+  }
+
+  // ── Tier A — enrich fact blocks with VERBATIM source text from the original
+  // uploaded files tagged to each entity. The KB only keeps short summaries, so
+  // real depth comes from re-reading the source (case studies, decks, docs).
+  // Bounded: ≤2 files per lesson and a global extraction budget to keep the run
+  // within the serverless time limit; processed sequentially to avoid memory spikes.
+  const TAG_BY_ENTITY: Record<string, "productTags" | "personaTags" | "competitorTags" | "marketTags"> = {
+    product: "productTags", persona: "personaTags", competitor: "competitorTags", market: "marketTags",
+  };
+  let extractBudget = 24;
+  for (const s of specs) {
+    if (extractBudget <= 0) break;
+    if (!s.entityType || !s.entityName) continue;
+    const tagKey = TAG_BY_ENTITY[s.entityType];
+    if (!tagKey) continue;
+    const files = assets.filter(a => a.fileUrl && (a[tagKey] as string[]).some(t => lc(t) === lc(s.entityName!))).slice(0, 2);
+    const parts: string[] = [];
+    for (const a of files) {
+      if (extractBudget <= 0) break;
+      extractBudget--;
+      const txt = await extractSourceText(a.fileUrl!, a.fileType, 4000);
+      if (txt) parts.push(`--- Excerpt from "${a.name}" ---\n${txt}`);
+    }
+    if (parts.length) {
+      s.factBlock += `\n\nSOURCE MATERIAL (verbatim excerpts from uploaded documents — the most detailed facts available; prioritise and explain these):\n${parts.join("\n\n").slice(0, 7000)}`;
+    }
   }
 
   // Generate all lessons concurrently (bounded by spec count via the caps above).

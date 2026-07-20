@@ -54,6 +54,7 @@ model Organization {
   usageSignals       UsageSignal[]
   outputFingerprints OutputFingerprint[]
   coachTracks        CoachTrack[]
+  coachEnrollments   CoachEnrollment[]
 }
 
 model User {
@@ -87,6 +88,7 @@ model User {
   emailSequenceJobs EmailSequenceJob[]
   linkedinCheckJobs LinkedinCheckJob[]
   coachProgress     CoachProgress[]
+  coachEnrollment   CoachEnrollment?
 }
 
 // Tracks who exported what from Radar (Accounts/Contacts CSV download), and when — the export
@@ -812,4 +814,19 @@ model CoachProgress {
 
   @@unique([userId, lessonId])
   @@index([organizationId, userId])
+}
+
+// Coach is opt-in per user (not all users). An admin enrolls specific people;
+// only enrolled users (plus admins/owners, who own the module) see the learning
+// experience. One enrollment per user.
+model CoachEnrollment {
+  id             String       @id @default(cuid())
+  userId         String       @unique
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  assignedById   String?
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId])
 }
