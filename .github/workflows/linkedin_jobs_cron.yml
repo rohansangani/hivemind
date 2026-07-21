@@ -1,0 +1,17 @@
+name: Hivemind — Continue LinkedIn Check Jobs
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  continue:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Continue any running Check LinkedIn jobs
+        run: |
+          curl -sf -X POST https://hivemind.clickpost.io/api/radar/linkedin-jobs \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.LINKEDIN_JOB_CRON_SECRET }}" \
+            -d '{"action":"continue_all"}'
