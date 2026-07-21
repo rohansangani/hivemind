@@ -1,0 +1,31 @@
+name: Hivemind — Check Bounces + Retest Jobs + Send Continuation (all jobs)
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger bounce/valid re-check
+        run: |
+          curl -sf -X POST https://hivemind.clickpost.io/api/radar/validate \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.VALIDATE_CRON_SECRET }}" \
+            -d '{"action":"check_all"}'
+
+      - name: Continue any running Debounce retest jobs
+        run: |
+          curl -sf -X POST https://hivemind.clickpost.io/api/radar/validate \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.VALIDATE_CRON_SECRET }}" \
+            -d '{"action":"continue_retest_jobs"}'
+
+      - name: Finish adding any leads a send() call didn't get to
+        run: |
+          curl -sf -X POST https://hivemind.clickpost.io/api/radar/validate \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.VALIDATE_CRON_SECRET }}" \
+            -d '{"action":"continue_all_sends"}'
