@@ -13,7 +13,15 @@ import { db } from "@/lib/db";
  * cron (validate_cron.yml) hits this route directly with a shared secret, same pattern as every
  * other cron-adjacent action ported in this migration.
  */
-export const maxDuration = 60;
+// Raised from 60 — that was radar-clickpost's original Hobby-plan ceiling, inherited unchanged
+// during migration. AI-scored generate() chunks can hit several never-before-seen domains at
+// once, each needing a live Claude/Tavily web-search call (up to 22s, 5 concurrent) before the
+// per-person scoring wave even starts — confirmed live: a 500-row AI-scored generate hit exactly
+// this, timing out with Vercel's non-JSON timeout page (surfaced to the frontend as a generic
+// "Request failed" since there's no JSON .error to read). hivemind's Pro plan supports fluid
+// compute up to 800s; 280 leaves real margin, same ceiling already used by the other job-runner
+// routes in this migration.
+export const maxDuration = 280;
 
 // Shared secret for the three cron-driven actions below — same pattern as
 // sync-exclusions/email-sequences' CRON_SECRET, matched by a GitHub Actions repo secret.
