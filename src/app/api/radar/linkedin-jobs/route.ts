@@ -21,6 +21,15 @@ const START_BUDGET_MS = 250000;
 const CONTINUE_BUDGET_MS = 260000;
 const MAX_CONSECUTIVE_FAILS = 5;
 
+// Cron-driven continuation (see the "continue_all" action below) — same shared-literal-secret
+// pattern as every other cron-adjacent action ported this migration (sync-exclusions,
+// email-sequences, validate.js), matched by a GitHub Actions repo secret of the same value. Lets a
+// LinkedIn-check job survive closing the tab entirely, not just reopening it later.
+const CRON_SECRET = "d29c6e14b8a37f52091d6c4a8b3e7f0159c2d8a5b1e4f7093c6a9d2e5b8f1c4a7";
+// Shared across every running job in one cron tick, leaving real margin under the 280s ceiling for
+// the response itself.
+const CRON_TOTAL_BUDGET_MS = 250000;
+
 interface JobRow {
   id: string;
   organizationId: string;
@@ -96,15 +105,40 @@ async function continueJob(job: JobRow, budgetMs: number, actorEmail: string | n
 }
 
 export async function POST(req: NextRequest) {
-  const access = await requireRadarAccess(req, "edit");
-  if (access instanceof NextResponse) return access;
-  const { userId, orgId } = access;
-
   let body;
   try { body = await req.json(); } catch {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
   const { action } = body as { action?: string };
+
+  // Cron-driven sweep — no hivemind user session in this context, so it's gated by the shared
+  // secret instead of requireRadarAccess, and runs BEFORE the auth check below (it has no orgId).
+  if (action === "continue_all") {
+    const auth = req.headers.get("authorization");
+    if (auth !== `Bearer ${CRON_SECRET}`) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    try {
+      const jobs = await db.linkedinCheckJob.findMany({ where: { status: "running" } });
+      const startedAt = Date.now();
+      const results: { jobId: string; skipped?: string; done?: boolean }[] = [];
+      for (const job of jobs) {
+        const elapsed = Date.now() - startedAt;
+        if (elapsed > CRON_TOTAL_BUDGET_MS) { results.push({ jobId: job.id, skipped: "time budget — will run next tick" }); continue; }
+        const actorEmail = await getActorEmail(job.userId);
+        await continueJob(job as unknown as JobRow, CRON_TOTAL_BUDGET_MS - elapsed, actorEmail);
+        const fresh = await db.linkedinCheckJob.findUnique({ where: { id: job.id }, select: { status: true } });
+        results.push({ jobId: job.id, done: fresh?.status !== "running" });
+      }
+      return NextResponse.json({ continued: results.length, results });
+    } catch (error) {
+      console.error("LinkedIn check jobs continue_all error:", error);
+      return NextResponse.json({ error: "Something went wrong" }, { status: 500 });
+    }
+  }
+
+  const access = await requireRadarAccess(req, "edit");
+  if (access instanceof NextResponse) return access;
+  const { userId, orgId } = access;
 
   try {
     if (action === "start") {
