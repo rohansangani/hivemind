@@ -277,8 +277,10 @@ async function continueRetestJob(job: RetestJobRow, startedAt: number, budgetMs:
   return { offset, processed, validated, skippedFresh, gaveUp, retrying, done };
 }
 
-async function handleAction(req: NextRequest, userEmail: string | null): Promise<{ status: number; body: Record<string, unknown> }> {
-  const reqBody = await req.json().catch(() => ({}));
+async function handleAction(req: NextRequest, userEmail: string | null, overrideAction?: string): Promise<{ status: number; body: Record<string, unknown> }> {
+  // overrideAction: used by the GET cron path below, which has no request body to parse (Vercel's
+  // native Cron calls via plain GET) — the three cron-only actions take no other params anyway.
+  const reqBody = overrideAction ? { action: overrideAction } : await req.json().catch(() => ({}));
   const { action } = reqBody as { action?: string };
   const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
   const TAVILY_KEY = process.env.RADAR_TAVILY_API_KEY || process.env.TAVILY_API_KEY;
@@ -677,7 +679,7 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
   // ── CONTINUE ALL SENDS (cron-driven) ────────────────────────────────────────
   if (action === "continue_all_sends") {
     const auth = req.headers.get("authorization");
-    if (auth !== `Bearer ${CRON_SECRET}`) return { status: 401, body: { error: "Unauthorized" } };
+    if (!overrideAction && auth !== `Bearer ${CRON_SECRET}`) return { status: 401, body: { error: "Unauthorized" } };
     const jobRows = await radarSql<{ id: number; campaign_id: string }>(`
       SELECT DISTINCT j.id, j.campaign_id FROM email_validation_jobs j
       JOIN email_validation_candidates c ON c.job_id = j.id
@@ -775,7 +777,7 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
 
   if (action === "continue_retest_jobs") {
     const auth = req.headers.get("authorization");
-    if (auth !== `Bearer ${CRON_SECRET}`) return { status: 401, body: { error: "Unauthorized" } };
+    if (!overrideAction && auth !== `Bearer ${CRON_SECRET}`) return { status: 401, body: { error: "Unauthorized" } };
     await ensureRetestJobsTable();
     const rows = await radarSql<RetestJobRow & { fail_count?: number }>(`SELECT * FROM retest_jobs WHERE status = 'running' ORDER BY id ASC`);
     const startedAt = Date.now();
@@ -798,7 +800,7 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
   // ── CHECK ALL (cron-driven) ─────────────────────────────────────────────────
   if (action === "check_all") {
     const auth = req.headers.get("authorization");
-    if (auth !== `Bearer ${CRON_SECRET}`) return { status: 401, body: { error: "Unauthorized" } };
+    if (!overrideAction && auth !== `Bearer ${CRON_SECRET}`) return { status: 401, body: { error: "Unauthorized" } };
     await radarSql(`ALTER TABLE email_validation_jobs ADD COLUMN IF NOT EXISTS resolved_at timestamptz`);
 
     const jobRows = await radarSql<{ job_id: number }>(`
@@ -1133,6 +1135,22 @@ const LOGGABLE_VALIDATE_ACTIONS: Record<string, (body: Record<string, unknown>, 
 // (CRON_SECRET-gated inside handleAction), matching the same allowance radar-clickpost's own GET
 // handler used to grant before this migration.
 const CRON_ONLY_ACTIONS = new Set(["check_all", "continue_retest_jobs", "continue_all_sends"]);
+
+// Vercel's native Cron always calls via a plain GET with `Authorization: Bearer $CRON_SECRET`
+// auto-attached (no custom body possible) — the reliable, precisely-timed alternative to the
+// GitHub Actions workflow (confirmed unreliable elsewhere in this codebase: multi-hour scheduling
+// gaps on a nominal 15-min schedule). Runs alongside the existing GH Actions cron rather than
+// replacing it. Which of the three cron actions to run comes from a `?cronAction=` query param,
+// since a single GET path can't carry a JSON body the way the POST+action convention does — three
+// separate vercel.json cron entries hit this same path with different query values.
+export async function GET(req: NextRequest) {
+  const auth = req.headers.get("authorization");
+  if (auth !== `Bearer ${process.env.CRON_SECRET}`) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const cronAction = req.nextUrl.searchParams.get("cronAction") || "";
+  if (!CRON_ONLY_ACTIONS.has(cronAction)) return NextResponse.json({ error: "Unknown or missing cronAction" }, { status: 400 });
+  const { status, body: resBody } = await handleAction(req, null, cronAction);
+  return NextResponse.json(resBody, { status });
+}
 
 export async function POST(req: NextRequest) {
   let bodyForDispatch: { action?: string } = {};

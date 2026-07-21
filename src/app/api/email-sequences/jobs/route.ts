@@ -107,6 +107,34 @@ async function continueJob(job: JobRow, budgetMs: number): Promise<void> {
   }
 }
 
+/** Continues every job still marked "running", across all organizations. Shared by both
+ * cron-trigger paths below (GitHub Actions' POST+literal-secret, and Vercel's native GET
+ * cron+CRON_SECRET env var — see the GET handler's comment for why both exist). */
+async function continueAllJobs() {
+  const startedAt = Date.now();
+  const jobs = await db.emailSequenceJob.findMany({ where: { status: "running" }, orderBy: { updatedAt: "asc" } });
+  const results: Array<{ jobId: string; processed?: number; skipped?: string }> = [];
+  for (const job of jobs) {
+    const remaining = CONTINUE_BUDGET_MS - (Date.now() - startedAt);
+    if (remaining < 5000) { results.push({ jobId: job.id, skipped: "time budget — next tick" }); continue; }
+    await continueJob(job as unknown as JobRow, remaining);
+    const fresh = await db.emailSequenceJob.findUnique({ where: { id: job.id }, select: { processed: true } });
+    results.push({ jobId: job.id, processed: fresh?.processed });
+  }
+  return { continued: results.length, results };
+}
+
+// Vercel's native Cron always calls via a plain GET with `Authorization: Bearer $CRON_SECRET`
+// auto-attached (no custom body/method possible) — this is the reliable, precisely-timed
+// alternative to the GitHub Actions workflow above (confirmed unreliable elsewhere in this
+// codebase: multi-hour scheduling gaps on a nominal 15-min schedule). Runs alongside the existing
+// GH Actions cron rather than replacing it, as a second independent trigger path.
+export async function GET(req: NextRequest) {
+  const auth = req.headers.get("authorization");
+  if (auth !== `Bearer ${process.env.CRON_SECRET}`) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  return NextResponse.json(await continueAllJobs());
+}
+
 export async function POST(req: NextRequest) {
   let body;
   try { body = await req.json(); } catch {
@@ -118,18 +146,7 @@ export async function POST(req: NextRequest) {
   if (action === "continue") {
     const auth = req.headers.get("authorization");
     if (auth !== `Bearer ${CRON_SECRET}`) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-    const startedAt = Date.now();
-    const jobs = await db.emailSequenceJob.findMany({ where: { status: "running" }, orderBy: { updatedAt: "asc" } });
-    const results: Array<{ jobId: string; processed?: number; skipped?: string }> = [];
-    for (const job of jobs) {
-      const remaining = CONTINUE_BUDGET_MS - (Date.now() - startedAt);
-      if (remaining < 5000) { results.push({ jobId: job.id, skipped: "time budget — next tick" }); continue; }
-      await continueJob(job as unknown as JobRow, remaining);
-      const fresh = await db.emailSequenceJob.findUnique({ where: { id: job.id }, select: { processed: true } });
-      results.push({ jobId: job.id, processed: fresh?.processed });
-    }
-    return NextResponse.json({ continued: results.length, results });
+    return NextResponse.json(await continueAllJobs());
   }
 
   // Everything below requires a real user session.
