@@ -55,6 +55,7 @@ model Organization {
   outputFingerprints OutputFingerprint[]
   coachTracks        CoachTrack[]
   coachEnrollments   CoachEnrollment[]
+  hubspotSyncJobs    HubspotSyncJob[]
 }
 
 model User {
@@ -185,6 +186,27 @@ model LinkedinCheckJob {
 // TARGET company, not tied to which org is running Email Sequences or which specific prospect
 // title/name is used — so this cache is global and keyed by the researched company/domain only,
 // reused across every org, batch, and future run for that same company.
+// Resumable HubSpot CRM sync. A large contact book (100k+) can't be paged and
+// stored within one serverless request, so this runs as a checkpointed background
+// job: each tick pages one CRM object for a time budget, persists rows, and saves
+// its cursor + accumulated stats in `state`. A cron tick (and the user's Sync-now)
+// resume it wherever it left off. Mirrors EmailSequenceJob/LinkedinCheckJob.
+model HubspotSyncJob {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  status         String       @default("running") // running | done | error | cancelled
+  phase          String       @default("contacts") // contacts | companies | deals | notes | finalize
+  state          Json         @default("{}") // cursors, per-object counts/totals, accumulated stat maps
+  error          String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([status])
+  @@index([organizationId, createdAt])
+}
+
 model WebsiteInsightCache {
   id        String   @id @default(cuid())
   key       String   @unique // "domain:acme.com" or "company:acme inc" — see websiteInsights.ts

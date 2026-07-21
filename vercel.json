@@ -1,6 +1,7 @@
 {
   "crons": [
     { "path": "/api/email-sequences/jobs", "schedule": "*/5 * * * *" },
+    { "path": "/api/integrations/hubspot/sync-jobs", "schedule": "*/5 * * * *" },
     { "path": "/api/radar/linkedin-jobs", "schedule": "*/5 * * * *" },
     { "path": "/api/radar/sync-exclusions", "schedule": "0 */6 * * *" },
     { "path": "/api/radar/validate?cronAction=check_all", "schedule": "*/15 * * * *" },

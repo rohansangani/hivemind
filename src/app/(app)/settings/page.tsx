@@ -291,33 +291,58 @@ export default function SettingsPage() {
     }
   };
 
+  // Resumable background sync: start the job, then drive it forward tick-by-tick
+  // (each "advance" runs a real chunk server-side and returns live progress). A
+  // Vercel cron also advances it, so it finishes even if the tab is closed.
   const hsSync = async () => {
     setHsSyncing(true);
     setHsMessage("");
+    type Prog = { count: number; total: number; done: boolean };
+    type JobProg = { status: string; phase: string; contacts: Prog; companies: Prog; deals: Prog };
+    const phaseLabel: Record<string, string> = { contacts: "Contacts", companies: "Companies", deals: "Deals", notes: "Notes", finalize: "Finalising" };
+    const render = (j: JobProg) => {
+      const active = (j.contacts && !j.contacts.done && j.phase === "contacts") ? j.contacts
+        : j.phase === "companies" ? j.companies : j.phase === "deals" ? j.deals : null;
+      const detail = active && active.total ? ` — ${active.count.toLocaleString()} of ${active.total.toLocaleString()}` : "";
+      setHsMessage(`Syncing ${phaseLabel[j.phase] || j.phase}${detail}…`);
+    };
     try {
-      const res = await fetch("/api/integrations/hubspot/sync", { method: "POST" });
-      const data = await res.json();
-      if (data.success) {
-        const s = data.summary;
-        const fmt = (obj: { totalCount?: number; hubspotTotal?: number } | undefined, label: string) => {
-          const n = (obj?.totalCount ?? 0).toLocaleString();
-          const t = obj?.hubspotTotal ? ` of ${obj.hubspotTotal.toLocaleString()}` : "";
-          return `${n}${t} ${label}`;
-        };
-        setHsMessage(`Sync complete — ${fmt(s.contacts, "contacts")}, ${fmt(s.companies, "companies")}, ${fmt(s.deals, "deals")}.`);
-        setHsConnected(true);
-        // Refresh status
-        const statusRes = await fetch("/api/integrations/hubspot/status");
-        const statusData = await statusRes.json();
-        setHsIntegration(statusData.integration);
-      } else {
-        setHsMessage("Sync failed: " + (data.error || "Unknown error"));
+      const call = async (action: string): Promise<JobProg | null> => {
+        const res = await fetch("/api/integrations/hubspot/sync-jobs", {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }),
+        });
+        const d = await res.json();
+        if (!res.ok) throw new Error(d.error || "Sync failed");
+        return d.job as JobProg | null;
+      };
+
+      let job = await call("start");
+      if (job) render(job);
+      // Drive to completion (cron is the backstop if the user leaves). Cap iterations
+      // so a stuck job can't loop forever in the browser.
+      let guard = 0;
+      while (job && job.status === "running" && guard++ < 30) {
+        job = await call("advance");
+        if (job) render(job);
       }
-    } catch {
-      setHsMessage("Sync failed — network error.");
+
+      if (job && job.status === "done") {
+        const fmt = (p: Prog, label: string) => `${(p?.count ?? 0).toLocaleString()}${p?.total ? ` of ${p.total.toLocaleString()}` : ""} ${label}`;
+        setHsMessage(`Sync complete — ${fmt(job.contacts, "contacts")}, ${fmt(job.companies, "companies")}, ${fmt(job.deals, "deals")}.`);
+        setHsConnected(true);
+      } else if (job && job.status === "error") {
+        setHsMessage("Sync failed — please try again.");
+      } else if (job && job.status === "running") {
+        setHsMessage("Sync is still running in the background — it'll finish shortly. Refresh to check.");
+      }
+      const statusRes = await fetch("/api/integrations/hubspot/status");
+      const statusData = await statusRes.json();
+      setHsIntegration(statusData.integration);
+    } catch (e) {
+      setHsMessage("Sync failed: " + (e instanceof Error ? e.message : "network error"));
     } finally {
       setHsSyncing(false);
-      setTimeout(() => setHsMessage(""), 8000);
+      setTimeout(() => setHsMessage(""), 10000);
     }
   };
 
