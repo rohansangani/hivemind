@@ -75,13 +75,15 @@ export async function rpc<T = Record<string, unknown>>(fn: string, args: Record<
 export async function insertRows<T = Record<string, unknown>>(
   table: string,
   rows: Record<string, unknown>[],
-  opts: { onConflict?: string; merge?: boolean } = {},
+  opts: { onConflict?: string; merge?: boolean; ignoreDuplicates?: boolean; returnMinimal?: boolean } = {},
 ): Promise<T[]> {
   if (!RADAR_SUPABASE_URL || !RADAR_SUPABASE_SERVICE_KEY) {
     throw new Error("Radar Supabase service key is not configured");
   }
   const qs = opts.onConflict ? `?on_conflict=${encodeURIComponent(opts.onConflict)}` : "";
-  const prefer = opts.merge ? "resolution=merge-duplicates,return=representation" : "return=representation";
+  const resolution = opts.ignoreDuplicates ? "resolution=ignore-duplicates" : opts.merge ? "resolution=merge-duplicates" : "";
+  const ret = opts.returnMinimal ? "return=minimal" : "return=representation";
+  const prefer = resolution ? `${resolution},${ret}` : ret;
   const r = await fetch(`${RADAR_SUPABASE_URL}/rest/v1/${table}${qs}`, {
     method: "POST",
     headers: serviceHeaders({ Prefer: prefer }),
@@ -91,6 +93,7 @@ export async function insertRows<T = Record<string, unknown>>(
     const body = await r.text().catch(() => "");
     throw new Error(`Radar Supabase insert failed (${r.status}): ${body || "no details"}`);
   }
+  if (opts.returnMinimal) return [];
   const d = (await r.json().catch(() => [])) as T[];
   return Array.isArray(d) ? d : [];
 }
