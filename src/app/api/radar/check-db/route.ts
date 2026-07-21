@@ -41,13 +41,19 @@ function normalizeDomain(v: string): string {
 }
 
 // Same idea as normalizeDomain — bulk-scraped LinkedIn URL lists are rarely consistent about
-// http vs https, www, or a trailing slash. Note: this normalizes the QUERY input only, not the
-// stored column, so it only helps when the DB itself was already stored in this same lowercase/
-// no-protocol/no-trailing-slash shape (true for anything Radar's own Check LinkedIn flow wrote,
-// less certain for older bulk-uploaded rows) — a real fix for the remainder would need a
-// matching functional index + view column, out of scope for the timeout fix this was bundled with.
+// http vs https, www, or a trailing slash.
 function normalizeLinkedin(v: string): string {
   return v.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/$/, "");
+}
+
+// Stored linkedin_url values are inconsistently shaped (with/without protocol, www, trailing
+// slash — confirmed live: a real contact stored as "https://www.linkedin.com/in/x/" never matched
+// a query of "www.linkedin.com/in/x" under a plain normalized-equality check). The public
+// identifier slug (the last path segment) is the one part that's actually stable regardless of
+// formatting, so linkedin_url lookups match on that via ILIKE instead of exact equality — same
+// fix already applied to Check LinkedIn's own contact-matching logic.
+function linkedinSlug(v: string): string {
+  return normalizeLinkedin(v).split("/").filter(Boolean).pop() || "";
 }
 
 export async function POST(req: NextRequest) {
@@ -77,16 +83,28 @@ export async function POST(req: NextRequest) {
     const CHUNK = 200;
     const chunks: string[][] = [];
     for (let i = 0; i < values.length; i += CHUNK) chunks.push(values.slice(i, i + CHUNK));
+
+    const isLinkedin = columnKey === "linkedin_url";
     const chunkResults = await Promise.all(
       chunks.map((chunk) => {
+        if (isLinkedin) {
+          // Exact equality can't work here — see linkedinSlug's comment. Match on each value's
+          // slug via ILIKE instead, OR'd together across the chunk.
+          const or = chunk.map((v) => `linkedin_url.ilike.*${encodeURIComponent(linkedinSlug(v))}*`).join(",");
+          return selectFrom(view, `select=${cols}&or=(${or})`);
+        }
         const list = chunk.map((v) => encodeURIComponent(v)).join(",");
         return selectFrom(view, `select=${cols}&${col}=in.(${list})`);
       }),
     );
     const rows: Record<string, unknown>[] = chunkResults.flatMap((r) => r.rows as Record<string, unknown>[]);
 
-    const found = new Set(rows.map((r) => normalize(String(r[col] ?? ""))));
-    const notFound = values.filter((v) => !found.has(v));
+    const found = isLinkedin
+      ? new Set(rows.map((r) => linkedinSlug(String(r[col] ?? ""))))
+      : new Set(rows.map((r) => normalize(String(r[col] ?? ""))));
+    const notFound = isLinkedin
+      ? values.filter((v) => !found.has(linkedinSlug(v)))
+      : values.filter((v) => !found.has(v));
     return NextResponse.json({ data: rows, checked: values.length, found: rows.length, notFound, column: columnKey, table });
   } catch (err) {
     console.error("Radar check-db error:", err);
