@@ -294,6 +294,27 @@ export async function updateRow(
   return rows[0];
 }
 
+/** Patches rows matching an arbitrary already-encoded filter fragment (e.g. `email=eq.x@y.com`)
+ * instead of by id — for callers whose only handle on a row is a natural key like an email. */
+export async function patchByFilter(
+  table: string,
+  filterQuery: string,
+  fields: Record<string, unknown>,
+): Promise<void> {
+  if (!RADAR_SUPABASE_URL || !RADAR_SUPABASE_SERVICE_KEY) {
+    throw new Error("Radar Supabase service key is not configured");
+  }
+  const r = await fetch(`${RADAR_SUPABASE_URL}/rest/v1/${table}?${filterQuery}`, {
+    method: "PATCH",
+    headers: serviceHeaders({ Prefer: "return=minimal" }),
+    body: JSON.stringify(fields),
+  });
+  if (!r.ok) {
+    const body = await r.text().catch(() => "");
+    throw new Error(`Radar Supabase patch failed (${r.status}): ${body || "no details"}`);
+  }
+}
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Filters a client-supplied id list down to well-formed UUIDs, so it's safe to splice into a
