@@ -2,18 +2,18 @@ export const maxDuration = 280;
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { requireRadarAccess } from "@/lib/radar/supabase";
+import { requireRadarAccess, logRadarUsage } from "@/lib/radar/supabase";
 import { logRadarActivity } from "@/lib/radar/activityLog";
+import { runLinkedInCheck } from "@/lib/radar/checkLinkedin";
 
 /**
- * Background job runner for Radar's "Check LinkedIn" — each chunk is a real paid Apify call
- * (via radar-clickpost's /api/enrich), so a few-hundred-URL run can take a while. This makes it
- * survive closing the tab/navigating away, adds a Stop button, and keeps a history of past runs
- * so results can be downloaded later — same pattern as EmailSequenceJob (checkpoint after every
- * chunk, resumable via "advance", cancellable).
+ * Background job runner for Radar's "Check LinkedIn" — each chunk is a real paid Apify call, so a
+ * few-hundred-URL run can take a while. This makes it survive closing the tab/navigating away,
+ * adds a Stop button, and keeps a history of past runs so results can be downloaded later — same
+ * pattern as EmailSequenceJob (checkpoint after every chunk, resumable via "advance", cancellable).
+ * Calls lib/radar/checkLinkedin.ts's runLinkedInCheck directly (in-process) — this used to be an
+ * HTTP round-trip to radar-clickpost's /api/enrich before that logic was migrated natively here.
  */
-const RADAR_API_BASE = process.env.RADAR_API_BASE || "https://radar-clickpost.vercel.app";
-
 const CHUNK = 15;
 // One chunk (15 real Apify scrapes) can legitimately take a while — budgets below leave real
 // margin under this route's 280s ceiling.
@@ -60,17 +60,8 @@ async function continueJob(job: JobRow, budgetMs: number, actorEmail: string | n
   while (processed < job.total && Date.now() - startedAt < budgetMs) {
     const batch = urls.slice(processed, processed + CHUNK);
     try {
-      const r = await fetch(`${RADAR_API_BASE}/api/enrich`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "check_linkedin",
-          userEmail: actorEmail,
-          params: { urls: batch, mode: job.scrapeMode, vertical: job.vertical },
-        }),
-      });
-      const d = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(d.error || "LinkedIn check failed");
+      const d = await runLinkedInCheck(batch, job.scrapeMode, job.vertical);
+      await logRadarUsage(actorEmail, job.scrapeMode === "email" ? "linkedin_email" : "linkedin_check", batch.length);
       results.push(...(d.results || []));
       matched += d.matched || 0;
       mismatched += d.mismatched || 0;

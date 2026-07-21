@@ -51,18 +51,48 @@ export async function countOfService(table: string, col = "id", filter = ""): Pr
   return parseInt(cr.split("/")[1] || "0", 10);
 }
 
-/** Call a Postgres RPC function (SECURITY DEFINER aggregation) via PostgREST. */
-export async function rpc<T = Record<string, unknown>>(fn: string): Promise<T[]> {
+/** Call a Postgres RPC function (SECURITY DEFINER aggregation, or a write like
+ * save_enrich_batch) via PostgREST. `args` becomes the function's named parameters. */
+export async function rpc<T = Record<string, unknown>>(fn: string, args: Record<string, unknown> = {}): Promise<T[]> {
   if (!RADAR_SUPABASE_URL || !RADAR_SUPABASE_SERVICE_KEY) {
     throw new Error("Radar Supabase service key is not configured");
   }
   const r = await fetch(`${RADAR_SUPABASE_URL}/rest/v1/rpc/${fn}`, {
     method: "POST",
     headers: serviceHeaders(),
-    body: "{}",
+    body: JSON.stringify(args),
   });
-  const d = await r.json();
+  const d = await r.json().catch(() => null);
+  if (!r.ok) {
+    throw new Error((d && (d as { message?: string }).message) || `Radar RPC ${fn} failed (${r.status})`);
+  }
   return Array.isArray(d) ? (d as T[]) : [];
+}
+
+/** Inserts rows into a table via PostgREST, with `Prefer: return=representation` so the
+ * inserted/upserted rows come back. Pass `onConflict` + `merge: true` for an upsert (matches
+ * `?on_conflict=...&Prefer: resolution=merge-duplicates,...`). */
+export async function insertRows<T = Record<string, unknown>>(
+  table: string,
+  rows: Record<string, unknown>[],
+  opts: { onConflict?: string; merge?: boolean } = {},
+): Promise<T[]> {
+  if (!RADAR_SUPABASE_URL || !RADAR_SUPABASE_SERVICE_KEY) {
+    throw new Error("Radar Supabase service key is not configured");
+  }
+  const qs = opts.onConflict ? `?on_conflict=${encodeURIComponent(opts.onConflict)}` : "";
+  const prefer = opts.merge ? "resolution=merge-duplicates,return=representation" : "return=representation";
+  const r = await fetch(`${RADAR_SUPABASE_URL}/rest/v1/${table}${qs}`, {
+    method: "POST",
+    headers: serviceHeaders({ Prefer: prefer }),
+    body: JSON.stringify(rows),
+  });
+  if (!r.ok) {
+    const body = await r.text().catch(() => "");
+    throw new Error(`Radar Supabase insert failed (${r.status}): ${body || "no details"}`);
+  }
+  const d = (await r.json().catch(() => [])) as T[];
+  return Array.isArray(d) ? d : [];
 }
 
 /**
@@ -130,6 +160,16 @@ export async function radarSql<T = Record<string, unknown>>(query: string, attem
     throw new Error(d?.message || "Radar SQL query failed");
   }
   return d as T[];
+}
+
+/** Logs a unit of external-API usage (Debounce/Apify/Tavily calls) for the Usage page's
+ * per-member cost breakdown. Best-effort — a logging failure should never fail the caller's
+ * actual work. */
+export async function logRadarUsage(userEmail: string | null | undefined, actionType: string, count: number): Promise<void> {
+  if (!userEmail || !count || count < 1) return;
+  try {
+    await radarSql(`INSERT INTO api_usage_logs (user_email, action, count) VALUES ('${userEmail.replace(/'/g, "''")}', '${actionType}', ${count})`);
+  } catch { /* non-critical */ }
 }
 
 /**
