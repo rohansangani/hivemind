@@ -23,6 +23,15 @@ if (!url) {
 }
 
 const pool = new pg.Pool({ connectionString: url, ssl: { rejectUnauthorized: true } });
+// Terminating a backend can land on the SAME pooled connection that issued the terminate call
+// (confirmed live: Neon's pooler routed it that way), which fires an unhandled 'error' event on
+// the pool and crashes this script with a non-zero exit — which then aborts the `&&`-chained
+// `prisma migrate deploy` step entirely, turning this self-heal into a NEW build failure. This
+// script must never be the reason a build fails, so every connection-level error is swallowed here.
+pool.on("error", (e) => {
+  console.log(`[clear-stale-migrate-lock] pool error (expected when self-terminating), ignoring: ${e.message}`);
+});
+
 try {
   const { rows } = await pool.query(`
     SELECT l.pid
@@ -38,12 +47,20 @@ try {
   }
   for (const r of rows) {
     console.log(`[clear-stale-migrate-lock] terminating stale idle migrate-lock holder pid=${r.pid}`);
-    await pool.query("SELECT pg_terminate_backend($1)", [r.pid]);
+    try {
+      await pool.query("SELECT pg_terminate_backend($1)", [r.pid]);
+    } catch (e) {
+      // Expected in the self-terminate case above — the pid got cleared either way.
+      console.log(`[clear-stale-migrate-lock] terminate call errored (likely self-termination), continuing: ${e.message}`);
+    }
   }
 } catch (e) {
   // Non-fatal by design — if this check itself fails, fall through to the real migrate deploy
   // and let it fail with its own (already-diagnosable) error rather than blocking the build here.
   console.log(`[clear-stale-migrate-lock] check failed, continuing anyway: ${e.message}`);
 } finally {
-  await pool.end();
+  try { await pool.end(); } catch { /* pool may already be dead — fine, we're exiting anyway */ }
 }
+
+// Always succeed — this script's own job is best-effort cleanup, never a build gate.
+process.exit(0);
