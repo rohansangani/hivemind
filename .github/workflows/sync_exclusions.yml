@@ -1,0 +1,16 @@
+name: Hivemind — Sync HubSpot Exclusions
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync HubSpot exclusions + capture growth snapshot
+        run: |
+          curl -sf -X POST https://hivemind.clickpost.io/api/radar/sync-exclusions \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.SYNC_EXCLUSIONS_CRON_SECRET }}"
