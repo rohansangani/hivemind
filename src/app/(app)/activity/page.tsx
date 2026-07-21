@@ -737,78 +737,46 @@ function DesignBriefsTab() {
   );
 }
 
-// ── All Activity tab — unified cross-module feed ─────────────────────────────────
+// ── Per-module activity tab — one module's activity list ─────────────────────────
 
 interface FeedEvent { id: string; module: string; action: string; title: string; user: string | null; at: string; href: string; }
 
-const MODULE_COLOR: Record<string, string> = {
-  "Content Generator": "#4361ee",
-  "Ask Halo": "#7c3aed",
-  "Design Brief": "#db2777",
-  "Asset Library": "#0891b2",
-  "Email Sequences": "#ea580c",
-  "Industry Insights": "#16a34a",
-  "Coach": "#9333ea",
-  "Knowledge Base": "#ca8a04",
-};
-
-function AllActivityTab() {
+function ModuleFeedTab({ module, empty }: { module: string; empty: string }) {
   const router = useRouter();
   const [events, setEvents] = useState<FeedEvent[] | null>(null);
-  const [counts, setCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     setLoading(true);
-    fetch("/api/activity/feed")
+    fetch(`/api/activity/feed?module=${module}`)
       .then(r => r.json())
-      .then(d => { setEvents(d.events || []); setCounts(d.counts || {}); })
+      .then(d => setEvents(d.events || []))
       .catch(() => setEvents([]))
       .finally(() => setLoading(false));
-  }, []);
+  }, [module]);
 
   if (loading) return <div className="flex justify-center py-16"><div className="w-6 h-6 border-2 border-[var(--hm-accent)]/30 border-t-[var(--hm-accent)] rounded-full animate-spin" /></div>;
-  if (!events || events.length === 0) return <p className="text-center text-[13px] py-12" style={{ color: "var(--hm-text-tertiary)" }}>No activity across your modules yet.</p>;
-
-  const countEntries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  if (!events || events.length === 0) return <p className="text-center text-[13px] py-12" style={{ color: "var(--hm-text-tertiary)" }}>{empty}</p>;
 
   return (
-    <div>
-      {/* Per-module summary (last 30 days) */}
-      {countEntries.length > 0 && (
-        <div className="flex flex-wrap gap-2 mb-5">
-          {countEntries.map(([mod, n]) => (
-            <div key={mod} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border" style={{ borderColor: "var(--hm-border)", background: "var(--hm-bg)" }}>
-              <span className="w-2 h-2 rounded-full" style={{ background: MODULE_COLOR[mod] || "#94a3b8" }} />
-              <span className="text-[11px] font-medium" style={{ color: "var(--hm-text)" }}>{mod}</span>
-              <span className="text-[11px]" style={{ color: "var(--hm-text-tertiary)" }}>{n}</span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Unified timeline */}
-      <div className="rounded-xl border overflow-hidden" style={{ borderColor: "var(--hm-border)", background: "var(--hm-bg)" }}>
-        {events.map((e, i) => (
-          <button
-            key={e.id}
-            onClick={() => router.push(e.href)}
-            className="w-full flex items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-[var(--hm-bg-secondary)]"
-            style={{ borderTop: i > 0 ? "1px solid var(--hm-border)" : "none" }}
-          >
-            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: MODULE_COLOR[e.module] || "#94a3b8" }} />
-            <div className="min-w-0 flex-1">
-              <p className="text-[13px] truncate" style={{ color: "var(--hm-text)" }}>
-                <span className="font-medium">{e.user || e.module}</span>
-                <span style={{ color: "var(--hm-text-tertiary)" }}> {e.action} · </span>
-                {e.title}
-              </p>
-              <p className="text-[11px] mt-0.5" style={{ color: "var(--hm-text-tertiary)" }}>{e.module}</p>
-            </div>
-            <span className="text-[11px] flex-shrink-0" style={{ color: "var(--hm-text-tertiary)" }}>{timeAgo(e.at)}</span>
-          </button>
-        ))}
-      </div>
+    <div className="rounded-xl border overflow-hidden" style={{ borderColor: "var(--hm-border)", background: "var(--hm-bg)" }}>
+      {events.map((e, i) => (
+        <button
+          key={e.id}
+          onClick={() => router.push(e.href)}
+          className="w-full flex items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-[var(--hm-bg-secondary)]"
+          style={{ borderTop: i > 0 ? "1px solid var(--hm-border)" : "none" }}
+        >
+          <div className="min-w-0 flex-1">
+            <p className="text-[13px] truncate" style={{ color: "var(--hm-text)" }}>
+              <span className="font-medium">{e.user || e.module}</span>
+              <span style={{ color: "var(--hm-text-tertiary)" }}> {e.action} · </span>
+              {e.title}
+            </p>
+          </div>
+          <span className="text-[11px] flex-shrink-0" style={{ color: "var(--hm-text-tertiary)" }}>{timeAgo(e.at)}</span>
+        </button>
+      ))}
     </div>
   );
 }
@@ -818,7 +786,7 @@ function AllActivityTab() {
 export default function ActivityPage() {
   const user = useUser();
   const router = useRouter();
-  const [tab, setTab] = useState<"all" | "content" | "conversations" | "briefs">("all");
+  const [tab, setTab] = useState<"content" | "conversations" | "briefs" | "assets" | "email" | "coach">("content");
 
   useEffect(() => {
     if (user && !hasPermission(user.role, "manage_team")) {
@@ -854,11 +822,6 @@ export default function ActivityPage() {
       {/* Tabs */}
       <div data-tour="act-tabs" className="flex gap-1 px-7 pt-4 pb-0 flex-shrink-0 border-b border-[var(--hm-border)]" style={{ background: "var(--hm-bg)" }}>
         {([
-          { id: "all", label: "All Activity", icon: (
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-              <path d="M2 8h2.5l1.5-4 3 8 1.5-4H14" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          )},
           { id: "content", label: "Generated Content", icon: (
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
               <path d="M4 12l1.5-4L12 2l2 2-6.5 6.5L4 12z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
@@ -876,6 +839,24 @@ export default function ActivityPage() {
               <rect x="9" y="2" width="5" height="4" rx="1" stroke="currentColor" strokeWidth="1.3" />
               <rect x="9" y="8" width="5" height="6" rx="1" stroke="currentColor" strokeWidth="1.3" />
               <rect x="2" y="11" width="5" height="3" rx="1" stroke="currentColor" strokeWidth="1.3" />
+            </svg>
+          )},
+          { id: "assets", label: "Asset Library", icon: (
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <rect x="2" y="3" width="12" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
+              <path d="M2 10l3-3 2.5 2.5L11 6l3 3" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+            </svg>
+          )},
+          { id: "email", label: "Email Sequences", icon: (
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <rect x="2" y="3" width="12" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
+              <path d="M2.5 4l5.5 4 5.5-4" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+            </svg>
+          )},
+          { id: "coach", label: "Coach", icon: (
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <path d="M8 2l6 3-6 3-6-3 6-3z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+              <path d="M4 6.5V10c0 1 1.8 2 4 2s4-1 4-2V6.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           )},
         ] as const).map(t => (
@@ -896,10 +877,12 @@ export default function ActivityPage() {
 
       {/* Content */}
       <div data-tour="act-content" className="flex-1 overflow-y-auto p-7">
-        {tab === "all" && <AllActivityTab />}
         {tab === "content" && <ContentTab />}
         {tab === "conversations" && <ConversationsTab />}
         {tab === "briefs" && <DesignBriefsTab />}
+        {tab === "assets" && <ModuleFeedTab module="assets" empty="No assets uploaded yet." />}
+        {tab === "email" && <ModuleFeedTab module="email" empty="No email sequences generated yet." />}
+        {tab === "coach" && <ModuleFeedTab module="coach" empty="No lessons completed yet." />}
       </div>
     </div>
   );
