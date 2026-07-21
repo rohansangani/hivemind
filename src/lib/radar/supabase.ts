@@ -39,6 +39,20 @@ function serviceHeaders(extra: Record<string, string> = {}): Record<string, stri
   };
 }
 
+/** Escape hatch for REST calls the higher-level helpers (selectFrom/insertRows/patchByFilter)
+ * don't cover — arbitrary select= shaping on a POST/PATCH, custom Prefer combos, etc. Prepends the
+ * Radar Supabase URL and service-role headers so callers never touch the raw URL/key directly. */
+export async function radarFetch(path: string, opts: { method?: string; headers?: Record<string, string>; body?: string } = {}): Promise<Response> {
+  if (!RADAR_SUPABASE_URL || !RADAR_SUPABASE_SERVICE_KEY) {
+    throw new Error("Radar Supabase service key is not configured");
+  }
+  return fetch(`${RADAR_SUPABASE_URL}/rest/v1/${path}`, {
+    method: opts.method,
+    body: opts.body,
+    headers: serviceHeaders(opts.headers),
+  });
+}
+
 /** Exact row count via the service key, for filters anon can't express safely. */
 export async function countOfService(table: string, col = "id", filter = ""): Promise<number> {
   if (!RADAR_SUPABASE_URL || !RADAR_SUPABASE_SERVICE_KEY) {
