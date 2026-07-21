@@ -103,50 +103,82 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No knowledge base content found to build a curriculum. Add products, personas, markets, or competitors first." }, { status: 400 });
     }
 
-    // Replace any existing generated track for this org (cascade clears modules/lessons/questions;
-    // per-user progress rows cascade too, since a regenerated curriculum has fresh lesson ids).
-    await db.coachTrack.deleteMany({ where: { organizationId: decoded.orgId, isGenerated: true } });
+    // Upsert-in-place so learner progress survives a regenerate. Lessons carry a
+    // stable `key` (entity- or domain-derived); we match on it and refresh content
+    // + questions, keeping the lesson row (and its CoachProgress) intact. The old
+    // flow deleted the whole track and recreated it with fresh ids, which wiped
+    // everyone's progress.
+    const lessonKey = (domain: string, entityType?: string, entityName?: string) =>
+      entityType && entityName ? `${entityType}:${entityName.toLowerCase()}` : `domain:${domain}`;
 
-    const track = await db.coachTrack.create({
-      data: {
-        key: "gtm-foundation",
-        name: "Go-to-Market Foundation",
-        description: "Everything a new joiner needs to know about our company, markets, customers, products, and competitors.",
-        isGenerated: true,
-        isActive: true,
-        organizationId: decoded.orgId,
-        modules: {
-          create: modules.map((m, mi) => ({
-            domain: m.domain,
-            name: m.name,
-            description: m.description,
-            order: mi,
-            lessons: {
-              create: m.lessons.map((l, li) => ({
-                title: l.title,
-                whyItMatters: l.whyItMatters,
-                keyPoints: l.keyPoints,
-                entityType: l.entityType ?? null,
-                entityName: l.entityName ?? null,
-                order: li,
-                questions: {
-                  create: l.questions.map((q, qi) => ({
-                    type: q.type,
-                    prompt: q.prompt,
-                    options: (q.options ?? []) as string[],
-                    correctIndex: q.correctIndex ?? null,
-                    expectedAnswer: q.expectedAnswer ?? null,
-                    explanation: q.explanation ?? null,
-                    order: qi,
-                  })),
-                },
-              })),
-            },
-          })),
+    // 1. Find or create the org's persistent generated track.
+    let track = await db.coachTrack.findFirst({ where: { organizationId: decoded.orgId, isGenerated: true }, select: { id: true } });
+    if (!track) {
+      track = await db.coachTrack.create({
+        data: {
+          key: "gtm-foundation",
+          name: "Go-to-Market Foundation",
+          description: "Everything you need to know about our company, markets, customers, products, and competitors.",
+          isGenerated: true,
+          isActive: true,
+          organizationId: decoded.orgId,
         },
-      },
-      select: { id: true },
-    });
+        select: { id: true },
+      });
+    } else {
+      await db.coachTrack.update({ where: { id: track.id }, data: { isActive: true, updatedAt: new Date() } });
+    }
+
+    const keptModuleIds: string[] = [];
+    const keptLessonIds: string[] = [];
+
+    for (let mi = 0; mi < modules.length; mi++) {
+      const m = modules[mi];
+      // 2. Find or create the module (stable by track + domain).
+      let mod = await db.coachModule.findFirst({ where: { trackId: track.id, domain: m.domain }, select: { id: true } });
+      if (!mod) {
+        mod = await db.coachModule.create({ data: { trackId: track.id, domain: m.domain, name: m.name, description: m.description, order: mi }, select: { id: true } });
+      } else {
+        await db.coachModule.update({ where: { id: mod.id }, data: { name: m.name, description: m.description, order: mi } });
+      }
+      keptModuleIds.push(mod.id);
+
+      for (let li = 0; li < m.lessons.length; li++) {
+        const l = m.lessons[li];
+        const key = lessonKey(m.domain, l.entityType, l.entityName);
+        const existing = await db.coachLesson.findUnique({ where: { moduleId_key: { moduleId: mod.id, key } }, select: { id: true } });
+
+        let lessonId: string;
+        if (existing) {
+          // Refresh content in place — progress rows point at this id and survive.
+          await db.coachLesson.update({
+            where: { id: existing.id },
+            data: { title: l.title, whyItMatters: l.whyItMatters, keyPoints: l.keyPoints, entityType: l.entityType ?? null, entityName: l.entityName ?? null, order: li },
+          });
+          await db.coachQuestion.deleteMany({ where: { lessonId: existing.id } });
+          lessonId = existing.id;
+        } else {
+          const created = await db.coachLesson.create({
+            data: { moduleId: mod.id, key, title: l.title, whyItMatters: l.whyItMatters, keyPoints: l.keyPoints, entityType: l.entityType ?? null, entityName: l.entityName ?? null, order: li },
+            select: { id: true },
+          });
+          lessonId = created.id;
+        }
+        keptLessonIds.push(lessonId);
+
+        await db.coachQuestion.createMany({
+          data: l.questions.map((q, qi) => ({
+            lessonId, type: q.type, prompt: q.prompt, options: (q.options ?? []) as string[],
+            correctIndex: q.correctIndex ?? null, expectedAnswer: q.expectedAnswer ?? null, explanation: q.explanation ?? null, order: qi,
+          })),
+        });
+      }
+    }
+
+    // 3. Prune lessons/modules that no longer exist (their entity was removed).
+    //    Progress for genuinely-removed lessons cascades away, which is correct.
+    await db.coachLesson.deleteMany({ where: { module: { trackId: track.id }, id: { notIn: keptLessonIds } } });
+    await db.coachModule.deleteMany({ where: { trackId: track.id, id: { notIn: keptModuleIds } } });
 
     const lessonCount = modules.reduce((n, m) => n + m.lessons.length, 0);
     return NextResponse.json({ trackId: track.id, modules: modules.length, lessons: lessonCount });

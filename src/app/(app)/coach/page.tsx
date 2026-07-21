@@ -281,9 +281,10 @@ export default function CoachPage() {
           </div>
           {canGenerate && (
             <button onClick={generate} disabled={generating}
+              title={data?.track ? "Refresh lesson content and questions from the latest knowledge base — learner progress is preserved" : "Generate the curriculum from your knowledge base"}
               className="h-[36px] px-4 border border-[var(--hm-border)] rounded-lg text-[12px] font-medium text-[var(--hm-text-secondary)] hover:border-[#4361ee] hover:text-[#4361ee] disabled:opacity-50 flex items-center gap-1.5 transition-colors">
-              {generating ? <><div className="w-3.5 h-3.5 border-2 border-[#4361ee]/30 border-t-[#4361ee] rounded-full animate-spin" /> Generating…</>
-                : <><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M2 10v4h4M14 6V2h-4M2 2l5 5M14 14l-5-5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /></svg>{data?.track ? "Regenerate" : "Generate curriculum"}</>}
+              {generating ? <><div className="w-3.5 h-3.5 border-2 border-[#4361ee]/30 border-t-[#4361ee] rounded-full animate-spin" /> Refreshing…</>
+                : <><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M2 10v4h4M14 6V2h-4M2 2l5 5M14 14l-5-5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /></svg>{data?.track ? "Refresh lessons" : "Generate curriculum"}</>}
             </button>
           )}
         </div>

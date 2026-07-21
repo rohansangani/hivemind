@@ -773,12 +773,16 @@ model CoachLesson {
   keyPoints    String          // markdown
   entityType   String?         // "product" | "persona" | "market" | "competitor" — for live reference-material lookup
   entityName   String?         // matched against Asset Library tag arrays
+  // Stable identity across regenerations (e.g. "product:clickpost returns", "domain:company").
+  // Regenerate matches on this so lesson rows — and their CoachProgress — survive a refresh.
+  key          String          @default("")
   order        Int             @default(0)
   questions    CoachQuestion[]
   progress     CoachProgress[]
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
 
+  @@unique([moduleId, key])
   @@index([moduleId, order])
 }
 
