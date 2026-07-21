@@ -5,11 +5,20 @@ import { db } from "@/lib/db";
 
 export const maxDuration = 300; // 5 min — needed for large CRM syncs
 
-const MAX_PER_SYNC = 100_000; // fetch all records (HubSpot caps search at 10,000 per query — we paginate through all)
+// Ceiling on records fetched per object. Set well above real CRM sizes so we
+// truly sync ALL records (pagination stops naturally when HubSpot has no more).
+// Was 100_000, which silently truncated larger contact books (e.g. 132,933 →
+// 100,000). Contacts + companies paginate in parallel inside the 300s budget;
+// PAGE_SIZE is HubSpot's max (100), so the only lever for speed is the delay.
+const MAX_PER_SYNC = 500_000;
 const PAGE_SIZE = 100;
 const CHUNK_SIZE = 500;       // bulk insert batch size for records
 const NOTES_CHUNK_SIZE = 25;  // notes lines per KB entry — keep small to avoid token overflow
-const INTER_PAGE_DELAY_MS = 50;
+// No artificial delay between pages: fetches are sequential (~5 req/s), well within
+// HubSpot's limit, and 429s are retried with Retry-After below. Removing the old
+// 50ms/page delay reclaims ~90s across a large contact sync — headroom for the
+// extra pages the higher ceiling now fetches.
+const INTER_PAGE_DELAY_MS = 0;
 
 // ─── Helpers ─────────────────────────────────────────────────
 
