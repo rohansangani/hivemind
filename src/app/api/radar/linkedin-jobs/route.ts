@@ -104,6 +104,39 @@ async function continueJob(job: JobRow, budgetMs: number, actorEmail: string | n
   }
 }
 
+/** Sweeps every running LinkedinCheckJob across all orgs and advances each with a shared time
+ * budget. Shared by both cron-trigger paths (GitHub Actions' POST+literal-secret, and Vercel's
+ * native GET cron+CRON_SECRET env var). */
+async function continueAllLinkedinJobs() {
+  const jobs = await db.linkedinCheckJob.findMany({ where: { status: "running" } });
+  const startedAt = Date.now();
+  const results: { jobId: string; skipped?: string; done?: boolean }[] = [];
+  for (const job of jobs) {
+    const elapsed = Date.now() - startedAt;
+    if (elapsed > CRON_TOTAL_BUDGET_MS) { results.push({ jobId: job.id, skipped: "time budget — will run next tick" }); continue; }
+    const actorEmail = await getActorEmail(job.userId);
+    await continueJob(job as unknown as JobRow, CRON_TOTAL_BUDGET_MS - elapsed, actorEmail);
+    const fresh = await db.linkedinCheckJob.findUnique({ where: { id: job.id }, select: { status: true } });
+    results.push({ jobId: job.id, done: fresh?.status !== "running" });
+  }
+  return { continued: results.length, results };
+}
+
+// Vercel's native Cron always calls via a plain GET with `Authorization: Bearer $CRON_SECRET`
+// auto-attached — the reliable, precisely-timed alternative to the GitHub Actions workflow
+// (confirmed unreliable elsewhere in this codebase: multi-hour scheduling gaps on a nominal 15-min
+// schedule). Runs alongside the existing GH Actions cron rather than replacing it.
+export async function GET(req: NextRequest) {
+  const auth = req.headers.get("authorization");
+  if (auth !== `Bearer ${process.env.CRON_SECRET}`) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    return NextResponse.json(await continueAllLinkedinJobs());
+  } catch (error) {
+    console.error("LinkedIn check jobs continue_all (cron) error:", error);
+    return NextResponse.json({ error: "Something went wrong" }, { status: 500 });
+  }
+}
+
 export async function POST(req: NextRequest) {
   let body;
   try { body = await req.json(); } catch {
@@ -118,18 +151,7 @@ export async function POST(req: NextRequest) {
     if (auth !== `Bearer ${CRON_SECRET}`) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     try {
-      const jobs = await db.linkedinCheckJob.findMany({ where: { status: "running" } });
-      const startedAt = Date.now();
-      const results: { jobId: string; skipped?: string; done?: boolean }[] = [];
-      for (const job of jobs) {
-        const elapsed = Date.now() - startedAt;
-        if (elapsed > CRON_TOTAL_BUDGET_MS) { results.push({ jobId: job.id, skipped: "time budget — will run next tick" }); continue; }
-        const actorEmail = await getActorEmail(job.userId);
-        await continueJob(job as unknown as JobRow, CRON_TOTAL_BUDGET_MS - elapsed, actorEmail);
-        const fresh = await db.linkedinCheckJob.findUnique({ where: { id: job.id }, select: { status: true } });
-        results.push({ jobId: job.id, done: fresh?.status !== "running" });
-      }
-      return NextResponse.json({ continued: results.length, results });
+      return NextResponse.json(await continueAllLinkedinJobs());
     } catch (error) {
       console.error("LinkedIn check jobs continue_all error:", error);
       return NextResponse.json({ error: "Something went wrong" }, { status: 500 });

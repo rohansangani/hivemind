@@ -20,12 +20,12 @@ const CRON_SECRET = "64c3c1935f8f60b65d7fe15da2c8822fdee664b136df0b7c4cb1d404df8
 
 const SHEET_CSV = "https://docs.google.com/spreadsheets/d/18xxj_eXaWrdzsN27A2gzQ_fpK3T0ZExKw2KLUMv7aPU/export?format=csv&gid=0";
 
-export async function POST(req: NextRequest) {
-  const auth = req.headers.get("authorization");
-  if (auth !== `Bearer ${CRON_SECRET}`) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
+/** The actual sync — shared by both cron-trigger paths (GitHub Actions' POST+literal-secret /
+ * upload.js/enrich.js's fire-and-forget post-save trigger, and Vercel's native GET
+ * cron+CRON_SECRET env var). */
+async function runSync(): Promise<{ status: number; body: Record<string, unknown> }> {
   const sheetRes = await fetch(SHEET_CSV);
-  if (!sheetRes.ok) return NextResponse.json({ error: "Failed to fetch Google Sheet" }, { status: 500 });
+  if (!sheetRes.ok) return { status: 500, body: { error: "Failed to fetch Google Sheet" } };
 
   const csv = await sheetRes.text();
   const emails = [...new Set(
@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
       .filter((e) => e && e.includes("@") && e !== "email address")
   )];
 
-  if (!emails.length) return NextResponse.json({ synced: 0, marked: 0 });
+  if (!emails.length) return { status: 200, body: { synced: 0, marked: 0 } };
 
   // Build VALUES list for a single atomic transaction: truncate + insert + update contacts
   const BATCH = 500;
@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
       COMMIT;
     `);
   } catch (e) {
-    return NextResponse.json({ error: (e as Error).message }, { status: 500 });
+    return { status: 500, body: { error: (e as Error).message } };
   }
 
   // Capture today's growth snapshot (runs on this same 6h cron → daily coverage even if the
@@ -86,5 +86,23 @@ export async function POST(req: NextRequest) {
   } catch { /* non-critical */ }
 
   const marked = Array.isArray(result) ? result.length : 0;
-  return NextResponse.json({ synced: emails.length, marked });
+  return { status: 200, body: { synced: emails.length, marked } };
+}
+
+// Vercel's native Cron always calls via a plain GET with `Authorization: Bearer $CRON_SECRET`
+// auto-attached — the reliable, precisely-timed alternative to the GitHub Actions workflow
+// (confirmed unreliable elsewhere in this codebase: multi-hour scheduling gaps on a nominal 15-min
+// schedule). Runs alongside the existing GH Actions cron rather than replacing it.
+export async function GET(req: NextRequest) {
+  const auth = req.headers.get("authorization");
+  if (auth !== `Bearer ${process.env.CRON_SECRET}`) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const { status, body } = await runSync();
+  return NextResponse.json(body, { status });
+}
+
+export async function POST(req: NextRequest) {
+  const auth = req.headers.get("authorization");
+  if (auth !== `Bearer ${CRON_SECRET}`) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const { status, body } = await runSync();
+  return NextResponse.json(body, { status });
 }
