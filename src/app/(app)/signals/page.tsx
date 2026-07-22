@@ -575,13 +575,17 @@ function AskSignalsSection() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: text, history: rawHistory }),
       });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error || "Request failed");
+      const d = await r.json().catch(() => ({ error: `Server returned a non-JSON response (HTTP ${r.status})` }));
+      if (!r.ok) throw new Error(d.error || `Request failed (HTTP ${r.status})`);
+      if (!d.reply) throw new Error("Got an empty reply back — the AI call may have failed silently.");
       setRawHistory(d.history || []);
-      setMessages((prev) => [...prev, { role: "assistant", content: d.reply || "(no reply)" }]);
+      setMessages((prev) => [...prev, { role: "assistant", content: d.reply }]);
     } catch (e) {
+      // Keep the user's own message visible — silently rolling it back made a real error look
+      // exactly like nothing happened at all (confirmed live: this is what made the underlying
+      // bug invisible in the first place).
       setError((e as Error).message);
-      setMessages((prev) => prev.slice(0, -1)); // drop the optimistic user message we can't answer
+      setMessages((prev) => [...prev, { role: "assistant", content: `⚠️ ${(e as Error).message}` }]);
     } finally {
       setBusy(false);
     }
