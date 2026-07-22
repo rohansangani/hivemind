@@ -61,6 +61,12 @@ interface Intel {
     deals: IntelDeal[];
     activities: IntelActivity[];
   };
+  research: {
+    found: boolean; industry: string; what_they_do: string;
+    recent_news: string[]; pain_signals: string[]; sources: string[];
+  };
+  relationship_summary: string;
+  blended_next_action: string;
 }
 
 interface Deal { id: string; play: string; name: string; company: string; stage: string; stage_probability: number; amount: number | null; currency: string; close_date: string; owner: string; contact_count: number }
@@ -68,6 +74,13 @@ interface Deal { id: string; play: string; name: string; company: string; stage:
 interface Call {
   id: string; title: string; date: string | null; company: string; call_type: string;
   sentiment: string; clickpost_reps: string[]; summary: string; objections?: string[];
+}
+
+// Full per-call digest (getCall by id) — richer than the list-view Call shape above.
+interface CallDigest extends Call {
+  participants?: string[]; customer_reps?: string[];
+  products_discussed?: string[]; competitors?: string[]; pain_points?: string[];
+  outcome?: string; next_steps?: string[]; key_quotes?: string[];
 }
 
 const PLAYS = ["Apex", "PBA", "Parth"];
@@ -272,6 +285,26 @@ function AccountDrawer({ name, onClose }: { name: string; onClose: () => void })
                   <StatCard label="Rank" value={`#${detail.scoring.rank_portfolio}`} />
                   <StatCard label="Sentiment" value={detail.scoring.sentiment.band} />
                 </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <StatCard label="Breadth" value={detail.breadth} sub="products/features touched" />
+                  <StatCard label="Value Band" value={detail.scoring.value_band} />
+                </div>
+                <div>
+                  <p className="text-[11px] font-semibold uppercase text-[var(--hm-text-tertiary)] mb-2">Score Breakdown</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {Object.entries(detail.scoring.decomposition).map(([k, v]) => (
+                      <span key={k} className="text-[11.5px] px-2 py-1 rounded-md bg-[var(--hm-bg-tertiary)] text-[var(--hm-text-secondary)] capitalize">{k.replace(/_/g, " ")}: {v}</span>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-[11px] font-semibold uppercase text-[var(--hm-text-tertiary)] mb-2">Key Metrics</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {Object.entries(detail.key_metrics).map(([k, v]) => (
+                      <span key={k} className="text-[11.5px] px-2 py-1 rounded-md bg-[var(--hm-bg-tertiary)] text-[var(--hm-text-secondary)] capitalize">{k.replace(/_/g, " ")}: {v.toLocaleString()}</span>
+                    ))}
+                  </div>
+                </div>
                 {detail.scoring.risks.length > 0 && (
                   <div className="rounded-lg border border-red-200 bg-red-50 dark:bg-red-900/20 dark:border-red-800 px-3 py-2">
                     <p className="text-[11px] font-semibold uppercase text-red-600 dark:text-red-400 mb-1">Risks</p>
@@ -306,11 +339,40 @@ function AccountDrawer({ name, onClose }: { name: string; onClose: () => void })
           {tab === "intel" && (
             !intel ? <Spinner /> : (
               <div className="space-y-4">
+                {intel.blended_next_action && (
+                  <div className="rounded-lg border border-[var(--hm-accent)]/30 bg-[var(--hm-accent-light)] px-3 py-2.5">
+                    <p className="text-[11px] font-semibold uppercase text-[var(--hm-accent)] mb-1">Next Action</p>
+                    <p className="text-[12.5px] text-[var(--hm-text)]">{intel.blended_next_action}</p>
+                  </div>
+                )}
+                {intel.relationship_summary && (
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase text-[var(--hm-text-tertiary)] mb-1.5">Relationship Summary</p>
+                    <p className="text-[12.5px] text-[var(--hm-text-secondary)]">{intel.relationship_summary}</p>
+                  </div>
+                )}
                 {intel.crm.company && (
                   <div className="rounded-lg border border-[var(--hm-border)] px-3 py-2.5 text-[12.5px]">
                     <p><span className="text-[var(--hm-text-tertiary)]">Company:</span> {intel.crm.company.name}</p>
                     <p><span className="text-[var(--hm-text-tertiary)]">Owner:</span> {intel.crm.owner || "—"}</p>
-                    <p><span className="text-[var(--hm-text-tertiary)]">Industry:</span> {intel.crm.company.industry || "—"}</p>
+                    <p><span className="text-[var(--hm-text-tertiary)]">Industry:</span> {intel.crm.company.industry || intel.research?.industry || "—"}</p>
+                  </div>
+                )}
+                {intel.research?.found && (
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase text-[var(--hm-text-tertiary)] mb-1.5">Web Research</p>
+                    {intel.research.what_they_do && <p className="text-[12.5px] text-[var(--hm-text-secondary)] mb-1.5">{intel.research.what_they_do}</p>}
+                    {intel.research.pain_signals.length > 0 && (
+                      <ul className="list-disc list-inside space-y-0.5 text-[12.5px] text-[var(--hm-text-secondary)]">
+                        {intel.research.pain_signals.map((p, i) => <li key={i}>{p}</li>)}
+                      </ul>
+                    )}
+                    {intel.research.recent_news.length > 0 && (
+                      <div className="mt-1.5">
+                        <p className="text-[11px] text-[var(--hm-text-tertiary)] mb-1">Recent news</p>
+                        {intel.research.recent_news.map((n, i) => <p key={i} className="text-[12.5px] text-[var(--hm-text-secondary)]">{n}</p>)}
+                      </div>
+                    )}
                   </div>
                 )}
                 <div>
@@ -370,14 +432,18 @@ function CallsSection() {
   const [calls, setCalls] = useState<Call[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [selected, setSelected] = useState<Call | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const runSemantic = async () => {
     if (!query.trim()) return;
     setLoading(true); setError("");
     try {
-      const d = await signalsCall<{ calls: Call[] }>("calls_search", { query: query.trim() });
-      setCalls(d.calls || []);
+      // calls-search returns {hits, note} (not {calls}) — and per Signals' own "note" field, its
+      // semantic index isn't configured on Sai's side yet (no VOYAGE_API_KEY), so this reliably
+      // comes back empty for now. Surface the note directly instead of silently showing nothing.
+      const d = await signalsCall<{ hits: Call[]; note?: string }>("calls_search", { query: query.trim() });
+      setCalls(d.hits || []);
+      if (!d.hits?.length && d.note) setError(d.note);
     } catch (e) { setError((e as Error).message); } finally { setLoading(false); }
   };
 
@@ -404,7 +470,7 @@ function CallsSection() {
       {loading ? <Spinner /> : (
         <div className="space-y-2">
           {calls.map((c) => (
-            <div key={c.id} onClick={() => setSelected(c)} className="rounded-lg border border-[var(--hm-border)] bg-[var(--hm-surface)] px-4 py-3 cursor-pointer hover:bg-[var(--hm-surface-hover)]">
+            <div key={c.id} onClick={() => setSelectedId(c.id)} className="rounded-lg border border-[var(--hm-border)] bg-[var(--hm-surface)] px-4 py-3 cursor-pointer hover:bg-[var(--hm-surface-hover)]">
               <div className="flex items-center justify-between gap-2">
                 <p className="text-[13px] font-medium text-[var(--hm-text)]">{c.title}</p>
                 <SentimentPill band={c.sentiment} />
@@ -417,35 +483,163 @@ function CallsSection() {
         </div>
       )}
 
-      {selected && (
-        <div className="fixed inset-0 z-40 flex justify-end" role="dialog" aria-modal="true">
-          <div className="absolute inset-0 bg-black/30" onClick={() => setSelected(null)} />
-          <div className="relative w-full max-w-xl h-full bg-[var(--hm-surface)] shadow-xl flex flex-col">
-            <div className="px-5 py-4 border-b border-[var(--hm-border)] flex items-center justify-between gap-3">
-              <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">{selected.title}</h2>
-              <button onClick={() => setSelected(null)} className="hm-btn hm-btn-secondary flex-shrink-0" style={{ height: 30, width: 30, padding: 0, fontSize: 14 }}>×</button>
-            </div>
-            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3 text-[13px]">
-              <p className="text-[var(--hm-text-tertiary)]">{selected.company} · {selected.call_type} · <SentimentPill band={selected.sentiment} /></p>
-              <p className="text-[var(--hm-text-secondary)]">{selected.summary}</p>
-              {selected.objections && selected.objections.length > 0 && (
-                <div>
-                  <p className="text-[11px] font-semibold uppercase text-[var(--hm-text-tertiary)] mb-1.5">Objections</p>
-                  <ul className="list-disc list-inside space-y-1 text-[12.5px] text-[var(--hm-text-secondary)]">
-                    {selected.objections.map((o, i) => <li key={i}>{o}</li>)}
-                  </ul>
+      {selectedId && <CallDrawer id={selectedId} onClose={() => setSelectedId(null)} />}
+    </div>
+  );
+}
+
+function ListField({ label, items }: { label: string; items?: string[] }) {
+  if (!items || !items.length) return null;
+  return (
+    <div>
+      <p className="text-[11px] font-semibold uppercase text-[var(--hm-text-tertiary)] mb-1.5">{label}</p>
+      <ul className="list-disc list-inside space-y-1 text-[12.5px] text-[var(--hm-text-secondary)]">
+        {items.map((o, i) => <li key={i}>{o}</li>)}
+      </ul>
+    </div>
+  );
+}
+
+function CallDrawer({ id, onClose }: { id: string; onClose: () => void }) {
+  const [call, setCall] = useState<CallDigest | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    signalsCall<CallDigest>("call", { id })
+      .then((d) => { if (!cancelled) setCall(d); })
+      .catch((e) => { if (!cancelled) setError(e.message); });
+    return () => { cancelled = true; };
+  }, [id]);
+
+  return (
+    <div className="fixed inset-0 z-40 flex justify-end" role="dialog" aria-modal="true">
+      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
+      <div className="relative w-full max-w-xl h-full bg-[var(--hm-surface)] shadow-xl flex flex-col">
+        <div className="px-5 py-4 border-b border-[var(--hm-border)] flex items-center justify-between gap-3">
+          <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">{call?.title || "Call"}</h2>
+          <button onClick={onClose} className="hm-btn hm-btn-secondary flex-shrink-0" style={{ height: 30, width: 30, padding: 0, fontSize: 14 }}>×</button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3 text-[13px]">
+          {error && <div className="rounded-lg border border-red-200 bg-red-50 dark:bg-red-900/20 dark:border-red-800 px-3 py-2 text-[12.5px] text-red-600 dark:text-red-400">{error}</div>}
+          {!call ? <Spinner /> : (
+            <>
+              <p className="text-[var(--hm-text-tertiary)]">{call.company} · {call.call_type} · <SentimentPill band={call.sentiment} /></p>
+              <p className="text-[11.5px] text-[var(--hm-text-tertiary)]">
+                {call.clickpost_reps?.length ? `ClickPost: ${call.clickpost_reps.join(", ")}` : ""}
+                {call.customer_reps?.length ? ` · Customer: ${call.customer_reps.join(", ")}` : ""}
+              </p>
+              <p className="text-[var(--hm-text-secondary)]">{call.summary}</p>
+              {call.outcome && (
+                <div className="rounded-lg border border-[var(--hm-accent)]/30 bg-[var(--hm-accent-light)] px-3 py-2">
+                  <p className="text-[11px] font-semibold uppercase text-[var(--hm-accent)] mb-1">Outcome</p>
+                  <p className="text-[12.5px] text-[var(--hm-text)]">{call.outcome}</p>
                 </div>
               )}
+              <ListField label="Next Steps" items={call.next_steps} />
+              <ListField label="Objections" items={call.objections} />
+              <ListField label="Pain Points" items={call.pain_points} />
+              <ListField label="Products Discussed" items={call.products_discussed} />
+              <ListField label="Competitors Mentioned" items={call.competitors} />
+              <ListField label="Key Quotes" items={call.key_quotes} />
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface ChatMessage { role: "user" | "assistant"; content: string }
+
+function AskSignalsSection() {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  // Full Anthropic-shaped history (including tool_use/tool_result blocks) — sent back to the
+  // backend on every turn so it has real conversational memory, kept separate from the
+  // simplified `messages` used purely for rendering.
+  const [rawHistory, setRawHistory] = useState<Array<{ role: string; content: unknown }>>([]);
+
+  const send = async () => {
+    const text = input.trim();
+    if (!text || busy) return;
+    setInput("");
+    setBusy(true);
+    setError("");
+    setMessages((prev) => [...prev, { role: "user", content: text }]);
+    try {
+      const r = await fetch("/api/signals/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text, history: rawHistory }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "Request failed");
+      setRawHistory(d.history || []);
+      setMessages((prev) => [...prev, { role: "assistant", content: d.reply || "(no reply)" }]);
+    } catch (e) {
+      setError((e as Error).message);
+      setMessages((prev) => prev.slice(0, -1)); // drop the optimistic user message we can't answer
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const EXAMPLES = [
+    "Which Enterprise accounts are Ready-now for PBA?",
+    "What's nushop's expansion score and top risk?",
+    "Any deals stuck in Commercials for more than a month?",
+  ];
+
+  return (
+    <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] flex flex-col" style={{ height: 520 }}>
+      <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+        {!messages.length && (
+          <div className="h-full flex flex-col items-center justify-center text-center gap-3">
+            <p className="text-[13px] text-[var(--hm-text-tertiary)]">Ask anything about accounts, plays, deals, or calls in Signals.</p>
+            <div className="flex flex-col gap-1.5 items-center">
+              {EXAMPLES.map((ex) => (
+                <button key={ex} onClick={() => setInput(ex)} className="text-[12px] px-3 py-1.5 rounded-full border border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:bg-[var(--hm-surface-hover)]">{ex}</button>
+              ))}
             </div>
           </div>
-        </div>
-      )}
+        )}
+        {messages.map((m, i) => (
+          <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+            <div className={`max-w-[80%] rounded-xl px-3.5 py-2.5 text-[13px] whitespace-pre-wrap ${m.role === "user" ? "bg-[var(--hm-accent)] text-white" : "bg-[var(--hm-bg-secondary)] text-[var(--hm-text)]"}`}>
+              {m.content}
+            </div>
+          </div>
+        ))}
+        {busy && (
+          <div className="flex justify-start">
+            <div className="rounded-xl px-3.5 py-2.5 bg-[var(--hm-bg-secondary)]">
+              <div className="w-4 h-4 border-2 border-[var(--hm-accent)]/30 border-t-[var(--hm-accent)] rounded-full animate-spin" />
+            </div>
+          </div>
+        )}
+      </div>
+      {error && <div className="mx-4 mb-2 rounded-lg border border-red-200 bg-red-50 dark:bg-red-900/20 dark:border-red-800 px-3 py-2 text-[12.5px] text-red-600 dark:text-red-400">{error}</div>}
+      <div className="px-4 py-3 border-t border-[var(--hm-border)] flex items-center gap-2">
+        <input
+          type="text"
+          placeholder="Ask about accounts, plays, deals, or calls…"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && send()}
+          className="flex-1"
+          disabled={busy}
+        />
+        <button onClick={send} disabled={busy || !input.trim()} className="hm-btn hm-btn-primary" style={{ height: 36, padding: "0 16px", fontSize: 12.5 }}>Send</button>
+      </div>
     </div>
   );
 }
 
 export default function SignalsPage() {
-  const [view, setView] = useState<"accounts" | "calls">("accounts");
+  const [view, setView] = useState<"accounts" | "calls" | "ask">("accounts");
   const [stats, setStats] = useState<Stats | null>(null);
   const [statsError, setStatsError] = useState("");
 
@@ -479,18 +673,18 @@ export default function SignalsPage() {
       )}
 
       <div className="flex gap-0.5 p-1 rounded-xl bg-[var(--hm-bg-tertiary)] w-fit">
-        {(["accounts", "calls"] as const).map((v) => (
+        {(["accounts", "calls", "ask"] as const).map((v) => (
           <button
             key={v}
             onClick={() => setView(v)}
             className={`px-3.5 py-1.5 text-[13px] rounded-lg capitalize transition-colors ${view === v ? "bg-[var(--hm-surface)] text-[var(--hm-text)] font-medium shadow-[var(--hm-shadow-sm)]" : "text-[var(--hm-text-secondary)]"}`}
           >
-            {v}
+            {v === "ask" ? "Ask Signals" : v}
           </button>
         ))}
       </div>
 
-      {view === "accounts" ? <AccountsSection /> : <CallsSection />}
+      {view === "accounts" ? <AccountsSection /> : view === "calls" ? <CallsSection /> : <AskSignalsSection />}
     </div>
   );
 }
