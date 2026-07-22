@@ -14,6 +14,7 @@ import { recordSignal } from "@/lib/signalCapture";
 import { countContacts, exportContactsCsv, logContactExport } from "@/lib/radar/contactExport";
 import { countAccounts, exportAccountsCsv, logAccountExport } from "@/lib/radar/accountExport";
 import { getRadarAccessLevel } from "@/lib/radar/supabase";
+import { getSignalsAccessLevel, getAccounts as getSignalsAccounts, getAccount as getSignalsAccount, searchCalls as searchSignalsCalls } from "@/lib/signals";
 import pg from "pg";
 
 // ─────────────────────────────────────────────────────────
@@ -149,13 +150,61 @@ const RADAR_TOOLS = [
   },
 ];
 
+// ClickPost Signal (GTM/expansion-intelligence, built by Sai) — read-only bridge, see
+// src/lib/signals.ts. A completely separate dataset/permission from Radar above: expansion
+// scores, plays (Apex/PBA/Parth), call-transcript search — not contacts/accounts.
+const SIGNALS_TOOLS = [
+  {
+    name: "search_signals_accounts",
+    description:
+      "Search ClickPost Signal's expansion-scored account list — ranked accounts with an expansion score, tier, " +
+      "readiness (Ready-now/Nurture/Protect-first), value band, sentiment, and top expansion play (Apex/PBA/Parth). " +
+      "Use this for GTM/expansion questions like \"which accounts are ready for PBA\", \"top accounts by expansion score\", " +
+      "or \"show me Enterprise accounts we should protect\". This is NOT the same data as Radar's contacts/accounts — " +
+      "Signals only covers existing customer accounts being scored for expansion, not prospecting.",
+    input_schema: {
+      type: "object",
+      properties: {
+        play: { type: "string", enum: ["Apex", "PBA", "Parth"], description: "Filter to accounts where this play is a strategic recommendation." },
+        tier: { type: "string", enum: ["Enterprise", "Mid", "SMB", "Long-tail"] },
+        readiness: { type: "string", enum: ["Ready-now", "Nurture", "Protect-first"] },
+        limit: { type: "number", description: "Max accounts to return, default 15." },
+      },
+    },
+  },
+  {
+    name: "get_signals_account_360",
+    description:
+      "Full expansion-intelligence profile for ONE named account: expansion score, every play with its rationale, " +
+      "adopted features, and any risks flagged. Use after search_signals_accounts to go deeper on a specific account, " +
+      "or whenever the user names a specific company and asks about its expansion opportunity/plays/risks.",
+    input_schema: {
+      type: "object",
+      properties: { account: { type: "string", description: "Account name, as returned by search_signals_accounts (case-insensitive)." } },
+      required: ["account"],
+    },
+  },
+  {
+    name: "search_signals_calls",
+    description:
+      "Semantic search across ClickPost Signal's sales-call transcript index — finds calls by MEANING, not just " +
+      "keyword match (e.g. \"pricing objection\", \"competitor mentioned\", \"churn risk raised\"). Returns call " +
+      "summaries with sentiment and objections. Use whenever the user asks what was discussed/said on calls about a topic.",
+    input_schema: {
+      type: "object",
+      properties: { query: { type: "string", description: "Natural-language description of what to find in the calls." } },
+      required: ["query"],
+    },
+  },
+];
+
 type AnthropicContentBlock = Record<string, unknown> & { type: string };
 
 async function callClaudeWithTools(
   apiKey: string,
   system: string,
   messages: Array<{ role: string; content: string | AnthropicContentBlock[] }>,
-  tools: typeof RADAR_TOOLS,
+  tools: { name: string; description: string; input_schema: object }[],
   maxTokens = 2048
 ): Promise<{ content: AnthropicContentBlock[]; stopReason: string; usage: { inputTokens: number; outputTokens: number } | null }> {
   const controller = new AbortController();
@@ -243,6 +292,33 @@ async function executeRadarTool(
       toolResult: { matched, exported, truncated },
       download: exported > 0 ? { filename: `radar_accounts_halo_${Date.now()}.csv`, csv } : undefined,
     };
+  }
+  return { toolResult: { error: `Unknown tool: ${toolName}` } };
+}
+
+async function executeSignalsTool(toolName: string, input: Record<string, unknown>): Promise<{ toolResult: unknown; download?: { filename: string; csv: string } }> {
+  try {
+    if (toolName === "search_signals_accounts") {
+      const d = await getSignalsAccounts({
+        play: input.play as string | undefined,
+        tier: input.tier as string | undefined,
+        readiness: input.readiness as string | undefined,
+        limit: (input.limit as number | undefined) ?? 15,
+      }) as { count: number; accounts: unknown[] };
+      return { toolResult: d };
+    }
+    if (toolName === "get_signals_account_360") {
+      const account = String(input.account || "").trim();
+      if (!account) return { toolResult: { error: "No account name given" } };
+      return { toolResult: await getSignalsAccount(account) };
+    }
+    if (toolName === "search_signals_calls") {
+      const query = String(input.query || "").trim();
+      if (!query) return { toolResult: { error: "No query given" } };
+      return { toolResult: await searchSignalsCalls(query) };
+    }
+  } catch (e) {
+    return { toolResult: { error: (e as Error).message || "Signals request failed" } };
   }
   return { toolResult: { error: `Unknown tool: ${toolName}` } };
 }
@@ -524,6 +600,12 @@ export async function POST(req: NextRequest) {
       : "none";
     const hasRadarAccess = radarLevel === "view" || radarLevel === "edit";
 
+    // ── Signals access gate — separate module/dataset from Radar, its own permission ──
+    const signalsLevel = actorUser
+      ? await getSignalsAccessLevel(decoded.userId, actorUser.role, actorUser.organizationId ?? decoded.orgId)
+      : "none";
+    const hasSignalsAccess = signalsLevel === "view" || signalsLevel === "edit";
+
     if (apiKey) {
       try {
         // ── Retrieve grounded knowledge ───────────────────
@@ -587,6 +669,17 @@ RADAR CONTACTS & ACCOUNTS (search_radar_contacts/accounts, export_radar_contacts
 
 RADAR: This user does not have Radar access. If they ask you to find/export contacts, leads, or accounts, tell them they need Radar access first (an owner or admin can grant it from their Team profile) — do not attempt to answer from any other data source.`;
 
+        const signalsToolInstructions = hasSignalsAccess
+          ? `
+
+SIGNALS — EXPANSION INTELLIGENCE (search_signals_accounts, get_signals_account_360, search_signals_calls tools):
+- This is a COMPLETELY SEPARATE dataset from Radar above — Signals covers EXISTING customer accounts being scored for expansion (upsell plays, adoption gaps, churn risk), not prospecting/lead-gen. Never conflate the two or answer a Signals question from Radar data or vice versa.
+- "Plays" are Apex (Control Tower expansion), PBA (ML-based carrier allocation upgrade), and Parth (AI voice agent for NDR/returns) — use search_signals_accounts with the play/tier/readiness filters to find candidates, then get_signals_account_360 for a named account's full rationale, risks, and adopted features.
+- For "what did calls say about X" / objection or sentiment questions, use search_signals_calls (semantic search — describe the topic naturally, don't just pass keywords).
+- Report scores/tiers/readiness plainly (e.g. "expansion score 99, Ready-now, Enterprise tier") — don't invent numbers not returned by the tool.
+- Do not mention these tools by name — talk about "checking Signals" / "the expansion data" naturally.`
+          : "";
+
         const systemPrompt = buildGroundedSystemPrompt(
           "HiveMind AI, an intelligent marketing assistant",
           knowledge,
@@ -597,7 +690,7 @@ CONVERSATION BEHAVIOR:
 - Think step-by-step: first identify what knowledge base items are most relevant, then compose your answer from those items only
 - Do not repeat context the user already established in this conversation
 - If this is a follow-up question, build on prior answers without re-introducing facts
-- End with 2–3 *Suggested follow-ups:* in italics that help the user go deeper into what's in the knowledge base${radarToolInstructions}`
+- End with 2–3 *Suggested follow-ups:* in italics that help the user go deeper into what's in the knowledge base${radarToolInstructions}${signalsToolInstructions}`
         );
 
         // ── Build message history with memory compression ─
@@ -617,7 +710,8 @@ CONVERSATION BEHAVIOR:
         // as a runaway backstop; existing KB-only conversations are completely unaffected since
         // tools are additive (Claude only invokes them when relevant, tool_choice is left "auto").
         const toolLoopMessages: Array<{ role: string; content: string | AnthropicContentBlock[] }> = claudeMessages;
-        const offeredTools = hasRadarAccess ? RADAR_TOOLS : [];
+        const signalsToolNames = new Set(SIGNALS_TOOLS.map((t) => t.name));
+        const offeredTools = [...(hasRadarAccess ? RADAR_TOOLS : []), ...(hasSignalsAccess ? SIGNALS_TOOLS : [])];
         let totalInputTokens = 0, totalOutputTokens = 0;
         for (let iteration = 0; iteration < 4; iteration++) {
           const result = await callClaudeWithTools(apiKey, systemPrompt, toolLoopMessages, offeredTools, 2048);
@@ -632,11 +726,11 @@ CONVERSATION BEHAVIOR:
           toolLoopMessages.push({ role: "assistant", content: result.content });
           const toolResultBlocks: AnthropicContentBlock[] = [];
           for (const block of toolUseBlocks) {
-            const { toolResult, download: toolDownload } = await executeRadarTool(
-              block.name as string,
-              (block.input as Record<string, unknown>) || {},
-              decoded.userId
-            );
+            const blockName = block.name as string;
+            const blockInput = (block.input as Record<string, unknown>) || {};
+            const { toolResult, download: toolDownload } = signalsToolNames.has(blockName)
+              ? await executeSignalsTool(blockName, blockInput)
+              : await executeRadarTool(blockName, blockInput, decoded.userId);
             if (toolDownload) exportDownloads.push(toolDownload);
             toolResultBlocks.push({ type: "tool_result", tool_use_id: block.id as string, content: JSON.stringify(toolResult) });
           }
