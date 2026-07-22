@@ -37,6 +37,7 @@ export const MODULES: ModuleDef[] = [
   { id: "knowledge_base",     label: "Knowledge Base",     description: "Products, personas, competitors, skills",      icon: "knowledge", group: "knowledge" },
   // Prospecting — owner/admin only
   { id: "radar",              label: "Radar",              description: "Accounts, contacts, enrichment & email validation", icon: "radar", group: "prospecting" },
+  { id: "signals",            label: "Signals",            description: "Account expansion scoring, plays & call intelligence (ClickPost Signal)", icon: "signals", group: "prospecting" },
   // Admin — admin/owner only
   { id: "team",               label: "Team",               description: "Invite and manage team members",               icon: "team",      group: "admin" },
   { id: "settings",           label: "Settings",           description: "Organisation settings and API keys",           icon: "settings",  group: "admin" },
@@ -61,6 +62,7 @@ export type ModulePermissions = Record<string, AccessLevel>;
  * │ Knowledge      │ edit      │ edit     │ edit      │ none     │ none   │
  * │ Team           │ edit      │ edit     │ none      │ none     │ none   │
  * │ Settings       │ edit      │ edit     │ none      │ none     │ none   │
+ * │ Signals        │ edit      │ edit     │ view      │ edit     │ none   │
  * └────────────────┴───────────┴──────────┴───────────┴──────────┴────────┘
  */
 export const ROLE_DEFAULT_PERMISSIONS: Record<string, ModulePermissions> = {
@@ -68,30 +70,35 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, ModulePermissions> = {
     dashboard: "edit", industry_insights: "edit",
     content_library: "edit", ai_assistant: "edit", content_generator: "edit", content_review: "edit", email_sequences: "edit", design_brief: "edit", knowledge_base: "edit",
     radar: "edit",
+    signals: "edit",
     team: "edit", settings: "edit",
   },
   admin: {
     dashboard: "edit", industry_insights: "edit",
     content_library: "edit", ai_assistant: "edit", content_generator: "edit", content_review: "edit", email_sequences: "edit", design_brief: "edit", knowledge_base: "edit",
     radar: "edit",
+    signals: "edit",
     team: "edit", settings: "edit",
   },
   marketing: {
     dashboard: "edit", industry_insights: "edit",
     content_library: "edit", ai_assistant: "edit", content_generator: "edit", content_review: "edit", email_sequences: "edit", design_brief: "edit", knowledge_base: "edit",
     radar: "none",
+    signals: "view",
     team: "none", settings: "none",
   },
   sales: {
     dashboard: "edit", industry_insights: "view",
     content_library: "edit", ai_assistant: "edit", content_generator: "none", content_review: "edit", email_sequences: "edit", design_brief: "none", knowledge_base: "none",
     radar: "none",
+    signals: "edit",
     team: "none", settings: "none",
   },
   others: {
     dashboard: "edit", industry_insights: "view",
     content_library: "edit", ai_assistant: "edit", content_generator: "none", content_review: "edit", email_sequences: "none", design_brief: "none", knowledge_base: "none",
     radar: "none",
+    signals: "none",
     team: "none", settings: "none",
   },
   // ── Legacy aliases ─────────────────────────────────────
@@ -99,18 +106,21 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, ModulePermissions> = {
     dashboard: "edit", industry_insights: "edit",
     content_library: "edit", ai_assistant: "edit", content_generator: "edit", content_review: "edit", email_sequences: "edit", design_brief: "edit", knowledge_base: "edit",
     radar: "none",
+    signals: "none",
     team: "none", settings: "none",
   },
   member: {
     dashboard: "edit", industry_insights: "edit",
     content_library: "edit", ai_assistant: "edit", content_generator: "edit", content_review: "edit", email_sequences: "edit", design_brief: "edit", knowledge_base: "edit",
     radar: "none",
+    signals: "none",
     team: "none", settings: "none",
   },
   viewer: {
     dashboard: "view", industry_insights: "view",
     content_library: "view", ai_assistant: "view", content_generator: "none", content_review: "none", email_sequences: "none", design_brief: "none", knowledge_base: "none",
     radar: "none",
+    signals: "none",
     team: "none", settings: "none",
   },
 };

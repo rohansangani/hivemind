@@ -27,6 +27,7 @@ const MODULE_ROUTES: Array<{ moduleId: string; href: string; label: string; icon
   { moduleId: "design_brief",       href: "/design-brief",      label: "Design Brief",       icon: "design" },
   { moduleId: "knowledge_base",     href: "/knowledge-base",    label: "Knowledge Base",     icon: "knowledge" },
   { moduleId: "radar",              href: "/radar",             label: "Radar",              icon: "radar" },
+  { moduleId: "signals",            href: "/signals",           label: "Signals",            icon: "signals" },
 ];
 
 const ADMIN_ROUTES: Array<{ moduleId: string; href: string; label: string; icon: string }> = [
@@ -55,6 +56,12 @@ function NavIcon({ icon, active }: { icon: string; active: boolean }) {
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
         <circle cx="7" cy="7" r="4.5" stroke={c} strokeWidth={w} />
         <path d="M10.4 10.4L14 14" stroke={c} strokeWidth={w} strokeLinecap="round" />
+      </svg>
+    );
+    case "signals": return (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path d="M8 2v3M8 11v3M2 8h3M11 8h3" stroke={c} strokeWidth={w} strokeLinecap="round" />
+        <circle cx="8" cy="8" r="2.2" stroke={c} strokeWidth={w} />
       </svg>
     );
     case "knowledge": return (
