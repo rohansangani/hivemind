@@ -16,6 +16,7 @@ const ACTOR_ID = "code_crafter~leads-finder";
 
 const LOGGABLE_ENRICH_ACTIONS: Record<string, (body: Record<string, unknown>, result: Record<string, unknown>) => string> = {
   start: (body) => `Started an Enrich search${body.label ? `: "${body.label}"` : ""}`,
+  stop: () => `Stopped a running Enrich search`,
   save: (body, result) => `Saved Enrich results to contacts — ${result?.saved ?? "?"} lead(s)`,
   export_leads: (body, result) => `Ran Debounce validation on Enrich leads — ${result?.validated ?? result?.checked ?? "?"} checked`,
   validate_and_save: (body, result) => `Validated and saved Enrich leads — ${result?.saved ?? "?"} lead(s)`,
@@ -204,6 +205,21 @@ async function handleAction(req: NextRequest, userEmail: string | null): Promise
       RETURNING id
     `);
     return { status: 200, body: { runId: data.data.id, datasetId: data.data.defaultDatasetId, status: data.data.status, jobId: inserted[0]?.id ?? null } };
+  }
+
+  // ── abort a running Apify leads-finder run ────────────────────────────
+  if (action === "stop") {
+    if (!APIFY_TOKEN) return { status: 503, body: { error: "Apify not configured" } };
+    if (!runId) return { status: 400, body: { error: "No runId" } };
+    const r = await fetch(`https://api.apify.com/v2/actor-runs/${runId}/abort?token=${APIFY_TOKEN}`, { method: "POST" });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      return { status: r.status, body: { error: err?.error?.message || "Failed to stop the run" } };
+    }
+    const data = await r.json();
+    await ensureEnrichJobsTable();
+    await radarSql(`UPDATE enrich_jobs SET status = '${data.data?.status || "ABORTED"}', updated_at = now() WHERE run_id = '${runId.replace(/'/g, "''")}'`);
+    return { status: 200, body: { status: data.data?.status || "ABORTED" } };
   }
 
   // ── list recent Enrich jobs (so a page refresh doesn't lose track of a running/finished search) ──

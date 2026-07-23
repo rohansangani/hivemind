@@ -2618,6 +2618,7 @@ function EnrichSection() {
 
   const [saveBusy, setSaveBusy] = useState(false);
   const [searchBusy, setSearchBusy] = useState(false);
+  const [stopBusy, setStopBusy] = useState(false);
   const [validateResult, setValidateResult] = useState<{ validated: number; byStatus: Record<string, number> } | null>(null);
 
   // Recent Enrich jobs — a page refresh loses runId/datasetId (plain component state), so this
@@ -2765,6 +2766,21 @@ function EnrichSection() {
       setError((e as Error).message);
     } finally {
       setSearchBusy(false);
+    }
+  };
+
+  const stopSearch = async () => {
+    if (!runId) return;
+    setStopBusy(true);
+    setError("");
+    try {
+      await call({ action: "stop", runId });
+      setPhase("form");
+      loadJobsList();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setStopBusy(false);
     }
   };
 
@@ -3195,6 +3211,9 @@ function EnrichSection() {
           <div className="px-5 py-14 flex flex-col items-center justify-center text-center gap-3">
             <div className="w-5 h-5 border-2 border-[var(--hm-accent)]/30 border-t-[var(--hm-accent)] rounded-full animate-spin" />
             <p className="text-[13px] text-[var(--hm-text)]">Enriching via Apify…</p>
+            <button onClick={stopSearch} disabled={stopBusy || !runId} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 14px", fontSize: 12.5 }}>
+              {stopBusy ? "Stopping…" : "■ Stop"}
+            </button>
           </div>
         )}
 
