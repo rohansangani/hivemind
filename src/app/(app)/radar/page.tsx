@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useUser } from "@/lib/UserContext";
 import { hasModuleAccess } from "@/lib/modules";
+import { APIFY_LEADS_FINDER_LOCATIONS } from "@/lib/radar/apifyLocations";
 
 /**
  * Radar — prospecting module (accounts, contacts, enrichment, email validation).
@@ -2578,8 +2579,8 @@ function EnrichSection() {
   const [notTitles, setNotTitles] = useState("");
   const [seniority, setSeniority] = useState<string[]>([]);
   const [functionalLevel, setFunctionalLevel] = useState<string[]>([]);
-  const [location, setLocation] = useState("");
-  const [notLocation, setNotLocation] = useState("");
+  const [location, setLocation] = useState<string[]>([]);
+  const [notLocation, setNotLocation] = useState<string[]>([]);
   const [industry, setIndustry] = useState<string[]>([]);
   const [notIndustry, setNotIndustry] = useState<string[]>([]);
   const [size, setSize] = useState<string[]>([]);
@@ -2637,8 +2638,8 @@ function EnrichSection() {
     // silently sent values the actor couldn't match. Now we keep the real enum keys throughout.
     setSeniority(icp.seniority || []);
     setFunctionalLevel(icp.function || []);
-    setLocation(icp.location || "");
-    setNotLocation(icp.notLocation || "");
+    setLocation(icp.location || []);
+    setNotLocation(icp.notLocation || []);
     setIndustry(icp.industry || []);
     setNotIndustry(icp.notIndustry || []);
     setSize(icp.size || []);
@@ -2688,8 +2689,8 @@ function EnrichSection() {
       if (notTitles.trim()) params.contact_not_job_title = csv(notTitles);
       if (seniority.length) params.seniority_level = seniority;
       if (functionalLevel.length) params.functional_level = functionalLevel;
-      if (location.trim()) params.contact_location = csv(location);
-      if (notLocation.trim()) params.contact_not_location = csv(notLocation);
+      if (location.length) params.contact_location = location;
+      if (notLocation.length) params.contact_not_location = notLocation;
       if (industry.length) params.company_industry = industry;
       if (notIndustry.length) params.company_not_industry = notIndustry;
       if (size.length) params.size = size;
@@ -2964,11 +2965,11 @@ function EnrichSection() {
               </div>
               <div>
                 <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Location</label>
-                <input type="text" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="India, US" />
+                <SearchableMultiSelect options={APIFY_LEADS_FINDER_LOCATIONS} selected={location} onChange={setLocation} placeholder="India, United States" />
               </div>
               <div>
                 <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Exclude location</label>
-                <input type="text" value={notLocation} onChange={(e) => setNotLocation(e.target.value)} placeholder="Pakistan" />
+                <SearchableMultiSelect options={APIFY_LEADS_FINDER_LOCATIONS} selected={notLocation} onChange={setNotLocation} placeholder="Pakistan" />
               </div>
               <div>
                 <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Keywords include</label>
@@ -5256,8 +5257,8 @@ interface IcpProfile {
   notTitles: string;
   seniority: string[];
   function: string[];
-  location: string;
-  notLocation: string;
+  location: string[];
+  notLocation: string[];
   industry: string[];
   notIndustry: string[];
   keywords: string;
@@ -5269,7 +5270,7 @@ interface IcpProfile {
 }
 
 const EMPTY_ICP: IcpProfile = {
-  titles: "", notTitles: "", seniority: [], function: [], location: "", notLocation: "",
+  titles: "", notTitles: "", seniority: [], function: [], location: [], notLocation: [],
   industry: [], notIndustry: [], keywords: "", notKeywords: "", size: [], minRevenue: "", maxRevenue: "",
 };
 
@@ -5277,20 +5278,27 @@ const ICP_STORAGE_KEY = "hivemind_radar_icps";
 
 function loadIcps(): Record<string, IcpProfile> {
   try {
-    const raw = JSON.parse(localStorage.getItem(ICP_STORAGE_KEY) || "{}") as Record<string, IcpProfile & { industry?: unknown; notIndustry?: unknown }>;
-    // Migrate ICPs saved before industry/notIndustry became real enum arrays (was free text).
+    const raw = JSON.parse(localStorage.getItem(ICP_STORAGE_KEY) || "{}") as Record<string, IcpProfile & { industry?: unknown; notIndustry?: unknown; location?: unknown; notLocation?: unknown }>;
+    // Migrate ICPs saved before industry/notIndustry/location/notLocation became real enum
+    // arrays (was free text) — a free-text location like "India, US" never matched the Apify
+    // actor's exact enum ("india", "united states"), which is what threw its "only one of the
+    // value is allowed" (enum mismatch) error as soon as a second, also-unmatched value was added.
     for (const key of Object.keys(raw)) {
       const icp = raw[key];
-      if (typeof icp.industry === "string") icp.industry = csvToList(icp.industry);
-      if (typeof icp.notIndustry === "string") icp.notIndustry = csvToList(icp.notIndustry);
+      if (typeof icp.industry === "string") icp.industry = csvToList(icp.industry, ICP_INDUSTRY);
+      if (typeof icp.notIndustry === "string") icp.notIndustry = csvToList(icp.notIndustry, ICP_INDUSTRY);
       if (!Array.isArray(icp.industry)) icp.industry = [];
       if (!Array.isArray(icp.notIndustry)) icp.notIndustry = [];
+      if (typeof icp.location === "string") icp.location = csvToList(icp.location, APIFY_LEADS_FINDER_LOCATIONS);
+      if (typeof icp.notLocation === "string") icp.notLocation = csvToList(icp.notLocation, APIFY_LEADS_FINDER_LOCATIONS);
+      if (!Array.isArray(icp.location)) icp.location = [];
+      if (!Array.isArray(icp.notLocation)) icp.notLocation = [];
     }
     return raw as Record<string, IcpProfile>;
   } catch { return {}; }
 }
-function csvToList(s: string): string[] {
-  return s.split(",").map((t) => t.trim().toLowerCase()).filter((t) => t && ICP_INDUSTRY.includes(t));
+function csvToList(s: string, allowed: string[]): string[] {
+  return s.split(",").map((t) => t.trim().toLowerCase()).filter((t) => t && allowed.includes(t));
 }
 function saveIcps(icps: Record<string, IcpProfile>) {
   localStorage.setItem(ICP_STORAGE_KEY, JSON.stringify(icps));
@@ -5443,8 +5451,8 @@ function IcpBaseSection() {
         notTitles: icp.notTitles || "",
         seniority: mapSeniority(icp.seniority || []),
         function: mapFunction(icp.function || []),
-        location: icp.location || "",
-        notLocation: icp.notLocation || "",
+        location: mapLocation(icp.location || ""),
+        notLocation: mapLocation(icp.notLocation || ""),
         industry: mapIndustry(icp.industry || []),
         minRevenue: icp.minRevenue || "",
         maxRevenue: icp.maxRevenue || "",
@@ -5520,11 +5528,11 @@ function IcpBaseSection() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Location</label>
-            <input type="text" value={draft.location} onChange={(e) => update({ location: e.target.value })} placeholder="India, US" />
+            <SearchableMultiSelect options={APIFY_LEADS_FINDER_LOCATIONS} selected={draft.location} onChange={(v) => update({ location: v })} placeholder="India, United States" />
           </div>
           <div>
             <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Exclude location</label>
-            <input type="text" value={draft.notLocation} onChange={(e) => update({ notLocation: e.target.value })} placeholder="Pakistan" />
+            <SearchableMultiSelect options={APIFY_LEADS_FINDER_LOCATIONS} selected={draft.notLocation} onChange={(v) => update({ notLocation: v })} placeholder="Pakistan" />
           </div>
         </div>
 
@@ -5598,4 +5606,10 @@ function mapFunction(vals: string[]): string[] {
 function mapIndustry(vals: string[]): string[] {
   // AI-guessed industries must land on the actor's exact enum or the filter silently matches nothing.
   return vals.map((v) => v.toLowerCase().trim()).filter((v) => ICP_INDUSTRY.includes(v));
+}
+function mapLocation(raw: string): string[] {
+  // The AI parser still returns a free-text comma list ("India, US") — same enum-mismatch problem
+  // as industry, so run it through the same lowercase + exact-enum filter before it ever reaches
+  // the actor.
+  return csvToList(raw || "", APIFY_LEADS_FINDER_LOCATIONS);
 }
