@@ -4965,6 +4965,8 @@ function CheckDbSection() {
   const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
   const [csvRows, setCsvRows] = useState<Record<string, string>[]>([]);
   const [csvColumn, setCsvColumn] = useState("");
+  const [marking, setMarking] = useState(false);
+  const [marked, setMarked] = useState(false);
 
   const columnOptions = CHECK_DB_COLUMNS[table];
   const activeColumn = columnOptions.find((c) => c.id === column) || columnOptions[0];
@@ -5044,6 +5046,7 @@ function CheckDbSection() {
     setBusy(true);
     setError("");
     setResult(null);
+    setMarked(false);
     try {
       const r = await fetch("/api/radar/check-db", {
         method: "POST",
@@ -5060,9 +5063,34 @@ function CheckDbSection() {
     }
   };
 
+  const markIrrelevantFound = async () => {
+    if (!result?.data.length) return;
+    const ids = result.data.map((r) => r.id).filter(Boolean) as (string | number)[];
+    if (!ids.length) return;
+    if (!confirm(`Mark ${ids.length} matched ${table} as irrelevant?`)) return;
+    setMarking(true);
+    try {
+      const r = await fetch(`/api/radar/${table}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "mark_irrelevant", ids, irrelevant: true }),
+      });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        setError(d.error || "Failed to mark irrelevant");
+        return;
+      }
+      setMarked(true);
+    } catch {
+      setError("Failed to mark irrelevant");
+    } finally {
+      setMarking(false);
+    }
+  };
+
   const exportFound = () => {
     if (!result?.data.length) return;
-    const cols = Object.keys(result.data[0]);
+    const cols = Object.keys(result.data[0]).filter((c) => c !== "id");
     const esc = (v: unknown) => `"${(v ?? "").toString().replace(/"/g, '""')}"`;
     const lines = [cols.join(",")];
     result.data.forEach((r) => lines.push(cols.map((c) => esc(r[c])).join(",")));
@@ -5075,14 +5103,16 @@ function CheckDbSection() {
     URL.revokeObjectURL(url);
   };
 
-  const cols = result?.data.length ? Object.keys(result.data[0]) : [];
+  // `id` is only carried along for the bulk "mark irrelevant via CSV" flow reusing this same
+  // lookup — never a meaningful column to a human looking at Check DB's own results.
+  const cols = result?.data.length ? Object.keys(result.data[0]).filter((c) => c !== "id") : [];
 
   return (
     <div className="space-y-5">
       <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
         <div className="px-5 py-4 border-b border-[var(--hm-border)]">
           <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Check values against the database</h2>
-          <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">Paste values (one per line) or upload a CSV — with a multi-column file, pick which column to check (e.g. just a LinkedIn URL column). We&apos;ll show which already exist, by any column, in Contacts or Accounts.</p>
+          <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">Paste values (one per line) or upload a CSV — with a multi-column file, pick which column to check (e.g. just a LinkedIn URL column). We&apos;ll show which already exist, by any column, in Contacts or Accounts — and let you bulk-mark all matched rows as irrelevant.</p>
         </div>
         <div className="px-5 py-5 space-y-3">
           <div className="flex items-center gap-3 flex-wrap">
@@ -5160,7 +5190,18 @@ function CheckDbSection() {
               {result.notFound.length > 0 && ` · ${result.notFound.length} not found`}
             </span>
             {result.data.length > 0 && (
-              <button onClick={exportFound} className="hm-btn hm-btn-secondary" style={{ height: 30, padding: "0 12px", fontSize: 12 }}>Export found</button>
+              <div className="flex items-center gap-2">
+                <button onClick={exportFound} className="hm-btn hm-btn-secondary" style={{ height: 30, padding: "0 12px", fontSize: 12 }}>Export found</button>
+                <button
+                  onClick={markIrrelevantFound}
+                  disabled={marking || marked}
+                  className="hm-btn hm-btn-secondary"
+                  style={{ height: 30, padding: "0 12px", fontSize: 12 }}
+                  title={`Mark all ${result.data.length} matched ${table} as irrelevant`}
+                >
+                  {marked ? "Marked irrelevant ✓" : marking ? "Marking…" : "Mark matched irrelevant"}
+                </button>
+              </div>
             )}
           </div>
           {result.data.length === 0 ? (

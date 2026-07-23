@@ -13,10 +13,13 @@ import { selectFrom, requireRadarAccess } from "@/lib/radar/supabase";
  */
 export const maxDuration = 30;
 
+// `id` is included so callers (e.g. the bulk "mark irrelevant via CSV" flow) can resolve a list of
+// values straight to real row ids without a second lookup — it's just carried through, not shown
+// as a meaningful column in the on-page preview table.
 const CONTACT_COLS =
-  "first_name,last_name,email,title,company_name,account_name,domain,industry,country,email_status,validated_at,vertical,phone,linkedin_url";
+  "id,first_name,last_name,email,title,company_name,account_name,domain,industry,country,email_status,validated_at,vertical,phone,linkedin_url";
 const ACCOUNT_COLS =
-  "name,domain,vertical,industry,sub_industry,employee_range,revenue_range,country,linkedin_url,sdr_owner";
+  "id,name,domain,vertical,industry,sub_industry,employee_range,revenue_range,country,linkedin_url,sdr_owner";
 
 type CheckTable = "contacts" | "accounts";
 
