@@ -807,12 +807,24 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
     if (!overrideAction && auth !== `Bearer ${CRON_SECRET}`) return { status: 401, body: { error: "Unauthorized" } };
     await ensureRetestJobsTable();
     const rows = await radarSql<RetestJobRow & { fail_count?: number }>(`SELECT * FROM retest_jobs WHERE status = 'running' ORDER BY id ASC`);
+    const TOTAL_BUDGET_MS = 42000;
     const startedAt = Date.now();
     const results: Record<string, unknown>[] = [];
-    for (const row of rows) {
-      if (Date.now() - startedAt > 42000) { results.push({ jobId: row.id, skipped: "time budget — will run next tick" }); continue; }
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const remaining = TOTAL_BUDGET_MS - (Date.now() - startedAt);
+      if (remaining < 3000) { results.push({ jobId: row.id, skipped: "time budget — will run next tick" }); continue; }
+      // A fair, recalculated slice of whatever's left — NOT the whole remaining budget. The old
+      // code passed continueRetestJob the shared deadline directly, so its own while-loop ran
+      // until that full deadline regardless of how many other jobs were waiting: confirmed live,
+      // job #10 (lowest id, a large filter-based job with plenty of stale contacts to keep
+      // finding) silently starved every other running job on every single tick, including one
+      // stuck on a 2,386-email list. Splitting evenly across whatever's still queued means a
+      // slow job no longer blocks the rest — leftover time from an early-finishing job also
+      // naturally redistributes since this is recomputed each iteration, not decided up front.
+      const perJobBudget = Math.floor(remaining / (rows.length - i));
       try {
-        const result = await continueRetestJob(row, startedAt, 42000);
+        const result = await continueRetestJob(row, Date.now(), perJobBudget);
         results.push({ jobId: row.id, ...result });
       } catch (e) {
         const failCount = (row.fail_count || 0) + 1;
