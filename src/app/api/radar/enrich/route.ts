@@ -128,9 +128,28 @@ async function callClaude(anthropicKey: string, system: string, user: string): P
 
 const INDUSTRY_ENUM = "information technology & services, construction, marketing & advertising, real estate, health, wellness & fitness, management consulting, computer software, internet, retail, financial services, consumer services, hospital & health care, automotive, restaurants, education management, food & beverages, design, hospitality, accounting, events services, nonprofit organization management, entertainment, electrical/electronic manufacturing, leisure, travel & tourism, professional training & coaching, transportation/trucking/railroad, law practice, apparel & fashion, architecture & planning, mechanical or industrial engineering, insurance, telecommunications, human resources, staffing & recruiting, sports, legal services, oil & energy, media production, machinery, wholesale, consumer goods, music, photography, medical practice, cosmetics, environmental services, graphic design, business supplies & equipment, renewables & environment, facilities services, publishing, food production, arts & crafts, building materials, civil engineering, religious institutions, public relations & communications, higher education, printing, furniture, mining & metals, logistics & supply chain, research, pharmaceuticals, individual & family services, medical devices, civic & social organization, e-learning, security & investigations, chemicals, government administration, online media, investment management, farming, writing & editing, textiles, mental health care, primary/secondary education, broadcast media, biotechnology, information services, international trade & development, motion pictures & film, consumer electronics, banking, import & export, industrial automation, recreational facilities & services, performing arts, utilities, sporting goods, fine art, airlines/aviation, computer & network security, maritime, luxury goods & jewelry, veterinary, venture capital & private equity, wine & spirits, plastics, aviation & aerospace, commercial real estate, computer games, packaging & containers, executive office, computer hardware, computer networking, market research, outsourcing/offshoring, program development, translation & localization, philanthropy, public safety, alternative medicine, museums & institutions, warehousing, defense & space, newspapers, paper & forest products, law enforcement, investment banking, government relations, fund-raising, think tanks, glass, ceramics & concrete, capital markets, semiconductors, animation, political organization, package/freight delivery, wireless, international affairs, public policy, libraries, gambling & casinos, railroad manufacture, ranching, military, fishery, supermarkets, dairy, tobacco, shipbuilding, judiciary, alternative dispute resolution, nanotechnology, agriculture, legislative office";
 
+// Recent Enrich (Apify) runs — lets a page refresh (or a different tab/teammate) find a
+// running or already-finished search instead of losing track of it, same reasoning as
+// retest_jobs in validate/route.ts. Apify itself keeps the run/dataset around regardless;
+// this table is just hivemind's own pointer + label into that.
+async function ensureEnrichJobsTable(): Promise<void> {
+  await radarSql(`CREATE TABLE IF NOT EXISTS enrich_jobs (
+    id bigserial primary key,
+    label text NOT NULL,
+    created_by text,
+    run_id text NOT NULL,
+    dataset_id text NOT NULL,
+    status text NOT NULL DEFAULT 'RUNNING',
+    item_count integer NOT NULL DEFAULT 0,
+    params jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+  )`);
+}
+
 async function handleAction(req: NextRequest, userEmail: string | null): Promise<{ status: number; body: Record<string, unknown> }> {
   const body = await req.json().catch(() => ({}));
-  const { action, params, runId, datasetId } = body as { action?: string; params?: Record<string, unknown>; runId?: string; datasetId?: string };
+  const { action, params, runId, datasetId, label, jobId } = body as { action?: string; params?: Record<string, unknown>; runId?: string; datasetId?: string; label?: string; jobId?: number };
   const APIFY_TOKEN = process.env.APIFY_TOKEN;
 
   // ── check existing contacts in DB for given domains ──────────────────
@@ -156,9 +175,10 @@ async function handleAction(req: NextRequest, userEmail: string | null): Promise
   // ── start an Apify leads-finder run ──────────────────────────────────────
   if (action === "start") {
     if (!APIFY_TOKEN) return { status: 503, body: { error: "Apify not configured" } };
-    const input: Record<string, unknown> = {};
+    if (!label || !label.trim()) return { status: 400, body: { error: "Job name is required" } };
+    const input: Record<string, unknown> = { file_name: label.trim() };
     const fields = [
-      "fetch_count", "file_name", "contact_job_title", "contact_not_job_title",
+      "fetch_count", "contact_job_title", "contact_not_job_title",
       "seniority_level", "functional_level", "contact_location", "contact_city",
       "contact_not_location", "contact_not_city", "email_status", "company_domain",
       "size", "company_industry", "company_not_industry", "company_keywords",
@@ -176,7 +196,35 @@ async function handleAction(req: NextRequest, userEmail: string | null): Promise
       return { status: r.status, body: { error: err?.error?.message || "Failed to start Apify run" } };
     }
     const data = await r.json();
-    return { status: 200, body: { runId: data.data.id, datasetId: data.data.defaultDatasetId, status: data.data.status } };
+    await ensureEnrichJobsTable();
+    const esc = (s: string) => s.replace(/'/g, "''");
+    const inserted = await radarSql<{ id: number }>(`
+      INSERT INTO enrich_jobs (label, created_by, run_id, dataset_id, status, params)
+      VALUES ('${esc(label.trim())}', ${userEmail ? `'${esc(userEmail)}'` : "NULL"}, '${esc(data.data.id)}', '${esc(data.data.defaultDatasetId)}', '${esc(data.data.status)}', '${esc(JSON.stringify(params || {}))}'::jsonb)
+      RETURNING id
+    `);
+    return { status: 200, body: { runId: data.data.id, datasetId: data.data.defaultDatasetId, status: data.data.status, jobId: inserted[0]?.id ?? null } };
+  }
+
+  // ── list recent Enrich jobs (so a page refresh doesn't lose track of a running/finished search) ──
+  if (action === "list_enrich_jobs") {
+    await ensureEnrichJobsTable();
+    const rows = await radarSql(`SELECT id, label, created_by, run_id, dataset_id, status, item_count, created_at FROM enrich_jobs ORDER BY id DESC LIMIT 50`);
+    return { status: 200, body: { jobs: rows } };
+  }
+
+  // ── sync one job's status/item_count from Apify (called when opening a past job) ──
+  if (action === "enrich_job_sync") {
+    if (!jobId) return { status: 400, body: { error: "No jobId" } };
+    await ensureEnrichJobsTable();
+    const row = (await radarSql<{ run_id: string; dataset_id: string }>(`SELECT run_id, dataset_id FROM enrich_jobs WHERE id = ${Number(jobId)}`))[0];
+    if (!row) return { status: 404, body: { error: "Job not found" } };
+    const r = await fetch(`https://api.apify.com/v2/actor-runs/${row.run_id}?token=${APIFY_TOKEN}`);
+    const data = await r.json();
+    const status = data.data?.status || "UNKNOWN";
+    const itemCount = data.data?.stats?.itemCount || 0;
+    await radarSql(`UPDATE enrich_jobs SET status = '${status}', item_count = ${itemCount}, updated_at = now() WHERE id = ${Number(jobId)}`);
+    return { status: 200, body: { runId: row.run_id, datasetId: row.dataset_id, status, itemCount } };
   }
 
   // ── poll run status ──────────────────────────────────────────────────

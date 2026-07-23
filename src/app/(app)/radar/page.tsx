@@ -2573,7 +2573,13 @@ type EnrichPhase = "form" | "running" | "results" | "saved";
 
 interface EnrichScore { email: string; score: number; reason: string; }
 
+interface EnrichJobRow {
+  id: number; label: string; created_by: string | null; run_id: string; dataset_id: string;
+  status: string; item_count: number; created_at: string;
+}
+
 function EnrichSection() {
+  const [jobLabel, setJobLabel] = useState("");
   const [domain, setDomain] = useState("");
   const [titles, setTitles] = useState("");
   const [notTitles, setNotTitles] = useState("");
@@ -2614,7 +2620,57 @@ function EnrichSection() {
   const [searchBusy, setSearchBusy] = useState(false);
   const [validateResult, setValidateResult] = useState<{ validated: number; byStatus: Record<string, number> } | null>(null);
 
+  // Recent Enrich jobs — a page refresh loses runId/datasetId (plain component state), so this
+  // list lets you find and re-open an already-run search instead of paying for another Apify run.
+  const [jobsList, setJobsList] = useState<EnrichJobRow[]>([]);
+  const [jobsListLoading, setJobsListLoading] = useState(false);
+  const [jobsListError, setJobsListError] = useState("");
+  const [openingJobId, setOpeningJobId] = useState<number | null>(null);
+
   useEffect(() => { setSavedIcps(loadIcps()); }, []);
+
+  const loadJobsList = async () => {
+    setJobsListLoading(true);
+    setJobsListError("");
+    try {
+      const d = await call({ action: "list_enrich_jobs" });
+      setJobsList(d.jobs || []);
+    } catch (e) {
+      setJobsListError((e as Error).message);
+    }
+    setJobsListLoading(false);
+  };
+  useEffect(() => { loadJobsList(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Re-open a past job: sync its live status/count from Apify, then either resume polling
+  // (still running) or fetch the dataset straight into the results view (already done) —
+  // no need to re-run the search just to see results after a page refresh.
+  const openJob = async (job: EnrichJobRow) => {
+    setOpeningJobId(job.id);
+    setError("");
+    setJobLabel(job.label);
+    try {
+      const s = await call({ action: "enrich_job_sync", jobId: job.id });
+      setRunId(s.runId);
+      setDatasetId(s.datasetId);
+      if (s.status === "SUCCEEDED") {
+        const f = await call({ action: "fetch", datasetId: s.datasetId });
+        setLeads(f.items || []);
+        setSelected(new Set((f.items || []).map((_: unknown, i: number) => i)));
+        setPhase("results");
+      } else if (s.status === "FAILED" || s.status === "ABORTED" || s.status === "TIMED-OUT") {
+        setError(`This job ${s.status.toLowerCase()}.`);
+      } else {
+        setPhase("running");
+        setPollTick((t) => t + 1);
+      }
+      loadJobsList();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setOpeningJobId(null);
+    }
+  };
 
   const call = async (body: Record<string, unknown>) => {
     const r = await fetch("/api/radar/enrich", {
@@ -2675,6 +2731,7 @@ function EnrichSection() {
 
   const startSearch = async () => {
     setError("");
+    if (!jobLabel.trim()) { setError("Give this search a job name before running it."); return; }
     if (!domain.trim()) { setError("Enter at least one domain to search."); return; }
     const domains = csv(domain);
     setSearchBusy(true);
@@ -2699,10 +2756,11 @@ function EnrichSection() {
       if (minRevenue) params.min_revenue = minRevenue;
       if (maxRevenue) params.max_revenue = maxRevenue;
 
-      const started = await call({ action: "start", params });
+      const started = await call({ action: "start", params, label: jobLabel.trim() });
       setRunId(started.runId);
       setDatasetId(started.datasetId);
       setPhase("running");
+      loadJobsList();
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -2906,7 +2964,24 @@ function EnrichSection() {
 
   const reset = () => {
     setPhase("form"); setRunId(null); setDatasetId(null); setLeads([]); setSelected(new Set());
-    setExistingLeads([]); setExistingSelected(new Set()); setError(""); setSavedCount(0); setSavedAccountsCount(0); setSaveVertical(""); setScores({}); setValidateResult(null);
+    setExistingLeads([]); setExistingSelected(new Set()); setError(""); setSavedCount(0); setSavedAccountsCount(0); setSaveVertical(""); setScores({}); setValidateResult(null); setJobLabel("");
+  };
+
+  const exportLeadsCsv = () => {
+    if (!leads.length) return;
+    const rows = leads.filter((_, i) => selected.has(i));
+    if (!rows.length) return;
+    const cols = ["full_name", "first_name", "last_name", "title", "company_name", "email", "phone", "linkedin_url", "location", "country"] as const;
+    const esc = (v: unknown) => `"${(v ?? "").toString().replace(/"/g, '""')}"`;
+    const lines = [cols.join(",")];
+    rows.forEach((r) => lines.push(cols.map((c) => esc(r[c as keyof EnrichLead])).join(",")));
+    const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `enrich-${(jobLabel || "leads").toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const sortedLeads = [...leads].map((l, i) => ({ l, i })).sort((a, b) => {
@@ -2931,8 +3006,39 @@ function EnrichSection() {
           </p>
         </div>
 
+        {(jobsList.length > 0 || jobsListLoading || jobsListError) && phase === "form" && (
+          <div className="px-5 py-3 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)]">
+            <div className="flex items-center justify-between mb-1.5">
+              <p className="text-[11px] font-medium text-[var(--hm-text-tertiary)] uppercase tracking-wide">Recent Enrich jobs</p>
+              <button onClick={loadJobsList} disabled={jobsListLoading} className="text-[11.5px] text-[var(--hm-accent)] hover:underline">
+                {jobsListLoading ? "Loading…" : "Refresh"}
+              </button>
+            </div>
+            {jobsListError && <p className="text-[12px] text-red-500">{jobsListError}</p>}
+            <div className="space-y-1 max-h-40 overflow-y-auto">
+              {jobsList.map((j) => (
+                <button
+                  key={j.id}
+                  onClick={() => openJob(j)}
+                  disabled={openingJobId === j.id}
+                  className="w-full flex items-center justify-between gap-2 text-left px-2.5 py-1.5 rounded-md hover:bg-[var(--hm-surface-hover)] text-[12.5px]"
+                >
+                  <span className="font-medium text-[var(--hm-text)] truncate">{j.label}</span>
+                  <span className="text-[11px] text-[var(--hm-text-tertiary)] whitespace-nowrap">
+                    {openingJobId === j.id ? "Opening…" : `${j.status.toLowerCase()} · ${j.item_count} found · ${new Date(j.created_at).toLocaleString()}`}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {phase === "form" && (
           <div className="px-5 py-5 space-y-4">
+            <div>
+              <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Job name</label>
+              <input type="text" value={jobLabel} onChange={(e) => setJobLabel(e.target.value)} placeholder="e.g. Q3 fintech VPs" />
+            </div>
             <div>
               <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Start from a saved ICP (optional)</label>
               <select value={icpVertical} onChange={(e) => applyIcp(e.target.value)} style={{ maxWidth: 220 }}>
@@ -3025,7 +3131,7 @@ function EnrichSection() {
 
             {error && <div className="rounded-lg p-3 text-[12.5px] bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</div>}
 
-            <button onClick={startSearch} disabled={searchBusy} className="hm-btn hm-btn-primary" style={{ height: 38, padding: "0 18px", fontSize: 13 }}>
+            <button onClick={startSearch} disabled={searchBusy || !jobLabel.trim()} className="hm-btn hm-btn-primary" style={{ height: 38, padding: "0 18px", fontSize: 13 }}>
               {searchBusy ? "Enriching…" : "Enrich"}
             </button>
           </div>
@@ -3107,6 +3213,7 @@ function EnrichSection() {
                       {scoring ? "Scoring…" : `✨ Score vs ${icpVertical} ICP`}
                     </button>
                   )}
+                  <button onClick={exportLeadsCsv} disabled={!selected.size} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 12px", fontSize: 12 }}>Export CSV</button>
                   <button onClick={reset} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 12px", fontSize: 12 }}>New search</button>
                   <select value={saveVertical} onChange={(e) => setSaveVertical(e.target.value)} style={{ width: 150, height: 32, fontSize: 12 }} title="Vertical is required to save">
                     <option value="">— Select vertical —</option>
