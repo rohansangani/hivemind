@@ -3790,7 +3790,7 @@ function ValidateSection() {
       const done = job.status === "done";
       setRetestJobDone(done);
       if (job.status === "error") {
-        setDebounceMsg({ kind: "err", text: job.error || "Retest job failed." });
+        setDebounceMsg({ kind: "err", text: job.error || "Email Debounce Validation job failed." });
       } else {
         const breakdown = debounceBreakdown(job.skipped_fresh || 0, job.gave_up || 0, job.retrying || 0);
         setDebounceMsg({
@@ -4242,7 +4242,7 @@ function ValidateSection() {
                     inputMode === "retest" ? "text-[var(--hm-accent)] bg-[var(--hm-accent-light)]" : "text-[var(--hm-text-tertiary)]"
                   }`}
                 >
-                  Re-test DB contacts
+                  Email Debounce Validation
                 </button>
                 <button
                   onClick={() => setInputMode("linkedin")}
@@ -4560,7 +4560,7 @@ function ValidateSection() {
               ) : (
                 <>
                   <div className="px-5 py-4 border-b border-[var(--hm-border)]">
-                    <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Re-test existing contacts</h2>
+                    <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Email Debounce Validation</h2>
                     <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">
                       Sends real test emails. Delivered → <strong>verified</strong> (never re-checked). Bounced → <strong>invalid</strong>.
                     </p>
