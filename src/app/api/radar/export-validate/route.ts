@@ -37,7 +37,14 @@ interface ContactRow {
   debounce_fail_count: number | null;
 }
 
-function buildRetestQuery(filters: RetestFilters, limit?: number, offset?: number): string {
+// `emailsOverride` lets a caller in "exact email list" mode pass an already-sliced page of the
+// list instead of the full array — see the emails-mode branches in count_stale/validate_chunk
+// below. Without this, a large list (confirmed live: one real job carried 2,386 emails) gets
+// embedded WHOLESALE into the `email=in.(...)` clause on every single chunk call regardless of
+// `limit`/`offset` (those only bound the SQL result, not the WHERE clause itself), producing a
+// query string large enough to fail outright — every chunk for that job errored with a generic
+// "Export validation unavailable", and the job never advanced past offset 0.
+function buildRetestQuery(filters: RetestFilters, limit?: number, offset?: number, emailsOverride?: string[]): string {
   let q = "select=*&order=id.asc";
   if (limit) q += `&limit=${limit}`;
   if (offset) q += `&offset=${offset}`;
@@ -59,7 +66,7 @@ function buildRetestQuery(filters: RetestFilters, limit?: number, offset?: numbe
 
   // Exact-list targeting (e.g. re-validating a specific set of rows the user checked in the UI,
   // rather than everything matching the other filters).
-  const emails = Array.isArray(filters.emails) ? filters.emails.filter(Boolean) : [];
+  const emails = emailsOverride ?? (Array.isArray(filters.emails) ? filters.emails.filter(Boolean) : []);
   if (emails.length) q += `&email=in.(${emails.map((e) => encodeURIComponent(e.toLowerCase())).join(",")})`;
   if (filters.country) q += `&country=eq.${encodeURIComponent(filters.country)}`;
   if (filters.company) q += `&company_name=ilike.*${encodeURIComponent(filters.company)}*`;
@@ -129,12 +136,28 @@ export async function POST(req: NextRequest) {
     const DEBOUNCE_KEY = process.env.DEBOUNCE_API_KEY;
 
     if (action === "count_stale") {
-      const { total } = await selectFrom("contacts_view", buildRetestQuery(filters));
-      // Sample 200 rows from a random offset to get an unbiased stale ratio estimate
-      const randomOffset = total > 200 ? Math.floor(Math.random() * (total - 200)) : 0;
-      const { rows } = await selectFrom("contacts_view", buildRetestQuery(filters, 200, randomOffset));
+      const allEmails = Array.isArray(filters.emails) ? filters.emails.filter(Boolean) : null;
+      let total: number;
+      let sample: ContactRow[];
+      if (allEmails) {
+        // Exact-list mode: the list itself already gives us the true total, and the query for
+        // the stale-ratio sample only ever needs to carry a bounded (<=200-email) slice — never
+        // the whole list, however large.
+        total = allEmails.length;
+        const sampleEmails = allEmails.length > 200
+          ? allEmails.slice(Math.floor(Math.random() * (allEmails.length - 200)), undefined).slice(0, 200)
+          : allEmails;
+        const { rows } = await selectFrom("contacts_view", buildRetestQuery(filters, undefined, undefined, sampleEmails));
+        sample = rows as unknown as ContactRow[];
+      } else {
+        const totalRes = await selectFrom("contacts_view", buildRetestQuery(filters));
+        total = totalRes.total;
+        // Sample 200 rows from a random offset to get an unbiased stale ratio estimate
+        const randomOffset = total > 200 ? Math.floor(Math.random() * (total - 200)) : 0;
+        const { rows } = await selectFrom("contacts_view", buildRetestQuery(filters, 200, randomOffset));
+        sample = rows as unknown as ContactRow[];
+      }
       const now = Date.now();
-      const sample = rows as unknown as ContactRow[];
       const staleCount = sample.filter((c) => isStale(c, now)).length;
       const staleRatio = sample.length ? staleCount / sample.length : 0;
       const estimatedStale = Math.round(total * staleRatio);
@@ -142,9 +165,23 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "validate_chunk") {
-      const { rows } = await selectFrom("contacts_view", buildRetestQuery(filters, CHUNK, offset));
-      const contacts = rows as unknown as ContactRow[];
-      if (!contacts.length) return NextResponse.json({ processed: 0, validated: 0, done: true });
+      const allEmails = Array.isArray(filters.emails) ? filters.emails.filter(Boolean) : null;
+      let contacts: ContactRow[];
+      let doneAfterThisChunk = false;
+      if (allEmails) {
+        // Exact-list mode: page through the LIST itself, not a SQL offset against a query that
+        // embeds the whole list — see buildRetestQuery's comment for why that failed outright
+        // for a large list.
+        const pageEmails = allEmails.slice(offset, offset + CHUNK);
+        if (!pageEmails.length) return NextResponse.json({ processed: 0, validated: 0, done: true });
+        const { rows } = await selectFrom("contacts_view", buildRetestQuery(filters, undefined, undefined, pageEmails));
+        contacts = rows as unknown as ContactRow[];
+        doneAfterThisChunk = offset + pageEmails.length >= allEmails.length;
+      } else {
+        const { rows } = await selectFrom("contacts_view", buildRetestQuery(filters, CHUNK, offset));
+        contacts = rows as unknown as ContactRow[];
+      }
+      if (!contacts.length && !allEmails) return NextResponse.json({ processed: 0, validated: 0, done: true });
 
       const now = Date.now();
       const nowISO = new Date().toISOString();
@@ -186,7 +223,11 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      const done = contacts.length < CHUNK;
+      // In emails-mode, "done" and the next offset are driven by how far through the REQUESTED
+      // email list we are, not by how many of those emails actually matched an existing contact
+      // row (a page can legitimately match fewer than CHUNK rows without the list being finished).
+      const done = allEmails ? doneAfterThisChunk : contacts.length < CHUNK;
+      const nextOffset = allEmails ? offset + Math.min(CHUNK, allEmails.length - offset) : offset + contacts.length;
       return NextResponse.json({
         processed: contacts.length,
         validated,
@@ -195,7 +236,7 @@ export async function POST(req: NextRequest) {
         // the UI can explain a 0-validated result instead of it silently looking like nothing happened.
         skippedFresh: contacts.length - stale.length,
         gaveUp,
-        next_offset: offset + contacts.length,
+        next_offset: nextOffset,
         done,
       });
     }

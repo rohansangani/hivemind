@@ -3809,6 +3809,27 @@ function ValidateSection() {
     }
   };
 
+  const [cancellingRetestJobId, setCancellingRetestJobId] = useState<number | null>(null);
+  const cancelRetestJob = async (jobId: number) => {
+    if (!confirm(`Stop Debounce validation job #${jobId}? Contacts already checked stay updated — nothing after this point will be checked.`)) return;
+    setCancellingRetestJobId(jobId);
+    try {
+      const r = await fetch("/api/radar/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "retest_job_cancel", jobId }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || "Couldn't stop job");
+      if (retestJobId === jobId) setRetestJobDone(true);
+    } catch (e) {
+      setDebounceMsg({ kind: "err", text: (e as Error).message });
+    } finally {
+      setCancellingRetestJobId(null);
+      loadRetestJobsList();
+    }
+  };
+
   const loadForRetest = async () => {
     setError("");
     if (!retestLabel.trim()) { setError("Give this job a name before running it."); return; }
@@ -4679,17 +4700,28 @@ function ValidateSection() {
                         ) : (
                           <div className="space-y-1 max-h-[160px] overflow-y-auto">
                             {retestJobsList.map((j) => (
-                              <button
+                              <div
                                 key={j.id}
-                                onClick={() => checkRetestJobStatus(j.id)}
-                                disabled={statusChecking}
-                                className="w-full flex items-center justify-between text-left text-[11.5px] px-2 py-1.5 rounded-md bg-[var(--hm-bg-primary)] border border-[var(--hm-border)] hover:border-[var(--hm-accent)]/40"
+                                className="w-full flex items-center gap-1.5 text-left text-[11.5px] px-2 py-1.5 rounded-md bg-[var(--hm-bg-primary)] border border-[var(--hm-border)] hover:border-[var(--hm-accent)]/40"
                               >
-                                <span className="truncate text-[var(--hm-text-secondary)]">#{j.id} {j.label || "Untitled"}</span>
-                                <span className={`shrink-0 ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium ${j.status === "done" ? "bg-[#DCFCE7] text-[#059669]" : j.status === "error" ? "bg-red-50 text-red-600" : "bg-[var(--hm-accent-light)] text-[var(--hm-accent)]"}`}>
-                                  {j.status === "done" ? `done — ${j.validated}/${j.processed}` : j.status === "error" ? "error" : `running — ${j.processed} checked`}
-                                </span>
-                              </button>
+                                <button onClick={() => checkRetestJobStatus(j.id)} disabled={statusChecking} className="flex-1 min-w-0 flex items-center justify-between text-left">
+                                  <span className="truncate text-[var(--hm-text-secondary)]">#{j.id} {j.label || "Untitled"}</span>
+                                  <span className={`shrink-0 ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium ${j.status === "done" ? "bg-[#DCFCE7] text-[#059669]" : j.status === "error" ? "bg-red-50 text-red-600" : "bg-[var(--hm-accent-light)] text-[var(--hm-accent)]"}`}>
+                                    {j.status === "done" ? `done — ${j.validated}/${j.processed}` : j.status === "error" ? "error" : `running — ${j.processed} checked`}
+                                  </span>
+                                </button>
+                                {j.status === "running" && (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); cancelRetestJob(j.id); }}
+                                    disabled={cancellingRetestJobId === j.id}
+                                    title="Stop this job"
+                                    className="shrink-0 text-red-500 hover:text-red-600 disabled:opacity-50"
+                                    style={{ fontSize: 14, lineHeight: 1, padding: "0 2px" }}
+                                  >
+                                    {cancellingRetestJobId === j.id ? "…" : "■"}
+                                  </button>
+                                )}
+                              </div>
                             ))}
                           </div>
                         )}

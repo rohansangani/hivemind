@@ -278,8 +278,13 @@ async function continueRetestJob(job: RetestJobRow, startedAt: number, budgetMs:
     gaveUp += d.gaveUp || 0;
     retrying += Math.max(0, (d.failed || 0) - (d.gaveUp || 0));
     offset = d.next_offset ?? offset + (d.processed || 0);
-    done = !!d.done || d.processed === 0;
-    await radarSql(`UPDATE retest_jobs SET job_offset = ${offset}, processed = ${processed}, validated = ${validated}, skipped_fresh = ${skippedFresh}, gave_up = ${gaveUp}, retrying = ${retrying}, status = '${done ? "done" : "running"}', fail_count = 0, updated_at = now() WHERE id = ${job.id}`);
+    // Trust export-validate's own `done` flag alone — it already correctly accounts for both
+    // filter-query mode (a page returning fewer than CHUNK rows really does mean end-of-results)
+    // AND exact-email-list mode (a middle page can legitimately match zero contacts while
+    // thousands of emails are still unprocessed after it). The old `d.processed === 0` fallback
+    // was silently marking email-list jobs "done" the moment they hit their first empty page.
+    done = !!d.done;
+    await radarSql(`UPDATE retest_jobs SET job_offset = ${offset}, processed = ${processed}, validated = ${validated}, skipped_fresh = ${skippedFresh}, gave_up = ${gaveUp}, retrying = ${retrying}, status = '${done ? "done" : "running"}', fail_count = 0, error = NULL, updated_at = now() WHERE id = ${job.id}`);
     if (done) break;
   }
   return { offset, processed, validated, skippedFresh, gaveUp, retrying, done };
@@ -781,6 +786,20 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
     await ensureRetestJobsTable();
     const rows = await radarSql(`SELECT * FROM retest_jobs ORDER BY id DESC LIMIT 20`);
     return { status: 200, body: { jobs: rows } };
+  }
+
+  // Stops a running Debounce-retest job for good — already-validated rows are untouched, and
+  // continue_retest_jobs' own `WHERE status = 'running'` sweep naturally stops picking it up
+  // again afterward. Same effect as LinkedinCheckJob's "cancel" action, which this flow never had.
+  if (action === "retest_job_cancel") {
+    const { jobId } = reqBody as { jobId?: number };
+    if (!jobId) return { status: 400, body: { error: "No jobId" } };
+    await ensureRetestJobsTable();
+    const row = (await radarSql<{ status: string }>(`SELECT status FROM retest_jobs WHERE id = ${Number(jobId)}`))[0];
+    if (!row) return { status: 404, body: { error: "Job not found" } };
+    if (row.status !== "running") return { status: 400, body: { error: "Job isn't running" } };
+    await radarSql(`UPDATE retest_jobs SET status = 'cancelled', updated_at = now() WHERE id = ${Number(jobId)}`);
+    return { status: 200, body: { ok: true } };
   }
 
   if (action === "continue_retest_jobs") {
