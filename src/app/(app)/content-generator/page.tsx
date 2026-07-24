@@ -586,9 +586,9 @@ export default function ContentGeneratorPage() {
     finally { setIncorporatingIdx(null); }
   };
 
-  const scoreColor = (s: number) => s >= 80 ? "text-emerald-500" : s >= 60 ? "text-amber-500" : "text-red-500";
-  const scoreBg = (s: number) => s >= 80 ? "bg-emerald-500" : s >= 60 ? "bg-amber-500" : "bg-red-500";
-  const scorePillClass = (s: number) => s >= 80 ? "bg-emerald-100 text-emerald-700" : s >= 60 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-600";
+  const scoreColor = (s: number) => s >= 80 ? "text-[var(--tag-green-fg)]" : s >= 60 ? "text-[var(--tag-yellow-fg)]" : "text-[var(--tag-red-fg)]";
+  const scoreBg = (s: number) => s >= 80 ? "bg-[var(--hm-success)]" : s >= 60 ? "bg-[var(--hm-warning)]" : "bg-[var(--hm-danger)]";
+  const scorePillClass = (s: number) => s >= 80 ? "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]" : s >= 60 ? "bg-[var(--tag-yellow-bg)] text-[var(--tag-yellow-fg)]" : "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)]";
 
   const historyGroups = groupHistory(historyItems);
 
@@ -603,7 +603,7 @@ export default function ContentGeneratorPage() {
         <div className="p-4 flex-shrink-0">
           <button
             onClick={startNew}
-            className="w-full h-9 rounded-xl bg-[#4361ee] text-white text-[12px] font-medium hover:opacity-90 transition-all flex items-center justify-center gap-2 shadow-sm"
+            className="w-full h-9 rounded-xl bg-[var(--hm-primary)] text-white text-[12px] font-medium hover:opacity-90 transition-all flex items-center justify-center gap-2"
           >
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
               <path d="M4 12l1.5-4L12 2l2 2-6.5 6.5L4 12z" stroke="#fff" strokeWidth="1.3" />
@@ -617,7 +617,7 @@ export default function ContentGeneratorPage() {
         <div className="flex-1 overflow-y-auto">
           {historyLoading && historyItems.length === 0 ? (
             <div className="flex justify-center py-8">
-              <div className="w-4 h-4 border-2 border-[#4361ee]/30 border-t-[#4361ee] rounded-full animate-spin" />
+              <div className="w-4 h-4 border-2 border-[var(--hm-border)] border-t-[var(--hm-text-secondary)] rounded-full animate-spin" />
             </div>
           ) : historyItems.length === 0 ? (
             <div className="px-4 py-8 text-center">
@@ -638,18 +638,18 @@ export default function ContentGeneratorPage() {
                           className={
                             "w-full text-left px-3 py-3 transition-colors border-l-2 mx-0 " +
                             (isActive
-                              ? "bg-white border-[#4361ee] shadow-sm"
-                              : "hover:bg-white/60 border-transparent")
+                              ? "bg-[var(--hm-surface)] border-[var(--hm-primary)]"
+                              : "hover:bg-[var(--hm-surface)]/60 border-transparent")
                           }
                         >
-                          <p className={"text-[12px] font-medium leading-snug mb-1.5 pr-6 " + (isActive ? "text-[#4361ee]" : "text-[var(--hm-text)]")}
+                          <p className={"text-[12px] font-medium leading-snug mb-1.5 pr-6 " + (isActive ? "text-[var(--hm-text)]" : "text-[var(--hm-text)]")}
                             title={item.topic.charAt(0).toUpperCase() + item.topic.slice(1)}
                             style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
                             {item.topic.charAt(0).toUpperCase() + item.topic.slice(1)}
                           </p>
                           <div className="flex items-center gap-1.5 flex-wrap">
                             {item.formats.slice(0, 3).map(f => (
-                              <span key={f} className={"text-[10px] px-1.5 py-0.5 rounded-md font-medium " + (isActive ? "bg-[#4361ee]/10 text-[#4361ee]" : "bg-[var(--hm-border)] text-[var(--hm-text-tertiary)]")}>
+                              <span key={f} className={"text-[10px] px-1.5 py-0.5 rounded-md font-medium " + (isActive ? "bg-[var(--hm-bg-tertiary)] text-[var(--hm-text)]" : "bg-[var(--hm-border)] text-[var(--hm-text-tertiary)]")}>
                                 {FORMAT_SHORT[f] || f}
                               </span>
                             ))}
@@ -661,7 +661,7 @@ export default function ContentGeneratorPage() {
                         </button>
                         <button
                           onClick={(e) => deleteGeneration(item.id, e)}
-                          className="absolute top-2.5 right-2 opacity-0 group-hover/item:opacity-100 transition-opacity w-6 h-6 rounded-md flex items-center justify-center text-[var(--hm-text-tertiary)] hover:bg-red-50 hover:text-red-500"
+                          className="absolute top-2.5 right-2 opacity-0 group-hover/item:opacity-100 transition-opacity w-6 h-6 rounded-md flex items-center justify-center text-[var(--hm-text-tertiary)] hover:bg-[var(--tag-red-bg)] hover:text-[var(--tag-red-fg)]"
                           title="Delete"
                         >
                           <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
@@ -682,34 +682,34 @@ export default function ContentGeneratorPage() {
       <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
 
         {/* Header */}
-        <div className="px-4 md:px-7 py-4 bg-white border-b border-[var(--hm-border)] flex items-center justify-between flex-shrink-0" style={{ boxShadow: "var(--hm-shadow-xs)" }}>
+        <div className="px-4 md:px-7 py-4 bg-[var(--hm-surface)] border-b border-[var(--hm-border)] flex items-center justify-between flex-shrink-0" style={{ boxShadow: "var(--hm-shadow-xs)" }}>
           <div className="min-w-0 flex-1">
             <p className="text-[18px] md:text-[22px] font-semibold leading-tight truncate">{outputs ? topic : "Content generator"}</p>
             {outputs ? (
               <p className="text-[12px] text-[var(--hm-text-tertiary)] mt-0.5">
                 {selectedFormats.length} format{selectedFormats.length !== 1 ? "s" : ""}
-                {saveStatus === "saving" && <span className="ml-2 text-[#4361ee]">· Saving…</span>}
+                {saveStatus === "saving" && <span className="ml-2 text-[var(--hm-text)]">· Saving…</span>}
               </p>
             ) : (
               <p className="text-[12px] text-[var(--hm-text-tertiary)] mt-0.5">Brand-aligned content in seconds</p>
             )}
           </div>
           <div className="flex items-center gap-2 flex-shrink-0 ml-4">
-            {saveStatus === "saved" && <div className="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 border border-green-200 text-green-700 rounded-lg text-[12px] font-medium animate-fade-in-fast"><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5l3 3 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>Saved</div>}
-            {saveStatus === "error" && <div className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 border border-red-200 text-red-700 rounded-lg text-[12px] font-medium animate-fade-in-fast"><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.5"/><path d="M8 5v4M8 10.5v.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>Save failed</div>}
+            {saveStatus === "saved" && <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--tag-green-bg)] border border-[var(--hm-border)] text-[var(--tag-green-fg)] rounded-lg text-[12px] font-medium animate-fade-in-fast"><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5l3 3 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>Saved</div>}
+            {saveStatus === "error" && <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--tag-red-bg)] border border-[var(--hm-border)] text-[var(--tag-red-fg)] rounded-lg text-[12px] font-medium animate-fade-in-fast"><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.5"/><path d="M8 5v4M8 10.5v.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>Save failed</div>}
             {outputs && (
               <button
                 onClick={startNew}
-                className="h-[30px] px-3 border border-[var(--hm-border)] rounded-lg text-[11px] text-[var(--hm-text-secondary)] hover:border-[#4361ee] hover:text-[#4361ee] transition-colors flex items-center gap-1.5"
+                className="h-[30px] px-3 border border-[var(--hm-border)] rounded-lg text-[11px] text-[var(--hm-text-secondary)] hover:border-[var(--hm-primary)] hover:text-[var(--hm-text)] transition-colors flex items-center gap-1.5"
                 title="Clear and start a new generation"
               >
                 <svg width="10" height="10" viewBox="0 0 16 16" fill="none"><path d="M2 10v4h4M14 6V2h-4M2 2l5 5M14 14l-5-5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /></svg>
                 Start over
               </button>
             )}
-            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 border border-emerald-100 rounded-lg">
-              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              <span className="text-[11px] text-emerald-600 font-medium">Brand voice active</span>
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--tag-green-bg)] border border-[var(--hm-border)] rounded-lg">
+              <div className="w-1.5 h-1.5 rounded-full bg-[var(--hm-success)]" />
+              <span className="text-[11px] text-[var(--tag-green-fg)] font-medium">Brand voice active</span>
             </div>
           </div>
         </div>
@@ -720,7 +720,7 @@ export default function ContentGeneratorPage() {
           {loadingGen ? (
             <div role="status" aria-label="Loading generation" className="flex-1 flex items-center justify-center">
               <div className="flex flex-col items-center gap-4">
-                <div aria-hidden="true" className="w-12 h-12 rounded-full bg-gradient-to-br from-[#4361ee] to-[#7c3aed] flex items-center justify-center animate-pulse">
+                <div aria-hidden="true" className="w-12 h-12 rounded-full bg-[var(--hm-primary)] flex items-center justify-center animate-pulse">
                   <svg aria-hidden="true" width="20" height="20" viewBox="0 0 16 16" fill="none"><path d="M4 12l1.5-4L12 2l2 2-6.5 6.5L4 12z" stroke="#fff" strokeWidth="1.3" /></svg>
                 </div>
                 <div className="flex flex-col items-center gap-1.5">
@@ -738,7 +738,7 @@ export default function ContentGeneratorPage() {
                 {/* Empty state hint (no topic yet) */}
                 {!topic.trim() && (
                   <div className="mb-8 flex flex-col items-center py-4 text-center">
-                    <div className="w-14 h-14 rounded-full bg-gradient-to-br from-[#4361ee] to-[#7c3aed] flex items-center justify-center mb-4 shadow-lg shadow-[#4361ee]/20">
+                    <div className="w-14 h-14 rounded-full bg-[var(--hm-primary)] flex items-center justify-center mb-4 shadow-[var(--hm-primary)]/20">
                       <svg width="22" height="22" viewBox="0 0 16 16" fill="none"><path d="M4 12l1.5-4L12 2l2 2-6.5 6.5L4 12z" stroke="#fff" strokeWidth="1.3" /><path d="M9.5 4.5l2 2" stroke="#fff" strokeWidth="1.3" /></svg>
                     </div>
                     <p className="text-[18px] font-semibold text-[var(--hm-text)] mb-1">Generate your first piece of content</p>
@@ -749,7 +749,7 @@ export default function ContentGeneratorPage() {
                 {/* Topic input */}
                 <div className="mb-6" data-tour="cg-topic">
                   <label className="block text-[13px] text-[var(--hm-text-secondary)] mb-2 font-medium">
-                    What do you want to create? <span className="text-red-500 ml-0.5" aria-label="required">*</span>
+                    What do you want to create? <span className="text-[var(--tag-red-fg)] ml-0.5" aria-label="required">*</span>
                   </label>
                   <textarea value={topic} onChange={e => setTopic(e.target.value)} placeholder="e.g. Why AI-powered analytics helps marketing teams move faster" className="w-full h-[88px] resize-y text-[14px]" aria-required="true" />
                   <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-1">Be specific — include your angle, audience, or goal for best results.</p>
@@ -758,7 +758,7 @@ export default function ContentGeneratorPage() {
                 {/* Format selection */}
                 <div className="mb-6" data-tour="cg-formats">
                   <label className="block text-[13px] text-[var(--hm-text-secondary)] mb-2 font-medium">
-                    Output formats <span className="text-red-500 ml-0.5" aria-label="required">*</span>
+                    Output formats <span className="text-[var(--tag-red-fg)] ml-0.5" aria-label="required">*</span>
                     <span className="font-normal text-[var(--hm-text-tertiary)] text-[11px] ml-1">— select one or more</span>
                   </label>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -771,31 +771,31 @@ export default function ContentGeneratorPage() {
                           className={
                             "rounded-xl border-2 p-3 cursor-pointer transition-all text-left " +
                             (active
-                              ? "border-[#4361ee] bg-[var(--hm-accent-light)]"
-                              : "border-[var(--hm-border)] hover:border-[#4361ee]/40 hover:bg-[var(--hm-bg-secondary)]")
+                              ? "border-[var(--hm-primary)] bg-[var(--hm-bg-tertiary)]"
+                              : "border-[var(--hm-border)] hover:border-[var(--hm-text-tertiary)] hover:bg-[var(--hm-bg-secondary)]")
                           }
                         >
-                          <p className={"text-[12px] font-semibold " + (active ? "text-[#4361ee]" : "text-[var(--hm-text)]")}>{f.label}</p>
-                          <p className={"text-[10px] mt-0.5 " + (active ? "text-[#4361ee]/70" : "text-[var(--hm-text-tertiary)]")}>{f.desc}</p>
+                          <p className={"text-[12px] font-semibold " + (active ? "text-[var(--hm-text)]" : "text-[var(--hm-text)]")}>{f.label}</p>
+                          <p className={"text-[10px] mt-0.5 " + (active ? "text-[var(--hm-text)]/70" : "text-[var(--hm-text-tertiary)]")}>{f.desc}</p>
                         </button>
                       );
                     })}
                   </div>
                   {selectedFormats.length === 0
-                    ? <p className="text-[11px] text-red-500 mt-2 font-medium">Select at least one format to continue.</p>
+                    ? <p className="text-[11px] text-[var(--tag-red-fg)] mt-2 font-medium">Select at least one format to continue.</p>
                     : <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-2">{selectedFormats.length} format{selectedFormats.length !== 1 ? "s" : ""} selected</p>
                   }
                   {selectedFormats.includes("custom") && (
                     <div className="mt-3">
                       <label className="block text-[11px] font-medium text-[var(--hm-text-secondary)] mb-1">
-                        Describe your custom format <span className="text-red-500">*</span>
+                        Describe your custom format <span className="text-[var(--tag-red-fg)]">*</span>
                       </label>
                       <input
                         type="text"
                         value={customFormatLabel}
                         onChange={e => setCustomFormatLabel(e.target.value)}
                         placeholder="e.g. YouTube video script, Product FAQ page, Sales deck slide copy…"
-                        className="w-full h-9 px-3 text-[12px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[#4361ee] bg-white"
+                        className="w-full h-9 px-3 text-[12px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[var(--hm-primary)] bg-[var(--hm-surface)]"
                       />
                     </div>
                   )}
@@ -810,7 +810,7 @@ export default function ContentGeneratorPage() {
                     >
                       <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
                       Customize <span className="font-normal text-[var(--hm-text-tertiary)] text-[11px] ml-0.5">(optional)</span>
-                      <span className="ml-1 text-[10px] text-[#4361ee] font-normal">→</span>
+                      <span className="ml-1 text-[10px] text-[var(--hm-text)] font-normal">→</span>
                     </button>
                   ) : (
                     <>
@@ -872,7 +872,7 @@ export default function ContentGeneratorPage() {
                               { id: "simpler", label: "Simpler", hint: "Plain language, easy to read" },
                               { id: "persuasive", label: "More persuasive", hint: "Stronger value propositions and CTAs" },
                             ].map(t => (
-                              <button key={t.id} onClick={() => setToneOverride(t.id)} title={t.hint} className={"px-3 py-1.5 rounded-full text-[11px] border " + (toneOverride === t.id ? "border-[#4361ee] bg-[#4361ee] text-white font-medium" : "border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[#4361ee]/50 hover:text-[var(--hm-text)]")}>
+                              <button key={t.id} onClick={() => setToneOverride(t.id)} title={t.hint} className={"px-3 py-1.5 rounded-full text-[11px] border " + (toneOverride === t.id ? "border-[var(--hm-primary)] bg-[var(--hm-primary)] text-white font-medium" : "border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[var(--hm-primary)]/50 hover:text-[var(--hm-text)]")}>
                                 {t.label}
                               </button>
                             ))}
@@ -897,19 +897,19 @@ export default function ContentGeneratorPage() {
 
                 {topic.trim() && selectedFormats.length > 0 && (
                   <div className="p-4 bg-[var(--hm-bg-secondary)] rounded-xl mb-5 flex items-center gap-3 animate-fade-in-fast">
-                    <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M4 12l1.5-4L12 2l2 2-6.5 6.5L4 12z" stroke="#4361ee" strokeWidth="1.1" /><path d="M9.5 4.5l2 2" stroke="#4361ee" strokeWidth="1.1" /></svg>
+                    <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M4 12l1.5-4L12 2l2 2-6.5 6.5L4 12z" stroke="var(--hm-primary)" strokeWidth="1.1" /><path d="M9.5 4.5l2 2" stroke="var(--hm-primary)" strokeWidth="1.1" /></svg>
                     <p className="text-[13px] text-[var(--hm-text)]"><span className="font-medium">Ready to generate {selectedFormats.length} piece{selectedFormats.length !== 1 ? "s" : ""}</span> — {selectedFormats.map(f => FORMATS.find(x => x.id === f)?.label).join(", ")}</p>
                   </div>
                 )}
 
                 {generateError && (
-                  <div className="mb-4 p-3 rounded-xl bg-red-50 border border-red-200 flex items-start gap-2">
-                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className="flex-shrink-0 mt-0.5"><circle cx="8" cy="8" r="6" stroke="#ef4444" strokeWidth="1.3"/><path d="M8 5v4M8 10.5v.5" stroke="#ef4444" strokeWidth="1.3" strokeLinecap="round"/></svg>
+                  <div className="mb-4 p-3 rounded-xl bg-[var(--tag-red-bg)] border border-[var(--hm-border)] flex items-start gap-2">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className="flex-shrink-0 mt-0.5"><circle cx="8" cy="8" r="6" stroke="var(--hm-danger)" strokeWidth="1.3"/><path d="M8 5v4M8 10.5v.5" stroke="var(--hm-danger)" strokeWidth="1.3" strokeLinecap="round"/></svg>
                     <div className="min-w-0 flex-1">
-                      <p className="text-[12px] font-medium text-red-700">Generation failed</p>
-                      <p className="text-[11px] text-red-600 mt-0.5">{generateError}</p>
+                      <p className="text-[12px] font-medium text-[var(--tag-red-fg)]">Generation failed</p>
+                      <p className="text-[11px] text-[var(--tag-red-fg)] mt-0.5">{generateError}</p>
                     </div>
-                    <button onClick={() => setGenerateError(null)} className="flex-shrink-0 text-red-400 hover:text-red-600 text-sm leading-none">×</button>
+                    <button onClick={() => setGenerateError(null)} className="flex-shrink-0 text-[var(--tag-red-fg)] hover:text-[var(--tag-red-fg)] text-sm leading-none">×</button>
                   </div>
                 )}
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
@@ -920,8 +920,8 @@ export default function ContentGeneratorPage() {
                     title={webSearch ? "Web search on — real-time context will be included" : "Enable web search for real-time context"}
                     className={"h-[46px] px-4 rounded-lg border text-[12px] font-medium flex items-center gap-2 transition-all flex-shrink-0 " +
                       (webSearch
-                        ? "border-[#4361ee] bg-[var(--hm-accent-light)] text-[#4361ee]"
-                        : "border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[#4361ee]/50 hover:text-[#4361ee]"
+                        ? "border-[var(--hm-primary)] bg-[var(--hm-bg-tertiary)] text-[var(--hm-text)]"
+                        : "border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[var(--hm-primary)]/50 hover:text-[var(--hm-text)]"
                       )}
                   >
                     <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
@@ -934,7 +934,7 @@ export default function ContentGeneratorPage() {
                   <button onClick={handleGenerate} disabled={generating || !topic.trim() || selectedFormats.length === 0 || (selectedFormats.includes("custom") && !customFormatLabel.trim())}
                     data-tour="cg-generate"
                     aria-label="Generate content"
-                    className="h-[46px] w-full sm:w-auto px-8 bg-[#4361ee] text-white rounded-lg text-[14px] font-medium hover:opacity-90 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                    className="h-[46px] w-full sm:w-auto px-8 bg-[var(--hm-primary)] text-white rounded-lg text-[14px] font-medium hover:opacity-90 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
                     {generating
                       ? (
                         <>
@@ -966,13 +966,13 @@ export default function ContentGeneratorPage() {
               {/* Content column */}
               <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
                 {/* Format tab bar */}
-                <div className="px-5 bg-white border-b border-[var(--hm-border)] flex items-center justify-between flex-shrink-0">
+                <div className="px-5 bg-[var(--hm-surface)] border-b border-[var(--hm-border)] flex items-center justify-between flex-shrink-0">
                   <div className="flex overflow-x-auto">
                     {selectedFormats.map(f => {
                       const out = outputs[f];
                       return (
                         <button key={f} onClick={() => { setActiveTab(f); setApplyError(null); setImproveError(null); setCopied(false); if (rightTab === "seo" && !SEO_FORMATS.includes(f)) setRightTab("suggestions"); }}
-                          className={"px-4 py-2.5 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors " + (activeTab === f ? "font-semibold text-[#4361ee] border-[#4361ee] text-[12px]" : "text-[12px] text-[var(--hm-text-tertiary)] border-transparent hover:text-[var(--hm-text)]")}>
+                          className={"px-4 py-2.5 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors " + (activeTab === f ? "font-semibold text-[var(--hm-text)] border-[var(--hm-primary)] text-[12px]" : "text-[12px] text-[var(--hm-text-tertiary)] border-transparent hover:text-[var(--hm-text)]")}>
                           {FORMATS.find(x => x.id === f)?.label || f}
                           {out && typeof out.score === "number" && (
                             <span className={"text-[10px] font-semibold px-2 py-0.5 rounded-full " + scorePillClass(out.score)}>
@@ -985,7 +985,7 @@ export default function ContentGeneratorPage() {
                   </div>
                   <div className="flex items-center gap-2 py-2 flex-shrink-0">
                     <button onClick={handleGenerate} disabled={generating}
-                      className="h-7 px-2.5 border border-[var(--hm-border)] rounded-md text-[10px] text-[var(--hm-text-secondary)] hover:bg-[var(--hm-bg-secondary)] hover:border-[#4361ee] hover:text-[#4361ee] flex items-center gap-1 disabled:opacity-40 transition-all">
+                      className="h-7 px-2.5 border border-[var(--hm-border)] rounded-md text-[10px] text-[var(--hm-text-secondary)] hover:bg-[var(--hm-bg-secondary)] hover:border-[var(--hm-primary)] hover:text-[var(--hm-text)] flex items-center gap-1 disabled:opacity-40 transition-all">
                       <svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="M2 10v4h4M14 6V2h-4M2 2l5 5M14 14l-5-5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /></svg>
                       Regenerate
                     </button>
@@ -1009,7 +1009,7 @@ export default function ContentGeneratorPage() {
                             }
                           </p>
                           {["twitter", "ad_copy"].includes(activeTab) && (
-                            <span className={"text-[10px] font-medium " + (outputs[activeTab].content.length > 280 ? "text-red-500" : "text-[var(--hm-text-tertiary)]")}>
+                            <span className={"text-[10px] font-medium " + (outputs[activeTab].content.length > 280 ? "text-[var(--tag-red-fg)]" : "text-[var(--hm-text-tertiary)]")}>
                               {activeTab === "twitter" ? `/ 280 char limit` : `/ 180 char guide`}
                             </span>
                           )}
@@ -1031,7 +1031,7 @@ export default function ContentGeneratorPage() {
                         />
                         <div className="flex flex-wrap gap-2 mt-6 pt-4 border-t border-[var(--hm-border)]">
                           <button onClick={() => { navigator.clipboard.writeText(outputs[activeTab].content); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
-                            className={"px-3 py-1.5 text-[11px] bg-white border rounded-lg transition-all flex items-center gap-1.5 shadow-sm " + (copied ? "border-emerald-400 text-emerald-600" : "text-[var(--hm-text-secondary)] border-[var(--hm-border)] hover:border-[#4361ee] hover:text-[#4361ee]")}>
+                            className={"px-3 py-1.5 text-[11px] bg-[var(--hm-surface)] border rounded-lg transition-all flex items-center gap-1.5 " + (copied ? "border-[var(--hm-border)] text-[var(--tag-green-fg)]" : "text-[var(--hm-text-secondary)] border-[var(--hm-border)] hover:border-[var(--hm-primary)] hover:text-[var(--hm-text)]")}>
                             {copied
                               ? <><svg width="10" height="10" viewBox="0 0 16 16" fill="none"><path d="M2 8l4 4 8-8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>Copied!</>
                               : <><svg width="10" height="10" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="8" height="10" rx="1" stroke="currentColor" strokeWidth="1.2" /><rect x="6" y="4" width="8" height="10" rx="1" stroke="currentColor" strokeWidth="1.2" /></svg>Copy</>
@@ -1047,7 +1047,7 @@ export default function ContentGeneratorPage() {
                               a.click();
                               URL.revokeObjectURL(url);
                             }}
-                            className="px-3 py-1.5 text-[11px] text-[var(--hm-text-secondary)] bg-white border border-[var(--hm-border)] rounded-lg hover:border-[#4361ee] hover:text-[#4361ee] transition-all flex items-center gap-1.5 shadow-sm"
+                            className="px-3 py-1.5 text-[11px] text-[var(--hm-text-secondary)] bg-[var(--hm-surface)] border border-[var(--hm-border)] rounded-lg hover:border-[var(--hm-primary)] hover:text-[var(--hm-text)] transition-all flex items-center gap-1.5"
                           >
                             <svg width="10" height="10" viewBox="0 0 16 16" fill="none"><path d="M8 2v8M5 7l3 3 3-3M3 12h10" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
                             Export .txt
@@ -1081,10 +1081,10 @@ export default function ContentGeneratorPage() {
                               finally { setDesignBriefLoading(false); }
                             }}
                             disabled={designBriefLoading}
-                            className="px-3 py-1.5 text-[11px] text-[var(--hm-text-secondary)] bg-white border border-[var(--hm-border)] rounded-lg hover:border-[#7c3aed] hover:text-[#7c3aed] transition-all flex items-center gap-1.5 shadow-sm disabled:opacity-50"
+                            className="px-3 py-1.5 text-[11px] text-[var(--hm-text-secondary)] bg-[var(--hm-surface)] border border-[var(--hm-border)] rounded-lg hover:border-[var(--hm-primary)] hover:text-[var(--hm-text)] transition-all flex items-center gap-1.5 disabled:opacity-50"
                           >
                             {designBriefLoading
-                              ? <><span className="w-3 h-3 border-2 border-[#7c3aed]/30 border-t-[#7c3aed] rounded-full animate-spin" />Generating brief…</>
+                              ? <><span className="w-3 h-3 border-2 border-[var(--hm-border)] border-t-[var(--hm-text-secondary)] rounded-full animate-spin" />Generating brief…</>
                               : <><svg width="10" height="10" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="14" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.2"/><path d="M4 5h8M4 8h5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round"/><path d="M11 13l2-2-2-2" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round"/><path d="M5 13h8" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round"/></svg>{designBriefs[activeTab] ? "View design brief" : "Design brief"}</>
                             }
                           </button>
@@ -1095,11 +1095,11 @@ export default function ContentGeneratorPage() {
 
                   {/* Improve bar */}
                   {activeTab && outputs[activeTab] && (
-                    <div className="border-t border-[var(--hm-border)] bg-white px-6 py-4 flex-shrink-0">
+                    <div className="border-t border-[var(--hm-border)] bg-[var(--hm-surface)] px-6 py-4 flex-shrink-0">
                       <div className="flex flex-wrap gap-2 mb-3">
                         {QUICK_ACTIONS.map(qa => (
                           <button key={qa.label} onClick={() => applyImprove(qa.instruction)} disabled={improving}
-                            className="px-3 py-1.5 rounded-full text-[11px] border border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[#4361ee] hover:text-[#4361ee] hover:bg-[var(--hm-accent-light)] disabled:opacity-40 transition-all font-medium">
+                            className="px-3 py-1.5 rounded-full text-[11px] border border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[var(--hm-primary)] hover:text-[var(--hm-text)] hover:bg-[var(--hm-bg-tertiary)] disabled:opacity-40 transition-all font-medium">
                             {qa.label}
                           </button>
                         ))}
@@ -1108,10 +1108,10 @@ export default function ContentGeneratorPage() {
                         <input type="text" value={improveInput} onChange={e => setImproveInput(e.target.value)}
                           onKeyDown={e => { if (e.key === "Enter") applyImprove(improveInput); }}
                           placeholder="Or type a custom instruction…"
-                          className="flex-1 h-[38px] text-[13px] rounded-lg border border-[var(--hm-border)] px-3 focus:outline-none focus:border-[#4361ee]"
+                          className="flex-1 h-[38px] text-[13px] rounded-lg border border-[var(--hm-border)] px-3 focus:outline-none focus:border-[var(--hm-primary)]"
                           disabled={improving} />
                         <button onClick={() => applyImprove(improveInput)} disabled={!improveInput.trim() || improving}
-                          className="h-[38px] px-5 rounded-lg bg-[#4361ee] text-white text-[12px] font-medium hover:opacity-90 disabled:opacity-40 flex items-center gap-1.5 transition-all">
+                          className="h-[38px] px-5 rounded-lg bg-[var(--hm-primary)] text-white text-[12px] font-medium hover:opacity-90 disabled:opacity-40 flex items-center gap-1.5 transition-all">
                           {improving
                             ? <><div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Improving…</>
                             : <><svg width="10" height="10" viewBox="0 0 16 16" fill="none"><path d="M4 12l1.5-4L12 2l2 2-6.5 6.5L4 12z" stroke="#fff" strokeWidth="1.2" /></svg>Improve</>
@@ -1119,10 +1119,10 @@ export default function ContentGeneratorPage() {
                         </button>
                       </div>
                       {improveError && (
-                        <div className="mt-2 p-2.5 rounded-lg bg-red-50 border border-red-200 flex items-start gap-2">
-                          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className="flex-shrink-0 mt-0.5"><circle cx="8" cy="8" r="6" stroke="#ef4444" strokeWidth="1.3"/><path d="M8 5v4M8 10.5v.5" stroke="#ef4444" strokeWidth="1.3" strokeLinecap="round"/></svg>
-                          <p className="text-[11px] text-red-600 flex-1">{improveError}</p>
-                          <button onClick={() => setImproveError(null)} className="text-red-400 hover:text-red-600 text-sm leading-none flex-shrink-0">×</button>
+                        <div className="mt-2 p-2.5 rounded-lg bg-[var(--tag-red-bg)] border border-[var(--hm-border)] flex items-start gap-2">
+                          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className="flex-shrink-0 mt-0.5"><circle cx="8" cy="8" r="6" stroke="var(--hm-danger)" strokeWidth="1.3"/><path d="M8 5v4M8 10.5v.5" stroke="var(--hm-danger)" strokeWidth="1.3" strokeLinecap="round"/></svg>
+                          <p className="text-[11px] text-[var(--tag-red-fg)] flex-1">{improveError}</p>
+                          <button onClick={() => setImproveError(null)} className="text-[var(--tag-red-fg)] hover:text-[var(--tag-red-fg)] text-sm leading-none flex-shrink-0">×</button>
                         </div>
                       )}
                     </div>
@@ -1132,7 +1132,7 @@ export default function ContentGeneratorPage() {
 
               {/* ── Right panel ── */}
               {activeTab && outputs[activeTab] && (
-                <div className="w-[320px] border-l border-[var(--hm-border)] bg-white flex flex-col flex-shrink-0 min-h-0 overflow-hidden">
+                <div className="w-[320px] border-l border-[var(--hm-border)] bg-[var(--hm-surface)] flex flex-col flex-shrink-0 min-h-0 overflow-hidden">
                   {/* Tab switcher */}
                   <div className="flex border-b border-[var(--hm-border)] flex-shrink-0 px-1">
                     {([
@@ -1142,9 +1142,9 @@ export default function ContentGeneratorPage() {
                       { id: "compliance", label: "Score" },
                     ] as { id: "suggestions" | "chat" | "seo" | "compliance"; label: string }[]).map(tab => (
                       <button key={tab.id} onClick={() => setRightTab(tab.id)}
-                        className={"flex-1 py-3 text-[12px] font-medium border-b-2 transition-colors " + (rightTab === tab.id ? "border-[#4361ee] text-[#4361ee]" : "border-transparent text-[var(--hm-text-tertiary)] hover:text-[var(--hm-text)]")}>
+                        className={"flex-1 py-3 text-[12px] font-medium border-b-2 transition-colors " + (rightTab === tab.id ? "border-[var(--hm-primary)] text-[var(--hm-text)]" : "border-transparent text-[var(--hm-text-tertiary)] hover:text-[var(--hm-text)]")}>
                         {tab.label}{tab.id === "seo" && seoAnalysis && (
-                          <span className={" ml-1 text-[9px] px-1.5 py-0.5 rounded-full text-white font-medium " + (seoAnalysis.score >= 85 ? "bg-emerald-500" : seoAnalysis.score >= 65 ? "bg-amber-500" : seoAnalysis.score >= 45 ? "bg-orange-500" : "bg-red-500")}>
+                          <span className={" ml-1 text-[9px] px-1.5 py-0.5 rounded-full text-white font-medium " + (seoAnalysis.score >= 85 ? "bg-[var(--hm-success)]" : seoAnalysis.score >= 65 ? "bg-[var(--hm-warning)]" : seoAnalysis.score >= 45 ? "bg-[var(--tag-orange-fg)]" : "bg-[var(--hm-danger)]")}>
                             {seoAnalysis.score}
                           </span>
                         )}
@@ -1157,10 +1157,10 @@ export default function ContentGeneratorPage() {
                     <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
                       <div className="flex-1 overflow-y-auto p-4">
                         <p className="text-[12px] text-[var(--hm-text-secondary)] mb-4 font-medium">AI improvements for your {FORMATS.find(x => x.id === activeTab)?.label?.toLowerCase()}</p>
-                        {applyError && <div className="mb-3 p-2.5 rounded-lg bg-red-50 border border-red-200"><p className="text-[11px] text-red-600">⚠ {applyError}</p></div>}
+                        {applyError && <div className="mb-3 p-2.5 rounded-lg bg-[var(--tag-red-bg)] border border-[var(--hm-border)]"><p className="text-[11px] text-[var(--tag-red-fg)]">⚠ {applyError}</p></div>}
                         {suggestionsLoading[`${generatedId}:${activeTab}`] ? (
                           <div className="flex flex-col items-center gap-2.5 py-12">
-                            <div className="w-5 h-5 border-2 border-[#4361ee]/30 border-t-[#4361ee] rounded-full animate-spin" />
+                            <div className="w-5 h-5 border-2 border-[var(--hm-border)] border-t-[var(--hm-text-secondary)] rounded-full animate-spin" />
                             <p className="text-[12px] text-[var(--hm-text-tertiary)]">Analyzing content…</p>
                           </div>
                         ) : suggestions[`${generatedId}:${activeTab}`]?.length ? (
@@ -1170,7 +1170,7 @@ export default function ContentGeneratorPage() {
                                 <p className="text-[13px] font-semibold text-[var(--hm-text)] mb-1.5">{s.title}</p>
                                 <p className="text-[12px] text-[var(--hm-text-secondary)] leading-relaxed mb-3">{s.description}</p>
                                 <button onClick={() => applySuggestion(s)} disabled={applyingId !== null || improving}
-                                  className="w-full py-2 rounded-lg text-[12px] font-medium bg-[#4361ee] text-white hover:opacity-90 disabled:opacity-40 flex items-center justify-center gap-1.5 transition-all">
+                                  className="w-full py-2 rounded-lg text-[12px] font-medium bg-[var(--hm-primary)] text-white hover:opacity-90 disabled:opacity-40 flex items-center justify-center gap-1.5 transition-all">
                                   {applyingId === s.id
                                     ? <><div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Applying…</>
                                     : <><svg width="10" height="10" viewBox="0 0 16 16" fill="none"><path d="M2 8l4 4 8-8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>Apply to content</>
@@ -1182,7 +1182,7 @@ export default function ContentGeneratorPage() {
                         ) : (
                           <div className="text-center py-12">
                             <p className="text-[12px] text-[var(--hm-text-tertiary)] mb-2">No suggestions loaded.</p>
-                            <button onClick={() => loadSuggestions(activeTab, outputs[activeTab].content)} className="text-[12px] text-[#4361ee] hover:underline">Load suggestions</button>
+                            <button onClick={() => loadSuggestions(activeTab, outputs[activeTab].content)} className="text-[12px] text-[var(--hm-link)] hover:underline">Load suggestions</button>
                           </div>
                         )}
                       </div>
@@ -1195,15 +1195,15 @@ export default function ContentGeneratorPage() {
                       <div className="flex-1 overflow-y-auto p-4 space-y-3">
                         {chatMessages.length === 0 && (
                           <div className="py-6 text-center">
-                            <div className="w-8 h-8 rounded-full bg-[#4361ee]/10 flex items-center justify-center mx-auto mb-2">
-                              <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="#4361ee" strokeWidth="1.2" /><path d="M8 7v3M8 5.5v.5" stroke="#4361ee" strokeWidth="1.3" strokeLinecap="round" /></svg>
+                            <div className="w-8 h-8 rounded-full bg-[var(--hm-bg-tertiary)] flex items-center justify-center mx-auto mb-2">
+                              <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="var(--hm-primary)" strokeWidth="1.2" /><path d="M8 7v3M8 5.5v.5" stroke="var(--hm-primary)" strokeWidth="1.3" strokeLinecap="round" /></svg>
                             </div>
                             <p className="text-[11px] font-medium text-[var(--hm-text)] mb-1">Ask anything about this content</p>
                             <p className="text-[10px] text-[var(--hm-text-tertiary)] leading-relaxed mb-3">Get stats, rewrite sections, strengthen CTAs, or ask brand questions.</p>
                             <div className="space-y-1.5">
                               {["Add a stat about ROI", "Make the hook stronger", "Suggest a better CTA", "What proof points can I add?"].map(hint => (
                                 <button key={hint} onClick={() => setChatInput(hint)}
-                                  className="block w-full text-left px-2.5 py-1.5 rounded-md text-[10px] text-[var(--hm-text-secondary)] bg-[var(--hm-bg-secondary)] border border-[var(--hm-border)] hover:border-[#4361ee]/40 transition-colors">{hint}</button>
+                                  className="block w-full text-left px-2.5 py-1.5 rounded-md text-[10px] text-[var(--hm-text-secondary)] bg-[var(--hm-bg-secondary)] border border-[var(--hm-border)] hover:border-[var(--hm-text-tertiary)] transition-colors">{hint}</button>
                               ))}
                             </div>
                           </div>
@@ -1211,16 +1211,16 @@ export default function ContentGeneratorPage() {
                         {chatMessages.map((msg, idx) => (
                           <div key={idx} className={msg.role === "user" ? "flex justify-end" : "flex flex-col gap-1.5"}>
                             {msg.role === "user" ? (
-                              <div className="max-w-[85%] px-3 py-2 rounded-xl text-[11px] bg-[#4361ee] text-white leading-relaxed">{msg.content}</div>
+                              <div className="max-w-[85%] px-3 py-2 rounded-xl text-[11px] bg-[var(--hm-primary)] text-white leading-relaxed">{msg.content}</div>
                             ) : (
                               <>
                                 <div className="px-3 py-2 rounded-xl text-[11px] bg-[var(--hm-bg-secondary)] border border-[var(--hm-border)] text-[var(--hm-text)] leading-relaxed whitespace-pre-wrap">
                                   {msg.content.replace(/\[CONTENT_SNIPPET\][\s\S]*?\[\/CONTENT_SNIPPET\]/g, m => m.replace(/\[CONTENT_SNIPPET\]/, "").replace(/\[\/CONTENT_SNIPPET\]/, ""))}
                                 </div>
                                 <button onClick={() => incorporateChatMessage(msg.content, idx)} disabled={incorporatingIdx !== null || improving || applyingId !== null}
-                                  className="self-start flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium text-[#4361ee] bg-blue-50 border border-[#4361ee]/20 hover:bg-blue-100 disabled:opacity-40 transition-colors">
+                                  className="self-start flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium text-[var(--hm-text)] bg-[var(--tag-blue-bg)] border border-[var(--hm-primary)]/20 hover:bg-[var(--tag-blue-bg)] disabled:opacity-40 transition-colors">
                                   {incorporatingIdx === idx
-                                    ? <><div className="w-2.5 h-2.5 border-2 border-[#4361ee]/30 border-t-[#4361ee] rounded-full animate-spin" /> Adding…</>
+                                    ? <><div className="w-2.5 h-2.5 border-2 border-[var(--hm-border)] border-t-[var(--hm-text-secondary)] rounded-full animate-spin" /> Adding…</>
                                     : <><svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="M4 12l1.5-4L12 2l2 2-6.5 6.5L4 12z" stroke="currentColor" strokeWidth="1.3" /></svg>Add to content</>
                                   }
                                 </button>
@@ -1238,9 +1238,9 @@ export default function ContentGeneratorPage() {
                           </div>
                         )}
                         {chatError && (
-                          <div role="alert" className="p-2.5 rounded-lg bg-red-50 border border-red-200">
-                            <p className="text-[10px] text-red-600">{chatError}</p>
-                            <button onClick={() => setChatError(null)} className="text-[10px] text-red-400 hover:underline mt-0.5">Dismiss</button>
+                          <div role="alert" className="p-2.5 rounded-lg bg-[var(--tag-red-bg)] border border-[var(--hm-border)]">
+                            <p className="text-[10px] text-[var(--tag-red-fg)]">{chatError}</p>
+                            <button onClick={() => setChatError(null)} className="text-[10px] text-[var(--tag-red-fg)] hover:underline mt-0.5">Dismiss</button>
                           </div>
                         )}
                         <div ref={chatEndRef} />
@@ -1251,10 +1251,10 @@ export default function ContentGeneratorPage() {
                             onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChatMessage(); } }}
                             placeholder="Ask a question or request a change…"
                             aria-label="Ask AI a question about this content"
-                            className="flex-1 h-[58px] resize-none text-[11px] rounded-lg border border-[var(--hm-border)] p-2 focus:outline-none focus:border-[#4361ee]" />
+                            className="flex-1 h-[58px] resize-none text-[11px] rounded-lg border border-[var(--hm-border)] p-2 focus:outline-none focus:border-[var(--hm-primary)]" />
                           <button onClick={sendChatMessage} disabled={!chatInput.trim() || chatLoading}
                             aria-label="Send message"
-                            className="w-8 h-8 rounded-lg bg-[#4361ee] text-white flex items-center justify-center self-end disabled:opacity-40 hover:opacity-90 transition-all flex-shrink-0">
+                            className="w-8 h-8 rounded-lg bg-[var(--hm-primary)] text-white flex items-center justify-center self-end disabled:opacity-40 hover:opacity-90 transition-all flex-shrink-0">
                             <svg aria-hidden="true" width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M2 14L14 8 2 2v5l8 1-8 1v5z" fill="currentColor" /></svg>
                           </button>
                         </div>
@@ -1268,16 +1268,16 @@ export default function ContentGeneratorPage() {
                     <div className="flex-1 overflow-y-auto min-h-0">
                       <div className="p-4 border-b border-[var(--hm-border)]">
                         {!focusKeyword && !seoAnalysis && (
-                          <div className="mb-3 p-2.5 rounded-lg bg-amber-50 border border-amber-200 flex items-start gap-2">
-                            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className="flex-shrink-0 mt-0.5"><circle cx="8" cy="8" r="6" stroke="#f59e0b" strokeWidth="1.3"/><path d="M8 5v4M8 10.5v.5" stroke="#f59e0b" strokeWidth="1.3" strokeLinecap="round"/></svg>
-                            <p className="text-[11px] text-amber-700">Enter a focus keyword below to unlock your SEO score.</p>
+                          <div className="mb-3 p-2.5 rounded-lg bg-[var(--tag-yellow-bg)] border border-[var(--hm-border)] flex items-start gap-2">
+                            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className="flex-shrink-0 mt-0.5"><circle cx="8" cy="8" r="6" stroke="var(--hm-warning)" strokeWidth="1.3"/><path d="M8 5v4M8 10.5v.5" stroke="var(--hm-warning)" strokeWidth="1.3" strokeLinecap="round"/></svg>
+                            <p className="text-[11px] text-[var(--tag-yellow-fg)]">Enter a focus keyword below to unlock your SEO score.</p>
                           </div>
                         )}
                         {seoAnalysis ? (() => {
                           const s = seoAnalysis.score;
                           const r = 28, circ = 2 * Math.PI * r;
                           const fill = circ - (s / 100) * circ;
-                          const col = s >= 85 ? "#10b981" : s >= 65 ? "#f59e0b" : s >= 45 ? "#f97316" : "#ef4444";
+                          const col = s >= 85 ? "var(--hm-success)" : s >= 65 ? "var(--hm-warning)" : s >= 45 ? "var(--tag-orange-fg)" : "var(--hm-danger)";
                           return (
                             <div className="flex items-center gap-4">
                               <div className="relative flex-shrink-0">
@@ -1303,12 +1303,12 @@ export default function ContentGeneratorPage() {
                       <div className="p-4 border-b border-[var(--hm-border)]">
                         <label className="block text-[11px] font-medium text-[var(--hm-text-secondary)] mb-1.5">Focus keyword</label>
                         <input type="text" value={focusKeyword} onChange={e => setFocusKeyword(e.target.value)} placeholder="e.g. AI marketing automation"
-                          className="w-full h-[32px] text-[12px] rounded-md border border-[var(--hm-border)] px-2.5 focus:outline-none focus:border-[#4361ee]" />
+                          className="w-full h-[32px] text-[12px] rounded-md border border-[var(--hm-border)] px-2.5 focus:outline-none focus:border-[var(--hm-primary)]" />
                         <label className="block text-[11px] font-medium text-[var(--hm-text-secondary)] mb-1.5 mt-3">Secondary keywords</label>
                         <div className="flex flex-wrap gap-1.5 mb-1.5">
                           {secondaryKeywords.map(kw => (
-                            <span key={kw} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-[#4361ee]/10 text-[#4361ee] border border-[#4361ee]/20">
-                              {kw}<button onClick={() => setSecondaryKeywords(prev => prev.filter(k => k !== kw))} className="hover:text-red-500">×</button>
+                            <span key={kw} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-[var(--hm-bg-tertiary)] text-[var(--hm-text)] border border-[var(--hm-primary)]/20">
+                              {kw}<button onClick={() => setSecondaryKeywords(prev => prev.filter(k => k !== kw))} className="hover:text-[var(--tag-red-fg)]">×</button>
                             </span>
                           ))}
                         </div>
@@ -1316,9 +1316,9 @@ export default function ContentGeneratorPage() {
                           <input type="text" value={kwInput} onChange={e => setKwInput(e.target.value)}
                             onKeyDown={e => { if ((e.key === "Enter" || e.key === ",") && kwInput.trim()) { e.preventDefault(); const kw = kwInput.trim().replace(/,$/, ""); if (kw && !secondaryKeywords.includes(kw)) setSecondaryKeywords(prev => [...prev, kw]); setKwInput(""); } }}
                             placeholder="Add keyword, press Enter"
-                            className="flex-1 h-[28px] text-[11px] rounded-md border border-[var(--hm-border)] px-2 focus:outline-none focus:border-[#4361ee]" />
+                            className="flex-1 h-[28px] text-[11px] rounded-md border border-[var(--hm-border)] px-2 focus:outline-none focus:border-[var(--hm-primary)]" />
                           <button onClick={() => { const kw = kwInput.trim(); if (kw && !secondaryKeywords.includes(kw)) setSecondaryKeywords(prev => [...prev, kw]); setKwInput(""); }} disabled={!kwInput.trim()}
-                            className="h-[28px] px-2.5 rounded-md bg-[#4361ee] text-white text-[10px] disabled:opacity-40 hover:opacity-90">Add</button>
+                            className="h-[28px] px-2.5 rounded-md bg-[var(--hm-primary)] text-white text-[10px] disabled:opacity-40 hover:opacity-90">Add</button>
                         </div>
                       </div>
                       {seoAnalysis && (
@@ -1327,7 +1327,7 @@ export default function ContentGeneratorPage() {
                           <div className="space-y-2">
                             {seoAnalysis.checklist.map(item => (
                               <button key={item.id} onClick={() => { if (item.jumpText) { const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT); let node: Text | null; while ((node = walker.nextNode() as Text | null)) { if (node.textContent?.includes(item.jumpText.slice(0, 30))) { node.parentElement?.scrollIntoView({ behavior: "smooth", block: "center" }); break; } } } }}
-                                className="w-full text-left p-2 rounded-lg border border-[var(--hm-border)] hover:border-[#4361ee]/30 transition-colors">
+                                className="w-full text-left p-2 rounded-lg border border-[var(--hm-border)] hover:border-[var(--hm-primary)]/30 transition-colors">
                                 <div className="flex items-start gap-2">
                                   <span className="flex-shrink-0 mt-0.5 text-[12px]">{item.passed ? "✅" : item.warning ? "⚠️" : "❌"}</span>
                                   <div className="min-w-0 flex-1">
@@ -1352,16 +1352,16 @@ export default function ContentGeneratorPage() {
                                 <div className="flex items-center justify-between mb-1">
                                   <div className="flex items-center gap-1.5 min-w-0">
                                     <span className="text-[10px] font-medium text-[var(--hm-text)] truncate">{kd.keyword}</span>
-                                    {kd.isPrimary && <span className="text-[8px] px-1 py-0.5 rounded-full bg-[#4361ee]/10 text-[#4361ee] flex-shrink-0">focus</span>}
+                                    {kd.isPrimary && <span className="text-[8px] px-1 py-0.5 rounded-full bg-[var(--hm-bg-tertiary)] text-[var(--hm-text)] flex-shrink-0">focus</span>}
                                   </div>
                                   <div className="flex items-center gap-1.5 flex-shrink-0">
-                                    {kd.inTitle && <span title="In title" className="text-[8px] text-emerald-600">T</span>}
-                                    {kd.inH2 && <span title="In H2" className="text-[8px] text-emerald-600">H2</span>}
+                                    {kd.inTitle && <span title="In title" className="text-[8px] text-[var(--tag-green-fg)]">T</span>}
+                                    {kd.inH2 && <span title="In H2" className="text-[8px] text-[var(--tag-green-fg)]">H2</span>}
                                     <span className="text-[10px] text-[var(--hm-text-tertiary)]">{kd.density}% ({kd.count}×)</span>
                                   </div>
                                 </div>
                                 <div className="w-full h-[3px] rounded-full bg-[var(--hm-border)] overflow-hidden">
-                                  <div className="h-full rounded-full transition-all" style={{ width: Math.min(100, (kd.density / 3) * 100) + "%", backgroundColor: kd.density >= 0.5 && kd.density <= 2.5 ? "#10b981" : kd.density > 2.5 ? "#ef4444" : "#f59e0b" }} />
+                                  <div className="h-full rounded-full transition-all" style={{ width: Math.min(100, (kd.density / 3) * 100) + "%", backgroundColor: kd.density >= 0.5 && kd.density <= 2.5 ? "var(--hm-success)" : kd.density > 2.5 ? "var(--hm-danger)" : "var(--hm-warning)" }} />
                                 </div>
                               </div>
                             ))}
@@ -1373,18 +1373,18 @@ export default function ContentGeneratorPage() {
                         <div className="mb-3">
                           <div className="flex items-center justify-between mb-1">
                             <label className="text-[10px] text-[var(--hm-text-tertiary)]">Meta title</label>
-                            <span className={`text-[10px] ${metaTitle.length >= 50 && metaTitle.length <= 60 ? "text-emerald-500" : metaTitle.length > 0 ? "text-amber-500" : "text-[var(--hm-text-tertiary)]"}`}>{metaTitle.length}/60</span>
+                            <span className={`text-[10px] ${metaTitle.length >= 50 && metaTitle.length <= 60 ? "text-[var(--tag-green-fg)]" : metaTitle.length > 0 ? "text-[var(--tag-yellow-fg)]" : "text-[var(--hm-text-tertiary)]"}`}>{metaTitle.length}/60</span>
                           </div>
                           <input type="text" value={metaTitle} onChange={e => setMetaTitle(e.target.value)} placeholder={seoAnalysis?.titleText || "Title from content"}
-                            className="w-full h-[30px] text-[11px] rounded-md border border-[var(--hm-border)] px-2 focus:outline-none focus:border-[#4361ee]" />
+                            className="w-full h-[30px] text-[11px] rounded-md border border-[var(--hm-border)] px-2 focus:outline-none focus:border-[var(--hm-primary)]" />
                         </div>
                         <div>
                           <div className="flex items-center justify-between mb-1">
                             <label className="text-[10px] text-[var(--hm-text-tertiary)]">Meta description</label>
-                            <span className={`text-[10px] ${metaDescription.length >= 120 && metaDescription.length <= 160 ? "text-emerald-500" : metaDescription.length > 0 ? "text-amber-500" : "text-[var(--hm-text-tertiary)]"}`}>{metaDescription.length}/160</span>
+                            <span className={`text-[10px] ${metaDescription.length >= 120 && metaDescription.length <= 160 ? "text-[var(--tag-green-fg)]" : metaDescription.length > 0 ? "text-[var(--tag-yellow-fg)]" : "text-[var(--hm-text-tertiary)]"}`}>{metaDescription.length}/160</span>
                           </div>
                           <textarea value={metaDescription} onChange={e => setMetaDescription(e.target.value)} placeholder="Write a compelling 120–160 char description…"
-                            className="w-full h-[56px] resize-none text-[11px] rounded-md border border-[var(--hm-border)] px-2 py-1.5 focus:outline-none focus:border-[#4361ee]" />
+                            className="w-full h-[56px] resize-none text-[11px] rounded-md border border-[var(--hm-border)] px-2 py-1.5 focus:outline-none focus:border-[var(--hm-primary)]" />
                         </div>
                       </div>
                       <div className="p-4">
@@ -1412,12 +1412,12 @@ export default function ContentGeneratorPage() {
                           }
                         }}
                           disabled={!focusKeyword || aiDeepLoading}
-                          className="w-full py-2 rounded-lg bg-[#4361ee] text-white text-[11px] font-medium hover:opacity-90 disabled:opacity-40 transition-all flex items-center justify-center gap-2">
+                          className="w-full py-2 rounded-lg bg-[var(--hm-primary)] text-white text-[11px] font-medium hover:opacity-90 disabled:opacity-40 transition-all flex items-center justify-center gap-2">
                           {aiDeepLoading ? <><div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Analysing…</> : <><svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M8 1v3M8 12v3M1 8h3M12 8h3M3.5 3.5l2 2M10.5 10.5l2 2M10.5 3.5l-2 2M3.5 10.5l2-2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /></svg>AI deep analysis</>}
                         </button>
                         {!focusKeyword && <p className="text-[10px] text-[var(--hm-text-tertiary)] text-center mt-1.5">Enter a focus keyword first</p>}
                         {aiDeepError && (
-                          <p className="mt-2 text-[10px] text-red-500 text-center">{aiDeepError}</p>
+                          <p className="mt-2 text-[10px] text-[var(--tag-red-fg)] text-center">{aiDeepError}</p>
                         )}
                         {aiDeepResult && (
                           <div className="mt-4 space-y-4">
@@ -1426,7 +1426,7 @@ export default function ContentGeneratorPage() {
                                 <p className="text-[11px] font-medium text-[var(--hm-text-secondary)] mb-1.5">Title variants</p>
                                 <div className="space-y-1.5">
                                   {aiDeepResult.titleVariants.map((t, i) => (
-                                    <button key={i} onClick={() => setMetaTitle(t)} className="w-full text-left p-2 rounded-md border border-[var(--hm-border)] text-[10px] text-[var(--hm-text)] hover:border-[#4361ee]/40 hover:bg-blue-50/50 transition-colors">{t}</button>
+                                    <button key={i} onClick={() => setMetaTitle(t)} className="w-full text-left p-2 rounded-md border border-[var(--hm-border)] text-[10px] text-[var(--hm-text)] hover:border-[var(--hm-text-tertiary)] hover:bg-[var(--tag-blue-bg)]/50 transition-colors">{t}</button>
                                   ))}
                                 </div>
                               </div>
@@ -1434,8 +1434,8 @@ export default function ContentGeneratorPage() {
                             {aiDeepResult.metaDescription && (
                               <div>
                                 <p className="text-[11px] font-medium text-[var(--hm-text-secondary)] mb-1.5">Suggested meta description</p>
-                                <button onClick={() => setMetaDescription(aiDeepResult!.metaDescription)} className="w-full text-left p-2 rounded-md border border-[var(--hm-border)] text-[10px] text-[var(--hm-text)] hover:border-[#4361ee]/40 hover:bg-blue-50/50 transition-colors leading-relaxed">
-                                  {aiDeepResult.metaDescription}<span className="block text-[9px] text-[#4361ee] mt-1">Click to use →</span>
+                                <button onClick={() => setMetaDescription(aiDeepResult!.metaDescription)} className="w-full text-left p-2 rounded-md border border-[var(--hm-border)] text-[10px] text-[var(--hm-text)] hover:border-[var(--hm-text-tertiary)] hover:bg-[var(--tag-blue-bg)]/50 transition-colors leading-relaxed">
+                                  {aiDeepResult.metaDescription}<span className="block text-[9px] text-[var(--hm-text)] mt-1">Click to use →</span>
                                 </button>
                               </div>
                             )}
@@ -1445,7 +1445,7 @@ export default function ContentGeneratorPage() {
                                 <div className="flex flex-wrap gap-1.5">
                                   {aiDeepResult.semanticKeywords.map((kw, i) => (
                                     <button key={i} onClick={() => { if (!secondaryKeywords.includes(kw)) setSecondaryKeywords(prev => [...prev, kw]); }}
-                                      className={"px-2 py-0.5 rounded-full text-[10px] border transition-colors " + (secondaryKeywords.includes(kw) ? "border-emerald-400 bg-emerald-50 text-emerald-600" : "border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[#4361ee] hover:text-[#4361ee]")}>
+                                      className={"px-2 py-0.5 rounded-full text-[10px] border transition-colors " + (secondaryKeywords.includes(kw) ? "border-[var(--hm-border)] bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]" : "border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[var(--hm-primary)] hover:text-[var(--hm-text)]")}>
                                       {secondaryKeywords.includes(kw) ? "✓ " : "+ "}{kw}
                                     </button>
                                   ))}
@@ -1457,7 +1457,7 @@ export default function ContentGeneratorPage() {
                                 <p className="text-[11px] font-medium text-[var(--hm-text-secondary)] mb-1.5">Missing sections</p>
                                 <ul className="space-y-1">
                                   {aiDeepResult.missingSections.map((s, i) => (
-                                    <li key={i} className="text-[10px] text-[var(--hm-text-secondary)] flex gap-1.5"><span className="text-amber-500 flex-shrink-0">→</span>{s}</li>
+                                    <li key={i} className="text-[10px] text-[var(--hm-text-secondary)] flex gap-1.5"><span className="text-[var(--tag-yellow-fg)] flex-shrink-0">→</span>{s}</li>
                                   ))}
                                 </ul>
                               </div>
@@ -1467,7 +1467,7 @@ export default function ContentGeneratorPage() {
                                 <p className="text-[11px] font-medium text-[var(--hm-text-secondary)] mb-1.5">Keyword opportunities</p>
                                 <ul className="space-y-1.5">
                                   {aiDeepResult.keywordOpportunities.map((opp, i) => (
-                                    <li key={i} className="text-[10px] text-[var(--hm-text-secondary)] p-2 rounded-md bg-blue-50/60 border border-blue-100 leading-relaxed">{opp}</li>
+                                    <li key={i} className="text-[10px] text-[var(--hm-text-secondary)] p-2 rounded-md bg-[var(--tag-blue-bg)]/60 border border-[var(--hm-border)] leading-relaxed">{opp}</li>
                                   ))}
                                 </ul>
                               </div>
@@ -1477,7 +1477,7 @@ export default function ContentGeneratorPage() {
                                 <p className="text-[11px] font-medium text-[var(--hm-text-secondary)] mb-1.5">Org SEO guideline gaps</p>
                                 <ul className="space-y-1">
                                   {aiDeepResult.guidelineGaps.map((gap, i) => (
-                                    <li key={i} className="text-[10px] text-red-600 flex gap-1.5 p-2 rounded-md bg-red-50 border border-red-100"><span className="flex-shrink-0">!</span>{gap}</li>
+                                    <li key={i} className="text-[10px] text-[var(--tag-red-fg)] flex gap-1.5 p-2 rounded-md bg-[var(--tag-red-bg)] border border-[var(--hm-border)]"><span className="flex-shrink-0">!</span>{gap}</li>
                                   ))}
                                 </ul>
                               </div>
@@ -1495,7 +1495,7 @@ export default function ContentGeneratorPage() {
                       {typeof outputs[activeTab].score === "number" && outputs[activeTab].scoreBreakdown ? (
                         <>
                           <div className="text-center mb-5 pb-4 border-b border-[var(--hm-border)]">
-                            <div className="w-[72px] h-[72px] rounded-full flex items-center justify-center mx-auto mb-2" style={{ borderWidth: "3px", borderStyle: "solid", borderColor: (outputs[activeTab].score as number) >= 80 ? "#10b981" : "#f59e0b" }}>
+                            <div className="w-[72px] h-[72px] rounded-full flex items-center justify-center mx-auto mb-2" style={{ borderWidth: "3px", borderStyle: "solid", borderColor: (outputs[activeTab].score as number) >= 80 ? "var(--hm-success)" : "var(--hm-warning)" }}>
                               <span className={"text-[22px] font-medium " + scoreColor(outputs[activeTab].score as number)}>{outputs[activeTab].score}%</span>
                             </div>
                             <p className="text-[11px] text-[var(--hm-text-tertiary)]">{FORMATS.find(x => x.id === activeTab)?.label} score</p>
@@ -1546,7 +1546,7 @@ export default function ContentGeneratorPage() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="design-brief-title"
-            className="relative w-full max-w-2xl max-h-[88vh] bg-white rounded-2xl flex flex-col shadow-2xl overflow-hidden"
+            className="relative w-full max-w-2xl max-h-[88vh] bg-[var(--hm-surface)] rounded-2xl flex flex-col overflow-hidden"
             style={{ boxShadow: "0 24px 80px rgba(0,0,0,0.22)" }}
             onClick={e => e.stopPropagation()}
           >
@@ -1554,7 +1554,7 @@ export default function ContentGeneratorPage() {
             <div className="px-6 py-4 border-b border-[var(--hm-border)] flex items-center justify-between flex-shrink-0">
               <div className="min-w-0 pr-4">
                 <div className="flex items-center gap-2 mb-0.5">
-                  <div className="w-5 h-5 rounded-md bg-gradient-to-br from-[#7c3aed] to-[#4361ee] flex items-center justify-center flex-shrink-0">
+                  <div className="w-5 h-5 rounded-md bg-[var(--hm-primary)] flex items-center justify-center flex-shrink-0">
                     <svg aria-hidden="true" width="10" height="10" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="14" height="10" rx="1.5" stroke="white" strokeWidth="1.2"/><path d="M4 5h8M4 8h5" stroke="white" strokeWidth="1.1" strokeLinecap="round"/></svg>
                   </div>
                   <p id="design-brief-title" className="text-[14px] font-semibold">Design brief</p>
@@ -1564,7 +1564,7 @@ export default function ContentGeneratorPage() {
               <div className="flex items-center gap-2 flex-shrink-0">
                 <button
                   onClick={() => { navigator.clipboard.writeText(designBriefs[activeTab] ?? ""); setBriefCopied(true); setTimeout(() => setBriefCopied(false), 2000); }}
-                  className={"h-[30px] px-3 border rounded-lg text-[11px] transition-colors flex items-center gap-1.5 " + (briefCopied ? "border-[#7c3aed] text-[#7c3aed] bg-[#7c3aed]/5" : "border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[#7c3aed] hover:text-[#7c3aed]")}
+                  className={"h-[30px] px-3 border rounded-lg text-[11px] transition-colors flex items-center gap-1.5 " + (briefCopied ? "border-[var(--hm-primary)] text-[var(--hm-text)] bg-[var(--hm-primary)]/5" : "border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[var(--hm-primary)] hover:text-[var(--hm-text)]")}
                 >
                   {briefCopied
                     ? <><svg width="10" height="10" viewBox="0 0 16 16" fill="none"><path d="M3 8l4 4 6-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>Copied!</>
@@ -1597,7 +1597,7 @@ export default function ContentGeneratorPage() {
                     finally { setDesignBriefLoading(false); }
                   }}
                   disabled={designBriefLoading}
-                  className="h-[30px] px-3 border border-[var(--hm-border)] rounded-lg text-[11px] text-[var(--hm-text-secondary)] hover:border-[#7c3aed] hover:text-[#7c3aed] transition-colors disabled:opacity-40 flex items-center gap-1.5"
+                  className="h-[30px] px-3 border border-[var(--hm-border)] rounded-lg text-[11px] text-[var(--hm-text-secondary)] hover:border-[var(--hm-primary)] hover:text-[var(--hm-text)] transition-colors disabled:opacity-40 flex items-center gap-1.5"
                 >
                   <svg width="10" height="10" viewBox="0 0 16 16" fill="none"><path d="M2 10v4h4M14 6V2h-4M2 2l5 5M14 14l-5-5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /></svg>
                   Regenerate
@@ -1610,7 +1610,7 @@ export default function ContentGeneratorPage() {
             <div className="flex-1 overflow-y-auto px-7 py-6 min-h-0">
               {designBriefLoading ? (
                 <div role="status" aria-label="Generating design brief" className="flex flex-col items-center gap-3 py-20">
-                  <div aria-hidden="true" className="w-6 h-6 border-2 border-[#7c3aed]/30 border-t-[#7c3aed] rounded-full animate-spin" />
+                  <div aria-hidden="true" className="w-6 h-6 border-2 border-[var(--hm-border)] border-t-[var(--hm-text-secondary)] rounded-full animate-spin" />
                   <p className="text-[12px] text-[var(--hm-text-tertiary)]">Generating design brief…</p>
                 </div>
               ) : (
@@ -1623,7 +1623,7 @@ export default function ContentGeneratorPage() {
             {/* Footer */}
             <div className="px-6 py-3.5 border-t border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] flex-shrink-0 flex items-center justify-between">
               <p className="text-[10px] text-[var(--hm-text-tertiary)]">Share this brief with your design team to ensure visual consistency with the content above.</p>
-              <button onClick={() => setShowDesignBrief(false)} className="text-[11px] text-[var(--hm-text-secondary)] hover:text-[var(--hm-text)] px-3 h-7 border border-[var(--hm-border)] rounded-lg hover:border-[#7c3aed]/40 transition-colors flex-shrink-0 ml-4">Close</button>
+              <button onClick={() => setShowDesignBrief(false)} className="text-[11px] text-[var(--hm-text-secondary)] hover:text-[var(--hm-text)] px-3 h-7 border border-[var(--hm-border)] rounded-lg hover:border-[var(--hm-primary)]/40 transition-colors flex-shrink-0 ml-4">Close</button>
             </div>
           </div>
         </div>
