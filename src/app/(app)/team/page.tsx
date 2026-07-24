@@ -28,7 +28,7 @@ interface CurrentUser { id: string; name: string; role: string; }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function RoleBadge({ role, customMeta }: { role: string; customMeta?: Record<string, { label: string; color: string; bg: string; description: string }> }) {
-  const meta = ROLE_META[role as Role] ?? customMeta?.[role] ?? { label: role, color: "#6B7280", bg: "#F3F4F6", description: "" };
+  const meta = ROLE_META[role as Role] ?? customMeta?.[role] ?? { label: role, color: "var(--tag-gray-fg)", bg: "var(--tag-gray-bg)", description: "" };
   return (
     <span className="text-[11px] px-2 py-0.5 rounded-md font-medium"
       style={{ background: meta.bg, color: meta.color }}>
@@ -42,8 +42,8 @@ function AccessToggle({ value, onChange, disabled }: { value: AccessLevel; onCha
   const levels: AccessLevel[] = ["none", "view", "edit"];
   const colors: Record<AccessLevel, string> = {
     none: "var(--hm-text-tertiary)",
-    view: "#0EA5E9",
-    edit: "#059669",
+    view: "var(--tag-blue-fg)",
+    edit: "var(--tag-green-fg)",
   };
   return (
     <div className="flex rounded-lg overflow-hidden border border-[var(--hm-border)] h-7 text-[11px] font-medium flex-shrink-0"
@@ -52,7 +52,7 @@ function AccessToggle({ value, onChange, disabled }: { value: AccessLevel; onCha
         <button key={l} onClick={() => onChange(l)}
           className="px-3 capitalize transition-all"
           style={{
-            background: value === l ? (l === "none" ? "var(--hm-bg-tertiary)" : l === "view" ? "#E0F2FE" : "#DCFCE7") : "var(--hm-bg)",
+            background: value === l ? (l === "none" ? "var(--hm-bg-tertiary)" : l === "view" ? "var(--tag-blue-bg)" : "var(--tag-green-bg)") : "var(--hm-bg)",
             color: value === l ? colors[l] : "var(--hm-text-tertiary)",
             borderRight: l !== "edit" ? "1px solid var(--hm-border)" : undefined,
           }}>
@@ -101,7 +101,7 @@ function PermissionEditor({
         <button onClick={resetToDefaults}
           className="text-[11px] px-2.5 py-1 rounded-lg border border-[var(--hm-border)] transition-all"
           style={{ color: "var(--hm-text-secondary)" }}
-          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = "var(--hm-accent)"; (e.currentTarget as HTMLElement).style.color = "var(--hm-accent)"; }}
+          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = "var(--hm-link)"; (e.currentTarget as HTMLElement).style.color = "var(--hm-link)"; }}
           onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = "var(--hm-border)"; (e.currentTarget as HTMLElement).style.color = "var(--hm-text-secondary)"; }}>
           Reset to role defaults
         </button>
@@ -125,7 +125,7 @@ function PermissionEditor({
                         <div className="flex items-center gap-1.5">
                           <p className="text-[13px] font-medium" style={{ color: "var(--hm-text)" }}>{mod.label}</p>
                           {isCustom && (
-                            <span className="text-[9px] px-1.5 py-0.5 rounded font-medium bg-[var(--hm-accent-light)] text-[var(--hm-accent)]">custom</span>
+                            <span className="text-[9px] px-1.5 py-0.5 rounded font-medium bg-[var(--hm-bg-tertiary)] text-[var(--hm-link)]">custom</span>
                           )}
                         </div>
                         <p className="text-[11px]" style={{ color: "var(--hm-text-tertiary)" }}>{mod.description}</p>
@@ -145,8 +145,8 @@ function PermissionEditor({
 
       <p className="text-[10px] mt-3 px-1" style={{ color: "var(--hm-text-tertiary)" }}>
         <strong style={{ color: "var(--hm-text-secondary)" }}>None</strong> — hidden from nav &nbsp;·&nbsp;
-        <strong style={{ color: "#0EA5E9" }}>View</strong> — read only (Radar: Dashboard + Export tabs only) &nbsp;·&nbsp;
-        <strong style={{ color: "#059669" }}>Edit</strong> — full create/edit access
+        <strong style={{ color: "var(--tag-blue-fg)" }}>View</strong> — read only (Radar: Dashboard + Export tabs only) &nbsp;·&nbsp;
+        <strong style={{ color: "var(--tag-green-fg)" }}>Edit</strong> — full create/edit access
       </p>
     </div>
   );
@@ -237,7 +237,7 @@ function UserModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.5)" }}>
-      <div className="w-[640px] max-h-[90vh] flex flex-col rounded-2xl shadow-2xl border border-[var(--hm-border)] animate-fade-in" style={{ background: "var(--hm-bg)" }}>
+      <div className="w-[640px] max-h-[90vh] flex flex-col rounded-2xl border border-[var(--hm-border)] animate-fade-in" style={{ background: "var(--hm-bg)" }}>
         {/* Modal header */}
         <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-[var(--hm-border)] flex-shrink-0">
           <div>
@@ -258,8 +258,8 @@ function UserModal({
               <button key={t} onClick={() => setTab(t)}
                 className="px-4 py-2 rounded-lg text-[12px] font-medium capitalize transition-all"
                 style={{
-                  background: tab === t ? "var(--hm-accent-light)" : "transparent",
-                  color: tab === t ? "var(--hm-accent)" : "var(--hm-text-tertiary)",
+                  background: tab === t ? "var(--hm-bg-tertiary)" : "transparent",
+                  color: tab === t ? "var(--hm-link)" : "var(--hm-text-tertiary)",
                 }}>
                 {t}
               </button>
@@ -309,8 +309,8 @@ function UserModal({
                 <div className="grid grid-cols-2 gap-1.5">
                   {MODULES.map(mod => {
                     const level = effectivePerms[mod.id] as AccessLevel ?? "none";
-                    const colors: Record<AccessLevel, string> = { none: "var(--hm-text-tertiary)", view: "#0EA5E9", edit: "#059669" };
-                    const bgs: Record<AccessLevel, string> = { none: "var(--hm-bg-secondary)", view: "#E0F2FE", edit: "#DCFCE7" };
+                    const colors: Record<AccessLevel, string> = { none: "var(--hm-text-tertiary)", view: "var(--tag-blue-fg)", edit: "var(--tag-green-fg)" };
+                    const bgs: Record<AccessLevel, string> = { none: "var(--hm-bg-secondary)", view: "var(--tag-blue-bg)", edit: "var(--tag-green-bg)" };
                     return (
                       <div key={mod.id} className="flex items-center justify-between px-3 py-1.5 rounded-lg"
                         style={{ background: "var(--hm-bg-secondary)" }}>
@@ -337,9 +337,9 @@ function UserModal({
 
         <div className="flex flex-col gap-2 px-6 py-4 border-t border-[var(--hm-border)] flex-shrink-0">
           {error && (
-            <div className="px-3 py-2 rounded-lg bg-red-50 border border-red-200 flex items-start gap-2">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className="flex-shrink-0 mt-0.5"><circle cx="8" cy="8" r="6.5" stroke="#EF4444" strokeWidth="1.3" /><path d="M8 5v3.5M8 10.5v.5" stroke="#EF4444" strokeWidth="1.3" strokeLinecap="round" /></svg>
-              <p className="text-[11px] text-red-600">{error}</p>
+            <div className="px-3 py-2 rounded-lg bg-[var(--tag-red-bg)] border border-[var(--hm-border)] flex items-start gap-2">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className="flex-shrink-0 mt-0.5"><circle cx="8" cy="8" r="6.5" stroke="var(--hm-danger)" strokeWidth="1.3" /><path d="M8 5v3.5M8 10.5v.5" stroke="var(--hm-danger)" strokeWidth="1.3" strokeLinecap="round" /></svg>
+              <p className="text-[11px] text-[var(--tag-red-fg)]">{error}</p>
             </div>
           )}
           <div className="flex gap-2">
@@ -348,7 +348,7 @@ function UserModal({
             </button>
             <button onClick={handleSave} disabled={saving}
               className="flex-1 h-[36px] rounded-lg text-[12px] font-medium text-white hover:opacity-90 disabled:opacity-50"
-              style={{ background: "var(--hm-accent)" }}>
+              style={{ background: "var(--hm-link)" }}>
               {saving ? "Saving…" : isNew ? "Send invite" : "Save changes"}
             </button>
           </div>
@@ -371,20 +371,20 @@ function LeaveModal({ onClose }: { onClose: () => void }) {
   };
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.5)" }}>
-      <div className="w-[400px] rounded-2xl shadow-2xl border border-[var(--hm-border)] p-6 animate-fade-in" style={{ background: "var(--hm-bg)" }}>
+      <div className="w-[400px] rounded-2xl border border-[var(--hm-border)] p-6 animate-fade-in" style={{ background: "var(--hm-bg)" }}>
         <div className="flex items-start gap-3 mb-4">
-          <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 8h6M10 6l2 2-2 2M8 4H4a1 1 0 00-1 1v6a1 1 0 001 1h4" stroke="#D97706" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          <div className="w-9 h-9 rounded-full bg-[var(--tag-yellow-bg)] flex items-center justify-center flex-shrink-0">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 8h6M10 6l2 2-2 2M8 4H4a1 1 0 00-1 1v6a1 1 0 001 1h4" stroke="var(--hm-warning)" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>
           </div>
           <div>
             <p className="text-[14px] font-semibold" style={{ color: "var(--hm-text)" }}>Leave this team?</p>
             <p className="text-[12px] mt-1" style={{ color: "var(--hm-text-secondary)" }}>You will lose access immediately and your data will be removed. This cannot be undone.</p>
           </div>
         </div>
-        {error && <p className="text-[11px] text-red-500 mb-3">{error}</p>}
+        {error && <p className="text-[11px] text-[var(--tag-red-fg)] mb-3">{error}</p>}
         <div className="flex gap-2">
           <button onClick={onClose} className="flex-1 h-[36px] rounded-lg text-[12px] border border-[var(--hm-border)]" style={{ color: "var(--hm-text-secondary)" }}>Cancel</button>
-          <button onClick={handleLeave} disabled={leaving} className="flex-1 h-[36px] rounded-lg text-[12px] font-medium text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-50">
+          <button onClick={handleLeave} disabled={leaving} className="flex-1 h-[36px] rounded-lg text-[12px] font-medium text-white bg-[var(--hm-warning)] hover:bg-[var(--hm-warning)] disabled:opacity-50">
             {leaving ? "Leaving…" : "Leave team"}
           </button>
         </div>
@@ -405,20 +405,20 @@ function DeleteModal({ member, onClose, onDeleted }: { member: Member; onClose: 
   };
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.5)" }}>
-      <div className="w-[400px] rounded-2xl shadow-2xl border border-[var(--hm-border)] p-6 animate-fade-in" style={{ background: "var(--hm-bg)" }}>
+      <div className="w-[400px] rounded-2xl border border-[var(--hm-border)] p-6 animate-fade-in" style={{ background: "var(--hm-bg)" }}>
         <div className="flex items-start gap-3 mb-4">
-          <div className="w-9 h-9 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M5.5 4V3a1 1 0 011-1h3a1 1 0 011 1v1M3 4l1 9h8l1-9" stroke="#EF4444" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          <div className="w-9 h-9 rounded-full bg-[var(--tag-red-bg)] flex items-center justify-center flex-shrink-0">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M5.5 4V3a1 1 0 011-1h3a1 1 0 011 1v1M3 4l1 9h8l1-9" stroke="var(--hm-danger)" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>
           </div>
           <div>
             <p className="text-[14px] font-semibold" style={{ color: "var(--hm-text)" }}>Remove {member.name || member.email}?</p>
             <p className="text-[12px] mt-1" style={{ color: "var(--hm-text-secondary)" }}>They will lose access immediately. This cannot be undone.</p>
           </div>
         </div>
-        {error && <p className="text-[11px] text-red-500 mb-3">{error}</p>}
+        {error && <p className="text-[11px] text-[var(--tag-red-fg)] mb-3">{error}</p>}
         <div className="flex gap-2">
           <button onClick={onClose} className="flex-1 h-[36px] rounded-lg text-[12px] border border-[var(--hm-border)]" style={{ color: "var(--hm-text-secondary)" }}>Cancel</button>
-          <button onClick={handleDelete} disabled={deleting} className="flex-1 h-[36px] rounded-lg text-[12px] font-medium text-white bg-red-500 hover:bg-red-600 disabled:opacity-50">
+          <button onClick={handleDelete} disabled={deleting} className="flex-1 h-[36px] rounded-lg text-[12px] font-medium text-white bg-[var(--hm-danger)] hover:bg-[var(--hm-danger)] disabled:opacity-50">
             {deleting ? "Removing…" : "Remove member"}
           </button>
         </div>
@@ -439,20 +439,20 @@ function ResetPasswordModal({ member, onClose, onDone }: { member: Member; onClo
   };
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.5)" }}>
-      <div className="w-[400px] rounded-2xl shadow-2xl border border-[var(--hm-border)] p-6 animate-fade-in" style={{ background: "var(--hm-bg)" }}>
+      <div className="w-[400px] rounded-2xl border border-[var(--hm-border)] p-6 animate-fade-in" style={{ background: "var(--hm-bg)" }}>
         <div className="flex items-start gap-3 mb-4">
-          <div className="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M11 2a4 4 0 010 5.66L5.66 13A4 4 0 012 9.34V8a1 1 0 011-1h1.34L9.66 1.66A4 4 0 0111 2z" stroke="#3B82F6" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /><circle cx="4.5" cy="11.5" r="1" fill="#3B82F6" /></svg>
+          <div className="w-9 h-9 rounded-full bg-[var(--tag-blue-bg)] flex items-center justify-center flex-shrink-0">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M11 2a4 4 0 010 5.66L5.66 13A4 4 0 012 9.34V8a1 1 0 011-1h1.34L9.66 1.66A4 4 0 0111 2z" stroke="var(--hm-link)" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /><circle cx="4.5" cy="11.5" r="1" fill="var(--hm-link)" /></svg>
           </div>
           <div>
             <p className="text-[14px] font-semibold" style={{ color: "var(--hm-text)" }}>Reset password for {member.name || member.email}?</p>
             <p className="text-[12px] mt-1" style={{ color: "var(--hm-text-secondary)" }}>They will be prompted to create a new password the next time they log in.</p>
           </div>
         </div>
-        {error && <p className="text-[11px] text-red-500 mb-3">{error}</p>}
+        {error && <p className="text-[11px] text-[var(--tag-red-fg)] mb-3">{error}</p>}
         <div className="flex gap-2">
           <button onClick={onClose} className="flex-1 h-[36px] rounded-lg text-[12px] border border-[var(--hm-border)]" style={{ color: "var(--hm-text-secondary)" }}>Cancel</button>
-          <button onClick={handleReset} disabled={resetting} className="flex-1 h-[36px] rounded-lg text-[12px] font-medium text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-50">
+          <button onClick={handleReset} disabled={resetting} className="flex-1 h-[36px] rounded-lg text-[12px] font-medium text-white bg-[var(--hm-primary)] hover:bg-[var(--hm-primary)] disabled:opacity-50">
             {resetting ? "Sending…" : "Reset password"}
           </button>
         </div>
@@ -472,12 +472,12 @@ function ViewPermsModal({ member, onClose, customRoles }: { member: Member; onCl
     { key: "prospecting", label: "Prospecting" },
     { key: "admin", label: "Admin" },
   ];
-  const colors: Record<AccessLevel, string> = { none: "var(--hm-text-tertiary)", view: "#0EA5E9", edit: "#059669" };
-  const bgs: Record<AccessLevel, string> = { none: "var(--hm-bg-secondary)", view: "#E0F2FE", edit: "#DCFCE7" };
+  const colors: Record<AccessLevel, string> = { none: "var(--hm-text-tertiary)", view: "var(--tag-blue-fg)", edit: "var(--tag-green-fg)" };
+  const bgs: Record<AccessLevel, string> = { none: "var(--hm-bg-secondary)", view: "var(--tag-blue-bg)", edit: "var(--tag-green-bg)" };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.5)" }}>
-      <div className="w-[480px] max-h-[85vh] flex flex-col rounded-2xl shadow-2xl border border-[var(--hm-border)] animate-fade-in" style={{ background: "var(--hm-bg)" }}>
+      <div className="w-[480px] max-h-[85vh] flex flex-col rounded-2xl border border-[var(--hm-border)] animate-fade-in" style={{ background: "var(--hm-bg)" }}>
         <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-[var(--hm-border)] flex-shrink-0">
           <div>
             <h2 className="text-[15px] font-semibold" style={{ color: "var(--hm-text)" }}>Your permissions</h2>
@@ -566,17 +566,17 @@ function MemberRow({
 
       {/* Avatar + name */}
       <div className="flex items-center gap-3 min-w-0">
-        <div className={`w-9 h-9 rounded-full flex items-center justify-center text-[12px] font-semibold flex-shrink-0 ${isPending ? "border-2 border-dashed border-[var(--hm-border)]" : isOwner ? "bg-amber-500 text-white" : "bg-[var(--hm-accent)] text-white"}`}
+        <div className={`w-9 h-9 rounded-full flex items-center justify-center text-[12px] font-semibold flex-shrink-0 ${isPending ? "border-2 border-dashed border-[var(--hm-border)]" : isOwner ? "bg-[var(--hm-warning)] text-white" : "bg-[var(--hm-link)] text-white"}`}
           style={isPending ? { color: "var(--hm-text-tertiary)" } : undefined}>
           {getInitials(m.name, m.email)}
         </div>
         <div className="min-w-0">
           <div className="flex items-center gap-1.5 flex-wrap">
             <p className="text-[13px] font-medium truncate" style={{ color: "var(--hm-text)" }}>{m.name || m.email}</p>
-            {isMe && <span className="text-[9px] px-1.5 py-0.5 rounded-md font-medium bg-amber-100 text-amber-600 flex-shrink-0">You</span>}
+            {isMe && <span className="text-[9px] px-1.5 py-0.5 rounded-md font-medium bg-[var(--tag-yellow-bg)] text-[var(--tag-yellow-fg)] flex-shrink-0">You</span>}
             {isAdminOrAbove && !isMe && (
               <span className="text-[9px] px-1.5 py-0.5 rounded-md font-medium flex-shrink-0"
-                style={{ background: isOwner ? "#FEF3C7" : "var(--hm-accent-light)", color: isOwner ? "#B45309" : "var(--hm-accent)" }}>
+                style={{ background: isOwner ? "var(--tag-yellow-bg)" : "var(--hm-bg-tertiary)", color: isOwner ? "var(--hm-warning)" : "var(--hm-link)" }}>
                 {isOwner ? "Owner" : "Admin"}
               </span>
             )}
@@ -589,16 +589,16 @@ function MemberRow({
 
       <div className="flex flex-col gap-1">
         <RoleBadge role={m.role} />
-        {hasCustom && <span className="text-[9px] px-1.5 py-0.5 rounded font-medium w-fit bg-[var(--hm-accent-light)] text-[var(--hm-accent)]">custom perms</span>}
+        {hasCustom && <span className="text-[9px] px-1.5 py-0.5 rounded font-medium w-fit bg-[var(--hm-bg-tertiary)] text-[var(--hm-link)]">custom perms</span>}
       </div>
 
       {/* Module access summary chips */}
       <div className="flex items-center gap-1 flex-wrap">
         {counts.edit > 0 && (
-          <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-[#DCFCE7] text-[#059669]">{counts.edit} edit</span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]">{counts.edit} edit</span>
         )}
         {counts.view > 0 && (
-          <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-[#E0F2FE] text-[#0EA5E9]">{counts.view} view</span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]">{counts.view} view</span>
         )}
         {counts.none > 0 && (
           <span className="text-[10px] px-1.5 py-0.5 rounded font-medium" style={{ background: "var(--hm-bg-secondary)", color: "var(--hm-text-tertiary)" }}>{counts.none} hidden</span>
@@ -606,8 +606,8 @@ function MemberRow({
       </div>
 
       <div className="flex items-center gap-1.5">
-        <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${isPending ? "bg-amber-400" : "bg-emerald-500"}`} />
-        <span className={`text-[11px] ${isPending ? "text-amber-500" : "text-emerald-500"}`}>
+        <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${isPending ? "bg-[var(--hm-warning)]" : "bg-[var(--hm-success)]"}`} />
+        <span className={`text-[11px] ${isPending ? "text-[var(--tag-yellow-fg)]" : "text-[var(--tag-green-fg)]"}`}>
           {isPending ? "Invite sent" : timeAgo(m.lastActiveAt)}
         </span>
       </div>
@@ -620,7 +620,7 @@ function MemberRow({
             className="text-[10px] px-2 py-1 rounded-lg border border-[var(--hm-border)] transition-all"
             style={{ color: "var(--hm-text-secondary)" }}
             title="View your permissions"
-            onMouseEnter={e => { const el = e.currentTarget as HTMLElement; el.style.borderColor = "var(--hm-accent)"; el.style.color = "var(--hm-accent)"; }}
+            onMouseEnter={e => { const el = e.currentTarget as HTMLElement; el.style.borderColor = "var(--hm-link)"; el.style.color = "var(--hm-link)"; }}
             onMouseLeave={e => { const el = e.currentTarget as HTMLElement; el.style.borderColor = "var(--hm-border)"; el.style.color = "var(--hm-text-secondary)"; }}>
             My perms
           </button>
@@ -628,10 +628,10 @@ function MemberRow({
         {/* Non-admin, non-owner members can voluntarily leave the team */}
         {canLeave && (
           <button onClick={() => setLeaveOpen(true)}
-            className="text-[10px] px-2 py-1 rounded-lg border border-amber-300 transition-all"
-            style={{ color: "#D97706" }}
+            className="text-[10px] px-2 py-1 rounded-lg border border-[var(--hm-border)] transition-all"
+            style={{ color: "var(--hm-warning)" }}
             title="Leave this team"
-            onMouseEnter={e => { const el = e.currentTarget as HTMLElement; el.style.background = "#FFFBEB"; }}
+            onMouseEnter={e => { const el = e.currentTarget as HTMLElement; el.style.background = "var(--tag-yellow-bg)"; }}
             onMouseLeave={e => { const el = e.currentTarget as HTMLElement; el.style.background = ""; }}>
             Leave
           </button>
@@ -640,7 +640,7 @@ function MemberRow({
           <button onClick={() => setResetTarget(m)}
             className="w-7 h-7 rounded-lg flex items-center justify-center transition-all"
             style={{ color: "var(--hm-text-tertiary)" }}
-            onMouseEnter={e => { const el = e.currentTarget as HTMLElement; el.style.background = "#EFF6FF"; el.style.color = "#3B82F6"; }}
+            onMouseEnter={e => { const el = e.currentTarget as HTMLElement; el.style.background = "var(--hm-bg-tertiary)"; el.style.color = "var(--hm-link)"; }}
             onMouseLeave={e => { const el = e.currentTarget as HTMLElement; el.style.background = ""; el.style.color = "var(--hm-text-tertiary)"; }}
             title="Reset password">
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="3" y="7" width="10" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.3"/><path d="M5 7V5a3 3 0 0 1 6 0v2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
@@ -650,7 +650,7 @@ function MemberRow({
           <button onClick={() => setEditTarget(m)}
             className="w-7 h-7 rounded-lg flex items-center justify-center transition-all"
             style={{ color: "var(--hm-text-tertiary)" }}
-            onMouseEnter={e => { const el = e.currentTarget as HTMLElement; el.style.background = "var(--hm-bg-secondary)"; el.style.color = "var(--hm-accent)"; }}
+            onMouseEnter={e => { const el = e.currentTarget as HTMLElement; el.style.background = "var(--hm-bg-secondary)"; el.style.color = "var(--hm-link)"; }}
             onMouseLeave={e => { const el = e.currentTarget as HTMLElement; el.style.background = ""; el.style.color = "var(--hm-text-tertiary)"; }}
             title="Edit member">
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M11 2l3 3-8.5 8.5L2 14l.5-3.5L11 2z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>
@@ -669,7 +669,7 @@ function MemberRow({
           <button onClick={() => setDeleteTarget(m)}
             className="w-7 h-7 rounded-lg flex items-center justify-center transition-all"
             style={{ color: "var(--hm-text-tertiary)" }}
-            onMouseEnter={e => { const el = e.currentTarget as HTMLElement; el.style.background = "#FEF2F2"; el.style.color = "#EF4444"; }}
+            onMouseEnter={e => { const el = e.currentTarget as HTMLElement; el.style.background = "var(--tag-red-bg)"; el.style.color = "var(--hm-danger)"; }}
             onMouseLeave={e => { const el = e.currentTarget as HTMLElement; el.style.background = ""; el.style.color = "var(--hm-text-tertiary)"; }}
             title="Remove member">
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M5.5 4V3a1 1 0 011-1h3a1 1 0 011 1v1M3 4l1 9h8l1-9" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>
@@ -751,7 +751,7 @@ export default function TeamPage() {
           {canManage && (
             <button data-tour="team-invite" onClick={() => setEditTarget("new")}
               className="h-[34px] px-4 text-white rounded-lg text-[12px] font-medium flex items-center gap-1.5 hover:opacity-90"
-              style={{ background: "var(--hm-accent)" }}>
+              style={{ background: "var(--hm-link)" }}>
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 3v10M3 8h10" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" /></svg>
               Invite member
             </button>
@@ -766,7 +766,7 @@ export default function TeamPage() {
               { label: "Owners & admins", value: members.filter(m => m.role === "owner" || m.role === "admin").length, color: ROLE_META.admin.color },
               { label: "Marketing", value: members.filter(m => ["marketing", "editor", "member"].includes(m.role)).length, color: ROLE_META.marketing.color },
               { label: "Sales & Others", value: members.filter(m => ["sales", "others", "viewer"].includes(m.role)).length, color: ROLE_META.sales.color },
-              { label: "Pending invites", value: members.filter(m => m.inviteStatus === "pending").length, color: "#F59E0B" },
+              { label: "Pending invites", value: members.filter(m => m.inviteStatus === "pending").length, color: "var(--hm-warning)" },
             ].map(s => (
               <div key={s.label} className="p-4 rounded-xl border border-[var(--hm-border)]" style={{ background: "var(--hm-bg)" }}>
                 <p className="text-[10px] uppercase tracking-wide font-medium mb-1" style={{ color: "var(--hm-text-tertiary)" }}>{s.label}</p>
@@ -802,8 +802,8 @@ export default function TeamPage() {
             {/* Fetch error state */}
             {!loading && fetchError && (
               <div className="px-5 py-8 flex flex-col items-center gap-3 text-center">
-                <svg width="20" height="20" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.5" stroke="#EF4444" strokeWidth="1.3" /><path d="M8 5v3.5M8 10.5v.5" stroke="#EF4444" strokeWidth="1.3" strokeLinecap="round" /></svg>
-                <p className="text-[13px] text-red-500">{fetchError}</p>
+                <svg width="20" height="20" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.5" stroke="var(--hm-danger)" strokeWidth="1.3" /><path d="M8 5v3.5M8 10.5v.5" stroke="var(--hm-danger)" strokeWidth="1.3" strokeLinecap="round" /></svg>
+                <p className="text-[13px] text-[var(--tag-red-fg)]">{fetchError}</p>
                 <button onClick={fetchMembers} className="text-[12px] px-3 py-1.5 rounded-lg border border-[var(--hm-border)]" style={{ color: "var(--hm-text-secondary)" }}>Retry</button>
               </div>
             )}
@@ -839,7 +839,7 @@ export default function TeamPage() {
                       {!search && canManage && (
                         <button onClick={() => setEditTarget("new")}
                           className="mt-1 h-[32px] px-4 text-white rounded-lg text-[12px] font-medium flex items-center gap-1.5 hover:opacity-90"
-                          style={{ background: "var(--hm-accent)" }}>
+                          style={{ background: "var(--hm-link)" }}>
                           <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M8 3v10M3 8h10" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" /></svg>
                           Invite first member
                         </button>
@@ -864,8 +864,8 @@ export default function TeamPage() {
                   {pendingFiltered.length > 0 && (
                     <>
                       <div className="px-5 py-1.5 border-b border-[var(--hm-border)] border-t border-t-[var(--hm-border)] text-[10px] uppercase tracking-wide font-semibold flex items-center gap-2"
-                        style={{ background: "#FFFBEB", color: "#B45309" }}>
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />
+                        style={{ background: "var(--tag-yellow-bg)", color: "var(--hm-warning)" }}>
+                        <span className="w-1.5 h-1.5 rounded-full bg-[var(--hm-warning)] inline-block" />
                         Pending invites ({pendingFiltered.length}) — awaiting acceptance
                       </div>
                       {pendingFiltered.map(m => <MemberRow key={m.id} m={m} user={user} canManage={canManage} timeAgo={timeAgo} getInitials={getInitials} setEditTarget={setEditTarget} setDeleteTarget={setDeleteTarget} setViewPermsTarget={setViewPermsTarget} setLeaveOpen={setLeaveOpen} setResetTarget={setResetTarget} customRoles={customRoles} />)}
@@ -911,8 +911,8 @@ export default function TeamPage() {
         />
       )}
       {resetDoneFor && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-3 rounded-xl shadow-lg border border-blue-200 bg-blue-50 text-blue-700 text-[13px] font-medium animate-fade-in flex items-center gap-2">
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.5" stroke="#3B82F6" strokeWidth="1.3" /><path d="M5 8l2 2 4-4" stroke="#3B82F6" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-3 rounded-xl border border-[var(--hm-border)] bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)] text-[13px] font-medium animate-fade-in flex items-center gap-2">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.5" stroke="var(--hm-link)" strokeWidth="1.3" /><path d="M5 8l2 2 4-4" stroke="var(--hm-link)" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>
           Password reset requested for {resetDoneFor}
         </div>
       )}

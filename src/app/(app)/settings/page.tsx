@@ -70,7 +70,7 @@ export default function SettingsPage() {
   const [editingRole, setEditingRole] = useState<RoleDef | null>(null);
   const [newRoleName, setNewRoleName] = useState("");
   const [newRoleDesc, setNewRoleDesc] = useState("");
-  const [newRoleColor, setNewRoleColor] = useState("#6B7280");
+  const [newRoleColor, setNewRoleColor] = useState("var(--tag-gray-fg)");
   const [showNewRole, setShowNewRole] = useState(false);
   const [roleSaving, setRoleSaving] = useState(false);
   const [roleMessage, setRoleMessage] = useState("");
@@ -117,7 +117,7 @@ export default function SettingsPage() {
       });
       const data = await res.json();
       if (!res.ok) { setRoleMessage(data.error || "Failed to create"); }
-      else { setRoleMessage("Role created"); setShowNewRole(false); setNewRoleName(""); setNewRoleDesc(""); setNewRoleColor("#6B7280"); await loadRoles(); setTimeout(() => setRoleMessage(""), 2000); }
+      else { setRoleMessage("Role created"); setShowNewRole(false); setNewRoleName(""); setNewRoleDesc(""); setNewRoleColor("var(--tag-gray-fg)"); await loadRoles(); setTimeout(() => setRoleMessage(""), 2000); }
     } catch { setRoleMessage("Failed to create"); }
     finally { setRoleSaving(false); }
   };
@@ -473,7 +473,7 @@ export default function SettingsPage() {
       <span
         className={
           "select-none w-[20px] text-right text-[11px] " +
-          (on ? "font-semibold text-[#4361ee]" : "text-[var(--hm-text-tertiary)]")
+          (on ? "font-semibold text-[var(--hm-text)]" : "text-[var(--hm-text-tertiary)]")
         }
       >
         {on ? "On" : "Off"}
@@ -484,13 +484,13 @@ export default function SettingsPage() {
         aria-label={label}
         onClick={onToggle}
         className={
-          "relative h-5 w-9 rounded-full transition-all focus:outline-none focus:ring-2 focus:ring-[#4361ee] focus:ring-offset-2 " +
-          (on ? "bg-[#4361ee]" : "bg-[var(--hm-border)]")
+          "relative h-5 w-9 rounded-full transition-all focus:outline-none focus:ring-2 focus:ring-[var(--hm-link)] focus:ring-offset-2 " +
+          (on ? "bg-[var(--hm-primary)]" : "bg-[var(--hm-border)]")
         }
       >
         <div
           className={
-            "absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all " +
+            "absolute top-0.5 h-4 w-4 rounded-full bg-[var(--hm-surface)] transition-all " +
             (on ? "left-[18px]" : "left-0.5")
           }
         />
@@ -517,7 +517,7 @@ export default function SettingsPage() {
   const FeedbackRow = () => (
     <>
       {saved && (
-        <p className="mt-2 flex animate-fade-in-fast items-center gap-1.5 text-[12px] text-emerald-600">
+        <p className="mt-2 flex animate-fade-in-fast items-center gap-1.5 text-[12px] text-[var(--tag-green-fg)]">
           <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
             <path
               d="M3.5 8.5l3 3 6-6"
@@ -530,7 +530,7 @@ export default function SettingsPage() {
         </p>
       )}
       {saveError && (
-        <p className="mt-2 flex animate-fade-in-fast items-center gap-1.5 text-[12px] text-red-500">
+        <p className="mt-2 flex animate-fade-in-fast items-center gap-1.5 text-[12px] text-[var(--tag-red-fg)]">
           <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
             <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.5" />
             <path
@@ -554,7 +554,7 @@ export default function SettingsPage() {
       <ModuleTour moduleId="settings" />
       <div
         data-tour="set-header"
-        className="flex items-center justify-between border-b border-[var(--hm-border)] bg-white px-7 py-4"
+        className="flex items-center justify-between border-b border-[var(--hm-border)] bg-[var(--hm-surface)] px-7 py-4"
         style={{ boxShadow: "var(--hm-shadow-xs)" }}
       >
         <div>
@@ -565,7 +565,7 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      <div data-tour="set-tabs" className="flex border-b border-[var(--hm-border)] bg-white px-7">
+      <div data-tour="set-tabs" className="flex border-b border-[var(--hm-border)] bg-[var(--hm-surface)] px-7">
         {(
           [
             { id: "general", label: "General" },
@@ -583,7 +583,7 @@ export default function SettingsPage() {
             className={
               "border-b-2 px-4 py-2.5 text-[12px] transition-colors " +
               (tab === t.id
-                ? "border-[#4361ee] font-semibold text-[#4361ee]"
+                ? "border-[var(--hm-primary)] font-semibold text-[var(--hm-text)]"
                 : "border-transparent font-normal text-[var(--hm-text-tertiary)] hover:border-[var(--hm-border)] hover:text-[var(--hm-text)]")
             }
           >
@@ -595,8 +595,8 @@ export default function SettingsPage() {
           className={
             "ml-auto border-b-2 px-4 py-2.5 text-[12px] transition-colors " +
             (tab === "danger"
-              ? "border-red-400 font-semibold text-red-500"
-              : "border-transparent font-normal text-[var(--hm-text-tertiary)] hover:border-red-200 hover:text-red-400")
+              ? "border-[var(--hm-border)] font-semibold text-[var(--tag-red-fg)]"
+              : "border-transparent font-normal text-[var(--hm-text-tertiary)] hover:border-[var(--hm-border)] hover:text-[var(--tag-red-fg)]")
           }
         >
           Danger zone
@@ -612,7 +612,7 @@ export default function SettingsPage() {
               <p className="mb-4 text-[12px] text-[var(--hm-text-tertiary)]">
                 Your organisation name and website shown across the product.
               </p>
-              <div data-tour="set-workspace" className="mb-3 space-y-4 rounded-xl border border-[var(--hm-border)] bg-white p-5">
+              <div data-tour="set-workspace" className="mb-3 space-y-4 rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] p-5">
                 <div>
                   <label className="mb-1.5 block text-[12px] font-medium text-[var(--hm-text-secondary)]">
                     Workspace name
@@ -656,7 +656,7 @@ export default function SettingsPage() {
                   save("update_workspace", { name: orgName, website: orgWebsite })
                 }
                 disabled={saving}
-                className="flex h-[34px] items-center gap-1.5 rounded-lg bg-[#4361ee] px-5 text-[12px] font-medium text-white hover:opacity-90 disabled:opacity-50"
+                className="flex h-[34px] items-center gap-1.5 rounded-lg bg-[var(--hm-primary)] px-5 text-[12px] font-medium text-white hover:opacity-90 disabled:opacity-50"
               >
                 {saving && <Spinner />}
                 {saving ? "Saving…" : "Save workspace"}
@@ -669,7 +669,7 @@ export default function SettingsPage() {
               <p className="mb-4 text-[12px] text-[var(--hm-text-tertiary)] leading-relaxed">
                 Anyone who signs up with an email matching one of these domains will automatically join this workspace as a member — no invite needed.
               </p>
-              <div className="mb-3 rounded-xl border border-[var(--hm-border)] bg-white p-5 space-y-3">
+              <div className="mb-3 rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] p-5 space-y-3">
                 {allowedDomains.length > 0 && (
                   <div className="flex flex-wrap gap-2">
                     {allowedDomains.map((d) => (
@@ -677,7 +677,7 @@ export default function SettingsPage() {
                         <span className="text-[var(--hm-text-secondary)]">@{d}</span>
                         <button
                           onClick={() => setAllowedDomains(allowedDomains.filter((x) => x !== d))}
-                          className="ml-0.5 text-[var(--hm-text-tertiary)] hover:text-red-500 transition-colors leading-none"
+                          className="ml-0.5 text-[var(--hm-text-tertiary)] hover:text-[var(--tag-red-fg)] transition-colors leading-none"
                           aria-label={`Remove ${d}`}
                         >×</button>
                       </span>
@@ -714,7 +714,7 @@ export default function SettingsPage() {
               <button
                 onClick={() => save("update_domains", { domains: allowedDomains })}
                 disabled={saving}
-                className="flex h-[34px] items-center gap-1.5 rounded-lg bg-[#4361ee] px-5 text-[12px] font-medium text-white hover:opacity-90 disabled:opacity-50"
+                className="flex h-[34px] items-center gap-1.5 rounded-lg bg-[var(--hm-primary)] px-5 text-[12px] font-medium text-white hover:opacity-90 disabled:opacity-50"
               >
                 {saving && <Spinner />}
                 {saving ? "Saving…" : "Save domains"}
@@ -731,13 +731,13 @@ export default function SettingsPage() {
                   <h2 className="text-[15px] font-semibold">Roles & Access</h2>
                   <p className="text-[12px] text-[var(--hm-text-tertiary)] mt-0.5">Define what each role can access. Changes apply to all users with that role.</p>
                 </div>
-                <button onClick={() => setShowNewRole(true)} className="h-8 px-4 bg-[#4361ee] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150">+ New role</button>
+                <button onClick={() => setShowNewRole(true)} className="h-8 px-4 bg-[var(--hm-primary)] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150">+ New role</button>
               </div>
 
-              {roleMessage && <div className={"mb-3 px-3 py-2 rounded-lg text-[12px] " + (roleMessage.includes("Failed") || roleMessage.includes("Cannot") || roleMessage.includes("reserved") || roleMessage.includes("exists") ? "bg-red-50 text-red-600" : "bg-emerald-50 text-emerald-600")}>{roleMessage}</div>}
+              {roleMessage && <div className={"mb-3 px-3 py-2 rounded-lg text-[12px] " + (roleMessage.includes("Failed") || roleMessage.includes("Cannot") || roleMessage.includes("reserved") || roleMessage.includes("exists") ? "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)]" : "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]")}>{roleMessage}</div>}
 
               {showNewRole && (
-                <div className="mb-4 border border-[#4361ee] rounded-xl p-4 space-y-3 bg-blue-50/30">
+                <div className="mb-4 border border-[var(--hm-primary)] rounded-xl p-4 space-y-3 bg-[var(--tag-blue-bg)]/30">
                   <h3 className="text-[13px] font-semibold">Create new role</h3>
                   <div className="grid grid-cols-2 gap-3">
                     <div><label className="block text-[11px] text-[var(--hm-text-secondary)] mb-1">Role name *</label><input type="text" value={newRoleName} onChange={e => setNewRoleName(e.target.value)} placeholder="e.g., Content Writer" className="w-full text-[13px]" /></div>
@@ -746,14 +746,14 @@ export default function SettingsPage() {
                   <div><label className="block text-[11px] text-[var(--hm-text-secondary)] mb-1">Description</label><input type="text" value={newRoleDesc} onChange={e => setNewRoleDesc(e.target.value)} placeholder="Brief description of this role" className="w-full text-[13px]" /></div>
                   <div className="flex justify-end gap-2">
                     <button onClick={() => { setShowNewRole(false); setNewRoleName(""); setNewRoleDesc(""); }} className="h-8 px-3 border border-[var(--hm-border)] rounded-lg text-[12px] hover:bg-[var(--hm-bg-secondary)]">Cancel</button>
-                    <button onClick={createRole} disabled={!newRoleName.trim() || roleSaving} className="h-8 px-4 bg-[#4361ee] text-white rounded-lg text-[12px] font-medium hover:opacity-90 disabled:opacity-50">{roleSaving ? "Creating..." : "Create role"}</button>
+                    <button onClick={createRole} disabled={!newRoleName.trim() || roleSaving} className="h-8 px-4 bg-[var(--hm-primary)] text-white rounded-lg text-[12px] font-medium hover:opacity-90 disabled:opacity-50">{roleSaving ? "Creating..." : "Create role"}</button>
                   </div>
                 </div>
               )}
 
               <div className="space-y-2">
                 {roles.map(role => (
-                  <div key={role.slug} className={"border rounded-xl transition-all duration-150 " + (editingRole?.slug === role.slug ? "border-[#4361ee] bg-white" : "border-[var(--hm-border)] bg-white hover:border-[#4361ee]/40")}>
+                  <div key={role.slug} className={"border rounded-xl transition-all duration-150 " + (editingRole?.slug === role.slug ? "border-[var(--hm-primary)] bg-[var(--hm-surface)]" : "border-[var(--hm-border)] bg-[var(--hm-surface)] hover:border-[var(--hm-text-tertiary)]")}>
                     <div className="flex items-center justify-between px-4 py-3 cursor-pointer" onClick={() => setEditingRole(editingRole?.slug === role.slug ? null : { ...role })}>
                       <div className="flex items-center gap-3">
                         <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: role.color }} />
@@ -761,7 +761,7 @@ export default function SettingsPage() {
                           <div className="flex items-center gap-2">
                             <span className="text-[13px] font-medium">{role.name}</span>
                             {role.isBuiltIn && <span className="text-[9px] px-1.5 py-0.5 bg-[var(--hm-bg-secondary)] text-[var(--hm-text-tertiary)] rounded">Built-in</span>}
-                            {role.slug === "owner" && <span className="text-[9px] px-1.5 py-0.5 bg-purple-50 text-purple-600 rounded">Protected</span>}
+                            {role.slug === "owner" && <span className="text-[9px] px-1.5 py-0.5 bg-[var(--tag-purple-bg)] text-[var(--tag-purple-fg)] rounded">Protected</span>}
                           </div>
                           <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-0.5">{role.description || "No description"}</p>
                         </div>
@@ -804,8 +804,8 @@ export default function SettingsPage() {
                                             <button
                                               onClick={() => setEditingRole({ ...editingRole, permissions: { ...editingRole.permissions, [mod.id]: level } })}
                                               className={"w-7 h-7 rounded-full border-2 transition-all duration-150 " + (currentLevel === level
-                                                ? level === "edit" ? "border-emerald-500 bg-emerald-500" : level === "view" ? "border-blue-500 bg-blue-500" : "border-gray-400 bg-gray-400"
-                                                : "border-[var(--hm-border)] hover:border-gray-400")}
+                                                ? level === "edit" ? "border-[var(--hm-success)] bg-[var(--hm-success)]" : level === "view" ? "border-[var(--tag-blue-fg)] bg-[var(--tag-blue-fg)]" : "border-[var(--hm-border)] bg-[var(--hm-text-tertiary)]"
+                                                : "border-[var(--hm-border)] hover:border-[var(--hm-border)]")}
                                             >
                                               {currentLevel === level && <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className="mx-auto"><path d="M4 8l3 3 5-5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>}
                                             </button>
@@ -823,19 +823,19 @@ export default function SettingsPage() {
                                 {!role.isBuiltIn && (
                                   roleDeleteConfirm === role.slug ? (
                                     <div className="flex items-center gap-2">
-                                      <span className="text-[11px] text-red-500">Delete this role?</span>
-                                      <button onClick={() => deleteRole(role.slug)} className="text-[11px] text-red-600 font-medium hover:underline">Yes, delete</button>
+                                      <span className="text-[11px] text-[var(--tag-red-fg)]">Delete this role?</span>
+                                      <button onClick={() => deleteRole(role.slug)} className="text-[11px] text-[var(--tag-red-fg)] font-medium hover:underline">Yes, delete</button>
                                       <button onClick={() => setRoleDeleteConfirm(null)} className="text-[11px] text-[var(--hm-text-tertiary)] hover:underline">Cancel</button>
                                     </div>
                                   ) : (
-                                    <button onClick={() => setRoleDeleteConfirm(role.slug)} className="text-[11px] text-red-500 hover:underline">Delete role</button>
+                                    <button onClick={() => setRoleDeleteConfirm(role.slug)} className="text-[11px] text-[var(--tag-red-fg)] hover:underline">Delete role</button>
                                   )
                                 )}
                               </div>
                               <button
                                 onClick={() => saveRolePermissions(editingRole.slug, editingRole.permissions, editingRole.kbPermissions)}
                                 disabled={roleSaving}
-                                className="h-8 px-4 bg-[#4361ee] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150 disabled:opacity-50"
+                                className="h-8 px-4 bg-[var(--hm-primary)] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150 disabled:opacity-50"
                               >
                                 {roleSaving ? "Saving..." : "Save permissions"}
                               </button>
@@ -860,7 +860,7 @@ export default function SettingsPage() {
               <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--hm-text-secondary)]">
                 Email
               </p>
-              <div className="mb-5 rounded-xl border border-[var(--hm-border)] bg-white p-5">
+              <div className="mb-5 rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] p-5">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-[13px] font-medium">Email notifications</p>
@@ -879,7 +879,7 @@ export default function SettingsPage() {
               <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--hm-text-secondary)]">
                 Alerts
               </p>
-              <div className="mb-4 space-y-4 rounded-xl border border-[var(--hm-border)] bg-white p-5">
+              <div className="mb-4 space-y-4 rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] p-5">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-[13px] font-medium">Low score alerts</p>
@@ -913,7 +913,7 @@ export default function SettingsPage() {
                   save("update_notifications", { emailNotifs, lowScoreAlerts, kbNotifs })
                 }
                 disabled={saving}
-                className="flex h-[34px] items-center gap-1.5 rounded-lg bg-[#4361ee] px-5 text-[12px] font-medium text-white hover:opacity-90 disabled:opacity-50"
+                className="flex h-[34px] items-center gap-1.5 rounded-lg bg-[var(--hm-primary)] px-5 text-[12px] font-medium text-white hover:opacity-90 disabled:opacity-50"
               >
                 {saving && <Spinner />}
                 {saving ? "Saving…" : "Save notifications"}
@@ -930,7 +930,7 @@ export default function SettingsPage() {
                 must add up to exactly 100%.{" "}
                 <span
                   className={
-                    "font-semibold " + (weightsValid ? "text-emerald-600" : "text-red-500")
+                    "font-semibold " + (weightsValid ? "text-[var(--tag-green-fg)]" : "text-[var(--tag-red-fg)]")
                   }
                 >
                   Running total: {weightsTotal}%
@@ -938,7 +938,7 @@ export default function SettingsPage() {
                     ` (${weightsTotal > 100 ? weightsTotal - 100 + "% over" : 100 - weightsTotal + "% under"})`}
                 </span>
               </p>
-              <div className="mb-4 rounded-xl border border-[var(--hm-border)] bg-white p-5">
+              <div className="mb-4 rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] p-5">
                 <div className="space-y-5">
                   {(
                     [
@@ -968,7 +968,7 @@ export default function SettingsPage() {
                     <div key={key}>
                       <div className="mb-1.5 flex justify-between">
                         <span className="text-[13px] font-medium">{label}</span>
-                        <span className="w-10 text-right text-[13px] font-semibold tabular-nums text-[#4361ee]">
+                        <span className="w-10 text-right text-[13px] font-semibold tabular-nums text-[var(--hm-text)]">
                           {weights[key]}%
                         </span>
                       </div>
@@ -995,13 +995,13 @@ export default function SettingsPage() {
                     <span
                       className={
                         "text-[15px] font-semibold tabular-nums " +
-                        (weightsValid ? "text-emerald-500" : "text-red-500")
+                        (weightsValid ? "text-[var(--tag-green-fg)]" : "text-[var(--tag-red-fg)]")
                       }
                     >
                       {weightsTotal}%
                     </span>
                     {!weightsValid && (
-                      <span className="text-[11px] text-red-400">— must equal 100%</span>
+                      <span className="text-[11px] text-[var(--tag-red-fg)]">— must equal 100%</span>
                     )}
                   </div>
                   <button
@@ -1020,7 +1020,7 @@ export default function SettingsPage() {
                         ? `Adjust sliders until total equals 100% (currently ${weightsTotal}%)`
                         : undefined
                     }
-                    className="flex h-8 items-center gap-1.5 rounded-lg bg-[#4361ee] px-4 text-[12px] font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="flex h-8 items-center gap-1.5 rounded-lg bg-[var(--hm-primary)] px-4 text-[12px] font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     {saving && <Spinner />}
                     {saving ? "Saving…" : "Save weights"}
@@ -1028,7 +1028,7 @@ export default function SettingsPage() {
                 </div>
 
                 {weightsError && (
-                  <p className="mt-2 flex items-center gap-1.5 text-[12px] text-red-500">
+                  <p className="mt-2 flex items-center gap-1.5 text-[12px] text-[var(--tag-red-fg)]">
                     <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
                       <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.5" />
                       <path
@@ -1050,7 +1050,7 @@ export default function SettingsPage() {
               <p className="mb-4 text-[12px] text-[var(--hm-text-tertiary)]">
                 Content scoring below this value will be flagged for review.
               </p>
-              <div className="mb-3 rounded-xl border border-[var(--hm-border)] bg-white p-5">
+              <div className="mb-3 rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] p-5">
                 <div className="mb-3 flex items-center gap-4">
                   <input
                     type="range"
@@ -1069,10 +1069,10 @@ export default function SettingsPage() {
                   <div
                     className={
                       "flex-1 rounded-lg p-2 text-center transition-all " +
-                      (scoreThreshold <= 49 ? "bg-red-100 ring-1 ring-red-300" : "bg-red-50")
+                      (scoreThreshold <= 49 ? "bg-[var(--tag-red-bg)] ring-1 ring-red-300" : "bg-[var(--tag-red-bg)]")
                     }
                   >
-                    <span className="text-[11px] font-medium text-red-600">
+                    <span className="text-[11px] font-medium text-[var(--tag-red-fg)]">
                       0–49% · Needs work
                     </span>
                   </div>
@@ -1080,11 +1080,11 @@ export default function SettingsPage() {
                     className={
                       "flex-1 rounded-lg p-2 text-center transition-all " +
                       (scoreThreshold >= 50 && scoreThreshold <= 69
-                        ? "bg-amber-100 ring-1 ring-amber-300"
-                        : "bg-amber-50")
+                        ? "bg-[var(--tag-yellow-bg)] ring-1 ring-amber-300"
+                        : "bg-[var(--tag-yellow-bg)]")
                     }
                   >
-                    <span className="text-[11px] font-medium text-amber-600">
+                    <span className="text-[11px] font-medium text-[var(--tag-yellow-fg)]">
                       50–69% · Review
                     </span>
                   </div>
@@ -1092,11 +1092,11 @@ export default function SettingsPage() {
                     className={
                       "flex-1 rounded-lg p-2 text-center transition-all " +
                       (scoreThreshold >= 70
-                        ? "bg-emerald-100 ring-1 ring-emerald-300"
-                        : "bg-emerald-50")
+                        ? "bg-[var(--tag-green-bg)] ring-1 ring-emerald-300"
+                        : "bg-[var(--tag-green-bg)]")
                     }
                   >
-                    <span className="text-[11px] font-medium text-emerald-600">
+                    <span className="text-[11px] font-medium text-[var(--tag-green-fg)]">
                       70%+ · On-brand
                     </span>
                   </div>
@@ -1108,7 +1108,7 @@ export default function SettingsPage() {
                 }
                 disabled={saving || !weightsValid}
                 title={!weightsValid ? "Fix scoring weights before saving" : undefined}
-                className="flex h-[34px] items-center gap-1.5 rounded-lg bg-[#4361ee] px-5 text-[12px] font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                className="flex h-[34px] items-center gap-1.5 rounded-lg bg-[var(--hm-primary)] px-5 text-[12px] font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {saving && <Spinner />}
                 {saving ? "Saving…" : "Save threshold"}
@@ -1123,7 +1123,7 @@ export default function SettingsPage() {
               <p className="mb-4 text-[12px] text-[var(--hm-text-tertiary)]">
                 Control how AI uses and learns from your knowledge base.
               </p>
-              <div className="mb-3 rounded-xl border border-[var(--hm-border)] bg-white p-5">
+              <div className="mb-3 rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] p-5">
                 <div className="mb-4 flex items-center justify-between">
                   <div>
                     <p className="text-[13px] font-medium">
@@ -1157,7 +1157,7 @@ export default function SettingsPage() {
               <button
                 onClick={() => save("update_kb", { kbGrounding, autoLearn })}
                 disabled={saving}
-                className="mb-1 flex h-[34px] items-center gap-1.5 rounded-lg bg-[#4361ee] px-5 text-[12px] font-medium text-white hover:opacity-90 disabled:opacity-50"
+                className="mb-1 flex h-[34px] items-center gap-1.5 rounded-lg bg-[var(--hm-primary)] px-5 text-[12px] font-medium text-white hover:opacity-90 disabled:opacity-50"
               >
                 {saving && <Spinner />}
                 {saving ? "Saving…" : "Save knowledge base config"}
@@ -1171,7 +1171,7 @@ export default function SettingsPage() {
                 Configure how HiveMind monitors your website and the wider web for brand-relevant
                 changes.
               </p>
-              <div className="mb-3 rounded-xl border border-[var(--hm-border)] bg-white p-5">
+              <div className="mb-3 rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] p-5">
                 <div className="mb-4">
                   <label className="mb-1.5 block text-[12px] font-medium text-[var(--hm-text-secondary)]">
                     Primary website{" "}
@@ -1210,8 +1210,8 @@ export default function SettingsPage() {
                         className={
                           "rounded-lg border px-3.5 py-1.5 text-[12px] transition-colors " +
                           (syncFreq === f.id
-                            ? "border-[#4361ee] bg-[#4361ee] font-semibold text-white"
-                            : "border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[#4361ee]/40")
+                            ? "border-[var(--hm-primary)] bg-[var(--hm-primary)] font-semibold text-white"
+                            : "border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[var(--hm-text-tertiary)]")
                         }
                       >
                         {f.label}
@@ -1251,7 +1251,7 @@ export default function SettingsPage() {
                   save("update_intelligence", { syncFreq, competitorMonitor, industryNews })
                 }
                 disabled={saving}
-                className="flex h-[34px] items-center gap-1.5 rounded-lg bg-[#4361ee] px-5 text-[12px] font-medium text-white hover:opacity-90 disabled:opacity-50"
+                className="flex h-[34px] items-center gap-1.5 rounded-lg bg-[var(--hm-primary)] px-5 text-[12px] font-medium text-white hover:opacity-90 disabled:opacity-50"
               >
                 {saving && <Spinner />}
                 {saving ? "Saving…" : "Save intelligence config"}
@@ -1268,7 +1268,7 @@ export default function SettingsPage() {
                   height="16"
                   viewBox="0 0 24 24"
                   fill="none"
-                  className="shrink-0 text-red-500"
+                  className="shrink-0 text-[var(--tag-red-fg)]"
                 >
                   <path
                     d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
@@ -1296,14 +1296,14 @@ export default function SettingsPage() {
                     strokeLinecap="round"
                   />
                 </svg>
-                <h2 className="text-[15px] font-semibold text-red-500">Danger zone</h2>
+                <h2 className="text-[15px] font-semibold text-[var(--tag-red-fg)]">Danger zone</h2>
               </div>
               <p className="mb-4 text-[12px] text-[var(--hm-text-tertiary)]">
                 These actions are permanent and cannot be undone. A confirmation step is required
                 for each.
               </p>
 
-              <div className="divide-y divide-[var(--hm-border)] rounded-xl border border-red-200 bg-white">
+              <div className="divide-y divide-[var(--hm-border)] rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)]">
 
                 <div className="p-5">
                   <div className="flex items-start justify-between gap-4">
@@ -1318,14 +1318,14 @@ export default function SettingsPage() {
                       onClick={() =>
                         setConfirmDelete(confirmDelete === "reset_kb" ? "" : "reset_kb")
                       }
-                      className="h-8 shrink-0 rounded-lg border border-red-300 px-3.5 text-[12px] font-medium text-red-500 hover:bg-red-50"
+                      className="h-8 shrink-0 rounded-lg border border-[var(--hm-border)] px-3.5 text-[12px] font-medium text-[var(--tag-red-fg)] hover:bg-[var(--tag-red-bg)]"
                     >
                       Reset
                     </button>
                   </div>
                   {confirmDelete === "reset_kb" && (
-                    <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 p-3">
-                      <p className="text-[12px] font-medium text-red-700">
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--hm-border)] bg-[var(--tag-red-bg)] p-3">
+                      <p className="text-[12px] font-medium text-[var(--tag-red-fg)]">
                         All enriched knowledge base data will be permanently deleted. This cannot
                         be recovered. Are you sure?
                       </p>
@@ -1341,7 +1341,7 @@ export default function SettingsPage() {
                             save("reset_kb", {});
                             setConfirmDelete("");
                           }}
-                          className="h-7 rounded-md bg-red-500 px-3 text-[12px] font-semibold text-white hover:bg-red-600"
+                          className="h-7 rounded-md bg-[var(--hm-danger)] px-3 text-[12px] font-semibold text-white hover:bg-[var(--hm-danger)]"
                         >
                           Yes, reset
                         </button>
@@ -1365,14 +1365,14 @@ export default function SettingsPage() {
                           confirmDelete === "clear_library" ? "" : "clear_library",
                         )
                       }
-                      className="h-8 shrink-0 rounded-lg border border-red-300 px-3.5 text-[12px] font-medium text-red-500 hover:bg-red-50"
+                      className="h-8 shrink-0 rounded-lg border border-[var(--hm-border)] px-3.5 text-[12px] font-medium text-[var(--tag-red-fg)] hover:bg-[var(--tag-red-bg)]"
                     >
                       Clear
                     </button>
                   </div>
                   {confirmDelete === "clear_library" && (
-                    <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 p-3">
-                      <p className="text-[12px] font-medium text-red-700">
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--hm-border)] bg-[var(--tag-red-bg)] p-3">
+                      <p className="text-[12px] font-medium text-[var(--tag-red-fg)]">
                         All content library files and URLs will be permanently deleted. Are you
                         sure?
                       </p>
@@ -1388,7 +1388,7 @@ export default function SettingsPage() {
                             save("clear_library", {});
                             setConfirmDelete("");
                           }}
-                          className="h-7 rounded-md bg-red-500 px-3 text-[12px] font-semibold text-white hover:bg-red-600"
+                          className="h-7 rounded-md bg-[var(--hm-danger)] px-3 text-[12px] font-semibold text-white hover:bg-[var(--hm-danger)]"
                         >
                           Yes, clear
                         </button>
@@ -1412,14 +1412,14 @@ export default function SettingsPage() {
                           confirmDelete === "delete_workspace" ? "" : "delete_workspace",
                         )
                       }
-                      className="h-8 shrink-0 rounded-lg border border-red-300 bg-red-50 px-3.5 text-[12px] font-semibold text-red-600 hover:bg-red-100"
+                      className="h-8 shrink-0 rounded-lg border border-[var(--hm-border)] bg-[var(--tag-red-bg)] px-3.5 text-[12px] font-semibold text-[var(--tag-red-fg)] hover:bg-[var(--tag-red-bg)]"
                     >
                       Delete workspace
                     </button>
                   </div>
                   {confirmDelete === "delete_workspace" && (
-                    <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-300 bg-red-50 p-3">
-                      <p className="text-[12px] font-semibold text-red-700">
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--hm-border)] bg-[var(--tag-red-bg)] p-3">
+                      <p className="text-[12px] font-semibold text-[var(--tag-red-fg)]">
                         This will permanently delete the entire workspace and all associated data.
                         This cannot be undone. Are you absolutely sure?
                       </p>
@@ -1435,7 +1435,7 @@ export default function SettingsPage() {
                             save("delete_workspace", {});
                             setConfirmDelete("");
                           }}
-                          className="h-7 rounded-md bg-red-600 px-3 text-[12px] font-semibold text-white hover:bg-red-700"
+                          className="h-7 rounded-md bg-[var(--hm-danger)] px-3 text-[12px] font-semibold text-white hover:bg-[var(--hm-danger)]"
                         >
                           Yes, delete everything
                         </button>
@@ -1459,8 +1459,8 @@ export default function SettingsPage() {
               {aiMessage && (
                 <p className={`mb-4 rounded-lg px-4 py-2.5 text-[12px] font-medium ${
                   aiMessage.toLowerCase().includes("fail") || aiMessage.toLowerCase().includes("invalid") || aiMessage.toLowerCase().includes("error")
-                    ? "bg-red-50 text-red-600 border border-red-200"
-                    : "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                    ? "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)] border border-[var(--hm-border)]"
+                    : "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)] border border-[var(--hm-border)]"
                 }`}>
                   {aiMessage}
                 </p>
@@ -1472,7 +1472,7 @@ export default function SettingsPage() {
                   const isExpanded = aiExpandedProvider === prov.id;
 
                   return (
-                    <div key={prov.id} className="rounded-xl border border-[var(--hm-border)] bg-white overflow-hidden">
+                    <div key={prov.id} className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] overflow-hidden">
                       <div className="flex items-center gap-4 px-5 py-4">
                         <div
                           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white text-[12px] font-bold"
@@ -1484,13 +1484,13 @@ export default function SettingsPage() {
                           <div className="flex items-center gap-2">
                             <span className="text-[13px] font-semibold">{prov.label}</span>
                             {configured && (
-                              <span className="flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-semibold text-emerald-600">
-                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 inline-block" />
+                              <span className="flex items-center gap-1 rounded-full bg-[var(--tag-green-bg)] border border-[var(--hm-border)] px-2 py-0.5 text-[10px] font-semibold text-[var(--tag-green-fg)]">
+                                <span className="h-1.5 w-1.5 rounded-full bg-[var(--hm-success)] inline-block" />
                                 Connected
                               </span>
                             )}
                             {prov.id === "anthropic" && !configured && (
-                              <span className="rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-[10px] font-semibold text-amber-600">
+                              <span className="rounded-full bg-[var(--tag-yellow-bg)] border border-[var(--hm-border)] px-2 py-0.5 text-[10px] font-semibold text-[var(--tag-yellow-fg)]">
                                 Required
                               </span>
                             )}
@@ -1513,7 +1513,7 @@ export default function SettingsPage() {
                               <button
                                 onClick={() => aiDisconnect(prov.id)}
                                 disabled={aiDisconnecting === prov.id}
-                                className="flex h-[30px] items-center rounded-lg border border-[var(--hm-border)] px-3 text-[11px] text-[var(--hm-text-secondary)] hover:border-red-300 hover:text-red-500 disabled:opacity-50"
+                                className="flex h-[30px] items-center rounded-lg border border-[var(--hm-border)] px-3 text-[11px] text-[var(--hm-text-secondary)] hover:border-[var(--hm-border)] hover:text-[var(--tag-red-fg)] disabled:opacity-50"
                               >
                                 {aiDisconnecting === prov.id ? "Removing…" : "Remove"}
                               </button>
@@ -1521,7 +1521,7 @@ export default function SettingsPage() {
                           ) : (
                             <button
                               onClick={() => setAiExpandedProvider(isExpanded ? null : prov.id)}
-                              className="flex h-[30px] items-center rounded-lg bg-[#4361ee] px-3 text-[11px] font-medium text-white hover:opacity-90"
+                              className="flex h-[30px] items-center rounded-lg bg-[var(--hm-primary)] px-3 text-[11px] font-medium text-white hover:opacity-90"
                             >
                               {isExpanded ? "Cancel" : "Add key"}
                             </button>
@@ -1547,7 +1547,7 @@ export default function SettingsPage() {
                               <button
                                 onClick={() => aiSave(prov.id)}
                                 disabled={aiSaving || !aiKeyInput.trim()}
-                                className="flex h-[38px] shrink-0 items-center gap-1.5 rounded-lg bg-[#4361ee] px-4 text-[12px] font-medium text-white hover:opacity-90 disabled:opacity-50"
+                                className="flex h-[38px] shrink-0 items-center gap-1.5 rounded-lg bg-[var(--hm-primary)] px-4 text-[12px] font-medium text-white hover:opacity-90 disabled:opacity-50"
                               >
                                 {aiSaving ? (
                                   <>
@@ -1582,15 +1582,15 @@ export default function SettingsPage() {
               {hsMessage && (
                 <p className={`mb-4 rounded-lg px-4 py-2.5 text-[12px] font-medium ${
                   hsMessage.includes("failed") || hsMessage.includes("cancelled") || hsMessage.includes("error")
-                    ? "bg-red-50 text-red-600 border border-red-200"
-                    : "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                    ? "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)] border border-[var(--hm-border)]"
+                    : "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)] border border-[var(--hm-border)]"
                 }`}>
                   {hsMessage}
                 </p>
               )}
 
               {/* HubSpot card */}
-              <div className="rounded-xl border border-[var(--hm-border)] bg-white overflow-hidden">
+              <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] overflow-hidden">
                 <div className="flex items-center gap-4 px-5 py-4 border-b border-[var(--hm-border)]">
                   {/* HubSpot logo */}
                   <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#ff7a59] text-white">
@@ -1603,7 +1603,7 @@ export default function SettingsPage() {
                     <div className="flex items-center gap-2">
                       <span className="text-[13px] font-semibold">HubSpot CRM</span>
                       {hsConnected && (
-                        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                        <span className="rounded-full bg-[var(--tag-green-bg)] px-2 py-0.5 text-[10px] font-semibold text-[var(--tag-green-fg)]">
                           Connected
                         </span>
                       )}
@@ -1642,7 +1642,7 @@ export default function SettingsPage() {
                             } finally { setHsResetting(false); }
                           }}
                           disabled={hsResetting}
-                          className="flex h-[32px] items-center rounded-lg border border-amber-300 px-3 text-[12px] font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-50"
+                          className="flex h-[32px] items-center rounded-lg border border-[var(--hm-border)] px-3 text-[12px] font-medium text-[var(--tag-yellow-fg)] hover:bg-[var(--tag-yellow-bg)] disabled:opacity-50"
                         >
                           {hsResetting ? "Checking…" : "Check status"}
                         </button>
@@ -1650,7 +1650,7 @@ export default function SettingsPage() {
                       <button
                         onClick={hsDisconnect}
                         disabled={hsDisconnecting}
-                        className="flex h-[32px] items-center rounded-lg border border-red-200 px-3 text-[12px] font-medium text-red-500 hover:bg-red-50 disabled:opacity-50"
+                        className="flex h-[32px] items-center rounded-lg border border-[var(--hm-border)] px-3 text-[12px] font-medium text-[var(--tag-red-fg)] hover:bg-[var(--tag-red-bg)] disabled:opacity-50"
                       >
                         {hsDisconnecting ? "Disconnecting…" : "Disconnect"}
                       </button>
@@ -1675,7 +1675,7 @@ export default function SettingsPage() {
                       </span>
                     </div>
                     {hsIntegration.syncStatus === "syncing" && (
-                      <div className="flex items-center gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-[12px] text-amber-700">
+                      <div className="flex items-center gap-2 rounded-lg bg-[var(--tag-yellow-bg)] border border-[var(--hm-border)] px-3 py-2 text-[12px] text-[var(--tag-yellow-fg)]">
                         <svg className="animate-spin shrink-0" width="12" height="12" viewBox="0 0 24 24" fill="none">
                           <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="32" strokeDashoffset="12" strokeLinecap="round"/>
                         </svg>
@@ -1683,7 +1683,7 @@ export default function SettingsPage() {
                       </div>
                     )}
                     {hsIntegration.syncStatus === "error" && hsIntegration.lastSyncError && (
-                      <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-[11px] text-red-600">
+                      <div className="rounded-lg bg-[var(--tag-red-bg)] border border-[var(--hm-border)] px-3 py-2 text-[11px] text-[var(--tag-red-fg)]">
                         Last sync error: {hsIntegration.lastSyncError}
                       </div>
                     )}
@@ -1702,7 +1702,7 @@ export default function SettingsPage() {
                             const to = obj?.syncedTo;
                             const err = (obj as { error?: string })?.error;
                             return (
-                              <div key={key} className={`flex items-center justify-between rounded-lg px-3 py-2 ${err ? "bg-red-50 border border-red-200" : "bg-[var(--hm-bg-secondary)]"}`}>
+                              <div key={key} className={`flex items-center justify-between rounded-lg px-3 py-2 ${err ? "bg-[var(--tag-red-bg)] border border-[var(--hm-border)]" : "bg-[var(--hm-bg-secondary)]"}`}>
                                 <div className="flex items-center gap-2">
                                   <span className="text-[13px]">{icon}</span>
                                   <div>
@@ -1717,11 +1717,11 @@ export default function SettingsPage() {
                                       </p>
                                     )}
                                     {err && (
-                                      <p className="text-[10px] text-red-500 mt-0.5 max-w-[280px] truncate" title={err}>{err}</p>
+                                      <p className="text-[10px] text-[var(--tag-red-fg)] mt-0.5 max-w-[280px] truncate" title={err}>{err}</p>
                                     )}
                                   </div>
                                 </div>
-                                <span className={`text-[11px] font-semibold ${err ? "text-red-500" : "text-[#4361ee]"}`}>{err ? "✗" : count > 0 ? "✓" : "—"}</span>
+                                <span className={`text-[11px] font-semibold ${err ? "text-[var(--tag-red-fg)]" : "text-[var(--hm-text)]"}`}>{err ? "✗" : count > 0 ? "✓" : "—"}</span>
                               </div>
                             );
                           })}
@@ -1757,7 +1757,7 @@ export default function SettingsPage() {
                         <button
                           onClick={hsSave}
                           disabled={hsSaving || !hsToken.trim()}
-                          className="flex h-[38px] shrink-0 items-center gap-1.5 rounded-lg bg-[#4361ee] px-4 text-[12px] font-medium text-white hover:opacity-90 disabled:opacity-50"
+                          className="flex h-[38px] shrink-0 items-center gap-1.5 rounded-lg bg-[var(--hm-primary)] px-4 text-[12px] font-medium text-white hover:opacity-90 disabled:opacity-50"
                         >
                           {hsSaving ? (
                             <>
@@ -1778,7 +1778,7 @@ export default function SettingsPage() {
               </div>
 
               {/* Confluence card */}
-              <div className="mt-5 rounded-xl border border-[var(--hm-border)] bg-white overflow-hidden">
+              <div className="mt-5 rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] overflow-hidden">
                 <div className="flex items-center gap-4 px-5 py-4 border-b border-[var(--hm-border)]">
                   {/* Confluence logo */}
                   <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#0052CC] text-white">
@@ -1791,8 +1791,8 @@ export default function SettingsPage() {
                     <div className="flex items-center gap-2">
                       <span className="text-[13px] font-semibold">Confluence</span>
                       {cfConnected && (
-                        <span className="flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-semibold text-emerald-600">
-                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 inline-block"/>
+                        <span className="flex items-center gap-1 rounded-full bg-[var(--tag-green-bg)] border border-[var(--hm-border)] px-2 py-0.5 text-[10px] font-semibold text-[var(--tag-green-fg)]">
+                          <span className="h-1.5 w-1.5 rounded-full bg-[var(--hm-success)] inline-block"/>
                           Connected
                         </span>
                       )}
@@ -1808,7 +1808,7 @@ export default function SettingsPage() {
                       <button
                         onClick={cfSync}
                         disabled={cfSyncing || cfIntegration?.syncStatus === "syncing"}
-                        className="flex h-[30px] items-center gap-1.5 rounded-lg bg-[#4361ee] px-3 text-[11px] font-medium text-white hover:opacity-90 disabled:opacity-50"
+                        className="flex h-[30px] items-center gap-1.5 rounded-lg bg-[var(--hm-primary)] px-3 text-[11px] font-medium text-white hover:opacity-90 disabled:opacity-50"
                       >
                         {cfSyncing || cfIntegration?.syncStatus === "syncing" ? (
                           <>
@@ -1822,7 +1822,7 @@ export default function SettingsPage() {
                       <button
                         onClick={cfDisconnect}
                         disabled={cfDisconnecting}
-                        className="flex h-[30px] items-center rounded-lg border border-[var(--hm-border)] px-3 text-[11px] text-[var(--hm-text-secondary)] hover:border-red-300 hover:text-red-500 disabled:opacity-50"
+                        className="flex h-[30px] items-center rounded-lg border border-[var(--hm-border)] px-3 text-[11px] text-[var(--hm-text-secondary)] hover:border-[var(--hm-border)] hover:text-[var(--tag-red-fg)] disabled:opacity-50"
                       >
                         {cfDisconnecting ? "Disconnecting…" : "Disconnect"}
                       </button>
@@ -1833,8 +1833,8 @@ export default function SettingsPage() {
                 {cfMessage && (
                   <div className={`mx-5 mt-3 rounded-lg px-3 py-2 text-[11px] font-medium ${
                     cfMessage.toLowerCase().includes("fail") || cfMessage.toLowerCase().includes("error")
-                      ? "bg-red-50 text-red-600 border border-red-200"
-                      : "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                      ? "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)] border border-[var(--hm-border)]"
+                      : "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)] border border-[var(--hm-border)]"
                   }`}>
                     {cfMessage}
                   </div>
@@ -1869,7 +1869,7 @@ export default function SettingsPage() {
                       )}
                     </div>
                     {cfIntegration.syncStatus === "syncing" && (
-                      <div className="flex items-center gap-2 rounded-lg bg-blue-50 border border-blue-200 px-3 py-2 text-[11px] text-blue-600">
+                      <div className="flex items-center gap-2 rounded-lg bg-[var(--tag-blue-bg)] border border-[var(--hm-border)] px-3 py-2 text-[11px] text-[var(--tag-blue-fg)]">
                         <svg className="animate-spin shrink-0" width="10" height="10" viewBox="0 0 24 24" fill="none">
                           <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="32" strokeDashoffset="12" strokeLinecap="round"/>
                         </svg>
@@ -1877,7 +1877,7 @@ export default function SettingsPage() {
                       </div>
                     )}
                     {cfIntegration.syncStatus === "error" && cfIntegration.lastSyncError && (
-                      <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-[11px] text-red-600">
+                      <div className="rounded-lg bg-[var(--tag-red-bg)] border border-[var(--hm-border)] px-3 py-2 text-[11px] text-[var(--tag-red-fg)]">
                         Last sync error: {cfIntegration.lastSyncError}
                       </div>
                     )}
@@ -1889,7 +1889,7 @@ export default function SettingsPage() {
                           {spaces.map((sp) => (
                             <div key={sp.name} className="flex items-center justify-between rounded-lg bg-[var(--hm-bg-secondary)] px-3 py-2">
                               <span className="text-[12px] text-[var(--hm-text)] truncate max-w-[320px]" title={sp.name}>{sp.name}</span>
-                              <span className="text-[11px] font-semibold text-[#4361ee] shrink-0 ml-3">{sp.count.toLocaleString()} pages</span>
+                              <span className="text-[11px] font-semibold text-[var(--hm-text)] shrink-0 ml-3">{sp.count.toLocaleString()} pages</span>
                             </div>
                           ))}
                         </div>
@@ -1949,7 +1949,7 @@ export default function SettingsPage() {
                       <button
                         onClick={cfSave}
                         disabled={cfSaving || !cfBaseUrl.trim() || !cfEmail.trim() || !cfApiToken.trim()}
-                        className="flex h-[34px] shrink-0 items-center gap-1.5 rounded-lg bg-[#4361ee] px-4 text-[12px] font-medium text-white hover:opacity-90 disabled:opacity-50"
+                        className="flex h-[34px] shrink-0 items-center gap-1.5 rounded-lg bg-[var(--hm-primary)] px-4 text-[12px] font-medium text-white hover:opacity-90 disabled:opacity-50"
                       >
                         {cfSaving ? (
                           <>
