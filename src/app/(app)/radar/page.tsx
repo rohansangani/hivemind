@@ -946,10 +946,18 @@ function initials(name: string): string {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase() || "?";
 }
 
+// One tone per vertical, matching VERTICAL_COLORS (bars/dots) so a vertical reads
+// the same colour everywhere — B2B blue, D2C purple, US orange, else gray.
+const VERTICAL_TAG: Record<string, string> = {
+  B2B: "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]",
+  D2C: "bg-[var(--tag-purple-bg)] text-[var(--tag-purple-fg)]",
+  US: "bg-[var(--tag-orange-bg)] text-[var(--tag-orange-fg)]",
+};
 function VerticalBadge({ v }: { v: string | null }) {
   if (!v) return <span className="text-[var(--hm-text-tertiary)]">—</span>;
+  const tone = VERTICAL_TAG[v.toUpperCase()] || "bg-[var(--tag-gray-bg)] text-[var(--tag-gray-fg)]";
   return (
-    <span className="text-[11px] px-2 py-0.5 rounded-md font-medium bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]">
+    <span className={"text-[11px] px-2 py-0.5 rounded-md font-medium " + tone}>
       {v}
     </span>
   );
