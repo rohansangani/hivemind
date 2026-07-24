@@ -2,35 +2,55 @@
 
 :root {
   color-scheme: light;
-  --hm-primary: #1A1A2E;
-  --hm-accent: #4361EE;
-  --hm-accent-light: #E8EDFF;
-  --hm-dark: #16213E;
-  --hm-mid: #0F3460;
-  --hm-bg: #FFFFFF;
-  --hm-bg-secondary: #F8F9FC;
-  --hm-bg-tertiary: #F1F3F9;
+  /* ── Notion-style palette ──────────────────────────────────────────────
+     Rules: primary actions & nav = near-black (--hm-primary). Blue (--hm-link)
+     is for links/interactive text ONLY, never buttons/nav. Color appears only
+     in tags/chips/data-viz (see --tag-* below), never in structural chrome.
+     Depth = 1px border, never a shadow. Keep color→meaning fixed everywhere. */
+  --hm-primary: #37352F;          /* near-black — primary buttons, active nav */
+  --hm-primary-hover: #2A2925;
+  --hm-link: #2383E2;             /* interactive text / links only */
+  --hm-accent: #2383E2;           /* legacy alias → link blue (transitional) */
+  --hm-accent-light: #EEF4FB;
+  --hm-dark: #37352F;
+  --hm-mid: #787774;
+  --hm-bg: #FFFFFF;               /* canvas */
+  --hm-bg-secondary: #F7F7F5;     /* sidebar / secondary surface */
+  --hm-bg-tertiary: #F1F1EF;      /* hover fill */
   --hm-surface: #FFFFFF;
-  --hm-surface-hover: #F0F2FA;
-  --hm-text: #2D2D2D;
-  --hm-text-secondary: #555555;
-  --hm-text-tertiary: #999999;
-  --hm-border: #E5E7EB;
-  --hm-border-light: #F0F0F0;
-  --hm-success: #10B981;
-  --hm-warning: #F59E0B;
-  --hm-danger: #EF4444;
-  --hm-info: #4361EE;
+  --hm-surface-hover: #F1F1EF;
+  --hm-text: #37352F;
+  --hm-text-secondary: #787774;
+  --hm-text-tertiary: #9B9A97;
+  --hm-border: #EBEBEA;           /* hairline — the only source of depth */
+  --hm-border-light: #F1F1EF;
+  --hm-success: #448361;
+  --hm-warning: #CB912F;
+  --hm-danger: #D44C47;
+  --hm-info: #337EA9;
+
+  /* ── Tag / status palette — fixed bg/fg pairs, same meaning on every screen ── */
+  --tag-gray-bg: #E3E2E0;   --tag-gray-fg: #787774;
+  --tag-green-bg: #DBEDDB;  --tag-green-fg: #448361;
+  --tag-yellow-bg: #FDECC8; --tag-yellow-fg: #CB912F;
+  --tag-orange-bg: #FADEC9; --tag-orange-fg: #D9730D;
+  --tag-blue-bg: #D3E5EF;   --tag-blue-fg: #337EA9;
+  --tag-purple-bg: #E8DEEE; --tag-purple-fg: #9065B0;
+  --tag-pink-bg: #F5E0E9;   --tag-pink-fg: #C14C8A;
+  --tag-red-bg: #FDE4E1;    --tag-red-fg: #D44C47;
 }
 
 /* ─── Elevation / Shadow system ─── */
 :root {
-  --hm-shadow-xs: 0 1px 2px rgba(0,0,0,0.04);
-  --hm-shadow-sm: 0 1px 3px rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.04);
-  --hm-shadow-md: 0 4px 6px -1px rgba(0,0,0,0.07), 0 2px 4px -1px rgba(0,0,0,0.04);
-  --hm-shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.08), 0 4px 6px -2px rgba(0,0,0,0.04);
-  --hm-shadow-card: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
-  --hm-shadow-card-hover: 0 4px 12px rgba(0,0,0,0.09), 0 1px 3px rgba(0,0,0,0.05);
+  /* No drop shadows, ever — depth comes from a 1px border only. These tokens are
+     kept (many components still reference them) but resolve to `none` so existing
+     shadow usages flatten automatically without a full sweep. */
+  --hm-shadow-xs: none;
+  --hm-shadow-sm: none;
+  --hm-shadow-md: none;
+  --hm-shadow-lg: none;
+  --hm-shadow-card: none;
+  --hm-shadow-card-hover: none;
   --hm-radius-sm: 8px;
   --hm-radius-md: 12px;
   --hm-radius-lg: 16px;
@@ -165,33 +185,37 @@ html.dark ::-webkit-scrollbar-thumb:hover { background: #3A3A52; }
 /* Manual light — overrides system dark preference when user explicitly chose light */
 html.light {
   color-scheme: light;
-  --hm-primary: #1A1A2E;
-  --hm-accent: #4361EE;
-  --hm-accent-light: #E8EDFF;
-  --hm-dark: #16213E;
-  --hm-mid: #0F3460;
+  --hm-primary: #37352F;
+  --hm-primary-hover: #2A2925;
+  --hm-link: #2383E2;
+  --hm-accent: #2383E2;
+  --hm-accent-light: #EEF4FB;
+  --hm-dark: #37352F;
+  --hm-mid: #787774;
   --hm-bg: #FFFFFF;
-  --hm-bg-secondary: #F8F9FC;
-  --hm-bg-tertiary: #F1F3F9;
+  --hm-bg-secondary: #F7F7F5;
+  --hm-bg-tertiary: #F1F1EF;
   --hm-surface: #FFFFFF;
-  --hm-surface-hover: #F0F2FA;
-  --hm-text: #2D2D2D;
-  --hm-text-secondary: #555555;
-  --hm-text-tertiary: #999999;
-  --hm-border: #E5E7EB;
-  --hm-border-light: #F0F0F0;
-  --hm-success: #10B981;
-  --hm-warning: #F59E0B;
-  --hm-danger: #EF4444;
-  --hm-info: #4361EE;
+  --hm-surface-hover: #F1F1EF;
+  --hm-text: #37352F;
+  --hm-text-secondary: #787774;
+  --hm-text-tertiary: #9B9A97;
+  --hm-border: #EBEBEA;
+  --hm-border-light: #F1F1EF;
+  --hm-success: #448361;
+  --hm-warning: #CB912F;
+  --hm-danger: #D44C47;
+  --hm-info: #337EA9;
+  --hm-shadow-xs: none; --hm-shadow-sm: none; --hm-shadow-md: none;
+  --hm-shadow-lg: none; --hm-shadow-card: none; --hm-shadow-card-hover: none;
 }
 html.light .bg-white { background-color: #ffffff !important; }
-html.light .text-gray-900, html.light .text-black { color: #2D2D2D !important; }
-html.light .text-gray-700, html.light .text-gray-800 { color: #555555 !important; }
-html.light .text-gray-500, html.light .text-gray-600 { color: #999999 !important; }
-html.light .border-gray-200 { border-color: #E5E7EB !important; }
-html.light ::-webkit-scrollbar-thumb { background: #E5E7EB; }
-html.light ::-webkit-scrollbar-thumb:hover { background: #d1d5db; }
+html.light .text-gray-900, html.light .text-black { color: #37352F !important; }
+html.light .text-gray-700, html.light .text-gray-800 { color: #787774 !important; }
+html.light .text-gray-500, html.light .text-gray-600 { color: #9B9A97 !important; }
+html.light .border-gray-200 { border-color: #EBEBEA !important; }
+html.light ::-webkit-scrollbar-thumb { background: #EBEBEA; }
+html.light ::-webkit-scrollbar-thumb:hover { background: #DEDEDC; }
 
 
 /* ─── Utility classes ─── */
@@ -199,39 +223,33 @@ html.light ::-webkit-scrollbar-thumb:hover { background: #d1d5db; }
   background: var(--hm-surface);
   border: 1px solid var(--hm-border);
   border-radius: var(--hm-radius-md);
-  box-shadow: var(--hm-shadow-card);
-  transition: box-shadow var(--hm-transition), border-color var(--hm-transition), transform var(--hm-transition);
+  transition: border-color var(--hm-transition), background var(--hm-transition);
 }
-.hm-card:hover {
-  box-shadow: var(--hm-shadow-card-hover);
-}
+/* Depth from border only — no shadow, no lift. */
 .hm-card-interactive:hover {
-  box-shadow: var(--hm-shadow-card-hover);
-  border-color: rgba(67,97,238,0.25);
-  transform: translateY(-1px);
+  border-color: var(--hm-text-tertiary);
+  background: var(--hm-bg-secondary);
 }
 .hm-btn {
   display: inline-flex; align-items: center; justify-content: center;
   gap: 6px; font-size: 12px; font-weight: 500;
   border-radius: 8px; cursor: pointer;
-  transition: all var(--hm-transition);
+  transition: background var(--hm-transition), border-color var(--hm-transition), color var(--hm-transition);
   white-space: nowrap;
 }
 .hm-btn:disabled {
   opacity: 0.5; cursor: not-allowed; pointer-events: none;
-  transform: none !important; box-shadow: none !important;
 }
+/* Primary actions are near-black — never a saturated brand color. */
 .hm-btn-primary {
-  background: #4361ee; color: white; border: none;
-  box-shadow: 0 1px 2px rgba(67,97,238,0.3);
+  background: var(--hm-primary); color: #FFFFFF; border: 1px solid var(--hm-primary);
 }
-.hm-btn-primary:hover { opacity: 0.9; box-shadow: 0 3px 8px rgba(67,97,238,0.35); transform: translateY(-1px); }
-.hm-btn-primary:active { transform: translateY(0); }
+.hm-btn-primary:hover { background: var(--hm-primary-hover); border-color: var(--hm-primary-hover); }
 .hm-btn-secondary {
   background: var(--hm-surface); color: var(--hm-text-secondary);
   border: 1px solid var(--hm-border);
 }
-.hm-btn-secondary:hover { background: var(--hm-bg-secondary); border-color: rgba(67,97,238,0.3); color: var(--hm-text); }
+.hm-btn-secondary:hover { background: var(--hm-bg-secondary); border-color: var(--hm-text-tertiary); color: var(--hm-text); }
 
 /* Smooth page transitions */
 .animate-fade-in { animation: fadeIn 0.2s ease; }

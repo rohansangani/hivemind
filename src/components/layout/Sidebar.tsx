@@ -40,7 +40,7 @@ const ADMIN_ROUTES: Array<{ moduleId: string; href: string; label: string; icon:
 ];
 
 function NavIcon({ icon, active }: { icon: string; active: boolean }) {
-  const c = active ? "var(--hm-accent)" : "var(--hm-text-tertiary)";
+  const c = active ? "var(--hm-text)" : "var(--hm-text-tertiary)";
   const w = "1.3";
   switch (icon) {
     case "home": return (
@@ -279,13 +279,13 @@ export default function Sidebar({ userName, userRole, customPermissions, orgRole
                     "group relative flex items-center gap-2.5 py-[9px] rounded-lg text-[13px] transition-colors duration-150",
                     showLabels ? "px-3" : "px-0 justify-center",
                     active
-                      ? "font-medium text-[var(--hm-accent)] bg-[var(--hm-accent-light)]"
+                      ? "font-medium text-[var(--hm-text)] bg-[var(--hm-bg-tertiary)]"
                       : "text-[var(--hm-text-secondary)] hover:text-[var(--hm-text)] hover:bg-[var(--hm-surface-hover)]",
                   ].join(" ")}
                 >
                   {active && showLabels && (
                     <span
-                      className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-[var(--hm-accent)]"
+                      className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-[var(--hm-primary)]"
                       aria-hidden="true"
                     />
                   )}
@@ -317,13 +317,13 @@ export default function Sidebar({ userName, userRole, customPermissions, orgRole
                         "group relative flex items-center gap-2.5 py-[9px] rounded-lg text-[13px] transition-colors duration-150",
                         showLabels ? "px-3" : "px-0 justify-center",
                         active
-                          ? "font-medium text-[var(--hm-accent)] bg-[var(--hm-accent-light)]"
+                          ? "font-medium text-[var(--hm-text)] bg-[var(--hm-bg-tertiary)]"
                           : "text-[var(--hm-text-secondary)] hover:text-[var(--hm-text)] hover:bg-[var(--hm-surface-hover)]",
                       ].join(" ")}
                     >
                       {active && showLabels && (
                         <span
-                          className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-[var(--hm-accent)]"
+                          className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-[var(--hm-primary)]"
                           aria-hidden="true"
                         />
                       )}
@@ -343,7 +343,7 @@ export default function Sidebar({ userName, userRole, customPermissions, orgRole
         {showLabels ? (
           <div className="flex items-center gap-2.5 mb-2.5 px-1">
             <div
-              className="w-8 h-8 rounded-full bg-[#4361ee] flex items-center justify-center text-[11px] font-medium text-white flex-shrink-0"
+              className="w-8 h-8 rounded-full bg-[var(--hm-primary)] flex items-center justify-center text-[11px] font-medium text-white flex-shrink-0"
               aria-hidden="true"
             >
               {getInitials(userName)}
@@ -361,7 +361,7 @@ export default function Sidebar({ userName, userRole, customPermissions, orgRole
         ) : (
           <div className="flex flex-col items-center gap-2 mb-2">
             <div
-              className="w-8 h-8 rounded-full bg-[#4361ee] flex items-center justify-center text-[11px] font-medium text-white"
+              className="w-8 h-8 rounded-full bg-[var(--hm-primary)] flex items-center justify-center text-[11px] font-medium text-white"
               title={`${userName} (${roleMeta.label})`}
               aria-label={`${userName}, ${roleMeta.label}`}
             >
@@ -376,7 +376,7 @@ export default function Sidebar({ userName, userRole, customPermissions, orgRole
             onClick={onStartTour}
             className={[
               "w-full flex items-center gap-2 rounded-lg text-[12px] font-medium mb-1",
-              "text-[var(--hm-text-tertiary)] hover:text-[#4361ee] hover:bg-[#4361ee]/5 transition-colors duration-150",
+              "text-[var(--hm-text-tertiary)] hover:text-[var(--hm-text)] hover:bg-[var(--hm-bg-tertiary)] transition-colors duration-150",
               showLabels ? "px-3 py-2" : "justify-center px-0 py-2",
             ].join(" ")}
             aria-label="Platform Guide"
