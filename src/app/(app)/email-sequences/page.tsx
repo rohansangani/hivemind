@@ -355,6 +355,7 @@ export default function EmailSequencesPage() {
     setError("");
     setMode("single");
     setProspect({ ...EMPTY_PROSPECT });
+    setCampaignTitle("");
   };
 
   const loadHistoryJob = async (jobId: string) => {
@@ -376,6 +377,7 @@ export default function EmailSequencesPage() {
       setResults(job.results || []);
       setExpandedResult(0);
       setMode(job.mode === "bulk" || job.mode === "radar" || job.mode === "template" ? (job.mode as typeof mode) : "single");
+      setCampaignTitle(job.mode === "bulk" ? (job.label || "") : "");
 
       const cfg = job.config as Partial<{
         emailCount: number; tone: string; length: string; products: string[]; cta: string; customCta: string;
@@ -422,6 +424,11 @@ export default function EmailSequencesPage() {
   };
 
   const [editBuffer, setEditBuffer] = useState({ subject: "", body: "" });
+
+  // Campaign title — mandatory for a bulk CSV batch. Used as the job's label (so it shows in
+  // History) AND as the Instantly campaign name at send time, so one name follows the batch
+  // all the way through instead of the job and the campaign drifting apart under different names.
+  const [campaignTitle, setCampaignTitle] = useState("");
 
   // Send via Instantly
   const [mailboxTags, setMailboxTags] = useState<Array<{ id: string; label: string }>>([]);
@@ -472,6 +479,7 @@ export default function EmailSequencesPage() {
     setSendError("");
     if (!mailboxTag) { setSendError("Select a mailbox tag to send from"); return; }
     if (!sendableProspects.length) { setSendError("No prospects with an email address to send to"); return; }
+    if (mode === "bulk" && !campaignTitle.trim()) { setSendError("Give this batch a campaign title first"); return; }
     setShowSendConfirm(true);
   };
 
@@ -484,7 +492,7 @@ export default function EmailSequencesPage() {
       const res = await fetch("/api/email-sequences/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ results: sendableProspects, mailboxTag, skipDuplicates }),
+        body: JSON.stringify({ results: sendableProspects, mailboxTag, skipDuplicates, campaignName: campaignTitle.trim() || undefined }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Send failed");
@@ -644,6 +652,11 @@ export default function EmailSequencesPage() {
           setGenerating(false);
           return;
         }
+        if (mode === "bulk" && !campaignTitle.trim()) {
+          setError("Give this batch a campaign title first");
+          setGenerating(false);
+          return;
+        }
         setProgress(`Starting a background job for ${batch.length} prospect(s)...`);
         const r = await fetch("/api/email-sequences/jobs", {
           method: "POST",
@@ -660,7 +673,7 @@ export default function EmailSequencesPage() {
               vertical: vertical || undefined,
             },
             mode,
-            label: `${mode === "radar" ? "Radar" : "CSV"} batch — ${new Date().toISOString().slice(0, 10)}`,
+            label: mode === "bulk" ? campaignTitle.trim() : `Radar batch — ${new Date().toISOString().slice(0, 10)}`,
           }),
         });
         const d = await r.json().catch(() => ({}));
@@ -1228,6 +1241,17 @@ export default function EmailSequencesPage() {
           {/* Bulk CSV upload */}
           {mode === "bulk" && (
             <div className={cardCls}>
+              <div className="mb-4">
+                <label className={labelCls}>Campaign Title *</label>
+                <input
+                  type="text"
+                  className={inputCls}
+                  value={campaignTitle}
+                  onChange={e => setCampaignTitle(e.target.value)}
+                  placeholder="e.g. Q3 Fintech Outreach"
+                />
+                <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-1">Shows in History and becomes the Instantly campaign name when you send.</p>
+              </div>
               <div className={labelCls + " mb-3"}>Upload Prospect List</div>
               {!csvFile ? (
                 <div
