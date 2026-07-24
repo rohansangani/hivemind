@@ -84,7 +84,7 @@ export default function RadarPage() {
     <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
       {/* ── Header bar ─────────────────────────────────────────────── */}
-      <div className="px-4 md:px-7 py-4 bg-white border-b border-[var(--hm-border)]" style={{ boxShadow: "var(--hm-shadow-xs)" }}>
+      <div className="px-4 md:px-7 py-4 bg-[var(--hm-surface)] border-b border-[var(--hm-border)]" style={{ boxShadow: "var(--hm-shadow-xs)" }}>
         <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
           <div className="min-w-0">
             <h1 className="text-[18px] md:text-[22px] font-semibold leading-tight text-[var(--hm-text)]">Radar</h1>
@@ -138,10 +138,10 @@ export default function RadarPage() {
                     <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">{s.blurb}</p>
                   </div>
                   <div className="px-5 py-16 flex flex-col items-center justify-center text-center gap-3">
-                    <div className="w-11 h-11 rounded-xl bg-[var(--hm-accent-light)] flex items-center justify-center">
+                    <div className="w-11 h-11 rounded-xl bg-[var(--hm-bg-tertiary)] flex items-center justify-center">
                       <svg width="20" height="20" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                        <circle cx="7" cy="7" r="4.5" stroke="var(--hm-accent)" strokeWidth="1.4" />
-                        <path d="M10.4 10.4L14 14" stroke="var(--hm-accent)" strokeWidth="1.4" strokeLinecap="round" />
+                        <circle cx="7" cy="7" r="4.5" stroke="var(--hm-text-secondary)" strokeWidth="1.4" />
+                        <path d="M10.4 10.4L14 14" stroke="var(--hm-text-secondary)" strokeWidth="1.4" strokeLinecap="round" />
                       </svg>
                     </div>
                     <p className="text-[13px] font-medium text-[var(--hm-text)]">{s.label} — coming soon</p>
@@ -215,7 +215,7 @@ function RadarActivityLogSection() {
 
       {loading ? (
         <div className="flex items-center justify-center py-20">
-          <div className="w-5 h-5 border-2 border-[var(--hm-accent)]/30 border-t-[var(--hm-accent)] rounded-full animate-spin" />
+          <div className="w-5 h-5 border-2 border-[var(--hm-border)] border-t-[var(--hm-text-secondary)] rounded-full animate-spin" />
         </div>
       ) : error ? (
         <div className="m-4 rounded-lg border border-red-200 bg-red-50 dark:bg-red-900/20 dark:border-red-800 p-4 text-[13px] text-red-600 dark:text-red-400">
@@ -337,7 +337,7 @@ function RadarDashboard() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <div className="w-5 h-5 border-2 border-[var(--hm-accent)]/30 border-t-[var(--hm-accent)] rounded-full animate-spin" />
+        <div className="w-5 h-5 border-2 border-[var(--hm-border)] border-t-[var(--hm-text-secondary)] rounded-full animate-spin" />
       </div>
     );
   }
@@ -604,7 +604,7 @@ function FilterSelect({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       style={{ width: "auto", minWidth: 130, maxWidth: 200 }}
-      className={value ? "border-[var(--hm-accent)]! text-[var(--hm-accent)]" : ""}
+      className={value ? "border-[var(--hm-primary)]! text-[var(--hm-text)]" : ""}
       aria-label={label}
     >
       <option value="">{label}: All</option>
@@ -769,7 +769,7 @@ function DataTable<T extends { id: string }>({
           {activeFilterCount > 0 && (
             <button
               onClick={clearFilters}
-              className="text-[12px] text-[var(--hm-text-secondary)] hover:text-[var(--hm-accent)] px-2 py-1 rounded-md border border-[var(--hm-border)] whitespace-nowrap"
+              className="text-[12px] text-[var(--hm-text-secondary)] hover:text-[var(--hm-link)] px-2 py-1 rounded-md border border-[var(--hm-border)] whitespace-nowrap"
             >
               Clear {activeFilterCount}
             </button>
@@ -791,9 +791,9 @@ function DataTable<T extends { id: string }>({
 
       {/* Bulk actions bar — shown once something is checked */}
       {bulkActions && (selected.size > 0 || allFiltered) && (
-        <div className="px-4 py-2.5 border-b border-[var(--hm-border)] bg-[var(--hm-accent-light)] flex flex-col gap-2">
+        <div className="px-4 py-2.5 border-b border-[var(--hm-border)] bg-[var(--hm-bg-tertiary)] flex flex-col gap-2">
           <div className="flex items-center gap-3 flex-wrap">
-            <span className="text-[12.5px] font-medium text-[var(--hm-accent)]">
+            <span className="text-[12.5px] font-medium text-[var(--hm-link)]">
               {allFiltered ? `All ${fmt(total)} matching selected` : `${selected.size} selected`}
             </span>
             {bulkActions({
@@ -812,7 +812,7 @@ function DataTable<T extends { id: string }>({
           {!allFiltered && selected.size === rows.length && total > rows.length && (
             <button
               onClick={() => setAllFiltered(true)}
-              className="text-[12px] text-[var(--hm-accent)] hover:underline text-left w-fit"
+              className="text-[12px] text-[var(--hm-link)] hover:underline text-left w-fit"
             >
               Select all {fmt(total)} matching your filters
             </button>
@@ -823,7 +823,7 @@ function DataTable<T extends { id: string }>({
       {/* Body */}
       {loading ? (
         <div className="flex items-center justify-center py-20">
-          <div className="w-5 h-5 border-2 border-[var(--hm-accent)]/30 border-t-[var(--hm-accent)] rounded-full animate-spin" />
+          <div className="w-5 h-5 border-2 border-[var(--hm-border)] border-t-[var(--hm-text-secondary)] rounded-full animate-spin" />
         </div>
       ) : error ? (
         <div className="m-4 rounded-lg border border-red-200 bg-red-50 dark:bg-red-900/20 dark:border-red-800 p-4 text-[13px] text-red-600 dark:text-red-400">
@@ -856,7 +856,7 @@ function DataTable<T extends { id: string }>({
                 <tr
                   key={row.id}
                   onClick={onRowClick ? () => onRowClick(row) : undefined}
-                  className={`hover:bg-[var(--hm-surface-hover)] ${selected.has(row.id) ? "bg-[var(--hm-accent-light)]" : ""} ${onRowClick ? "cursor-pointer" : ""}`}
+                  className={`hover:bg-[var(--hm-surface-hover)] ${selected.has(row.id) ? "bg-[var(--hm-bg-tertiary)]" : ""} ${onRowClick ? "cursor-pointer" : ""}`}
                 >
                   {bulkActions && (
                     <td className="px-4 py-3 border-b border-[var(--hm-border-light)]" onClick={(e) => e.stopPropagation()}>
@@ -887,7 +887,7 @@ function DataTable<T extends { id: string }>({
           <button
             onClick={() => setPage((p) => Math.max(0, p - 1))}
             disabled={page === 0 || loading}
-            className="h-7 px-2.5 rounded-md border border-[var(--hm-border)] bg-[var(--hm-surface)] text-[12px] text-[var(--hm-text-secondary)] disabled:opacity-40 hover:enabled:border-[var(--hm-accent)] transition-colors"
+            className="h-7 px-2.5 rounded-md border border-[var(--hm-border)] bg-[var(--hm-surface)] text-[12px] text-[var(--hm-text-secondary)] disabled:opacity-40 hover:enabled:border-[var(--hm-primary)] transition-colors"
           >
             ‹ Prev
           </button>
@@ -897,7 +897,7 @@ function DataTable<T extends { id: string }>({
           <button
             onClick={() => setPage((p) => Math.min(maxPage, p + 1))}
             disabled={page >= maxPage || loading}
-            className="h-7 px-2.5 rounded-md border border-[var(--hm-border)] bg-[var(--hm-surface)] text-[12px] text-[var(--hm-text-secondary)] disabled:opacity-40 hover:enabled:border-[var(--hm-accent)] transition-colors"
+            className="h-7 px-2.5 rounded-md border border-[var(--hm-border)] bg-[var(--hm-surface)] text-[12px] text-[var(--hm-text-secondary)] disabled:opacity-40 hover:enabled:border-[var(--hm-primary)] transition-colors"
           >
             Next ›
           </button>
@@ -949,7 +949,7 @@ function initials(name: string): string {
 function VerticalBadge({ v }: { v: string | null }) {
   if (!v) return <span className="text-[var(--hm-text-tertiary)]">—</span>;
   return (
-    <span className="text-[11px] px-2 py-0.5 rounded-md font-medium bg-[var(--hm-accent-light)] text-[var(--hm-accent)]">
+    <span className="text-[11px] px-2 py-0.5 rounded-md font-medium bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]">
       {v}
     </span>
   );
@@ -1131,7 +1131,7 @@ function EditRecordPanel<T extends { id: string }>({
   return (
     <div className="fixed inset-0 z-40 flex justify-end" role="dialog" aria-modal="true">
       <div className="absolute inset-0 bg-black/30" onClick={onClose} />
-      <div className="relative w-full max-w-lg h-full bg-[var(--hm-surface)] shadow-xl flex flex-col">
+      <div className="relative w-full max-w-lg h-full bg-[var(--hm-surface)] flex flex-col">
         <div className="px-5 py-4 border-b border-[var(--hm-border)] flex items-center justify-between gap-3">
           <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">{title}</h2>
           <button onClick={onClose} className="hm-btn hm-btn-secondary flex-shrink-0" style={{ height: 30, width: 30, padding: 0, fontSize: 14 }}>×</button>
@@ -1262,7 +1262,7 @@ function AccountsSection() {
       key: "domain",
       header: "Domain",
       render: (r) => r.domain ? (
-        <a href={`https://${r.domain}`} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-[var(--hm-accent)] hover:underline">
+        <a href={`https://${r.domain}`} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-[var(--hm-link)] hover:underline">
           {r.domain}
         </a>
       ) : <span className="text-[var(--hm-text-tertiary)]">—</span>,
@@ -1274,7 +1274,7 @@ function AccountsSection() {
     { key: "revenue", header: "Revenue", className: "tabular-nums", render: (r) => <Cell value={r.revenue_range} /> },
     { key: "location", header: "Company Location", render: (r) => <Cell value={r.company_location} /> },
     { key: "country", header: "Country", render: (r) => <Cell value={r.country} /> },
-    { key: "linkedin", header: "LinkedIn", render: (r) => r.linkedin_url ? <a href={linkedinHref(r.linkedin_url)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-[var(--hm-accent)] whitespace-nowrap">{linkedinHref(r.linkedin_url)}</a> : <span className="text-[var(--hm-text-tertiary)]">—</span> },
+    { key: "linkedin", header: "LinkedIn", render: (r) => r.linkedin_url ? <a href={linkedinHref(r.linkedin_url)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-[var(--hm-link)] whitespace-nowrap">{linkedinHref(r.linkedin_url)}</a> : <span className="text-[var(--hm-text-tertiary)]">—</span> },
     { key: "sdr", header: "SDR Owner", render: (r) => <Cell value={r.sdr_owner} /> },
     { key: "track_order", header: "Track Order Page", render: (r) => <Cell value={r.track_order_page} /> },
     { key: "edd", header: "EDD", render: (r) => <Cell value={r.edd} /> },
@@ -1386,7 +1386,7 @@ function AccountContactsPanel({ account, onClose }: { account: AccountRow; onClo
   return (
     <div className="fixed inset-0 z-40 flex justify-end" role="dialog" aria-modal="true">
       <div className="absolute inset-0 bg-black/30" onClick={onClose} />
-      <div className="relative w-full max-w-lg h-full bg-[var(--hm-surface)] shadow-xl flex flex-col">
+      <div className="relative w-full max-w-lg h-full bg-[var(--hm-surface)] flex flex-col">
         <div className="px-5 py-4 border-b border-[var(--hm-border)] flex items-center justify-between gap-3">
           <div className="min-w-0">
             <h2 className="text-[14px] font-semibold text-[var(--hm-text)] truncate">{account.name || account.domain}</h2>
@@ -1399,7 +1399,7 @@ function AccountContactsPanel({ account, onClose }: { account: AccountRow; onClo
         <div className="flex-1 overflow-y-auto">
           {loading ? (
             <div className="flex items-center justify-center py-16">
-              <div className="w-5 h-5 border-2 border-[var(--hm-accent)]/30 border-t-[var(--hm-accent)] rounded-full animate-spin" />
+              <div className="w-5 h-5 border-2 border-[var(--hm-border)] border-t-[var(--hm-text-secondary)] rounded-full animate-spin" />
             </div>
           ) : error ? (
             <div className="m-4 rounded-lg border border-red-200 bg-red-50 dark:bg-red-900/20 dark:border-red-800 p-4 text-[13px] text-red-600 dark:text-red-400">{error}</div>
@@ -1419,7 +1419,7 @@ function AccountContactsPanel({ account, onClose }: { account: AccountRow; onClo
                   <div className="flex items-center gap-2 mt-1 text-[12px] text-[var(--hm-text-secondary)]">
                     {c.email && <span className="truncate">{c.email}</span>}
                     {c.linkedin_url && (
-                      <a href={linkedinHref(c.linkedin_url)} target="_blank" rel="noreferrer" className="text-[var(--hm-accent)] truncate">{linkedinHref(c.linkedin_url)}</a>
+                      <a href={linkedinHref(c.linkedin_url)} target="_blank" rel="noreferrer" className="text-[var(--hm-link)] truncate">{linkedinHref(c.linkedin_url)}</a>
                     )}
                   </div>
                 </div>
@@ -1473,7 +1473,7 @@ function EmailStatusPill({ status }: { status: string | null }) {
   let cls = "bg-[var(--hm-bg-tertiary)] text-[var(--hm-text-tertiary)]";
   let label = status || "Unvalidated";
   if (s === "safe to send") { cls = "bg-[#DCFCE7] text-[#059669]"; label = "Safe to send"; }
-  else if (s === "verified") { cls = "bg-[var(--hm-accent-light)] text-[var(--hm-accent)]"; label = "Verified"; }
+  else if (s === "verified") { cls = "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]"; label = "Verified"; }
   else if (s === "risky") { cls = "bg-[#FEF3C7] text-[#B45309]"; label = "Risky"; }
   else if (s === "invalid" || s === "bounced") { cls = "bg-[#FEE2E2] text-[#DC2626]"; label = s === "bounced" ? "Bounced" : "Invalid"; }
   else if (s === "unknown") { cls = "bg-[var(--hm-bg-tertiary)] text-[var(--hm-text-tertiary)]"; label = "Unknown"; }
@@ -1537,7 +1537,7 @@ function ContactsSection() {
     { key: "phone2", header: "Phone 2", render: (r) => <Cell value={r.phone2} /> },
     { key: "location", header: "Location", render: (r) => <Cell value={r.location} /> },
     { key: "country", header: "Country", render: (r) => <Cell value={r.country} /> },
-    { key: "linkedin", header: "LinkedIn", render: (r) => r.linkedin_url ? <a href={linkedinHref(r.linkedin_url)} target="_blank" rel="noreferrer" className="text-[var(--hm-accent)] whitespace-nowrap">{linkedinHref(r.linkedin_url)}</a> : <span className="text-[var(--hm-text-tertiary)]">—</span> },
+    { key: "linkedin", header: "LinkedIn", render: (r) => r.linkedin_url ? <a href={linkedinHref(r.linkedin_url)} target="_blank" rel="noreferrer" className="text-[var(--hm-link)] whitespace-nowrap">{linkedinHref(r.linkedin_url)}</a> : <span className="text-[var(--hm-text-tertiary)]">—</span> },
     { key: "sdr", header: "SDR Owner", render: (r) => <Cell value={r.sdr_owner} /> },
     { key: "source", header: "Source", render: (r) => <Cell value={r.source} /> },
     { key: "created", header: "Created", className: "min-w-[190px] whitespace-nowrap", render: (r) => fmtDateTimeIST(r.created_at) },
@@ -1812,7 +1812,7 @@ function ExportSection() {
               onClick={() => setExportType(t)}
               className={`px-3 py-1 rounded-lg text-[12.5px] border capitalize transition-colors ${
                 exportType === t
-                  ? "border-[var(--hm-accent)] text-[var(--hm-accent)] bg-[var(--hm-accent-light)] font-medium"
+                  ? "border-[var(--hm-primary)] text-[var(--hm-text)] bg-[var(--hm-bg-tertiary)] font-medium"
                   : "border-[var(--hm-border)] text-[var(--hm-text-secondary)]"
               }`}
             >
@@ -1851,7 +1851,7 @@ function ExportSection() {
                   <button
                     key={s.key}
                     onClick={() => toggleStatus(s.key)}
-                    className={`text-[11.5px] px-2.5 py-1 rounded-md border ${active ? "border-[var(--hm-accent)] bg-[var(--hm-accent-light)] text-[var(--hm-accent)] font-medium" : "border-[var(--hm-border)] text-[var(--hm-text-secondary)]"}`}
+                    className={`text-[11.5px] px-2.5 py-1 rounded-md border ${active ? "border-[var(--hm-primary)] bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)] font-medium" : "border-[var(--hm-border)] text-[var(--hm-text-secondary)]"}`}
                   >
                     {s.label}
                   </button>
@@ -1889,7 +1889,7 @@ function ExportSection() {
           </div>
         )}
 
-        <div className="text-[13px] font-semibold text-[var(--hm-accent)]">
+        <div className="text-[13px] font-semibold text-[var(--hm-link)]">
           {counting ? "Counting…" : matchCount != null ? `${matchCount.toLocaleString()} ${exportType} match` : "—"}
         </div>
 
@@ -1950,11 +1950,11 @@ function RecentExports({ refreshToken }: { refreshToken: number }) {
     <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
       <div className="px-5 py-4 border-b border-[var(--hm-border)] flex items-center justify-between">
         <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Recent exports</h2>
-        <button onClick={load} className="text-[12px] text-[var(--hm-text-secondary)] hover:text-[var(--hm-accent)]">Refresh</button>
+        <button onClick={load} className="text-[12px] text-[var(--hm-text-secondary)] hover:text-[var(--hm-link)]">Refresh</button>
       </div>
       {loading ? (
         <div className="flex items-center justify-center py-10">
-          <div className="w-4 h-4 border-2 border-[var(--hm-accent)]/30 border-t-[var(--hm-accent)] rounded-full animate-spin" />
+          <div className="w-4 h-4 border-2 border-[var(--hm-border)] border-t-[var(--hm-text-secondary)] rounded-full animate-spin" />
         </div>
       ) : logs.length === 0 ? (
         <div className="py-8 text-center text-[12.5px] text-[var(--hm-text-tertiary)]">No exports yet.</div>
@@ -2303,7 +2303,7 @@ function UploadSection() {
                 onClick={() => { setTable(t); resetAll(); }}
                 className={`px-3 py-1 rounded-lg text-[12.5px] border transition-colors ${
                   table === t
-                    ? "border-[var(--hm-accent)] text-[var(--hm-accent)] bg-[var(--hm-accent-light)] font-medium"
+                    ? "border-[var(--hm-primary)] text-[var(--hm-text)] bg-[var(--hm-bg-tertiary)] font-medium"
                     : "border-[var(--hm-border)] text-[var(--hm-text-secondary)]"
                 }`}
               >
@@ -2315,11 +2315,11 @@ function UploadSection() {
           {/* File picker */}
           {!parsed && (
             <label className="block cursor-pointer">
-              <div className="border border-dashed border-[var(--hm-border)] rounded-xl px-4 py-8 text-center bg-[var(--hm-bg-secondary)] hover:border-[var(--hm-accent)] transition-colors">
-                <div className="w-10 h-10 rounded-xl bg-[var(--hm-accent-light)] flex items-center justify-center mx-auto mb-3">
+              <div className="border border-dashed border-[var(--hm-border)] rounded-xl px-4 py-8 text-center bg-[var(--hm-bg-secondary)] hover:border-[var(--hm-primary)] transition-colors">
+                <div className="w-10 h-10 rounded-xl bg-[var(--hm-bg-tertiary)] flex items-center justify-center mx-auto mb-3">
                   <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                    <path d="M8 11V3M8 3L5 6M8 3l3 3" stroke="var(--hm-accent)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-                    <path d="M2 11v1a2 2 0 002 2h8a2 2 0 002-2v-1" stroke="var(--hm-accent)" strokeWidth="1.4" strokeLinecap="round" />
+                    <path d="M8 11V3M8 3L5 6M8 3l3 3" stroke="var(--hm-text-secondary)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M2 11v1a2 2 0 002 2h8a2 2 0 002-2v-1" stroke="var(--hm-text-secondary)" strokeWidth="1.4" strokeLinecap="round" />
                   </svg>
                 </div>
                 <p className="text-[13px] font-medium text-[var(--hm-text)]">Click to choose a CSV file</p>
@@ -2336,7 +2336,7 @@ function UploadSection() {
                 <span className="text-[12.5px] text-[var(--hm-text-secondary)]">
                   <strong className="text-[var(--hm-text)]">{fileName}</strong> · {parsed.rows.length.toLocaleString()} rows · {mappedCount} column(s) mapped
                 </span>
-                <button onClick={resetAll} className="text-[12px] text-[var(--hm-text-tertiary)] hover:text-[var(--hm-accent)]">Choose different file</button>
+                <button onClick={resetAll} className="text-[12px] text-[var(--hm-text-tertiary)] hover:text-[var(--hm-link)]">Choose different file</button>
               </div>
               <div className="rounded-lg border border-[var(--hm-border)] overflow-hidden">
                 <div className="max-h-80 overflow-y-auto">
@@ -2398,7 +2398,7 @@ function UploadSection() {
                 </div>
               </div>
               <div className="h-2 rounded-full bg-[var(--hm-bg-tertiary)] overflow-hidden">
-                <div className="h-full rounded-full bg-[var(--hm-accent)] transition-all" style={{ width: `${(progress.done / Math.max(progress.total, 1)) * 100}%` }} />
+                <div className="h-full rounded-full bg-[var(--hm-primary)] transition-all" style={{ width: `${(progress.done / Math.max(progress.total, 1)) * 100}%` }} />
               </div>
             </div>
           )}
@@ -2406,7 +2406,7 @@ function UploadSection() {
           {msg && (
             <div className={`rounded-lg p-3 text-[12.5px] ${
               msg.kind === "ok" ? "bg-[#DCFCE7] text-[#059669]"
-              : msg.kind === "info" ? "bg-[var(--hm-accent-light)] text-[var(--hm-accent)]"
+              : msg.kind === "info" ? "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]"
               : "bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400"
             }`}>{msg.text}</div>
           )}
@@ -2466,11 +2466,11 @@ function UploadJobs() {
     <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
       <div className="px-5 py-4 border-b border-[var(--hm-border)] flex items-center justify-between">
         <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Recent imports</h2>
-        <button onClick={load} className="text-[12px] text-[var(--hm-text-secondary)] hover:text-[var(--hm-accent)]">Refresh</button>
+        <button onClick={load} className="text-[12px] text-[var(--hm-text-secondary)] hover:text-[var(--hm-link)]">Refresh</button>
       </div>
       {loading ? (
         <div className="flex items-center justify-center py-10">
-          <div className="w-4 h-4 border-2 border-[var(--hm-accent)]/30 border-t-[var(--hm-accent)] rounded-full animate-spin" />
+          <div className="w-4 h-4 border-2 border-[var(--hm-border)] border-t-[var(--hm-text-secondary)] rounded-full animate-spin" />
         </div>
       ) : jobs.length === 0 ? (
         <div className="py-8 text-center text-[12.5px] text-[var(--hm-text-tertiary)]">No imports yet.</div>
@@ -3026,7 +3026,7 @@ function EnrichSection() {
           <div className="px-5 py-3 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)]">
             <div className="flex items-center justify-between mb-1.5">
               <p className="text-[11px] font-medium text-[var(--hm-text-tertiary)] uppercase tracking-wide">Recent Enrich jobs</p>
-              <button onClick={loadJobsList} disabled={jobsListLoading} className="text-[11.5px] text-[var(--hm-accent)] hover:underline">
+              <button onClick={loadJobsList} disabled={jobsListLoading} className="text-[11.5px] text-[var(--hm-link)] hover:underline">
                 {jobsListLoading ? "Loading…" : "Refresh"}
               </button>
             </div>
@@ -3068,7 +3068,7 @@ function EnrichSection() {
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] block">Company domain(s)</label>
-                <label className="text-[11.5px] text-[var(--hm-accent)] cursor-pointer hover:underline">
+                <label className="text-[11.5px] text-[var(--hm-link)] cursor-pointer hover:underline">
                   ⬆ Upload CSV
                   <input type="file" accept=".csv,text/csv" onChange={loadDomainsCsv} style={{ display: "none" }} />
                 </label>
@@ -3196,7 +3196,7 @@ function EnrichSection() {
                       <td className="px-4 py-2 border-b border-[var(--hm-border-light)]">{c.company_name || c.account_name || "—"}</td>
                       <td className="px-4 py-2 border-b border-[var(--hm-border-light)] text-[var(--hm-text-secondary)]">{c.email || "—"}</td>
                       <td className="px-4 py-2 border-b border-[var(--hm-border-light)]">
-                        {c.linkedin_url ? <a href={linkedinHref(c.linkedin_url)} target="_blank" rel="noreferrer" className="text-[var(--hm-accent)]">Profile</a> : "—"}
+                        {c.linkedin_url ? <a href={linkedinHref(c.linkedin_url)} target="_blank" rel="noreferrer" className="text-[var(--hm-link)]">Profile</a> : "—"}
                       </td>
                       <td className="px-4 py-2 border-b border-[var(--hm-border-light)]"><EmailStatusPill status={c.email_status} /></td>
                     </tr>
@@ -3209,7 +3209,7 @@ function EnrichSection() {
 
         {phase === "running" && (
           <div className="px-5 py-14 flex flex-col items-center justify-center text-center gap-3">
-            <div className="w-5 h-5 border-2 border-[var(--hm-accent)]/30 border-t-[var(--hm-accent)] rounded-full animate-spin" />
+            <div className="w-5 h-5 border-2 border-[var(--hm-border)] border-t-[var(--hm-text-secondary)] rounded-full animate-spin" />
             <p className="text-[13px] text-[var(--hm-text)]">Enriching via Apify…</p>
             <button onClick={stopSearch} disabled={stopBusy || !runId} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 14px", fontSize: 12.5 }}>
               {stopBusy ? "Stopping…" : "■ Stop"}
@@ -3289,7 +3289,7 @@ function EnrichSection() {
                           <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">{l.company_name || "—"}</td>
                           <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text-secondary)]">{l.email || "—"}</td>
                           <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">
-                            {l.linkedin_url ? <a href={linkedinHref(l.linkedin_url)} target="_blank" rel="noreferrer" className="text-[var(--hm-accent)]">Profile</a> : "—"}
+                            {l.linkedin_url ? <a href={linkedinHref(l.linkedin_url)} target="_blank" rel="noreferrer" className="text-[var(--hm-link)]">Profile</a> : "—"}
                           </td>
                           {Object.keys(scores).length > 0 && (
                             <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">
@@ -4304,11 +4304,11 @@ function ValidateSection() {
         <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
           <div className="px-5 py-3 border-b border-[var(--hm-border)] flex items-center justify-between">
             <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Validation jobs</h2>
-            <button onClick={loadJobs} className="text-[12px] text-[var(--hm-text-secondary)] hover:text-[var(--hm-accent)]">Refresh</button>
+            <button onClick={loadJobs} className="text-[12px] text-[var(--hm-text-secondary)] hover:text-[var(--hm-link)]">Refresh</button>
           </div>
           {jobsLoading ? (
             <div className="flex items-center justify-center py-10">
-              <div className="w-4 h-4 border-2 border-[var(--hm-accent)]/30 border-t-[var(--hm-accent)] rounded-full animate-spin" />
+              <div className="w-4 h-4 border-2 border-[var(--hm-border)] border-t-[var(--hm-text-secondary)] rounded-full animate-spin" />
             </div>
           ) : jobs.length === 0 ? (
             <div className="py-10 text-center text-[12.5px] text-[var(--hm-text-tertiary)]">No validation jobs yet.</div>
@@ -4329,7 +4329,7 @@ function ValidateSection() {
                       <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]"><ValidateJobStatusPill status={j.status} pendingCount={j.pending_count} resolvedAt={j.resolved_at} /></td>
                       <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text-tertiary)] whitespace-nowrap">{fmtDateTimeIST(j.created_at)}</td>
                       <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)] text-right whitespace-nowrap">
-                        <button onClick={() => openJob(j.id)} disabled={openingJobId !== null} className="text-[12px] text-[var(--hm-accent)] mr-3 disabled:opacity-50 inline-flex items-center gap-1.5">
+                        <button onClick={() => openJob(j.id)} disabled={openingJobId !== null} className="text-[12px] text-[var(--hm-link)] mr-3 disabled:opacity-50 inline-flex items-center gap-1.5">
                           {openingJobId === j.id && <span className="w-2.5 h-2.5 border-2 border-current/30 border-t-current rounded-full animate-spin" />}
                           {openingJobId === j.id ? "Opening…" : "Open"}
                         </button>
@@ -4356,13 +4356,13 @@ function ValidateSection() {
                     <span
                       className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold border ${
                         state === "done" ? "bg-[var(--hm-success)] border-[var(--hm-success)] text-white"
-                        : state === "current" ? "bg-[var(--hm-accent)] border-[var(--hm-accent)] text-white"
+                        : state === "current" ? "bg-[var(--hm-primary)] border-[var(--hm-primary)] text-white"
                         : "border-[var(--hm-border)] text-[var(--hm-text-tertiary)]"
                       }`}
                     >
                       {state === "done" ? "✓" : i + 1}
                     </span>
-                    <span className={`text-[12.5px] ${state === "current" ? "font-semibold text-[var(--hm-accent)]" : "text-[var(--hm-text-tertiary)]"}`}>{labels[p]}</span>
+                    <span className={`text-[12.5px] ${state === "current" ? "font-semibold text-[var(--hm-link)]" : "text-[var(--hm-text-tertiary)]"}`}>{labels[p]}</span>
                   </div>
                   {i < arr.length - 1 && <span className="w-6 h-px bg-[var(--hm-border)]" />}
                 </div>
@@ -4379,7 +4379,7 @@ function ValidateSection() {
                 <button
                   onClick={() => setInputMode("patterns")}
                   className={`flex-1 py-2.5 text-[12.5px] font-semibold transition-colors ${
-                    inputMode === "patterns" ? "text-[var(--hm-accent)] bg-[var(--hm-accent-light)]" : "text-[var(--hm-text-tertiary)]"
+                    inputMode === "patterns" ? "text-[var(--hm-link)] bg-[var(--hm-bg-tertiary)]" : "text-[var(--hm-text-tertiary)]"
                   }`}
                 >
                   New patterns
@@ -4387,7 +4387,7 @@ function ValidateSection() {
                 <button
                   onClick={() => setInputMode("retest")}
                   className={`flex-1 py-2.5 text-[12.5px] font-semibold transition-colors ${
-                    inputMode === "retest" ? "text-[var(--hm-accent)] bg-[var(--hm-accent-light)]" : "text-[var(--hm-text-tertiary)]"
+                    inputMode === "retest" ? "text-[var(--hm-link)] bg-[var(--hm-bg-tertiary)]" : "text-[var(--hm-text-tertiary)]"
                   }`}
                 >
                   Email Debounce Validation
@@ -4395,7 +4395,7 @@ function ValidateSection() {
                 <button
                   onClick={() => setInputMode("linkedin")}
                   className={`flex-1 py-2.5 text-[12.5px] font-semibold transition-colors ${
-                    inputMode === "linkedin" ? "text-[var(--hm-accent)] bg-[var(--hm-accent-light)]" : "text-[var(--hm-text-tertiary)]"
+                    inputMode === "linkedin" ? "text-[var(--hm-link)] bg-[var(--hm-bg-tertiary)]" : "text-[var(--hm-text-tertiary)]"
                   }`}
                 >
                   Check LinkedIn
@@ -4429,13 +4429,13 @@ function ValidateSection() {
                       <div className="flex gap-1.5">
                         <button
                           onClick={() => setLinkedinScrapeMode("basic")}
-                          className={`text-[11.5px] px-2.5 py-1 rounded-md border ${linkedinScrapeMode === "basic" ? "border-[var(--hm-accent)] bg-[var(--hm-accent-light)] text-[var(--hm-accent)] font-medium" : "border-[var(--hm-border)] text-[var(--hm-text-secondary)]"}`}
+                          className={`text-[11.5px] px-2.5 py-1 rounded-md border ${linkedinScrapeMode === "basic" ? "border-[var(--hm-primary)] bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)] font-medium" : "border-[var(--hm-border)] text-[var(--hm-text-secondary)]"}`}
                         >
                           Profile details ($4/1k)
                         </button>
                         <button
                           onClick={() => setLinkedinScrapeMode("email")}
-                          className={`text-[11.5px] px-2.5 py-1 rounded-md border ${linkedinScrapeMode === "email" ? "border-[var(--hm-accent)] bg-[var(--hm-accent-light)] text-[var(--hm-accent)] font-medium" : "border-[var(--hm-border)] text-[var(--hm-text-secondary)]"}`}
+                          className={`text-[11.5px] px-2.5 py-1 rounded-md border ${linkedinScrapeMode === "email" ? "border-[var(--hm-primary)] bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)] font-medium" : "border-[var(--hm-border)] text-[var(--hm-text-secondary)]"}`}
                         >
                           Profile details + email ($10/1k)
                         </button>
@@ -4461,7 +4461,7 @@ function ValidateSection() {
                       <div className="p-3 rounded-lg bg-[var(--hm-bg-secondary)] border border-[var(--hm-border)] text-[12.5px] flex items-center justify-between gap-3">
                         {activeLinkedinJob.status === "running" ? (
                           <span className="flex items-center gap-2">
-                            <span className="w-3 h-3 border-2 border-current/30 border-t-current rounded-full animate-spin text-[var(--hm-accent)]" />
+                            <span className="w-3 h-3 border-2 border-current/30 border-t-current rounded-full animate-spin text-[var(--hm-link)]" />
                             Running — {activeLinkedinJob.processed}/{activeLinkedinJob.total} checked. Safe to close this tab; it keeps going and picks back up here.
                           </span>
                         ) : activeLinkedinJob.status === "error" ? (
@@ -4476,7 +4476,7 @@ function ValidateSection() {
                             <button
                               onClick={refreshLinkedinJob}
                               disabled={linkedinJobRefreshing || linkedinJobCancelling}
-                              className="text-[11px] font-medium text-[var(--hm-accent)] hover:underline disabled:opacity-50"
+                              className="text-[11px] font-medium text-[var(--hm-link)] hover:underline disabled:opacity-50"
                             >
                               {linkedinJobRefreshing ? "Refreshing..." : "Refresh"}
                             </button>
@@ -4496,7 +4496,7 @@ function ValidateSection() {
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
                         <p className="text-[11px] font-medium text-[var(--hm-text-tertiary)] uppercase tracking-wide">Recent LinkedIn checks</p>
-                        <button onClick={loadRecentLinkedinJobs} disabled={recentLinkedinJobsLoading} className="text-[11px] text-[var(--hm-accent)]">
+                        <button onClick={loadRecentLinkedinJobs} disabled={recentLinkedinJobsLoading} className="text-[11px] text-[var(--hm-link)]">
                           {recentLinkedinJobsLoading ? "Refreshing..." : "Refresh"}
                         </button>
                       </div>
@@ -4508,10 +4508,10 @@ function ValidateSection() {
                             <div key={j.id} className="relative group/item">
                               <button
                                 onClick={() => watchLinkedinJob(j.id)}
-                                className={`w-full flex items-center justify-between text-left text-[11.5px] px-2 py-1.5 rounded-md border ${activeLinkedinJobId === j.id ? "border-[var(--hm-accent)]" : "border-[var(--hm-border)]"} bg-[var(--hm-bg-primary)] hover:border-[var(--hm-accent)]/40 pr-7`}
+                                className={`w-full flex items-center justify-between text-left text-[11.5px] px-2 py-1.5 rounded-md border ${activeLinkedinJobId === j.id ? "border-[var(--hm-primary)]" : "border-[var(--hm-border)]"} bg-[var(--hm-surface)] hover:border-[var(--hm-primary)]/40 pr-7`}
                               >
                                 <span className="truncate text-[var(--hm-text-secondary)]">{j.label || "Untitled check"}</span>
-                                <span className={`shrink-0 ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium ${j.status === "done" ? "bg-[#DCFCE7] text-[#059669]" : j.status === "error" ? "bg-red-50 text-red-600" : j.status === "cancelled" ? "bg-[var(--hm-border)] text-[var(--hm-text-tertiary)]" : "bg-[var(--hm-accent-light)] text-[var(--hm-accent)]"}`}>
+                                <span className={`shrink-0 ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium ${j.status === "done" ? "bg-[#DCFCE7] text-[#059669]" : j.status === "error" ? "bg-red-50 text-red-600" : j.status === "cancelled" ? "bg-[var(--hm-border)] text-[var(--hm-text-tertiary)]" : "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]"}`}>
                                   {j.status === "done" ? `done — ${j.total}/${j.total}` : j.status === "error" ? "error" : j.status === "cancelled" ? `stopped — ${j.processed}/${j.total}` : `running — ${j.processed}/${j.total}`}
                                 </span>
                               </button>
@@ -4535,7 +4535,7 @@ function ValidateSection() {
                         {linkedinSummary.uncertain > 0 && (
                           <span className="text-[#B45309]">? {linkedinSummary.uncertain} uncertain — needs review</span>
                         )}
-                        <span className="text-[var(--hm-accent)]">+ {linkedinSummary.created} new contact(s) created</span>
+                        <span className="text-[var(--hm-link)]">+ {linkedinSummary.created} new contact(s) created</span>
                         <span className="text-[var(--hm-text-tertiary)]">— {linkedinSummary.notFound} profile(s) not found</span>
                         <button
                           onClick={() => downloadCSV(linkedinResults.map((r) => ({
@@ -4567,7 +4567,7 @@ function ValidateSection() {
                               <tr key={i} className="hover:bg-[var(--hm-surface-hover)]">
                                 <td className="px-3 py-2 border-b border-[var(--hm-border-light)]">{[r.firstName, r.lastName].filter(Boolean).join(" ") || "—"}</td>
                                 <td className="px-3 py-2 border-b border-[var(--hm-border-light)]">
-                                  {r.linkedinUrl ? <a href={linkedinHref(r.linkedinUrl)} target="_blank" rel="noreferrer" className="text-[var(--hm-accent)]">Profile</a> : "—"}
+                                  {r.linkedinUrl ? <a href={linkedinHref(r.linkedinUrl)} target="_blank" rel="noreferrer" className="text-[var(--hm-link)]">Profile</a> : "—"}
                                 </td>
                                 <td className="px-3 py-2 border-b border-[var(--hm-border-light)]">{r.company || "—"}</td>
                                 <td className="px-3 py-2 border-b border-[var(--hm-border-light)]">{r.dbCompany || "—"}</td>
@@ -4601,7 +4601,7 @@ function ValidateSection() {
                                     })()
                                     : r.match === true ? <span className="text-[#059669] font-medium">✓ Same</span>
                                     : r.match === false ? <span className="text-red-500 font-medium">✗ Different — marked moved</span>
-                                    : r.created ? <span className="text-[var(--hm-accent)] font-medium">+ Created</span>
+                                    : r.created ? <span className="text-[var(--hm-link)] font-medium">+ Created</span>
                                     : <span className="text-[var(--hm-text-tertiary)]">No DB match</span>}
                                 </td>
                                 {linkedinScrapeMode === "email" && (
@@ -4727,7 +4727,7 @@ function ValidateSection() {
                             <button
                               key={s}
                               onClick={() => setRetestStatuses((prev) => active ? prev.filter((x) => x !== s) : [...prev, s])}
-                              className={`text-[11.5px] px-2.5 py-1 rounded-md border capitalize ${active ? "border-[var(--hm-accent)] bg-[var(--hm-accent-light)] text-[var(--hm-accent)] font-medium" : "border-[var(--hm-border)] text-[var(--hm-text-secondary)]"}`}
+                              className={`text-[11.5px] px-2.5 py-1 rounded-md border capitalize ${active ? "border-[var(--hm-primary)] bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)] font-medium" : "border-[var(--hm-border)] text-[var(--hm-text-secondary)]"}`}
                             >
                               {s}
                             </button>
@@ -4751,7 +4751,7 @@ function ValidateSection() {
                       </div>
                     </div>
 
-                    <div className="text-[13px] font-semibold text-[var(--hm-accent)]">
+                    <div className="text-[13px] font-semibold text-[var(--hm-link)]">
                       {retestCounting ? "Counting…" : retestCount != null ? `${retestCount.toLocaleString()} contact(s) match` : "—"}
                     </div>
 
@@ -4814,7 +4814,7 @@ function ValidateSection() {
                       <div className="pt-1">
                         <div className="flex items-center justify-between mb-1">
                           <p className="text-[11px] font-medium text-[var(--hm-text-tertiary)] uppercase tracking-wide">Recent Debounce jobs</p>
-                          <button onClick={loadRetestJobsList} disabled={retestJobsListLoading} className="text-[11px] text-[var(--hm-accent)]">
+                          <button onClick={loadRetestJobsList} disabled={retestJobsListLoading} className="text-[11px] text-[var(--hm-link)]">
                             {retestJobsListLoading ? "Refreshing…" : "Refresh"}
                           </button>
                         </div>
@@ -4829,11 +4829,11 @@ function ValidateSection() {
                             {retestJobsList.map((j) => (
                               <div
                                 key={j.id}
-                                className="w-full flex items-center gap-1.5 text-left text-[11.5px] px-2 py-1.5 rounded-md bg-[var(--hm-bg-primary)] border border-[var(--hm-border)] hover:border-[var(--hm-accent)]/40"
+                                className="w-full flex items-center gap-1.5 text-left text-[11.5px] px-2 py-1.5 rounded-md bg-[var(--hm-surface)] border border-[var(--hm-border)] hover:border-[var(--hm-primary)]/40"
                               >
                                 <button onClick={() => checkRetestJobStatus(j.id)} disabled={statusChecking} className="flex-1 min-w-0 flex items-center justify-between text-left">
                                   <span className="truncate text-[var(--hm-text-secondary)]">#{j.id} {j.label || "Untitled"}</span>
-                                  <span className={`shrink-0 ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium ${j.status === "done" ? "bg-[#DCFCE7] text-[#059669]" : j.status === "error" ? "bg-red-50 text-red-600" : "bg-[var(--hm-accent-light)] text-[var(--hm-accent)]"}`}>
+                                  <span className={`shrink-0 ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium ${j.status === "done" ? "bg-[#DCFCE7] text-[#059669]" : j.status === "error" ? "bg-red-50 text-red-600" : "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]"}`}>
                                     {j.status === "done" ? `done — ${j.validated}/${j.processed}` : j.status === "error" ? "error" : `running — ${j.processed} checked`}
                                   </span>
                                 </button>
@@ -5248,7 +5248,7 @@ function CheckDbSection() {
                 <button
                   key={t.id}
                   onClick={() => switchTable(t.id)}
-                  className={`px-3 py-1.5 rounded-md text-[12.5px] font-medium transition-colors ${table === t.id ? "bg-[#4361ee] text-white" : "text-[var(--hm-text-secondary)] hover:bg-[var(--hm-bg-secondary)]"}`}
+                  className={`px-3 py-1.5 rounded-md text-[12.5px] font-medium transition-colors ${table === t.id ? "bg-[var(--hm-primary)] text-white" : "text-[var(--hm-text-secondary)] hover:bg-[var(--hm-bg-secondary)]"}`}
                 >
                   {t.label}
                 </button>
@@ -5257,7 +5257,7 @@ function CheckDbSection() {
             <select
               value={column}
               onChange={(e) => switchColumn(e.target.value)}
-              className="h-[34px] px-2.5 rounded-lg border border-[var(--hm-border)] bg-[var(--hm-bg-primary)] text-[12.5px]"
+              className="h-[34px] px-2.5 rounded-lg border border-[var(--hm-border)] bg-[var(--hm-surface)] text-[12.5px]"
             >
               {columnOptions.map((c) => <option key={c.id} value={c.id}>Check by {c.label}</option>)}
             </select>
@@ -5274,7 +5274,7 @@ function CheckDbSection() {
                 <select
                   value={csvColumn}
                   onChange={(e) => { setCsvColumn(e.target.value); setResult(null); setError(""); }}
-                  className="h-[30px] px-2 rounded-md border border-[var(--hm-border)] bg-[var(--hm-bg-primary)] text-[12px] flex-1 min-w-0"
+                  className="h-[30px] px-2 rounded-md border border-[var(--hm-border)] bg-[var(--hm-surface)] text-[12px] flex-1 min-w-0"
                 >
                   {csvHeaders.map((h) => <option key={h} value={h}>{h}</option>)}
                 </select>
@@ -5450,7 +5450,7 @@ function ChipToggle({ options, labels, selected, onChange }: {
             onClick={() => toggle(o)}
             className={`text-[11.5px] px-2.5 py-1 rounded-md border transition-colors ${
               active
-                ? "border-[var(--hm-accent)] bg-[var(--hm-accent-light)] text-[var(--hm-accent)] font-medium"
+                ? "border-[var(--hm-primary)] bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)] font-medium"
                 : "border-[var(--hm-border)] text-[var(--hm-text-secondary)]"
             }`}
           >
@@ -5492,7 +5492,7 @@ function SearchableMultiSelect({ options, selected, onChange, placeholder = "Sel
         className="min-h-[38px] w-full rounded-lg border border-[var(--hm-border)] bg-[var(--hm-bg)] px-2 py-1.5 flex flex-wrap gap-1 items-center cursor-text"
       >
         {selected.map((v) => (
-          <span key={v} className="inline-flex items-center gap-1 text-[11.5px] px-2 py-0.5 rounded-md bg-[var(--hm-accent-light)] text-[var(--hm-accent)] font-medium">
+          <span key={v} className="inline-flex items-center gap-1 text-[11.5px] px-2 py-0.5 rounded-md bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)] font-medium">
             {v}
             <button type="button" onClick={(e) => { e.stopPropagation(); toggle(v); }} className="hover:text-red-500" style={{ lineHeight: 1 }}>×</button>
           </span>
@@ -5515,7 +5515,7 @@ function SearchableMultiSelect({ options, selected, onChange, placeholder = "Sel
               <div
                 key={o}
                 onClick={() => toggle(o)}
-                className={`px-3 py-1.5 text-[13px] cursor-pointer hover:bg-[var(--hm-bg-secondary)] ${selected.includes(o) ? "text-[var(--hm-accent)] font-medium" : "text-[var(--hm-text)]"}`}
+                className={`px-3 py-1.5 text-[13px] cursor-pointer hover:bg-[var(--hm-bg-secondary)] ${selected.includes(o) ? "text-[var(--hm-link)] font-medium" : "text-[var(--hm-text)]"}`}
               >
                 {selected.includes(o) ? "✓ " : ""}{o}
               </div>
