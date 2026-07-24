@@ -173,6 +173,11 @@ export async function POST(req: NextRequest) {
       if (!config || !config.emailCount || config.emailCount < 1 || config.emailCount > 7) {
         return NextResponse.json({ error: "emailCount must be 1-7" }, { status: 400 });
       }
+      // A bulk CSV batch becomes an Instantly campaign — the campaign name is this same label
+      // (see send/route.ts), so an untitled batch would mean an untitled campaign too.
+      if (mode === "bulk" && !label?.trim()) {
+        return NextResponse.json({ error: "A campaign title is required for a bulk CSV batch" }, { status: 400 });
+      }
 
       const job = await db.emailSequenceJob.create({
         data: {
