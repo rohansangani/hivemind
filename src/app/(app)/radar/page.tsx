@@ -70,8 +70,8 @@ export default function RadarPage() {
     return (
       <div className="flex-1 overflow-auto p-6">
         <div className="max-w-4xl mx-auto">
-          <div className="rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 p-6 text-center">
-            <p className="text-[14px] text-amber-700 dark:text-amber-400">
+          <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--tag-yellow-bg)] dark:bg-[var(--tag-yellow-bg)]/20 dark:border-[var(--hm-border)] p-6 text-center">
+            <p className="text-[14px] text-[var(--tag-yellow-fg)] dark:text-[var(--tag-yellow-fg)]">
               You don&apos;t have access to Radar. Ask a workspace owner or admin to grant it from your Team profile.
             </p>
           </div>
@@ -218,7 +218,7 @@ function RadarActivityLogSection() {
           <div className="w-5 h-5 border-2 border-[var(--hm-border)] border-t-[var(--hm-text-secondary)] rounded-full animate-spin" />
         </div>
       ) : error ? (
-        <div className="m-4 rounded-lg border border-red-200 bg-red-50 dark:bg-red-900/20 dark:border-red-800 p-4 text-[13px] text-red-600 dark:text-red-400">
+        <div className="m-4 rounded-lg border border-[var(--hm-border)] bg-[var(--tag-red-bg)] dark:bg-[var(--tag-red-bg)]/20 dark:border-[var(--hm-border)] p-4 text-[13px] text-[var(--tag-red-fg)] dark:text-[var(--tag-red-fg)]">
           {error}
         </div>
       ) : rows.length === 0 ? (
@@ -298,20 +298,24 @@ function fmt(n: number): string {
   return (n == null || isNaN(n)) ? "0" : n.toLocaleString();
 }
 
+// Data-viz legend for the three verticals — drawn from the locked tag palette so the
+// bars/dots match chips elsewhere instead of using off-brand brights.
 const VERTICAL_COLORS: Record<string, string> = {
-  B2B: "#4361EE",
-  D2C: "#00b4b2",
-  US: "#F59E0B",
-  unassigned: "#94a3b8",
+  B2B: "var(--tag-blue-fg)",
+  D2C: "var(--tag-purple-fg)",
+  US: "var(--tag-orange-fg)",
+  unassigned: "var(--hm-text-tertiary)",
 };
 
+// Email-status colours = status meaning, mapped to the palette's status/tag tokens
+// (kept stable with the same mapping used everywhere else).
 const STATUS_META: Array<{ key: string; label: string; color: string }> = [
-  { key: "safe to send", label: "Safe", color: "#059669" },
-  { key: "verified", label: "Verified", color: "#4361EE" },
-  { key: "risky", label: "Risky", color: "#d97706" },
-  { key: "invalid", label: "Invalid", color: "#dc2626" },
-  { key: "unknown", label: "Unknown", color: "#6b7280" },
-  { key: "unvalidated", label: "Unvalidated", color: "#94a3b8" },
+  { key: "safe to send", label: "Safe", color: "var(--tag-green-fg)" },
+  { key: "verified", label: "Verified", color: "var(--tag-blue-fg)" },
+  { key: "risky", label: "Risky", color: "var(--tag-yellow-fg)" },
+  { key: "invalid", label: "Invalid", color: "var(--tag-red-fg)" },
+  { key: "unknown", label: "Unknown", color: "var(--hm-text-tertiary)" },
+  { key: "unvalidated", label: "Unvalidated", color: "var(--hm-text-tertiary)" },
 ];
 
 function RadarDashboard() {
@@ -344,7 +348,7 @@ function RadarDashboard() {
 
   if (error) {
     return (
-      <div className="rounded-xl border border-red-200 bg-red-50 dark:bg-red-900/20 dark:border-red-800 p-5 text-[13px] text-red-600 dark:text-red-400">
+      <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--tag-red-bg)] dark:bg-[var(--tag-red-bg)]/20 dark:border-[var(--hm-border)] p-5 text-[13px] text-[var(--tag-red-fg)] dark:text-[var(--tag-red-fg)]">
         Couldn&apos;t load radar data: {error}
       </div>
     );
@@ -368,8 +372,8 @@ function RadarDashboard() {
       {/* Hero cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
         <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)] px-5 py-4 flex items-center gap-4">
-          <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "linear-gradient(135deg,#1A1A2E,#4361EE)" }}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>
+          <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 bg-[var(--hm-bg-tertiary)]">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--hm-text-secondary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>
           </div>
           <div>
             <p className="text-[24px] font-semibold text-[var(--hm-text)] tabular-nums leading-tight">{fmt(stats.total_accounts)}</p>
@@ -377,8 +381,8 @@ function RadarDashboard() {
           </div>
         </div>
         <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)] px-5 py-4 flex items-center gap-4">
-          <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "linear-gradient(135deg,#0d7a6e,#00b4b2)" }}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
+          <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 bg-[var(--hm-bg-tertiary)]">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--hm-text-secondary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
           </div>
           <div>
             <p className="text-[24px] font-semibold text-[var(--hm-text)] tabular-nums leading-tight">{fmt(stats.total_contacts)}</p>
@@ -422,7 +426,7 @@ function RadarDashboard() {
                   <div className="h-full rounded-full transition-all" style={{ width: `${(n / cvMax) * 100}%`, background: VERTICAL_COLORS[key] }} />
                 </div>
                 <span className="text-[12px] text-[var(--hm-text-secondary)] w-14 text-right tabular-nums">{fmt(n)}</span>
-                <span className="text-[10.5px] text-red-500 w-16 text-right flex-shrink-0">{blank ? `${fmt(blank)} blank` : ""}</span>
+                <span className="text-[10.5px] text-[var(--tag-red-fg)] w-16 text-right flex-shrink-0">{blank ? `${fmt(blank)} blank` : ""}</span>
               </div>
             ))}
           </div>
@@ -462,7 +466,7 @@ function ContactStatusMatrix({ stats }: { stats: RadarStats }) {
       <div className="px-5 py-3.5 border-b border-[var(--hm-border)]">
         <h2 className="text-[13px] font-semibold text-[var(--hm-text)]">Contacts by Vertical &amp; Email Status</h2>
         <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-0.5">
-          <span className="font-semibold" style={{ color: "#4361EE" }}>Verified</span> = rescued from Risky/Unknown via a real Instantly test send that delivered.
+          <span className="font-semibold" style={{ color: "var(--tag-blue-fg)" }}>Verified</span> = rescued from Risky/Unknown via a real Instantly test send that delivered.
         </p>
       </div>
       <div className="overflow-x-auto">
@@ -490,7 +494,7 @@ function ContactStatusMatrix({ stats }: { stats: RadarStats }) {
                   })}
                   <td className="text-right px-3 py-2 font-semibold tabular-nums">{fmt(rowTotal(v))}</td>
                   <td className="text-right px-3 py-2 text-[var(--hm-text-tertiary)] tabular-nums border-l border-[var(--hm-border)]">{dv?.domains ? fmt(dv.domains) : "—"}</td>
-                  <td className="text-right px-3 py-2 font-semibold tabular-nums" style={{ color: "#4361EE" }}>{dv?.avg_per_domain ?? "—"}</td>
+                  <td className="text-right px-3 py-2 font-semibold tabular-nums" style={{ color: "var(--tag-blue-fg)" }}>{dv?.avg_per_domain ?? "—"}</td>
                 </tr>
               );
             })}
@@ -503,7 +507,7 @@ function ContactStatusMatrix({ stats }: { stats: RadarStats }) {
               ))}
               <td className="text-right px-3 py-2 font-bold tabular-nums">{fmt(grand)}</td>
               <td className="text-right px-3 py-2 font-semibold text-[var(--hm-text-tertiary)] tabular-nums border-l border-[var(--hm-border)]">{fmt(totDomains)}</td>
-              <td className="text-right px-3 py-2 font-bold tabular-nums" style={{ color: "#4361EE" }}>{grandAvg}</td>
+              <td className="text-right px-3 py-2 font-bold tabular-nums" style={{ color: "var(--tag-blue-fg)" }}>{grandAvg}</td>
             </tr>
           </tfoot>
         </table>
@@ -546,12 +550,12 @@ function AccountCoverageTable({ coverage }: { coverage: AccountCoverageRow[] }) 
                 <tr key={v} className="border-b border-[var(--hm-border-light)]">
                   <td className="px-3 py-2 font-medium">{v === "Unassigned" ? <span className="text-[11px] px-2 py-0.5 rounded-md font-medium bg-[var(--hm-bg-tertiary)] text-[var(--hm-text-tertiary)]">Unassigned</span> : <VerticalBadge v={v} />}</td>
                   <td className="text-right px-3 py-2 font-semibold tabular-nums">{fmt(total)}</td>
-                  <td className="text-right px-3 py-2 tabular-nums" style={{ color: "#059669" }}>{fmt(withC)}</td>
+                  <td className="text-right px-3 py-2 tabular-nums" style={{ color: "var(--tag-green-fg)" }}>{fmt(withC)}</td>
                   <td className="text-right px-3 py-2 text-[var(--hm-text-tertiary)] tabular-nums">{fmt(empty)}</td>
                   <td className="px-3 py-2">
                     <div className="flex items-center gap-2">
                       <div className="flex-1 h-1.5 rounded-full bg-[var(--hm-bg-tertiary)] overflow-hidden">
-                        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: "#059669" }} />
+                        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: "var(--tag-green-fg)" }} />
                       </div>
                       <span className="text-[11px] text-[var(--hm-text-tertiary)] w-8 text-right">{pct}%</span>
                     </div>
@@ -564,7 +568,7 @@ function AccountCoverageTable({ coverage }: { coverage: AccountCoverageRow[] }) 
             <tr className="border-t-2 border-[var(--hm-border)]">
               <td className="px-3 py-2 font-semibold text-[var(--hm-text-tertiary)]">Total</td>
               <td className="text-right px-3 py-2 font-bold tabular-nums">{fmt(tt)}</td>
-              <td className="text-right px-3 py-2 font-semibold tabular-nums" style={{ color: "#059669" }}>{fmt(tw)}</td>
+              <td className="text-right px-3 py-2 font-semibold tabular-nums" style={{ color: "var(--tag-green-fg)" }}>{fmt(tw)}</td>
               <td className="text-right px-3 py-2 font-semibold text-[var(--hm-text-tertiary)] tabular-nums">{fmt(tt - tw)}</td>
               <td className="px-3 py-2 text-[11px] text-[var(--hm-text-tertiary)]">{tt ? Math.round((tw / tt) * 100) : 0}% covered</td>
             </tr>
@@ -826,7 +830,7 @@ function DataTable<T extends { id: string }>({
           <div className="w-5 h-5 border-2 border-[var(--hm-border)] border-t-[var(--hm-text-secondary)] rounded-full animate-spin" />
         </div>
       ) : error ? (
-        <div className="m-4 rounded-lg border border-red-200 bg-red-50 dark:bg-red-900/20 dark:border-red-800 p-4 text-[13px] text-red-600 dark:text-red-400">
+        <div className="m-4 rounded-lg border border-[var(--hm-border)] bg-[var(--tag-red-bg)] dark:bg-[var(--tag-red-bg)]/20 dark:border-[var(--hm-border)] p-4 text-[13px] text-[var(--tag-red-fg)] dark:text-[var(--tag-red-fg)]">
           {error}
         </div>
       ) : rows.length === 0 ? (
@@ -936,12 +940,8 @@ interface AccountRow {
   updated_at: string | null;
 }
 
-const LOGO_COLORS = ["#4361EE", "#7C3AED", "#059669", "#F59E0B", "#EF4444", "#0EA5E9"];
-function logoColor(seed: string): string {
-  let h = 0;
-  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
-  return LOGO_COLORS[h % LOGO_COLORS.length];
-}
+// Company avatars are neutral tiles (uniform bg + initials) — no per-company colour;
+// colour is reserved for tags/status/legends.
 function initials(name: string): string {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase() || "?";
 }
@@ -1000,7 +1000,7 @@ function fmtDateTimeIST(v: string | null): React.ReactNode {
 
 function YesNo({ v }: { v: boolean | null }) {
   if (v == null) return <span className="text-[var(--hm-text-tertiary)]">—</span>;
-  return v ? <span style={{ color: "#059669" }}>Yes</span> : <span className="text-[var(--hm-text-tertiary)]">No</span>;
+  return v ? <span style={{ color: "var(--tag-green-fg)" }}>Yes</span> : <span className="text-[var(--hm-text-tertiary)]">No</span>;
 }
 
 // "unvalidated" is never a literal DB value — it's this app's convention for
@@ -1137,7 +1137,7 @@ function EditRecordPanel<T extends { id: string }>({
           <button onClick={onClose} className="hm-btn hm-btn-secondary flex-shrink-0" style={{ height: 30, width: 30, padding: 0, fontSize: 14 }}>×</button>
         </div>
         <div className="flex-1 overflow-y-auto p-5 space-y-3">
-          {error && <div className="rounded-lg p-3 text-[12.5px] bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</div>}
+          {error && <div className="rounded-lg p-3 text-[12.5px] bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)] dark:bg-[var(--tag-red-bg)]/20 dark:text-[var(--tag-red-fg)]">{error}</div>}
           {fields.map((f) => (
             <div key={f.key}>
               <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">{f.label}</label>
@@ -1246,10 +1246,7 @@ function AccountsSection() {
         const nm = r.name || r.domain || "—";
         return (
           <div className="flex items-center gap-2.5">
-            <div
-              className="w-6 h-6 rounded-md flex items-center justify-center text-[9px] font-bold text-white flex-shrink-0"
-              style={{ background: logoColor(nm) }}
-            >
+            <div className="w-6 h-6 rounded-md flex items-center justify-center text-[9px] font-bold flex-shrink-0 bg-[var(--hm-bg-tertiary)] text-[var(--hm-text-secondary)]">
               {initials(nm)}
             </div>
             <div className="min-w-0 font-medium truncate">{nm}</div>
@@ -1326,7 +1323,7 @@ function AccountsSection() {
                     Unmark
                   </button>
                   {isAdmin && (
-                    <button onClick={() => deleteForever(sel, clearSelection, count)} className="hm-btn" style={{ height: 28, padding: "0 10px", fontSize: 11.5, background: "#FEE2E2", color: "#DC2626" }}>
+                    <button onClick={() => deleteForever(sel, clearSelection, count)} className="hm-btn" style={{ height: 28, padding: "0 10px", fontSize: 11.5, background: "var(--tag-red-bg)", color: "var(--tag-red-fg)" }}>
                       Delete permanently
                     </button>
                   )}
@@ -1402,7 +1399,7 @@ function AccountContactsPanel({ account, onClose }: { account: AccountRow; onClo
               <div className="w-5 h-5 border-2 border-[var(--hm-border)] border-t-[var(--hm-text-secondary)] rounded-full animate-spin" />
             </div>
           ) : error ? (
-            <div className="m-4 rounded-lg border border-red-200 bg-red-50 dark:bg-red-900/20 dark:border-red-800 p-4 text-[13px] text-red-600 dark:text-red-400">{error}</div>
+            <div className="m-4 rounded-lg border border-[var(--hm-border)] bg-[var(--tag-red-bg)] dark:bg-[var(--tag-red-bg)]/20 dark:border-[var(--hm-border)] p-4 text-[13px] text-[var(--tag-red-fg)] dark:text-[var(--tag-red-fg)]">{error}</div>
           ) : rows.length === 0 ? (
             <div className="py-16 text-center text-[13px] text-[var(--hm-text-tertiary)]">No contacts for this account.</div>
           ) : (
@@ -1472,10 +1469,10 @@ function EmailStatusPill({ status }: { status: string | null }) {
   // risky, invalid, unknown. Anything blank means never validated.
   let cls = "bg-[var(--hm-bg-tertiary)] text-[var(--hm-text-tertiary)]";
   let label = status || "Unvalidated";
-  if (s === "safe to send") { cls = "bg-[#DCFCE7] text-[#059669]"; label = "Safe to send"; }
+  if (s === "safe to send") { cls = "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]"; label = "Safe to send"; }
   else if (s === "verified") { cls = "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]"; label = "Verified"; }
-  else if (s === "risky") { cls = "bg-[#FEF3C7] text-[#B45309]"; label = "Risky"; }
-  else if (s === "invalid" || s === "bounced") { cls = "bg-[#FEE2E2] text-[#DC2626]"; label = s === "bounced" ? "Bounced" : "Invalid"; }
+  else if (s === "risky") { cls = "bg-[var(--tag-yellow-bg)] text-[var(--tag-yellow-fg)]"; label = "Risky"; }
+  else if (s === "invalid" || s === "bounced") { cls = "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)]"; label = s === "bounced" ? "Bounced" : "Invalid"; }
   else if (s === "unknown") { cls = "bg-[var(--hm-bg-tertiary)] text-[var(--hm-text-tertiary)]"; label = "Unknown"; }
   return <span className={`text-[11px] px-2 py-0.5 rounded-md font-medium whitespace-nowrap ${cls}`}>{label}</span>;
 }
@@ -1581,7 +1578,7 @@ function ContactsSection() {
                     Unmark
                   </button>
                   {isAdmin && (
-                    <button onClick={() => deleteForever(sel, clearSelection, count)} className="hm-btn" style={{ height: 28, padding: "0 10px", fontSize: 11.5, background: "#FEE2E2", color: "#DC2626" }}>
+                    <button onClick={() => deleteForever(sel, clearSelection, count)} className="hm-btn" style={{ height: 28, padding: "0 10px", fontSize: 11.5, background: "var(--tag-red-bg)", color: "var(--tag-red-fg)" }}>
                       Delete permanently
                     </button>
                   )}
@@ -1906,8 +1903,8 @@ function ExportSection() {
           <div
             className={`rounded-lg p-3 text-[12.5px] ${
               msg.kind === "ok"
-                ? "bg-[#DCFCE7] text-[#059669]"
-                : "bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400"
+                ? "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]"
+                : "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)] dark:bg-[var(--tag-red-bg)]/20 dark:text-[var(--tag-red-fg)]"
             }`}
           >
             {msg.text}
@@ -2392,7 +2389,7 @@ function UploadSection() {
                 <span>Uploading…</span>
                 <div className="flex items-center gap-3">
                   <span className="tabular-nums">{progress.done.toLocaleString()} / {progress.total.toLocaleString()}</span>
-                  <button onClick={stop} disabled={stopping} className="text-red-500 hover:underline">
+                  <button onClick={stop} disabled={stopping} className="text-[var(--tag-red-fg)] hover:underline">
                     {stopping ? "Stopping…" : "■ Stop"}
                   </button>
                 </div>
@@ -2405,9 +2402,9 @@ function UploadSection() {
 
           {msg && (
             <div className={`rounded-lg p-3 text-[12.5px] ${
-              msg.kind === "ok" ? "bg-[#DCFCE7] text-[#059669]"
+              msg.kind === "ok" ? "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]"
               : msg.kind === "info" ? "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]"
-              : "bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400"
+              : "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)] dark:bg-[var(--tag-red-bg)]/20 dark:text-[var(--tag-red-fg)]"
             }`}>{msg.text}</div>
           )}
 
@@ -2507,9 +2504,9 @@ function UploadJobs() {
 function UploadStatusPill({ status }: { status: string }) {
   const s = (status || "").toLowerCase();
   let cls = "bg-[var(--hm-bg-tertiary)] text-[var(--hm-text-tertiary)]";
-  if (s === "done") cls = "bg-[#DCFCE7] text-[#059669]";
-  else if (s === "running") cls = "bg-[#FEF3C7] text-[#B45309]";
-  else if (s === "stopped") cls = "bg-red-50 text-red-600";
+  if (s === "done") cls = "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]";
+  else if (s === "running") cls = "bg-[var(--tag-yellow-bg)] text-[var(--tag-yellow-fg)]";
+  else if (s === "stopped") cls = "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)]";
   return <span className={`text-[11px] px-2 py-0.5 rounded-md font-medium ${cls}`}>{status}</span>;
 }
 
@@ -2531,12 +2528,12 @@ function UploadStatusPill({ status }: { status: string }) {
 function ValidateJobStatusPill({ status, pendingCount, resolvedAt }: { status: string; pendingCount?: number; resolvedAt?: string | null }) {
   const s = (status || "").toLowerCase();
   let label = "Draft", cls = "bg-[var(--hm-bg-tertiary)] text-[var(--hm-text-tertiary)]";
-  if (s === "done") { label = "Completed"; cls = "bg-[#DCFCE7] text-[#059669]"; }
+  if (s === "done") { label = "Completed"; cls = "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]"; }
   else if (s === "sent" || s === "checked") {
-    if ((pendingCount ?? 0) > 0) { label = "Running"; cls = "bg-[#FEF3C7] text-[#B45309]"; }
+    if ((pendingCount ?? 0) > 0) { label = "Running"; cls = "bg-[var(--tag-yellow-bg)] text-[var(--tag-yellow-fg)]"; }
     else if (resolvedAt && Date.now() - new Date(resolvedAt).getTime() < 72 * 60 * 60 * 1000) {
-      label = "Verifying"; cls = "bg-[#DBEAFE] text-[#1D4ED8]";
-    } else { label = "Completed"; cls = "bg-[#DCFCE7] text-[#059669]"; }
+      label = "Verifying"; cls = "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]";
+    } else { label = "Completed"; cls = "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]"; }
   }
   return <span className={`text-[11px] px-2 py-0.5 rounded-md font-medium ${cls}`}>{label}</span>;
 }
@@ -3030,7 +3027,7 @@ function EnrichSection() {
                 {jobsListLoading ? "Loading…" : "Refresh"}
               </button>
             </div>
-            {jobsListError && <p className="text-[12px] text-red-500">{jobsListError}</p>}
+            {jobsListError && <p className="text-[12px] text-[var(--tag-red-fg)]">{jobsListError}</p>}
             <div className="space-y-1 max-h-40 overflow-y-auto">
               {jobsList.map((j) => (
                 <button
@@ -3145,7 +3142,7 @@ function EnrichSection() {
               <input type="number" value={fetchCount} min={1} max={200} onChange={(e) => setFetchCount(Number(e.target.value) || 25)} style={{ width: 120 }} />
             </div>
 
-            {error && <div className="rounded-lg p-3 text-[12.5px] bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</div>}
+            {error && <div className="rounded-lg p-3 text-[12.5px] bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)] dark:bg-[var(--tag-red-bg)]/20 dark:text-[var(--tag-red-fg)]">{error}</div>}
 
             <button onClick={startSearch} disabled={searchBusy || !jobLabel.trim()} className="hm-btn hm-btn-primary" style={{ height: 38, padding: "0 18px", fontSize: 13 }}>
               {searchBusy ? "Enriching…" : "Enrich"}
@@ -3249,8 +3246,8 @@ function EnrichSection() {
 
             {phase === "saved" ? (
               <div className="px-5 py-6 text-center">
-                <div className="w-9 h-9 rounded-xl bg-[#DCFCE7] flex items-center justify-center mx-auto mb-2">
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 5" stroke="#059669" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                <div className="w-9 h-9 rounded-xl bg-[var(--tag-green-bg)] flex items-center justify-center mx-auto mb-2">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 5" stroke="var(--tag-green-fg)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
                 </div>
                 <p className="text-[13px] font-medium text-[var(--hm-text)]">
                   {savedCount} contact(s) saved and validated
@@ -3298,8 +3295,8 @@ function EnrichSection() {
                                   title={sc.reason}
                                   className="text-[11px] px-2 py-0.5 rounded-md font-medium"
                                   style={{
-                                    background: sc.score >= 70 ? "#DCFCE7" : sc.score >= 40 ? "#FEF3C7" : "#FEE2E2",
-                                    color: sc.score >= 70 ? "#059669" : sc.score >= 40 ? "#B45309" : "#DC2626",
+                                    background: sc.score >= 70 ? "var(--tag-green-bg)" : sc.score >= 40 ? "var(--tag-yellow-bg)" : "var(--tag-red-bg)",
+                                    color: sc.score >= 70 ? "var(--tag-green-fg)" : sc.score >= 40 ? "var(--tag-yellow-fg)" : "var(--tag-red-fg)",
                                   }}
                                 >
                                   {sc.score}
@@ -4333,7 +4330,7 @@ function ValidateSection() {
                           {openingJobId === j.id && <span className="w-2.5 h-2.5 border-2 border-current/30 border-t-current rounded-full animate-spin" />}
                           {openingJobId === j.id ? "Opening…" : "Open"}
                         </button>
-                        <button onClick={() => deleteJob(j.id)} disabled={openingJobId !== null} className="text-[12px] text-red-500 disabled:opacity-50">Delete</button>
+                        <button onClick={() => deleteJob(j.id)} disabled={openingJobId !== null} className="text-[12px] text-[var(--tag-red-fg)] disabled:opacity-50">Delete</button>
                       </td>
                     </tr>
                   ))}
@@ -4370,7 +4367,7 @@ function ValidateSection() {
             })}
           </div>
 
-          {error && <div className="rounded-lg p-3 text-[12.5px] bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</div>}
+          {error && <div className="rounded-lg p-3 text-[12.5px] bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)] dark:bg-[var(--tag-red-bg)]/20 dark:text-[var(--tag-red-fg)]">{error}</div>}
 
           {phase === "input" && (
             <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
@@ -4465,11 +4462,11 @@ function ValidateSection() {
                             Running — {activeLinkedinJob.processed}/{activeLinkedinJob.total} checked. Safe to close this tab; it keeps going and picks back up here.
                           </span>
                         ) : activeLinkedinJob.status === "error" ? (
-                          <span className="text-red-500">Job stopped: {activeLinkedinJob.error}</span>
+                          <span className="text-[var(--tag-red-fg)]">Job stopped: {activeLinkedinJob.error}</span>
                         ) : activeLinkedinJob.status === "cancelled" ? (
                           <span className="text-[var(--hm-text-tertiary)]">Stopped — {activeLinkedinJob.processed}/{activeLinkedinJob.total} checked before you stopped it.</span>
                         ) : (
-                          <span className="text-[#059669]">Done — {activeLinkedinJob.processed}/{activeLinkedinJob.total} checked.</span>
+                          <span className="text-[var(--tag-green-fg)]">Done — {activeLinkedinJob.processed}/{activeLinkedinJob.total} checked.</span>
                         )}
                         {activeLinkedinJob.status === "running" && (
                           <span className="shrink-0 flex items-center gap-3">
@@ -4483,7 +4480,7 @@ function ValidateSection() {
                             <button
                               onClick={cancelLinkedinJob}
                               disabled={linkedinJobRefreshing || linkedinJobCancelling}
-                              className="text-[11px] font-medium text-red-500 hover:underline disabled:opacity-50"
+                              className="text-[11px] font-medium text-[var(--tag-red-fg)] hover:underline disabled:opacity-50"
                             >
                               {linkedinJobCancelling ? "Stopping..." : "Stop"}
                             </button>
@@ -4511,13 +4508,13 @@ function ValidateSection() {
                                 className={`w-full flex items-center justify-between text-left text-[11.5px] px-2 py-1.5 rounded-md border ${activeLinkedinJobId === j.id ? "border-[var(--hm-primary)]" : "border-[var(--hm-border)]"} bg-[var(--hm-surface)] hover:border-[var(--hm-primary)]/40 pr-7`}
                               >
                                 <span className="truncate text-[var(--hm-text-secondary)]">{j.label || "Untitled check"}</span>
-                                <span className={`shrink-0 ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium ${j.status === "done" ? "bg-[#DCFCE7] text-[#059669]" : j.status === "error" ? "bg-red-50 text-red-600" : j.status === "cancelled" ? "bg-[var(--hm-border)] text-[var(--hm-text-tertiary)]" : "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]"}`}>
+                                <span className={`shrink-0 ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium ${j.status === "done" ? "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]" : j.status === "error" ? "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)]" : j.status === "cancelled" ? "bg-[var(--hm-border)] text-[var(--hm-text-tertiary)]" : "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]"}`}>
                                   {j.status === "done" ? `done — ${j.total}/${j.total}` : j.status === "error" ? "error" : j.status === "cancelled" ? `stopped — ${j.processed}/${j.total}` : `running — ${j.processed}/${j.total}`}
                                 </span>
                               </button>
                               <button
                                 onClick={(e) => deleteLinkedinJob(j.id, e)}
-                                className="absolute top-1.5 right-1.5 opacity-0 group-hover/item:opacity-100 transition-opacity w-5 h-5 rounded flex items-center justify-center text-[var(--hm-text-tertiary)] hover:bg-red-50 hover:text-red-500"
+                                className="absolute top-1.5 right-1.5 opacity-0 group-hover/item:opacity-100 transition-opacity w-5 h-5 rounded flex items-center justify-center text-[var(--hm-text-tertiary)] hover:bg-[var(--tag-red-bg)] hover:text-[var(--tag-red-fg)]"
                                 title="Delete"
                               >
                                 ✕
@@ -4530,10 +4527,10 @@ function ValidateSection() {
 
                     {linkedinSummary && (
                       <div className="flex items-center gap-4 text-[12.5px] flex-wrap">
-                        <span className="text-[#059669]">✓ {linkedinSummary.matched} same company</span>
-                        <span className="text-red-500">✗ {linkedinSummary.mismatched} different company (marked moved)</span>
+                        <span className="text-[var(--tag-green-fg)]">✓ {linkedinSummary.matched} same company</span>
+                        <span className="text-[var(--tag-red-fg)]">✗ {linkedinSummary.mismatched} different company (marked moved)</span>
                         {linkedinSummary.uncertain > 0 && (
-                          <span className="text-[#B45309]">? {linkedinSummary.uncertain} uncertain — needs review</span>
+                          <span className="text-[var(--tag-yellow-fg)]">? {linkedinSummary.uncertain} uncertain — needs review</span>
                         )}
                         <span className="text-[var(--hm-link)]">+ {linkedinSummary.created} new contact(s) created</span>
                         <span className="text-[var(--hm-text-tertiary)]">— {linkedinSummary.notFound} profile(s) not found</span>
@@ -4577,7 +4574,7 @@ function ValidateSection() {
                                       const isResolving = !!r.dbContactId && resolvingContactIds.has(r.dbContactId);
                                       return (
                                         <div className="flex items-center gap-2">
-                                          <span className="text-[#B45309] font-medium whitespace-nowrap">
+                                          <span className="text-[var(--tag-yellow-fg)] font-medium whitespace-nowrap">
                                             {isResolving ? "Saving…" : "? Possible match — review"}
                                           </span>
                                           <button
@@ -4592,15 +4589,15 @@ function ValidateSection() {
                                             onClick={() => resolveLinkedinMatch(r, true)}
                                             disabled={isResolving}
                                             className="hm-btn"
-                                            style={{ height: 22, padding: "0 8px", fontSize: 10.5, background: "#FEE2E2", color: "#DC2626", opacity: isResolving ? 0.5 : 1, cursor: isResolving ? "default" : "pointer" }}
+                                            style={{ height: 22, padding: "0 8px", fontSize: 10.5, background: "var(--tag-red-bg)", color: "var(--tag-red-fg)", opacity: isResolving ? 0.5 : 1, cursor: isResolving ? "default" : "pointer" }}
                                           >
                                             {isResolving ? "…" : "Moved"}
                                           </button>
                                         </div>
                                       );
                                     })()
-                                    : r.match === true ? <span className="text-[#059669] font-medium">✓ Same</span>
-                                    : r.match === false ? <span className="text-red-500 font-medium">✗ Different — marked moved</span>
+                                    : r.match === true ? <span className="text-[var(--tag-green-fg)] font-medium">✓ Same</span>
+                                    : r.match === false ? <span className="text-[var(--tag-red-fg)] font-medium">✗ Different — marked moved</span>
                                     : r.created ? <span className="text-[var(--hm-link)] font-medium">+ Created</span>
                                     : <span className="text-[var(--hm-text-tertiary)]">No DB match</span>}
                                 </td>
@@ -4689,7 +4686,7 @@ function ValidateSection() {
                                 {[p.first_name, p.middle_name, p.last_name].filter(Boolean).join(" ")}
                                 <span className="text-[var(--hm-text-tertiary)]"> · {p.domain}</span>
                               </span>
-                              <button onClick={() => removePerson(i)} className="text-red-500 hover:text-red-600" style={{ fontSize: 14, lineHeight: 1 }} title="Remove">×</button>
+                              <button onClick={() => removePerson(i)} className="text-[var(--tag-red-fg)] hover:text-[var(--tag-red-fg)]" style={{ fontSize: 14, lineHeight: 1 }} title="Remove">×</button>
                             </div>
                           ))}
                         </div>
@@ -4761,7 +4758,7 @@ function ValidateSection() {
                       if (!retestStatuses.length) missing.push("at least one status to include");
                       if (retestCount === 0) missing.push("contacts matching these filters (currently 0)");
                       return missing.length ? (
-                        <p className="text-[11.5px] text-amber-600 dark:text-amber-400">Fill in {missing.join(" and ")} before running a job below.</p>
+                        <p className="text-[11.5px] text-[var(--tag-yellow-fg)] dark:text-[var(--tag-yellow-fg)]">Fill in {missing.join(" and ")} before running a job below.</p>
                       ) : null;
                     })()}
 
@@ -4819,7 +4816,7 @@ function ValidateSection() {
                           </button>
                         </div>
                         {retestJobsListError ? (
-                          <p className="text-[11.5px] text-red-500">{retestJobsListError}</p>
+                          <p className="text-[11.5px] text-[var(--tag-red-fg)]">{retestJobsListError}</p>
                         ) : retestJobsListLoading && !retestJobsList.length ? (
                           <p className="text-[11.5px] text-[var(--hm-text-tertiary)]">Loading…</p>
                         ) : !retestJobsList.length ? (
@@ -4833,7 +4830,7 @@ function ValidateSection() {
                               >
                                 <button onClick={() => checkRetestJobStatus(j.id)} disabled={statusChecking} className="flex-1 min-w-0 flex items-center justify-between text-left">
                                   <span className="truncate text-[var(--hm-text-secondary)]">#{j.id} {j.label || "Untitled"}</span>
-                                  <span className={`shrink-0 ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium ${j.status === "done" ? "bg-[#DCFCE7] text-[#059669]" : j.status === "error" ? "bg-red-50 text-red-600" : "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]"}`}>
+                                  <span className={`shrink-0 ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium ${j.status === "done" ? "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]" : j.status === "error" ? "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)]" : "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]"}`}>
                                     {j.status === "done" ? `done — ${j.validated}/${j.processed}` : j.status === "error" ? "error" : `running — ${j.processed} checked`}
                                   </span>
                                 </button>
@@ -4842,7 +4839,7 @@ function ValidateSection() {
                                     onClick={(e) => { e.stopPropagation(); cancelRetestJob(j.id); }}
                                     disabled={cancellingRetestJobId === j.id}
                                     title="Stop this job"
-                                    className="shrink-0 text-red-500 hover:text-red-600 disabled:opacity-50"
+                                    className="shrink-0 text-[var(--tag-red-fg)] hover:text-[var(--tag-red-fg)] disabled:opacity-50"
                                     style={{ fontSize: 14, lineHeight: 1, padding: "0 2px" }}
                                   >
                                     {cancellingRetestJobId === j.id ? "…" : "■"}
@@ -4854,7 +4851,7 @@ function ValidateSection() {
                         )}
                       </div>
                       {debounceMsg && (
-                        <p className={`text-[12px] ${debounceMsg.kind === "err" ? "text-red-500" : "text-[#059669]"}`}>{debounceMsg.text}</p>
+                        <p className={`text-[12px] ${debounceMsg.kind === "err" ? "text-[var(--tag-red-fg)]" : "text-[var(--tag-green-fg)]"}`}>{debounceMsg.text}</p>
                       )}
                     </div>
 
@@ -4966,8 +4963,8 @@ function ValidateSection() {
 
               {phase === "sent" && checkResult && (
                 <div className="px-5 py-3 border-b border-[var(--hm-border)] flex gap-4 text-[12.5px]">
-                  <span className="text-[#059669]">✓ {checkResult.valid} valid</span>
-                  <span className="text-red-500">✗ {checkResult.bounced} bounced</span>
+                  <span className="text-[var(--tag-green-fg)]">✓ {checkResult.valid} valid</span>
+                  <span className="text-[var(--tag-red-fg)]">✗ {checkResult.bounced} bounced</span>
                   <span className="text-[var(--hm-text-tertiary)]">… {checkResult.pending} pending</span>
                   {!checkResult.allResolved && <span className="text-[var(--hm-text-tertiary)]">— {autoRefresh ? "refreshing automatically" : "check again in a minute"}</span>}
                 </div>
@@ -4975,8 +4972,8 @@ function ValidateSection() {
 
               {phase === "done" ? (
                 <div className="px-5 py-10 text-center">
-                  <div className="w-11 h-11 rounded-xl bg-[#DCFCE7] flex items-center justify-center mx-auto mb-3">
-                    <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 5" stroke="#059669" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                  <div className="w-11 h-11 rounded-xl bg-[var(--tag-green-bg)] flex items-center justify-center mx-auto mb-3">
+                    <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M3 8l3.5 3.5L13 5" stroke="var(--tag-green-fg)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
                   </div>
                   <p className="text-[13px] font-medium text-[var(--hm-text)]">
                     {savedCount} verified email(s) saved to contacts{savedInvalidCount > 0 ? `, ${savedInvalidCount} bounced email(s) marked invalid` : ""}.
@@ -5013,7 +5010,7 @@ function ValidateSection() {
                             {c.confidence != null ? (
                               <span className="inline-flex items-center gap-1.5">
                                 <span className="inline-block w-10 h-1.5 rounded-full overflow-hidden bg-[var(--hm-bg-tertiary)]">
-                                  <span className="block h-full rounded-full" style={{ width: `${c.confidence}%`, background: c.confidence >= 70 ? "#10B981" : c.confidence >= 40 ? "#F59E0B" : "#EF4444" }} />
+                                  <span className="block h-full rounded-full" style={{ width: `${c.confidence}%`, background: c.confidence >= 70 ? "var(--tag-green-fg)" : c.confidence >= 40 ? "var(--tag-yellow-fg)" : "var(--tag-red-fg)" }} />
                                 </span>
                                 {c.confidence}
                               </span>
@@ -5021,15 +5018,15 @@ function ValidateSection() {
                           </td>
                           <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">{c.source === "ai" ? "AI" : "Mechanical"}</td>
                           <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">
-                            {c.bounce_status === "valid" ? <span className="text-[#059669]">✓ valid</span>
-                              : c.bounce_status === "bounced" ? <span className="text-red-500">✗ bounced</span>
+                            {c.bounce_status === "valid" ? <span className="text-[var(--tag-green-fg)]">✓ valid</span>
+                              : c.bounce_status === "bounced" ? <span className="text-[var(--tag-red-fg)]">✗ bounced</span>
                               : phase === "sent" ? <span className="text-[var(--hm-text-tertiary)]">… pending</span>
                               : <span className="text-[var(--hm-text-tertiary)]">—</span>}
                           </td>
                           <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">
-                            {c.debounce_status === "safe to send" ? <span className="text-[#059669]">✓ safe</span>
-                              : c.debounce_status === "invalid" ? <span className="text-red-500">✗ invalid</span>
-                              : c.debounce_status === "risky" ? <span className="text-[#F59E0B]">⚠ risky</span>
+                            {c.debounce_status === "safe to send" ? <span className="text-[var(--tag-green-fg)]">✓ safe</span>
+                              : c.debounce_status === "invalid" ? <span className="text-[var(--tag-red-fg)]">✗ invalid</span>
+                              : c.debounce_status === "risky" ? <span className="text-[var(--tag-yellow-fg)]">⚠ risky</span>
                               : c.debounce_status === "unknown" ? <span className="text-[var(--hm-text-tertiary)]">? unknown</span>
                               : <span className="text-[var(--hm-text-tertiary)]">—</span>}
                           </td>
@@ -5267,7 +5264,7 @@ function CheckDbSection() {
             <div className="rounded-lg border border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] p-3 space-y-2">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[12.5px] text-[var(--hm-text-secondary)] truncate">📄 {csvFileName} — {csvRows.length} row(s)</span>
-                <button onClick={clearCsv} className="text-[11.5px] text-red-500 hover:text-red-600 flex-shrink-0">Remove</button>
+                <button onClick={clearCsv} className="text-[11.5px] text-[var(--tag-red-fg)] hover:text-[var(--tag-red-fg)] flex-shrink-0">Remove</button>
               </div>
               <div className="flex items-center gap-2">
                 <label className="text-[12px] text-[var(--hm-text-tertiary)] flex-shrink-0">Which column has the {activeColumn.label.toLowerCase()}?</label>
@@ -5305,7 +5302,7 @@ function CheckDbSection() {
               {busy ? "Checking…" : "Check DB"}
             </button>
           </div>
-          {error && <div className="rounded-lg p-3 text-[12.5px] bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</div>}
+          {error && <div className="rounded-lg p-3 text-[12.5px] bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)] dark:bg-[var(--tag-red-bg)]/20 dark:text-[var(--tag-red-fg)]">{error}</div>}
         </div>
       </div>
 
@@ -5494,7 +5491,7 @@ function SearchableMultiSelect({ options, selected, onChange, placeholder = "Sel
         {selected.map((v) => (
           <span key={v} className="inline-flex items-center gap-1 text-[11.5px] px-2 py-0.5 rounded-md bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)] font-medium">
             {v}
-            <button type="button" onClick={(e) => { e.stopPropagation(); toggle(v); }} className="hover:text-red-500" style={{ lineHeight: 1 }}>×</button>
+            <button type="button" onClick={(e) => { e.stopPropagation(); toggle(v); }} className="hover:text-[var(--tag-red-fg)]" style={{ lineHeight: 1 }}>×</button>
           </span>
         ))}
         <input
@@ -5607,7 +5604,7 @@ function IcpBaseSection() {
             {aiBusy ? "Parsing…" : "✨ Auto-fill ICP"}
           </button>
         </div>
-        {aiError && <p className="text-[12px] text-red-500 mt-2">{aiError}</p>}
+        {aiError && <p className="text-[12px] text-[var(--tag-red-fg)] mt-2">{aiError}</p>}
         {draft.reasoning && <p className="text-[12px] text-[var(--hm-text-tertiary)] mt-2">{draft.reasoning}</p>}
       </div>
 
@@ -5710,7 +5707,7 @@ function IcpBaseSection() {
           <button onClick={save} className="hm-btn hm-btn-primary" style={{ height: 38, padding: "0 18px", fontSize: 13 }}>
             💾 Save {vertical} ICP
           </button>
-          {saved && <span className="text-[12.5px] text-[#059669]">Saved.</span>}
+          {saved && <span className="text-[12.5px] text-[var(--tag-green-fg)]">Saved.</span>}
         </div>
       </div>
 
