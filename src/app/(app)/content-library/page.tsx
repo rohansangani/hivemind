@@ -40,7 +40,7 @@ export default function ContentLibraryPage() {
   const [markets, setMarkets] = useState<{ name: string }[]>([]);
   const [personas, setPersonas] = useState<{ title: string }[]>([]);
   const [competitors, setCompetitors] = useState<{ name: string }[]>([]);
-  const [view, setView] = useState<"tile" | "list" | "grouped">("tile");
+  const [view, setView] = useState<"tile" | "list" | "grouped" | "compact">("tile");
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [showUpload, setShowUpload] = useState(false);
   const [uploadName, setUploadName] = useState("");
@@ -368,6 +368,99 @@ export default function ContentLibraryPage() {
   const severityColor = (s: string) => s === "high" ? "text-[var(--tag-red-fg)] bg-[var(--tag-red-bg)] border-[var(--hm-border)]" : s === "medium" ? "text-[var(--tag-yellow-fg)] bg-[var(--tag-yellow-bg)] border-[var(--hm-border)]" : "text-[var(--tag-gray-fg)] bg-[var(--tag-gray-bg)] border-[var(--hm-border)]";
   const dimensionOrder = ["voice", "terminology", "messaging", "personality", "completeness"];
 
+  // Ordered, capped tag list for compact/tile surfaces (product → market → persona → competitor)
+  const assetTags = (a: Asset) => [
+    ...a.productTags.map((t) => ({ t, cls: "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]" })),
+    ...a.marketTags.map((t) => ({ t, cls: "bg-[var(--hm-bg-secondary)] text-[var(--hm-text-tertiary)]" })),
+    ...(a.personaTags || []).map((t) => ({ t, cls: "bg-[var(--tag-purple-bg)] text-[var(--tag-purple-fg)]" })),
+    ...(a.competitorTags || []).map((t) => ({ t, cls: "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)]" })),
+  ];
+
+  // Open file / Open source / Details — shared across list + compact rows
+  const rowActions = (a: Asset) => (
+    <div className="flex items-center gap-0.5 justify-end" onClick={(e) => e.stopPropagation()}>
+      {a.fileUrl && (
+        <a href={`/view/${a.id}`} target="_blank" rel="noopener" title="Open file" className="w-6 h-6 flex items-center justify-center rounded-md text-[var(--hm-text-secondary)] hover:text-[var(--hm-text)] hover:bg-[var(--hm-bg-secondary)] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-link)]">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M7 2H3a1 1 0 00-1 1v10a1 1 0 001 1h10a1 1 0 001-1V9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /><path d="M10 2h4v4M14 2L8 8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        </a>
+      )}
+      {a.sourceUrl && (
+        <a href={a.sourceUrl} target="_blank" rel="noopener noreferrer" title="Open source file" className="w-6 h-6 flex items-center justify-center rounded-md text-[var(--hm-link)] hover:bg-[var(--tag-blue-bg)] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-link)]">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M6.5 3.5H3.5a1 1 0 00-1 1v8a1 1 0 001 1h8a1 1 0 001-1v-3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /><path d="M9.5 2.5h4v4M14 2l-6.5 6.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        </a>
+      )}
+      <button onClick={() => openPanel(a)} title="Details" className="w-6 h-6 flex items-center justify-center rounded-md text-[var(--hm-text-secondary)] hover:text-[var(--hm-text)] hover:bg-[var(--hm-bg-secondary)] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-link)]">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+      </button>
+    </div>
+  );
+
+  // Thumbnail + hover overlay (Open file / Source file), shared by tile + grouped
+  const assetThumb = (a: Asset) => (
+    a.fileUrl ? (
+      <a href={`/view/${a.id}`} target="_blank" rel="noopener" className="block h-[80px] relative overflow-hidden cursor-pointer">
+        <button onClick={(e) => toggleSelect(a.id, e)} title="Select" className={"absolute top-2 left-2 z-10 w-5 h-5 rounded border-2 flex items-center justify-center transition-all " + (selectedIds.has(a.id) ? "bg-[var(--hm-primary)] border-[var(--hm-primary)]" : "bg-[var(--hm-surface)]/80 border-white/50 opacity-0 group-hover:opacity-100")} style={{ backdropFilter: "blur(4px)" }}>
+          {selectedIds.has(a.id) && <svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="M3 8l4 4 6-6" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /></svg>}
+        </button>
+        {isImage(a.fileType || "") ? (
+          <img src={a.fileUrl} alt={a.name} className="w-full h-full object-cover object-left-top" />
+        ) : (
+          <div className="w-full h-full bg-[var(--hm-bg-secondary)] flex items-center justify-center">
+            <div className={"w-10 h-10 rounded-xl flex items-center justify-center text-[12px] font-medium " + typeColor(a.fileType || "")}>{(a.fileType || "?").toUpperCase().slice(0, 4)}</div>
+          </div>
+        )}
+        <span className="absolute top-2 text-[10px] px-2 py-0.5 bg-black/50 text-white rounded-md font-medium uppercase backdrop-blur-sm" style={{ left: "30px" }}>{a.fileType || "FILE"}</span>
+        {a.brandScore !== null ? <span className={"absolute top-2 right-2 text-[10px] px-2 py-0.5 text-white rounded-md font-medium " + scoreBg(a.brandScore)}>{Math.round(a.brandScore)}%</span> : isAutoReviewing ? <span className="absolute top-2 right-2 flex items-center gap-1 text-[10px] px-2 py-0.5 bg-[var(--tag-blue-fg)]/80 text-white rounded-md font-medium backdrop-blur-sm"><span className="w-2 h-2 border border-white/50 border-t-white rounded-full animate-spin inline-block shrink-0" />Analyzing</span> : <span className="absolute top-2 right-2 text-[10px] px-2 py-0.5 bg-black/40 text-white/70 rounded-md font-medium backdrop-blur-sm">Pending</span>}
+        {a.scoreStatus === "analyzed" && <span className="absolute bottom-2 left-2 text-[9px] px-1.5 py-0.5 bg-[var(--tag-purple-fg)]/80 text-white rounded-md backdrop-blur-sm">AI Reviewed</span>}
+        <span className="absolute inset-0 transition-all flex items-center justify-center gap-2" style={{ background: "rgba(0,0,0,0)" }} onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = "rgba(0,0,0,0.45)"} onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = "rgba(0,0,0,0)"}>
+          <span className="opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5" style={{ background: "#ffffff", color: "var(--hm-text)" }}>
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M7 2H3a1 1 0 00-1 1v10a1 1 0 001 1h10a1 1 0 001-1V9" stroke="var(--hm-text)" strokeWidth="1.5" strokeLinecap="round" /><path d="M10 2h4v4M14 2L8 8" stroke="var(--hm-text)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            Open file
+          </span>
+          {a.sourceUrl && <a href={a.sourceUrl} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5" style={{ background: "var(--hm-primary)", color: "#ffffff" }}>
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M6.5 3.5H3.5a1 1 0 00-1 1v8a1 1 0 001 1h8a1 1 0 001-1v-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /><path d="M9.5 2.5h4v4M14 2l-6.5 6.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            Source file
+          </a>}
+        </span>
+      </a>
+    ) : (
+      <div className="h-[80px] relative overflow-hidden">
+        <div className="w-full h-full bg-[var(--hm-bg-secondary)] flex items-center justify-center">
+          <div className={"w-10 h-10 rounded-xl flex items-center justify-center text-[12px] font-medium " + typeColor(a.fileType || "")}>{(a.fileType || "?").toUpperCase().slice(0, 4)}</div>
+        </div>
+        <span className="absolute top-2 text-[10px] px-2 py-0.5 bg-black/50 text-white rounded-md font-medium uppercase backdrop-blur-sm" style={{ left: "30px" }}>{a.fileType || "FILE"}</span>
+        {a.brandScore !== null ? <span className={"absolute top-2 right-2 text-[10px] px-2 py-0.5 text-white rounded-md font-medium " + scoreBg(a.brandScore)}>{Math.round(a.brandScore)}%</span> : isAutoReviewing ? <span className="absolute top-2 right-2 flex items-center gap-1 text-[10px] px-2 py-0.5 bg-[var(--tag-blue-fg)]/80 text-white rounded-md font-medium backdrop-blur-sm"><span className="w-2 h-2 border border-white/50 border-t-white rounded-full animate-spin inline-block shrink-0" />Analyzing</span> : <span className="absolute top-2 right-2 text-[10px] px-2 py-0.5 bg-black/40 text-white/70 rounded-md font-medium backdrop-blur-sm">Pending</span>}
+        {a.scoreStatus === "analyzed" && <span className="absolute bottom-2 left-2 text-[9px] px-1.5 py-0.5 bg-[var(--tag-purple-fg)]/80 text-white rounded-md backdrop-blur-sm">AI Reviewed</span>}
+      </div>
+    )
+  );
+
+  // Full tile card — shared by tile + grouped views
+  const assetTile = (a: Asset) => {
+    const tags = assetTags(a);
+    const shown = tags.slice(0, 2);
+    const overflow = tags.length - shown.length;
+    return (
+      <div key={a.id} className={"bg-[var(--hm-surface)] border rounded-xl overflow-hidden transition-all group " + (selectedIds.has(a.id) ? "border-[var(--hm-primary)] ring-2 ring-[var(--hm-link)]/30" : panelAsset?.id === a.id ? "border-[var(--hm-primary)] ring-1 ring-[var(--hm-link)]/20" : "border-[var(--hm-border)] hover:border-[var(--hm-primary)]/40")} style={{ boxShadow: "var(--hm-shadow-card)" }}>
+        {assetThumb(a)}
+        <div className="p-3">
+          <p className="text-[13px] font-medium truncate">{a.name}</p>
+          <div className="flex flex-wrap gap-1 mt-1.5 mb-1.5">
+            {shown.map(({ t, cls }, i) => <span key={i} className={"text-[10px] px-1.5 py-0.5 rounded-md " + cls}>{t}</span>)}
+            {overflow > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-[var(--hm-bg-secondary)] text-[var(--hm-text-tertiary)]" title={tags.slice(2).map((x) => x.t).join(", ")}>+{overflow}</span>}
+          </div>
+          <div className="flex items-center justify-between">
+            <p className="text-[10px] text-[var(--hm-text-tertiary)]">{timeAgo(a.createdAt)}</p>
+            <button onClick={(e) => { e.stopPropagation(); openPanel(a); }} className="text-[10px] text-[var(--hm-link)] hover:underline flex items-center gap-1">
+              View details
+              <svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="var(--hm-primary)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <ModuleTour moduleId="content-library" />
@@ -452,6 +545,7 @@ export default function ContentLibraryPage() {
             <button onClick={() => setView("tile")} title="Tile view" className={"w-7 h-7 flex items-center justify-center rounded-md transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-link)] " + (view === "tile" ? "bg-[var(--hm-surface)]" : "hover:bg-[var(--hm-surface)]/60")}><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1" stroke={view === "tile" ? "var(--hm-primary)" : "#999"} strokeWidth="1.1" /><rect x="9" y="1" width="6" height="6" rx="1" stroke={view === "tile" ? "var(--hm-primary)" : "#999"} strokeWidth="1.1" /><rect x="1" y="9" width="6" height="6" rx="1" stroke={view === "tile" ? "var(--hm-primary)" : "#999"} strokeWidth="1.1" /><rect x="9" y="9" width="6" height="6" rx="1" stroke={view === "tile" ? "var(--hm-primary)" : "#999"} strokeWidth="1.1" /></svg></button>
             <button onClick={() => setView("list")} title="List view" className={"w-7 h-7 flex items-center justify-center rounded-md transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-link)] " + (view === "list" ? "bg-[var(--hm-surface)]" : "hover:bg-[var(--hm-surface)]/60")}><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M2 8h12M2 12h12" stroke={view === "list" ? "var(--hm-primary)" : "#999"} strokeWidth="1.2" strokeLinecap="round" /></svg></button>
             <button onClick={() => setView("grouped")} title="Grouped by product" className={"w-7 h-7 flex items-center justify-center rounded-md transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-link)] " + (view === "grouped" ? "bg-[var(--hm-surface)]" : "hover:bg-[var(--hm-surface)]/60")}><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M1 4.5h5.5l1 1.5H15v7H1V4.5z" stroke={view === "grouped" ? "var(--hm-primary)" : "#999"} strokeWidth="1.1" strokeLinejoin="round" /><path d="M1 7.5h14" stroke={view === "grouped" ? "var(--hm-primary)" : "#999"} strokeWidth="1.1" /></svg></button>
+            <button onClick={() => setView("compact")} title="Compact view" className={"w-7 h-7 flex items-center justify-center rounded-md transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-link)] " + (view === "compact" ? "bg-[var(--hm-surface)]" : "hover:bg-[var(--hm-surface)]/60")}><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 3.5h12M2 6.5h12M2 9.5h12M2 12.5h12" stroke={view === "compact" ? "var(--hm-primary)" : "#999"} strokeWidth="1.1" strokeLinecap="round" /></svg></button>
           </div>
         </div>
 
@@ -583,80 +677,19 @@ export default function ContentLibraryPage() {
             {/* Tile view */}
             {assets.length > 0 && view === "tile" && (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {assets.map((a) => (
-                  <div key={a.id} className={"bg-[var(--hm-surface)] border rounded-xl overflow-hidden transition-all group " + (selectedIds.has(a.id) ? "border-[var(--hm-primary)] ring-2 ring-[var(--hm-link)]/30" : panelAsset?.id === a.id ? "border-[var(--hm-primary)] ring-1 ring-[var(--hm-link)]/20" : "border-[var(--hm-border)] hover:border-[var(--hm-primary)]/40")} style={{ boxShadow: "var(--hm-shadow-card)" }}>
-                    {/* Thumbnail — click opens viewer */}
-                    {a.fileUrl ? (
-                      <a href={`/view/${a.id}`} target="_blank" rel="noopener" className="block h-[110px] relative overflow-hidden cursor-pointer">
-                        <button onClick={(e) => toggleSelect(a.id, e)} title="Select" className={"absolute top-2 left-2 z-10 w-5 h-5 rounded border-2 flex items-center justify-center transition-all " + (selectedIds.has(a.id) ? "bg-[var(--hm-primary)] border-[var(--hm-primary)]" : "bg-[var(--hm-surface)]/80 border-white/50 opacity-0 group-hover:opacity-100")} style={{ backdropFilter: "blur(4px)" }}>
-                          {selectedIds.has(a.id) && <svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="M3 8l4 4 6-6" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/></svg>}
-                        </button>
-                        {isImage(a.fileType || "") ? (
-                          <img src={a.fileUrl} alt={a.name} className="w-full h-full object-cover object-left-top" />
-                        ) : (
-                          <div className="w-full h-full bg-[var(--hm-bg-secondary)] flex items-center justify-center">
-                            <div className={"w-12 h-12 rounded-xl flex items-center justify-center text-[14px] font-medium " + typeColor(a.fileType || "")}>{(a.fileType || "?").toUpperCase().slice(0, 4)}</div>
-                          </div>
-                        )}
-                        <span className="absolute top-2 text-[10px] px-2 py-0.5 bg-black/50 text-white rounded-md font-medium uppercase backdrop-blur-sm" style={{ left: "30px" }}>{a.fileType || "FILE"}</span>
-                        {a.brandScore !== null ? <span className={"absolute top-2 right-2 text-[10px] px-2 py-0.5 text-white rounded-md font-medium " + scoreBg(a.brandScore)}>{Math.round(a.brandScore)}%</span> : isAutoReviewing ? <span className="absolute top-2 right-2 flex items-center gap-1 text-[10px] px-2 py-0.5 bg-[var(--tag-blue-fg)]/80 text-white rounded-md font-medium backdrop-blur-sm"><span className="w-2 h-2 border border-white/50 border-t-white rounded-full animate-spin inline-block shrink-0" />Analyzing</span> : <span className="absolute top-2 right-2 text-[10px] px-2 py-0.5 bg-black/40 text-white/70 rounded-md font-medium backdrop-blur-sm">Pending</span>}
-                        {a.scoreStatus === "analyzed" && <span className="absolute bottom-2 left-2 text-[9px] px-1.5 py-0.5 bg-[var(--tag-purple-fg)]/80 text-white rounded-md backdrop-blur-sm">AI Reviewed</span>}
-                        <span className="absolute inset-0 transition-all flex items-center justify-center gap-2" style={{ background: "rgba(0,0,0,0)" }} onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "rgba(0,0,0,0.45)"} onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "rgba(0,0,0,0)"}>
-                          <span className="opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5" style={{ background: "#ffffff", color: "var(--hm-text)" }}>
-                            <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M7 2H3a1 1 0 00-1 1v10a1 1 0 001 1h10a1 1 0 001-1V9" stroke="var(--hm-text)" strokeWidth="1.5" strokeLinecap="round" /><path d="M10 2h4v4M14 2L8 8" stroke="var(--hm-text)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
-                            Open file
-                          </span>
-                          {a.sourceUrl && <a href={a.sourceUrl} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5" style={{ background: "var(--hm-primary)", color: "#ffffff" }}>
-                            <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M6.5 3.5H3.5a1 1 0 00-1 1v8a1 1 0 001 1h8a1 1 0 001-1v-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><path d="M9.5 2.5h4v4M14 2l-6.5 6.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                            Source file
-                          </a>}
-                        </span>
-                      </a>
-                    ) : (
-                      <div className="h-[110px] relative overflow-hidden">
-                        <div className="w-full h-full bg-[var(--hm-bg-secondary)] flex items-center justify-center">
-                          <div className={"w-12 h-12 rounded-xl flex items-center justify-center text-[14px] font-medium " + typeColor(a.fileType || "")}>{(a.fileType || "?").toUpperCase().slice(0, 4)}</div>
-                        </div>
-                        <span className="absolute top-2 text-[10px] px-2 py-0.5 bg-black/50 text-white rounded-md font-medium uppercase backdrop-blur-sm" style={{ left: "30px" }}>{a.fileType || "FILE"}</span>
-                        {a.brandScore !== null ? <span className={"absolute top-2 right-2 text-[10px] px-2 py-0.5 text-white rounded-md font-medium " + scoreBg(a.brandScore)}>{Math.round(a.brandScore)}%</span> : isAutoReviewing ? <span className="absolute top-2 right-2 flex items-center gap-1 text-[10px] px-2 py-0.5 bg-[var(--tag-blue-fg)]/80 text-white rounded-md font-medium backdrop-blur-sm"><span className="w-2 h-2 border border-white/50 border-t-white rounded-full animate-spin inline-block shrink-0" />Analyzing</span> : <span className="absolute top-2 right-2 text-[10px] px-2 py-0.5 bg-black/40 text-white/70 rounded-md font-medium backdrop-blur-sm">Pending</span>}
-                        {a.scoreStatus === "analyzed" && <span className="absolute bottom-2 left-2 text-[9px] px-1.5 py-0.5 bg-[var(--tag-purple-fg)]/80 text-white rounded-md backdrop-blur-sm">AI Reviewed</span>}
-                      </div>
-                    )}
-                    {/* Card body */}
-                    <div className="p-3.5">
-                      <p className="text-[13px] font-medium truncate">{a.name}</p>
-                      <div className="flex flex-wrap gap-1 mt-2 mb-2">
-                        {a.productTags.map((t) => <span key={t} className="text-[9px] px-1.5 py-0.5 bg-[var(--tag-blue-bg)] text-[var(--hm-text)] rounded-md">{t}</span>)}
-                        {a.marketTags.map((t) => <span key={t} className="text-[9px] px-1.5 py-0.5 bg-[var(--hm-bg-secondary)] text-[var(--hm-text-tertiary)] rounded-md">{t}</span>)}
-                        {(a.personaTags || []).map((t) => <span key={t} className="text-[9px] px-1.5 py-0.5 bg-[var(--tag-purple-bg)] text-[var(--tag-purple-fg)] rounded-md">{t}</span>)}
-                        {(a.competitorTags || []).map((t) => <span key={t} className="text-[9px] px-1.5 py-0.5 bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)] rounded-md">{t}</span>)}
-                        {a.contentType && <span className="text-[9px] px-1.5 py-0.5 bg-[var(--hm-bg-secondary)] text-[var(--hm-text-tertiary)] rounded-md capitalize">{a.contentType.replace(/_/g, " ")}</span>}
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <p className="text-[10px] text-[var(--hm-text-tertiary)]">{a.uploadedBy.name} &middot; {timeAgo(a.createdAt)}</p>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); openPanel(a); }}
-                          className="text-[10px] text-[var(--hm-link)] hover:underline flex items-center gap-1"
-                        >
-                          View details
-                          <svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="var(--hm-primary)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+                {assets.map((a) => assetTile(a))}
               </div>
             )}
 
             {/* List view */}
             {assets.length > 0 && view === "list" && (
               <div className="bg-[var(--hm-surface)] border border-[var(--hm-border)] rounded-xl overflow-x-auto">
-                <div className="grid grid-cols-[28px_2fr_80px_80px_70px_55px_70px_60px] gap-2 px-4 py-2.5 border-b border-[var(--hm-border)] text-[10px] text-[var(--hm-text-tertiary)] uppercase tracking-wide font-medium">
+                <div className="grid grid-cols-[28px_minmax(0,2fr)_84px_78px_68px_50px_78px_92px] gap-2 px-4 py-2.5 border-b border-[var(--hm-border)] text-[10px] text-[var(--hm-text-tertiary)] uppercase tracking-wide font-medium min-w-[640px]">
                   <button onClick={toggleSelectAll} title={allSelected ? "Deselect all" : "Select all"} className={"w-4 h-4 rounded border-2 flex items-center justify-center transition-all flex-shrink-0 " + (allSelected ? "bg-[var(--hm-primary)] border-[var(--hm-primary)]" : "border-[var(--hm-border)] hover:border-[var(--hm-primary)]")}>{allSelected && <svg width="8" height="8" viewBox="0 0 16 16" fill="none"><path d="M3 8l4 4 6-6" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/></svg>}</button>
-                  <span>Name</span><span>Type</span><span>Product</span><span>Market</span><span>Score</span><span>Status</span><span></span>
+                  <span>Name</span><span>Type</span><span>Product</span><span>Market</span><span>Score</span><span>Status</span><span className="text-right">Actions</span>
                 </div>
                 {assets.map((a) => (
-                  <div key={a.id} className={"grid grid-cols-[28px_2fr_80px_80px_70px_55px_70px_60px] gap-2 px-4 py-2.5 border-b border-[var(--hm-border)] items-center last:border-b-0 group " + (selectedIds.has(a.id) ? "bg-[var(--tag-blue-bg)]/40" : panelAsset?.id === a.id ? "bg-[var(--tag-blue-bg)]/30" : "hover:bg-[var(--hm-bg-secondary)]")}>
+                  <div key={a.id} className={"grid grid-cols-[28px_minmax(0,2fr)_84px_78px_68px_50px_78px_92px] gap-2 px-4 py-2 border-b border-[var(--hm-border)] items-center last:border-b-0 group min-w-[640px] " + (selectedIds.has(a.id) ? "bg-[var(--tag-blue-bg)]/40" : panelAsset?.id === a.id ? "bg-[var(--tag-blue-bg)]/30" : "hover:bg-[var(--hm-bg-secondary)]")}>
                     <button onClick={(e) => toggleSelect(a.id, e)} title="Select" className={"w-4 h-4 rounded border-2 flex items-center justify-center transition-all flex-shrink-0 opacity-0 group-hover:opacity-100 " + (selectedIds.has(a.id) ? "!opacity-100 bg-[var(--hm-primary)] border-[var(--hm-primary)]" : "border-[var(--hm-border)] hover:border-[var(--hm-primary)]")}>{selectedIds.has(a.id) && <svg width="8" height="8" viewBox="0 0 16 16" fill="none"><path d="M3 8l4 4 6-6" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/></svg>}</button>
                     {a.fileUrl ? (
                       <a href={`/view/${a.id}`} target="_blank" rel="noopener" className="flex items-center gap-2.5 min-w-0 cursor-pointer">
@@ -673,22 +706,16 @@ export default function ContentLibraryPage() {
                     <span className="text-[11px] text-[var(--hm-text-secondary)] truncate">{a.productTags[0] || "All"}</span>
                     <span className="text-[11px] text-[var(--hm-text-secondary)] truncate">{a.marketTags[0] || "Global"}</span>
                     <span className={"text-[11px] font-medium " + scoreText(a.brandScore)}>{a.brandScore !== null ? Math.round(a.brandScore) + "%" : "—"}</span>
-                    <div className="flex flex-col gap-1">
-                      <span className={"text-[9px] px-1.5 py-0.5 rounded-md font-medium w-fit flex items-center gap-1 " + (a.scoreStatus === "analyzed" ? "bg-[var(--tag-purple-bg)] text-[var(--tag-purple-fg)]" : a.brandScore !== null ? "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]" : isAutoReviewing ? "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]" : "bg-[var(--hm-bg-tertiary)] text-[var(--hm-text-tertiary)]")}>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className={"text-[9px] px-1.5 py-0.5 rounded-md font-medium flex items-center gap-1 truncate " + (a.scoreStatus === "analyzed" ? "bg-[var(--tag-purple-bg)] text-[var(--tag-purple-fg)]" : a.brandScore !== null ? "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]" : isAutoReviewing ? "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]" : "bg-[var(--hm-bg-tertiary)] text-[var(--hm-text-tertiary)]")}>
                         {isAutoReviewing && a.scoreStatus === "pending" && <span className="w-2 h-2 border border-[var(--hm-border)]/50 border-t-blue-600 rounded-full animate-spin inline-block shrink-0" />}
                         {a.scoreStatus === "analyzed" ? "Reviewed" : a.brandScore !== null ? "Scored" : isAutoReviewing ? "Analyzing…" : "Pending"}
                       </span>
-                      <span className={"text-[9px] px-1.5 py-0.5 rounded-md font-medium w-fit flex items-center gap-1 " + (a.intelligenceStatus === "done" ? "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]" : a.intelligenceStatus === "extracting" ? "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]" : a.intelligenceStatus === "failed" ? "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)]" : "bg-[var(--hm-bg-tertiary)] text-[var(--hm-text-tertiary)]")}>
-                        {a.intelligenceStatus === "extracting" && <span className="w-2 h-2 border border-[var(--hm-border)]/50 border-t-blue-600 rounded-full animate-spin inline-block shrink-0" />}
-                        {a.intelligenceStatus === "done" ? "Extracted" : a.intelligenceStatus === "extracting" ? "Extracting…" : a.intelligenceStatus === "failed" ? "Failed" : "Not extracted"}
+                      <span title={a.intelligenceStatus === "done" ? "Intelligence extracted" : a.intelligenceStatus === "extracting" ? "Extracting intelligence…" : a.intelligenceStatus === "failed" ? "Extraction failed" : "Intelligence not extracted"} className={"w-4 h-4 rounded flex items-center justify-center flex-shrink-0 " + (a.intelligenceStatus === "done" ? "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]" : a.intelligenceStatus === "extracting" ? "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]" : a.intelligenceStatus === "failed" ? "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)]" : "bg-[var(--hm-bg-tertiary)] text-[var(--hm-text-tertiary)]")}>
+                        {a.intelligenceStatus === "extracting" ? <span className="w-2 h-2 border border-[var(--hm-border)]/50 border-t-blue-600 rounded-full animate-spin inline-block shrink-0" /> : <svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="M8 2l1.4 3.2L13 6.5l-2.6 2.5.5 3.5L8 11l-2.9 1.5.5-3.5L3 6.5l3.6-1.3L8 2z" stroke="currentColor" strokeWidth="1" fill="none" strokeLinejoin="round" /></svg>}
                       </span>
                     </div>
-                    <button
-                      onClick={() => openPanel(a)}
-                      className="text-[10px] text-[var(--hm-link)] hover:underline whitespace-nowrap"
-                    >
-                      Details →
-                    </button>
+                    {rowActions(a)}
                   </div>
                 ))}
               </div>
@@ -736,59 +763,7 @@ export default function ContentLibraryPage() {
                         </button>
                         {!isCollapsed && (
                           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                            {items.map((a) => (
-                              <div key={a.id} className={"bg-[var(--hm-surface)] border rounded-xl overflow-hidden transition-all group " + (selectedIds.has(a.id) ? "border-[var(--hm-primary)] ring-2 ring-[var(--hm-link)]/30" : panelAsset?.id === a.id ? "border-[var(--hm-primary)] ring-1 ring-[var(--hm-link)]/20" : "border-[var(--hm-border)] hover:border-[var(--hm-primary)]/40")} style={{ boxShadow: "var(--hm-shadow-card)" }}>
-                                {a.fileUrl ? (
-                                  <a href={`/view/${a.id}`} target="_blank" rel="noopener" className="block h-[110px] relative overflow-hidden cursor-pointer">
-                                    <button onClick={(e) => toggleSelect(a.id, e)} title="Select" className={"absolute top-2 left-2 z-10 w-5 h-5 rounded border-2 flex items-center justify-center transition-all " + (selectedIds.has(a.id) ? "bg-[var(--hm-primary)] border-[var(--hm-primary)]" : "bg-[var(--hm-surface)]/80 border-white/50 opacity-0 group-hover:opacity-100")} style={{ backdropFilter: "blur(4px)" }}>
-                                      {selectedIds.has(a.id) && <svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="M3 8l4 4 6-6" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/></svg>}
-                                    </button>
-                                    {isImage(a.fileType || "") ? (
-                                      <img src={a.fileUrl} alt={a.name} className="w-full h-full object-cover object-left-top" />
-                                    ) : (
-                                      <div className="w-full h-full bg-[var(--hm-bg-secondary)] flex items-center justify-center">
-                                        <div className={"w-12 h-12 rounded-xl flex items-center justify-center text-[14px] font-medium " + typeColor(a.fileType || "")}>{(a.fileType || "?").toUpperCase().slice(0, 4)}</div>
-                                      </div>
-                                    )}
-                                    <span className="absolute top-2 text-[10px] px-2 py-0.5 bg-black/50 text-white rounded-md font-medium uppercase backdrop-blur-sm" style={{ left: "30px" }}>{a.fileType || "FILE"}</span>
-                                    {a.brandScore !== null ? <span className={"absolute top-2 right-2 text-[10px] px-2 py-0.5 text-white rounded-md font-medium " + scoreBg(a.brandScore)}>{Math.round(a.brandScore)}%</span> : isAutoReviewing ? <span className="absolute top-2 right-2 flex items-center gap-1 text-[10px] px-2 py-0.5 bg-[var(--tag-blue-fg)]/80 text-white rounded-md font-medium backdrop-blur-sm"><span className="w-2 h-2 border border-white/50 border-t-white rounded-full animate-spin inline-block shrink-0" />Analyzing</span> : <span className="absolute top-2 right-2 text-[10px] px-2 py-0.5 bg-black/40 text-white/70 rounded-md font-medium backdrop-blur-sm">Pending</span>}
-                                    {a.scoreStatus === "analyzed" && <span className="absolute bottom-2 left-2 text-[9px] px-1.5 py-0.5 bg-[var(--tag-purple-fg)]/80 text-white rounded-md backdrop-blur-sm">AI Reviewed</span>}
-                                    <span className="absolute inset-0 transition-all flex items-center justify-center" style={{ background: "rgba(0,0,0,0)" }} onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "rgba(0,0,0,0.45)"} onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "rgba(0,0,0,0)"}>
-                                      <span className="opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5" style={{ background: "#ffffff", color: "var(--hm-text)" }}>
-                                        <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M7 2H3a1 1 0 00-1 1v10a1 1 0 001 1h10a1 1 0 001-1V9" stroke="var(--hm-text)" strokeWidth="1.5" strokeLinecap="round" /><path d="M10 2h4v4M14 2L8 8" stroke="var(--hm-text)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
-                                        Open file
-                                      </span>
-                                    </span>
-                                  </a>
-                                ) : (
-                                  <div className="h-[110px] relative overflow-hidden">
-                                    <div className="w-full h-full bg-[var(--hm-bg-secondary)] flex items-center justify-center">
-                                      <div className={"w-12 h-12 rounded-xl flex items-center justify-center text-[14px] font-medium " + typeColor(a.fileType || "")}>{(a.fileType || "?").toUpperCase().slice(0, 4)}</div>
-                                    </div>
-                                    <span className="absolute top-2 text-[10px] px-2 py-0.5 bg-black/50 text-white rounded-md font-medium uppercase backdrop-blur-sm" style={{ left: "30px" }}>{a.fileType || "FILE"}</span>
-                                    {a.brandScore !== null ? <span className={"absolute top-2 right-2 text-[10px] px-2 py-0.5 text-white rounded-md font-medium " + scoreBg(a.brandScore)}>{Math.round(a.brandScore)}%</span> : isAutoReviewing ? <span className="absolute top-2 right-2 flex items-center gap-1 text-[10px] px-2 py-0.5 bg-[var(--tag-blue-fg)]/80 text-white rounded-md font-medium backdrop-blur-sm"><span className="w-2 h-2 border border-white/50 border-t-white rounded-full animate-spin inline-block shrink-0" />Analyzing</span> : <span className="absolute top-2 right-2 text-[10px] px-2 py-0.5 bg-black/40 text-white/70 rounded-md font-medium backdrop-blur-sm">Pending</span>}
-                                    {a.scoreStatus === "analyzed" && <span className="absolute bottom-2 left-2 text-[9px] px-1.5 py-0.5 bg-[var(--tag-purple-fg)]/80 text-white rounded-md backdrop-blur-sm">AI Reviewed</span>}
-                                  </div>
-                                )}
-                                <div className="p-3.5">
-                                  <p className="text-[13px] font-medium truncate">{a.name}</p>
-                                  <div className="flex flex-wrap gap-1 mt-2 mb-2">
-                                    {a.productTags.map((t) => <span key={t} className="text-[9px] px-1.5 py-0.5 bg-[var(--tag-blue-bg)] text-[var(--hm-text)] rounded-md">{t}</span>)}
-                                    {a.marketTags.map((t) => <span key={t} className="text-[9px] px-1.5 py-0.5 bg-[var(--hm-bg-secondary)] text-[var(--hm-text-tertiary)] rounded-md">{t}</span>)}
-                                    {(a.personaTags || []).map((t) => <span key={t} className="text-[9px] px-1.5 py-0.5 bg-[var(--tag-purple-bg)] text-[var(--tag-purple-fg)] rounded-md">{t}</span>)}
-                                    {(a.competitorTags || []).map((t) => <span key={t} className="text-[9px] px-1.5 py-0.5 bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)] rounded-md">{t}</span>)}
-                                    {a.contentType && <span className="text-[9px] px-1.5 py-0.5 bg-[var(--hm-bg-secondary)] text-[var(--hm-text-tertiary)] rounded-md capitalize">{a.contentType.replace(/_/g, " ")}</span>}
-                                  </div>
-                                  <div className="flex items-center justify-between">
-                                    <p className="text-[10px] text-[var(--hm-text-tertiary)]">{a.uploadedBy.name} &middot; {timeAgo(a.createdAt)}</p>
-                                    <button onClick={(e) => { e.stopPropagation(); openPanel(a); }} className="text-[10px] text-[var(--hm-link)] hover:underline flex items-center gap-1">
-                                      View details
-                                      <svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="var(--hm-primary)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
-                                    </button>
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
+                            {items.map((a) => assetTile(a))}
                           </div>
                         )}
                       </div>
@@ -797,6 +772,32 @@ export default function ContentLibraryPage() {
                 </div>
               );
             })()}
+
+            {/* Compact view */}
+            {assets.length > 0 && view === "compact" && (
+              <div className="bg-[var(--hm-surface)] border border-[var(--hm-border)] rounded-xl overflow-x-auto">
+                {assets.map((a) => {
+                  const sc = scoreBg(a.brandScore);
+                  return (
+                    <div key={a.id} className={"grid grid-cols-[24px_38px_minmax(0,1fr)_96px_58px_60px_96px] gap-2 px-3 h-[34px] items-center border-b border-[var(--hm-border)] last:border-b-0 group min-w-[560px] " + (selectedIds.has(a.id) ? "bg-[var(--tag-blue-bg)]/40" : panelAsset?.id === a.id ? "bg-[var(--tag-blue-bg)]/30" : "hover:bg-[var(--hm-bg-secondary)]")}>
+                      <button onClick={(e) => toggleSelect(a.id, e)} title="Select" className={"w-4 h-4 rounded border-2 flex items-center justify-center transition-all flex-shrink-0 opacity-0 group-hover:opacity-100 " + (selectedIds.has(a.id) ? "!opacity-100 bg-[var(--hm-primary)] border-[var(--hm-primary)]" : "border-[var(--hm-border)] hover:border-[var(--hm-primary)]")}>{selectedIds.has(a.id) && <svg width="8" height="8" viewBox="0 0 16 16" fill="none"><path d="M3 8l4 4 6-6" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/></svg>}</button>
+                      <span className={"text-[9px] font-medium px-1 py-0.5 rounded text-center " + typeColor(a.fileType || "")}>{(a.fileType || "?").toUpperCase().slice(0, 4)}</span>
+                      {a.fileUrl ? (
+                        <a href={`/view/${a.id}`} target="_blank" rel="noopener" className="text-[12px] font-medium truncate hover:text-[var(--hm-link)] hover:underline min-w-0">{a.name}</a>
+                      ) : (
+                        <span className="text-[12px] font-medium truncate min-w-0">{a.name}</span>
+                      )}
+                      <span className="text-[11px] text-[var(--hm-text-secondary)] truncate">{a.productTags[0] || "All"}</span>
+                      <span className="flex items-center gap-1.5">
+                        {a.brandScore !== null ? <><span className={"w-1.5 h-1.5 rounded-full flex-shrink-0 " + sc} /><span className={"text-[11px] font-medium " + scoreText(a.brandScore)}>{Math.round(a.brandScore)}%</span></> : <span className="text-[11px] text-[var(--hm-text-tertiary)]">—</span>}
+                      </span>
+                      <span className="text-[10px] text-[var(--hm-text-tertiary)] truncate">{timeAgo(a.createdAt)}</span>
+                      {rowActions(a)}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
 
             {/* Infinite scroll sentinel */}
             <div ref={sentinelRef} className="h-1" />
