@@ -48,11 +48,11 @@ function CopyButton({ text, label }: { text: string; label?: string }) {
   return (
     <button
       onClick={copy}
-      className="flex items-center gap-1 text-[10px] px-2 py-1 rounded-md border border-[var(--hm-border)] text-[var(--hm-text-tertiary)] hover:text-[#4361ee] hover:border-[#4361ee]/40 transition-colors shrink-0"
+      className="flex items-center gap-1 text-[10px] px-2 py-1 rounded-md border border-[var(--hm-border)] text-[var(--hm-text-tertiary)] hover:text-[var(--hm-text)] hover:border-[var(--hm-text-tertiary)] transition-colors shrink-0"
     >
       {copied ? (
         <>
-          <svg width="10" height="10" viewBox="0 0 16 16" fill="none"><path d="M3 8l4 4 6-6" stroke="#10b981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          <svg width="10" height="10" viewBox="0 0 16 16" fill="none"><path d="M3 8l4 4 6-6" stroke="var(--hm-success)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
           Copied
         </>
       ) : (
@@ -67,14 +67,14 @@ function CopyButton({ text, label }: { text: string; label?: string }) {
 
 function PlatformBadge({ platform }: { platform: string }) {
   const colors: Record<string, string> = {
-    LinkedIn: "bg-blue-100 text-blue-700",
-    Meta: "bg-indigo-100 text-indigo-700",
-    Instagram: "bg-pink-100 text-pink-700",
-    Blog: "bg-emerald-100 text-emerald-700",
-    "Twitter/X": "bg-gray-100 text-gray-700",
-    YouTube: "bg-red-100 text-red-700",
-    Email: "bg-amber-100 text-amber-700",
-    Website: "bg-teal-100 text-teal-700",
+    LinkedIn: "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]",
+    Meta: "bg-[var(--tag-purple-bg)] text-[var(--tag-purple-fg)]",
+    Instagram: "bg-[var(--tag-pink-bg)] text-[var(--tag-pink-fg)]",
+    Blog: "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]",
+    "Twitter/X": "bg-[var(--hm-bg-tertiary)] text-[var(--tag-gray-fg)]",
+    YouTube: "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)]",
+    Email: "bg-[var(--tag-yellow-bg)] text-[var(--tag-yellow-fg)]",
+    Website: "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]",
   };
   const cls = colors[platform] || "bg-[var(--hm-bg-secondary)] text-[var(--hm-text-secondary)]";
   return (
@@ -183,7 +183,7 @@ function BriefView({ item, onDelete, onRegenerate, regenerating }: { item: Brief
           <button
             onClick={onRegenerate}
             disabled={regenerating || deleting}
-            className="flex items-center gap-1 text-[10px] px-2 py-1 rounded-md border border-[var(--hm-border)] text-[var(--hm-text-tertiary)] hover:text-[#4361ee] hover:border-[#4361ee]/40 transition-colors disabled:opacity-40"
+            className="flex items-center gap-1 text-[10px] px-2 py-1 rounded-md border border-[var(--hm-border)] text-[var(--hm-text-tertiary)] hover:text-[var(--hm-text)] hover:border-[var(--hm-text-tertiary)] transition-colors disabled:opacity-40"
             title="Regenerate with same prompt"
           >
             {regenerating ? (
@@ -205,12 +205,12 @@ function BriefView({ item, onDelete, onRegenerate, regenerating }: { item: Brief
           </button>
           {confirmDel ? (
             <div className="flex items-center gap-1.5">
-              <span className="text-[10px] text-red-500">Delete?</span>
-              <button onClick={handleDelete} disabled={deleting} className="text-[10px] px-2 py-1 rounded-md bg-red-500 text-white hover:bg-red-600 disabled:opacity-50">Yes</button>
+              <span className="text-[10px] text-[var(--tag-red-fg)]">Delete?</span>
+              <button onClick={handleDelete} disabled={deleting} className="text-[10px] px-2 py-1 rounded-md bg-[var(--hm-danger)] text-white hover:bg-[var(--hm-danger)] disabled:opacity-50">Yes</button>
               <button onClick={() => setConfirmDel(false)} className="text-[10px] px-2 py-1 rounded-md border border-[var(--hm-border)] hover:bg-[var(--hm-bg-secondary)]">No</button>
             </div>
           ) : (
-            <button onClick={() => setConfirmDel(true)} disabled={regenerating} className="text-[10px] px-2 py-1 rounded-md border border-[var(--hm-border)] text-[var(--hm-text-tertiary)] hover:border-red-300 hover:text-red-500 transition-colors disabled:opacity-40">Delete</button>
+            <button onClick={() => setConfirmDel(true)} disabled={regenerating} className="text-[10px] px-2 py-1 rounded-md border border-[var(--hm-border)] text-[var(--hm-text-tertiary)] hover:border-[var(--hm-border)] hover:text-[var(--tag-red-fg)] transition-colors disabled:opacity-40">Delete</button>
           )}
         </div>
       </div>
@@ -256,19 +256,19 @@ function BriefView({ item, onDelete, onRegenerate, regenerating }: { item: Brief
       )}
 
       {/* AI Image Prompt — hero section */}
-      <div className="rounded-xl border-2 border-[#4361ee]/30 overflow-hidden" style={{ background: "linear-gradient(135deg, #f0f4ff 0%, #faf5ff 100%)" }}>
-        <div className="flex items-center justify-between px-4 py-3 border-b border-[#4361ee]/20">
+      <div className="rounded-xl border border-[var(--hm-border)] overflow-hidden bg-[var(--hm-bg-secondary)]">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--hm-primary)]/20">
           <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-md bg-gradient-to-br from-[#4361ee] to-[#7c3aed] flex items-center justify-center">
+            <div className="w-6 h-6 rounded-md bg-[var(--hm-primary)] flex items-center justify-center">
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 2l1.5 3.5L13 6.5l-2.5 2.5.5 3.5L8 11l-3 1.5.5-3.5L3 6.5l3.5-1L8 2z" stroke="white" strokeWidth="1.1" fill="none" strokeLinejoin="round" /></svg>
             </div>
-            <span className="text-[11px] font-bold text-[#4361ee] uppercase tracking-wide">AI Image Generation Prompt</span>
-            <span className="text-[10px] text-[#7c3aed]/70">Works in Claude, ChatGPT, Midjourney, Firefly, Canva & more</span>
+            <span className="text-[11px] font-bold text-[var(--hm-text)] uppercase tracking-wide">AI Image Generation Prompt</span>
+            <span className="text-[10px] text-[var(--hm-text)]/70">Works in Claude, ChatGPT, Midjourney, Firefly, Canva & more</span>
           </div>
           <CopyButton text={b.imagePrompt} label="Copy prompt" />
         </div>
         <div className="px-4 py-4">
-          <p className="text-[13px] text-[#1a1a2e] leading-relaxed font-medium">{b.imagePrompt}</p>
+          <p className="text-[13px] text-[var(--hm-text)] leading-relaxed font-medium">{b.imagePrompt}</p>
         </div>
       </div>
 
@@ -283,23 +283,23 @@ function BriefView({ item, onDelete, onRegenerate, regenerating }: { item: Brief
       </div>
 
       {/* Complete AI Prompt — all-in-one copy block */}
-      <div className="rounded-xl border-2 border-emerald-200 overflow-hidden" style={{ background: "linear-gradient(135deg, #f0fdf4 0%, #f0f9ff 100%)" }}>
-        <div className="flex items-center justify-between px-4 py-3 border-b border-emerald-200/60">
+      <div className="rounded-xl border border-[var(--hm-border)] overflow-hidden bg-[var(--hm-bg-secondary)]">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--hm-border)]/60">
           <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-md bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center shrink-0">
+            <div className="w-6 h-6 rounded-md bg-[var(--hm-success)] flex items-center justify-center shrink-0">
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
                 <path d="M2 4h12M2 8h8M2 12h10" stroke="white" strokeWidth="1.5" strokeLinecap="round" />
               </svg>
             </div>
             <div>
-              <span className="text-[11px] font-bold text-emerald-700 uppercase tracking-wide">Complete AI Prompt</span>
-              <span className="text-[10px] text-emerald-600/70 ml-2">Paste this entire block into any AI tool</span>
+              <span className="text-[11px] font-bold text-[var(--tag-green-fg)] uppercase tracking-wide">Complete AI Prompt</span>
+              <span className="text-[10px] text-[var(--tag-green-fg)]/70 ml-2">Paste this entire block into any AI tool</span>
             </div>
           </div>
           <CopyButton text={fullBrief} label="Copy all" />
         </div>
         <div className="px-4 py-4">
-          <pre className="text-[12px] text-gray-700 leading-relaxed whitespace-pre-wrap font-mono break-words">{fullBrief}</pre>
+          <pre className="text-[12px] text-[var(--tag-gray-fg)] leading-relaxed whitespace-pre-wrap font-mono break-words">{fullBrief}</pre>
         </div>
       </div>
     </div>
@@ -406,14 +406,14 @@ export default function DesignBriefPage() {
     <div className="flex-1 flex flex-col overflow-hidden">
       <ModuleTour moduleId="design-brief" />
       {/* Header */}
-      <div className="px-7 py-4 bg-white border-b border-[var(--hm-border)] flex items-center justify-between" style={{ boxShadow: "var(--hm-shadow-xs)" }}>
+      <div className="px-7 py-4 bg-[var(--hm-surface)] border-b border-[var(--hm-border)] flex items-center justify-between" style={{ boxShadow: "var(--hm-shadow-xs)" }}>
         <div>
           <h1 className="text-[22px] font-semibold leading-tight">Design Brief</h1>
           <p className="mt-0.5 text-[12px] text-[var(--hm-text-tertiary)]">Generate brand-grounded visual briefs for any AI image tool</p>
         </div>
         <button
           onClick={() => { setActiveBrief(null); setPrompt(""); setTimeout(() => textareaRef.current?.focus(), 50); }}
-          className="flex items-center gap-1.5 h-[34px] px-4 bg-[#4361ee] text-white rounded-lg text-[12px] font-medium hover:opacity-90 transition-opacity"
+          className="flex items-center gap-1.5 h-[34px] px-4 bg-[var(--hm-primary)] text-white rounded-lg text-[12px] font-medium hover:opacity-90 transition-opacity"
         >
           <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 2v12M2 8h12" stroke="white" strokeWidth="1.8" strokeLinecap="round" /></svg>
           New brief
@@ -422,7 +422,7 @@ export default function DesignBriefPage() {
 
       <div className="flex-1 flex min-h-0 overflow-hidden">
         {/* Left sidebar — history */}
-        <div data-tour="db-history" className="w-[260px] shrink-0 border-r border-[var(--hm-border)] bg-white flex flex-col overflow-hidden">
+        <div data-tour="db-history" className="w-[260px] shrink-0 border-r border-[var(--hm-border)] bg-[var(--hm-surface)] flex flex-col overflow-hidden">
           <div className="px-4 py-3 border-b border-[var(--hm-border)]">
             <p className="text-[11px] font-semibold text-[var(--hm-text-secondary)] uppercase tracking-wide">History</p>
           </div>
@@ -446,10 +446,10 @@ export default function DesignBriefPage() {
                   <button
                     key={b.id}
                     onClick={() => setActiveBrief(b)}
-                    className={"w-full text-left px-3 py-2.5 mx-1 rounded-lg transition-colors group/brief relative " + (activeBrief?.id === b.id ? "bg-[#4361ee]/8 border border-[#4361ee]/20" : "hover:bg-[var(--hm-bg-secondary)]")}
+                    className={"w-full text-left px-3 py-2.5 mx-1 rounded-lg transition-colors group/brief relative " + (activeBrief?.id === b.id ? "bg-[var(--hm-primary)]/8 border border-[var(--hm-primary)]/20" : "hover:bg-[var(--hm-bg-secondary)]")}
                     style={{ width: "calc(100% - 8px)" }}
                   >
-                    <p className={"text-[12px] truncate leading-snug " + (activeBrief?.id === b.id ? "font-semibold text-[#4361ee]" : "font-medium text-[var(--hm-text)]")}>
+                    <p className={"text-[12px] truncate leading-snug " + (activeBrief?.id === b.id ? "font-semibold text-[var(--hm-text)]" : "font-medium text-[var(--hm-text)]")}>
                       {b.prompt}
                     </p>
                     <div className="flex items-center gap-1.5 mt-1">
@@ -459,7 +459,7 @@ export default function DesignBriefPage() {
                   </button>
                 ))}
                 {nextCursor && (
-                  <button onClick={handleLoadMore} disabled={loadingMore} className="w-full py-2 text-[11px] text-[#4361ee] hover:underline disabled:opacity-50">
+                  <button onClick={handleLoadMore} disabled={loadingMore} className="w-full py-2 text-[11px] text-[var(--hm-link)] hover:underline disabled:opacity-50">
                     {loadingMore ? "Loading…" : "Load more"}
                   </button>
                 )}
@@ -474,15 +474,15 @@ export default function DesignBriefPage() {
             <div className="max-w-[760px] mx-auto">
               <BriefView item={activeBrief} onDelete={handleDelete} onRegenerate={handleRegenerate} regenerating={regenerating} />
               {error && (
-                <p className="mt-3 text-[12px] text-red-500 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
+                <p className="mt-3 text-[12px] text-[var(--tag-red-fg)] bg-[var(--tag-red-bg)] border border-[var(--hm-border)] rounded-lg px-3 py-2">{error}</p>
               )}
             </div>
           ) : (
             <div className="max-w-[640px] mx-auto">
               {/* Prompt input */}
-              <div className="bg-white rounded-2xl border border-[var(--hm-border)] p-6" style={{ boxShadow: "var(--hm-shadow-card)" }}>
+              <div className="bg-[var(--hm-surface)] rounded-2xl border border-[var(--hm-border)] p-6" style={{ boxShadow: "var(--hm-shadow-card)" }}>
                 <div className="flex items-center gap-3 mb-4">
-                  <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#4361ee] to-[#7c3aed] flex items-center justify-center shrink-0">
+                  <div className="w-9 h-9 rounded-xl bg-[var(--hm-primary)] flex items-center justify-center shrink-0">
                     <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                       <rect x="1" y="1" width="6" height="6" rx="1" stroke="white" strokeWidth="1.3" />
                       <rect x="9" y="1" width="6" height="4" rx="1" stroke="white" strokeWidth="1.3" />
@@ -503,13 +503,13 @@ export default function DesignBriefPage() {
                   onChange={e => setPrompt(e.target.value)}
                   onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") handleGenerate(); }}
                   placeholder={`Examples:\n• LinkedIn carousel (5 slides, 1:1) breaking down our product benefits for enterprise buyers\n• Blog header image for our Q3 product launch targeting enterprise CTOs\n• LinkedIn single image ad promoting our new pricing plan — aspirational, not salesy\n• 3-frame Meta carousel for a webinar on AI in marketing\n• Instagram story announcing a product update for SMB customers`}
-                  className="w-full resize-none text-[13px] border border-[var(--hm-border)] rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#4361ee]/30 focus:border-[#4361ee]"
+                  className="w-full resize-none text-[13px] border border-[var(--hm-border)] rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[var(--hm-link)]/30 focus:border-[var(--hm-primary)]"
                   style={{ minHeight: "160px", background: "var(--hm-bg-secondary)" }}
                   disabled={generating}
                 />
 
                 {error && (
-                  <p className="mt-2 text-[12px] text-red-500 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
+                  <p className="mt-2 text-[12px] text-[var(--tag-red-fg)] bg-[var(--tag-red-bg)] border border-[var(--hm-border)] rounded-lg px-3 py-2">{error}</p>
                 )}
 
                 <div className="flex items-center justify-between mt-3">
@@ -518,7 +518,7 @@ export default function DesignBriefPage() {
                     data-tour="db-generate"
                     onClick={handleGenerate}
                     disabled={generating || !prompt.trim()}
-                    className="flex items-center gap-2 h-[38px] px-5 bg-gradient-to-r from-[#4361ee] to-[#7c3aed] text-white rounded-xl text-[13px] font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
+                    className="flex items-center gap-2 h-[38px] px-5 bg-[var(--hm-primary)] text-white rounded-xl text-[13px] font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
                   >
                     {generating ? (
                       <>
@@ -551,9 +551,9 @@ export default function DesignBriefPage() {
                     key={hint.label}
                     onClick={() => { setPrompt(hint.example); textareaRef.current?.focus(); }}
                     disabled={generating}
-                    className="text-left p-3 rounded-xl border border-[var(--hm-border)] hover:border-[#4361ee]/40 hover:bg-blue-50/40 transition-colors disabled:opacity-50"
+                    className="text-left p-3 rounded-xl border border-[var(--hm-border)] hover:border-[var(--hm-text-tertiary)] hover:bg-[var(--tag-blue-bg)]/40 transition-colors disabled:opacity-50"
                   >
-                    <p className="text-[11px] font-semibold text-[#4361ee] mb-1">{hint.label}</p>
+                    <p className="text-[11px] font-semibold text-[var(--hm-text)] mb-1">{hint.label}</p>
                     <p className="text-[10px] text-[var(--hm-text-tertiary)] leading-relaxed line-clamp-2">{hint.example}</p>
                   </button>
                 ))}
