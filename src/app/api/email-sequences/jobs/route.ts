@@ -232,8 +232,10 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "list") {
+      // History is per-user (matches Content Generator / Halo) — a user only sees
+      // their own sequences, not everyone's in the org.
       const jobs = await db.emailSequenceJob.findMany({
-        where: { organizationId: decoded.orgId },
+        where: { organizationId: decoded.orgId, userId: decoded.userId },
         orderBy: { createdAt: "desc" },
         take: 50,
         select: { id: true, label: true, mode: true, status: true, processed: true, total: true, error: true, createdAt: true, updatedAt: true },
