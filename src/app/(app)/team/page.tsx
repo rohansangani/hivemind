@@ -259,7 +259,7 @@ function UserModal({
                 className="px-4 py-2 rounded-lg text-[12px] font-medium capitalize transition-all"
                 style={{
                   background: tab === t ? "var(--hm-bg-tertiary)" : "transparent",
-                  color: tab === t ? "var(--hm-link)" : "var(--hm-text-tertiary)",
+                  color: tab === t ? "var(--hm-text)" : "var(--hm-text-tertiary)",
                 }}>
                 {t}
               </button>
@@ -348,7 +348,7 @@ function UserModal({
             </button>
             <button onClick={handleSave} disabled={saving}
               className="flex-1 h-[36px] rounded-lg text-[12px] font-medium text-white hover:opacity-90 disabled:opacity-50"
-              style={{ background: "var(--hm-link)" }}>
+              style={{ background: "var(--hm-primary)" }}>
               {saving ? "Saving…" : isNew ? "Send invite" : "Save changes"}
             </button>
           </div>
@@ -566,7 +566,7 @@ function MemberRow({
 
       {/* Avatar + name */}
       <div className="flex items-center gap-3 min-w-0">
-        <div className={`w-9 h-9 rounded-full flex items-center justify-center text-[12px] font-semibold flex-shrink-0 ${isPending ? "border-2 border-dashed border-[var(--hm-border)]" : isOwner ? "bg-[var(--hm-warning)] text-white" : "bg-[var(--hm-link)] text-white"}`}
+        <div className={`w-9 h-9 rounded-full flex items-center justify-center text-[12px] font-semibold flex-shrink-0 ${isPending ? "border-2 border-dashed border-[var(--hm-border)]" : "bg-[var(--hm-primary)] text-white"}`}
           style={isPending ? { color: "var(--hm-text-tertiary)" } : undefined}>
           {getInitials(m.name, m.email)}
         </div>
@@ -751,7 +751,7 @@ export default function TeamPage() {
           {canManage && (
             <button data-tour="team-invite" onClick={() => setEditTarget("new")}
               className="h-[34px] px-4 text-white rounded-lg text-[12px] font-medium flex items-center gap-1.5 hover:opacity-90"
-              style={{ background: "var(--hm-link)" }}>
+              style={{ background: "var(--hm-primary)" }}>
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 3v10M3 8h10" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" /></svg>
               Invite member
             </button>
@@ -839,7 +839,7 @@ export default function TeamPage() {
                       {!search && canManage && (
                         <button onClick={() => setEditTarget("new")}
                           className="mt-1 h-[32px] px-4 text-white rounded-lg text-[12px] font-medium flex items-center gap-1.5 hover:opacity-90"
-                          style={{ background: "var(--hm-link)" }}>
+                          style={{ background: "var(--hm-primary)" }}>
                           <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M8 3v10M3 8h10" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" /></svg>
                           Invite first member
                         </button>
