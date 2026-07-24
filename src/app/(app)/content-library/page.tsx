@@ -366,6 +366,10 @@ export default function ContentLibraryPage() {
   const allSelected = assets.length > 0 && assets.every(a => selectedIds.has(a.id));
   const toggleSelectAll = () => setSelectedIds(allSelected ? new Set() : new Set(assets.map(a => a.id)));
   const hasFile = fileRef.current !== null;
+  // Default A-Z by name (case-insensitive) for the tile + list views. The API also
+  // orders by name so paginated pages stay in order; this guarantees a clean sort
+  // client-side regardless of DB collation.
+  const sortedAssets = [...assets].sort((a, b) => (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" }));
   const severityColor = (s: string) => s === "high" ? "text-[var(--tag-red-fg)] bg-[var(--tag-red-bg)] border-[var(--hm-border)]" : s === "medium" ? "text-[var(--tag-yellow-fg)] bg-[var(--tag-yellow-bg)] border-[var(--hm-border)]" : "text-[var(--tag-gray-fg)] bg-[var(--tag-gray-bg)] border-[var(--hm-border)]";
   const dimensionOrder = ["voice", "terminology", "messaging", "personality", "completeness"];
 
@@ -676,7 +680,7 @@ export default function ContentLibraryPage() {
             {/* Tile view */}
             {assets.length > 0 && view === "tile" && (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 2xl:grid-cols-6 gap-2.5">
-                {assets.map((a) => assetTile(a))}
+                {sortedAssets.map((a) => assetTile(a))}
               </div>
             )}
 
@@ -687,7 +691,7 @@ export default function ContentLibraryPage() {
                   <button onClick={toggleSelectAll} title={allSelected ? "Deselect all" : "Select all"} className={"w-4 h-4 rounded border-2 flex items-center justify-center transition-all flex-shrink-0 " + (allSelected ? "bg-[var(--hm-primary)] border-[var(--hm-primary)]" : "border-[var(--hm-border)] hover:border-[var(--hm-primary)]")}>{allSelected && <svg width="8" height="8" viewBox="0 0 16 16" fill="none"><path d="M3 8l4 4 6-6" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/></svg>}</button>
                   <span>Name</span><span>Type</span><span>Product</span><span>Market</span><span>Score</span><span>Status</span><span className="text-right">Actions</span>
                 </div>
-                {assets.map((a) => (
+                {sortedAssets.map((a) => (
                   <div key={a.id} className={"grid grid-cols-[28px_minmax(0,2fr)_84px_78px_68px_50px_78px_92px] gap-2 px-4 py-2 border-b border-[var(--hm-border)] items-center last:border-b-0 group min-w-[640px] " + (selectedIds.has(a.id) ? "bg-[var(--tag-blue-bg)]/40" : panelAsset?.id === a.id ? "bg-[var(--tag-blue-bg)]/30" : "hover:bg-[var(--hm-bg-secondary)]")}>
                     <button onClick={(e) => toggleSelect(a.id, e)} title="Select" className={"w-4 h-4 rounded border-2 flex items-center justify-center transition-all flex-shrink-0 opacity-0 group-hover:opacity-100 " + (selectedIds.has(a.id) ? "!opacity-100 bg-[var(--hm-primary)] border-[var(--hm-primary)]" : "border-[var(--hm-border)] hover:border-[var(--hm-primary)]")}>{selectedIds.has(a.id) && <svg width="8" height="8" viewBox="0 0 16 16" fill="none"><path d="M3 8l4 4 6-6" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/></svg>}</button>
                     {a.fileUrl ? (

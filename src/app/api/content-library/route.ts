@@ -43,7 +43,9 @@ export async function GET(req: NextRequest) {
       db.contentAsset.findMany({
         where,
         include: { uploadedBy: { select: { name: true } } },
-        orderBy: { createdAt: "desc" },
+        // Default A-Z by name (createdAt as a stable tiebreak) so paginated pages
+        // arrive in alphabetical order for the library's tile/list views.
+        orderBy: [{ name: "asc" }, { createdAt: "desc" }],
         take: limit,
         skip,
       }),
