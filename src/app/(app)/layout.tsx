@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Sidebar from "@/components/layout/Sidebar";
 import GuidedTour from "@/components/GuidedTour";
+import { LogoLoader } from "@/components/LogoLoader";
 import { UserContext, type AppUser } from "@/lib/UserContext";
 import { TOURS, getToursForRole, getPendingTours, type TourDef } from "@/lib/tours";
 
@@ -140,7 +141,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   if (!user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[var(--hm-bg)]">
-        <div className="w-5 h-5 border-2 border-[var(--hm-accent)]/30 border-t-[var(--hm-accent)] rounded-full animate-spin" />
+        <LogoLoader size={44} />
       </div>
     );
   }

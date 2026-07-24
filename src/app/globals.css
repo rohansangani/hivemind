@@ -378,6 +378,40 @@ a, button { transition: all 0.15s ease; }
 .animate-fade-in-fast { animation: fadeInFast 0.2s ease-out; }
 .animate-spin { animation: spin 0.8s linear infinite; }
 
+/* ═══ HiveMind logo loader ═══
+   Hexagon frame draws on clockwise once, then the six radiating lines unfold one
+   by one clockwise (staggered via inline animation-delay) and loop. */
+.hm-ll-hex {
+  stroke-dasharray: 84;
+  stroke-dashoffset: 84;
+  animation: hmHexDraw 0.9s ease-out forwards;
+}
+.hm-ll-ray {
+  stroke-dasharray: 8;
+  stroke-dashoffset: 8;
+  opacity: 0.15;
+  animation: hmRayUnfold 1.8s ease-in-out infinite;
+}
+.hm-ll-dot {
+  transform-origin: 16px 16px;
+  animation: hmDotPulse 1.8s ease-in-out infinite;
+}
+@keyframes hmHexDraw { to { stroke-dashoffset: 0; } }
+@keyframes hmRayUnfold {
+  0%   { stroke-dashoffset: 8; opacity: 0.15; }
+  25%  { stroke-dashoffset: 0; opacity: 1; }
+  70%  { stroke-dashoffset: 0; opacity: 1; }
+  100% { stroke-dashoffset: 8; opacity: 0.15; }
+}
+@keyframes hmDotPulse {
+  0%, 100% { transform: scale(0.5); opacity: 0.35; }
+  50%      { transform: scale(1);   opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hm-ll-hex, .hm-ll-ray { animation: none; stroke-dashoffset: 0; opacity: 1; }
+  .hm-ll-dot { animation: none; transform: scale(1); opacity: 1; }
+}
+
 /* ═══ Prose for AI content ═══ */
 .prose h1 { font-size: 22px; font-weight: 500; margin-bottom: 12px; }
 .prose h2 { font-size: 17px; font-weight: 500; margin-top: 20px; margin-bottom: 8px; }

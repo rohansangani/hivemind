@@ -82,14 +82,14 @@ export default function WelcomePage() {
             viewBox="0 0 32 32"
             className="mx-auto mb-4"
           >
-            <path d="M16 2L28 9v14l-12 7L4 23V9z" fill="none" stroke="#4361ee" strokeWidth="1.5" />
-            <circle cx="16" cy="16" r="4" fill="#4361ee" opacity="0.8" />
-            <line x1="16" y1="12" x2="16" y2="6" stroke="#4361ee" strokeWidth="1" opacity="0.5" />
-            <line x1="19.5" y1="14" x2="24" y2="10" stroke="#4361ee" strokeWidth="1" opacity="0.5" />
-            <line x1="19.5" y1="18" x2="24" y2="22" stroke="#4361ee" strokeWidth="1" opacity="0.5" />
-            <line x1="16" y1="20" x2="16" y2="26" stroke="#4361ee" strokeWidth="1" opacity="0.5" />
-            <line x1="12.5" y1="18" x2="8" y2="22" stroke="#4361ee" strokeWidth="1" opacity="0.5" />
-            <line x1="12.5" y1="14" x2="8" y2="10" stroke="#4361ee" strokeWidth="1" opacity="0.5" />
+            <path d="M16 2L28 9v14l-12 7L4 23V9z" fill="none" stroke="var(--hm-text)" strokeWidth="1.5" />
+            <circle cx="16" cy="16" r="4" fill="var(--hm-text)" opacity="0.85" />
+            <line x1="16" y1="12" x2="16" y2="6" stroke="var(--hm-text)" strokeWidth="1" opacity="0.5" />
+            <line x1="19.5" y1="14" x2="24" y2="10" stroke="var(--hm-text)" strokeWidth="1" opacity="0.5" />
+            <line x1="19.5" y1="18" x2="24" y2="22" stroke="var(--hm-text)" strokeWidth="1" opacity="0.5" />
+            <line x1="16" y1="20" x2="16" y2="26" stroke="var(--hm-text)" strokeWidth="1" opacity="0.5" />
+            <line x1="12.5" y1="18" x2="8" y2="22" stroke="var(--hm-text)" strokeWidth="1" opacity="0.5" />
+            <line x1="12.5" y1="14" x2="8" y2="10" stroke="var(--hm-text)" strokeWidth="1" opacity="0.5" />
           </svg>
           <h1 className="text-[28px] font-medium text-[var(--hm-text)] mb-2.5 tracking-tight">
             Welcome, {user.name.split(" ")[0]}!

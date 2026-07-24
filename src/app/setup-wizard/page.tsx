@@ -513,8 +513,8 @@ export default function SetupWizardPage() {
         <div>
           <div className="flex items-center gap-2 mb-10">
             <svg width="24" height="24" viewBox="0 0 32 32">
-              <path d="M16 2L28 9v14l-12 7L4 23V9z" fill="none" stroke="#4361ee" strokeWidth="1.5" />
-              <circle cx="16" cy="16" r="4" fill="#4361ee" opacity="0.8" />
+              <path d="M16 2L28 9v14l-12 7L4 23V9z" fill="none" stroke="var(--hm-text)" strokeWidth="1.5" />
+              <circle cx="16" cy="16" r="4" fill="var(--hm-text)" opacity="0.85" />
             </svg>
             <span className="text-[15px] font-medium tracking-wide">HiveMind</span>
           </div>

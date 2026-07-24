@@ -213,16 +213,16 @@ export default function LoginPage() {
               <path
                 d="M16 2L28 9v14l-12 7L4 23V9z"
                 fill="none"
-                stroke="#4361ee"
+                stroke="white"
                 strokeWidth="1.5"
               />
-              <circle cx="16" cy="16" r="4" fill="#4361ee" opacity="0.8" />
-              <line x1="16" y1="12" x2="16" y2="6" stroke="#4361ee" strokeWidth="1" opacity="0.5" />
-              <line x1="19.5" y1="14" x2="24" y2="10" stroke="#4361ee" strokeWidth="1" opacity="0.5" />
-              <line x1="19.5" y1="18" x2="24" y2="22" stroke="#4361ee" strokeWidth="1" opacity="0.5" />
-              <line x1="16" y1="20" x2="16" y2="26" stroke="#4361ee" strokeWidth="1" opacity="0.5" />
-              <line x1="12.5" y1="18" x2="8" y2="22" stroke="#4361ee" strokeWidth="1" opacity="0.5" />
-              <line x1="12.5" y1="14" x2="8" y2="10" stroke="#4361ee" strokeWidth="1" opacity="0.5" />
+              <circle cx="16" cy="16" r="4" fill="white" opacity="0.8" />
+              <line x1="16" y1="12" x2="16" y2="6" stroke="white" strokeWidth="1" opacity="0.5" />
+              <line x1="19.5" y1="14" x2="24" y2="10" stroke="white" strokeWidth="1" opacity="0.5" />
+              <line x1="19.5" y1="18" x2="24" y2="22" stroke="white" strokeWidth="1" opacity="0.5" />
+              <line x1="16" y1="20" x2="16" y2="26" stroke="white" strokeWidth="1" opacity="0.5" />
+              <line x1="12.5" y1="18" x2="8" y2="22" stroke="white" strokeWidth="1" opacity="0.5" />
+              <line x1="12.5" y1="14" x2="8" y2="10" stroke="white" strokeWidth="1" opacity="0.5" />
             </svg>
             <span className="text-xl font-medium text-white tracking-wide">
               HiveMind
