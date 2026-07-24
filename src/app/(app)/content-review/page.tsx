@@ -47,33 +47,33 @@ const DIM_ICONS: Record<string, string> = {
 };
 
 function scoreColor(score: number) {
-  if (score >= 80) return "text-emerald-600";
-  if (score >= 60) return "text-amber-500";
-  return "text-red-500";
+  if (score >= 80) return "text-[var(--tag-green-fg)]";
+  if (score >= 60) return "text-[var(--tag-yellow-fg)]";
+  return "text-[var(--tag-red-fg)]";
 }
 
 function scoreBg(score: number) {
-  if (score >= 80) return "bg-emerald-50 border-emerald-200";
-  if (score >= 60) return "bg-amber-50 border-amber-200";
-  return "bg-red-50 border-red-200";
+  if (score >= 80) return "bg-[var(--tag-green-bg)] border-[var(--hm-border)]";
+  if (score >= 60) return "bg-[var(--tag-yellow-bg)] border-[var(--hm-border)]";
+  return "bg-[var(--tag-red-bg)] border-[var(--hm-border)]";
 }
 
 function scoreBar(score: number) {
-  if (score >= 80) return "bg-emerald-500";
-  if (score >= 60) return "bg-amber-400";
-  return "bg-red-500";
+  if (score >= 80) return "bg-[var(--hm-success)]";
+  if (score >= 60) return "bg-[var(--hm-warning)]";
+  return "bg-[var(--hm-danger)]";
 }
 
 function issueColor(type: string) {
-  if (type === "error") return "bg-red-50 border-red-200 text-red-700";
-  if (type === "warning") return "bg-amber-50 border-amber-200 text-amber-700";
-  return "bg-blue-50 border-blue-200 text-blue-700";
+  if (type === "error") return "bg-[var(--tag-red-bg)] border-[var(--hm-border)] text-[var(--tag-red-fg)]";
+  if (type === "warning") return "bg-[var(--tag-yellow-bg)] border-[var(--hm-border)] text-[var(--tag-yellow-fg)]";
+  return "bg-[var(--tag-blue-bg)] border-[var(--hm-border)] text-[var(--tag-blue-fg)]";
 }
 
 function issueBadge(type: string) {
-  if (type === "error") return "bg-red-500 text-white";
-  if (type === "warning") return "bg-amber-400 text-white";
-  return "bg-blue-400 text-white";
+  if (type === "error") return "bg-[var(--hm-danger)] text-white";
+  if (type === "warning") return "bg-[var(--hm-warning)] text-white";
+  return "bg-[var(--tag-blue-fg)] text-white";
 }
 
 export default function ContentReviewPage() {
@@ -119,7 +119,7 @@ export default function ContentReviewPage() {
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       <ModuleTour moduleId="content-review" />
-      <div className="px-7 py-4 bg-white border-b border-[var(--hm-border)] flex items-center justify-between" style={{ boxShadow: "var(--hm-shadow-xs)" }}>
+      <div className="px-7 py-4 bg-[var(--hm-surface)] border-b border-[var(--hm-border)] flex items-center justify-between" style={{ boxShadow: "var(--hm-shadow-xs)" }}>
         <div>
           <h1 className="text-[22px] font-semibold leading-tight">Content Review</h1>
           <p className="text-[12px] text-[var(--hm-text-tertiary)] mt-0.5">Grammar · Brand alignment · Fact check · AI detection · Readability · SEO</p>
@@ -131,7 +131,7 @@ export default function ContentReviewPage() {
           {!review ? (
             <div className="animate-fade-in">
               {/* Input area */}
-              <div className="bg-white border border-[var(--hm-border)] rounded-xl p-5" style={{ boxShadow: "var(--hm-shadow-card)" }}>
+              <div className="bg-[var(--hm-surface)] border border-[var(--hm-border)] rounded-xl p-5" style={{ boxShadow: "var(--hm-shadow-card)" }}>
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-[14px] font-medium">Paste your content</h3>
                   <div className="flex items-center gap-3">
@@ -139,7 +139,7 @@ export default function ContentReviewPage() {
                       data-tour="cr-type"
                       value={contentType}
                       onChange={e => setContentType(e.target.value)}
-                      className="text-[12px] h-8 px-3 border border-[var(--hm-border)] rounded-lg bg-white focus:ring-2 focus:ring-[#4361ee] focus:border-[#4361ee] outline-none"
+                      className="text-[12px] h-8 px-3 border border-[var(--hm-border)] rounded-lg bg-[var(--hm-surface)] focus:ring-2 focus:ring-[var(--hm-link)] focus:border-[var(--hm-primary)] outline-none"
                     >
                       {CONTENT_TYPES.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
                     </select>
@@ -152,20 +152,20 @@ export default function ContentReviewPage() {
                   value={content}
                   onChange={e => setContent(e.target.value)}
                   placeholder="Paste your blog post, LinkedIn update, email copy, or any marketing content here..."
-                  className="w-full min-h-[320px] text-[13px] leading-relaxed p-4 border border-[var(--hm-border)] rounded-lg resize-y focus:ring-2 focus:ring-[#4361ee] focus:border-[#4361ee] outline-none"
+                  className="w-full min-h-[320px] text-[13px] leading-relaxed p-4 border border-[var(--hm-border)] rounded-lg resize-y focus:ring-2 focus:ring-[var(--hm-link)] focus:border-[var(--hm-primary)] outline-none"
                 />
 
                 {error && (
-                  <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-[12px] text-red-600 flex items-center justify-between">
+                  <div className="mt-3 p-3 bg-[var(--tag-red-bg)] border border-[var(--hm-border)] rounded-lg text-[12px] text-[var(--tag-red-fg)] flex items-center justify-between">
                     {error}
-                    <button onClick={() => setError("")} className="opacity-50 hover:opacity-100 w-6 h-6 flex items-center justify-center rounded-md hover:bg-red-100">&times;</button>
+                    <button onClick={() => setError("")} className="opacity-50 hover:opacity-100 w-6 h-6 flex items-center justify-center rounded-md hover:bg-[var(--tag-red-bg)]">&times;</button>
                   </div>
                 )}
 
                 <div className="flex items-center justify-between mt-4">
                   <div className="flex items-center gap-2">
-                    <div className="w-5 h-5 rounded-full bg-gradient-to-br from-[#4361ee]/10 to-[#7c3aed]/10 flex items-center justify-center">
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" stroke="#4361ee" strokeWidth="2"/><path d="M12 6v6l4 2" stroke="#4361ee" strokeWidth="2" strokeLinecap="round"/></svg>
+                    <div className="w-5 h-5 rounded-full bg-[var(--hm-bg-tertiary)] flex items-center justify-center">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" stroke="var(--hm-primary)" strokeWidth="2"/><path d="M12 6v6l4 2" stroke="var(--hm-primary)" strokeWidth="2" strokeLinecap="round"/></svg>
                     </div>
                     <span className="text-[11px] text-[var(--hm-text-tertiary)]">Review takes 15–30 seconds depending on content length</span>
                   </div>
@@ -173,7 +173,7 @@ export default function ContentReviewPage() {
                     data-tour="cr-run"
                     onClick={runReview}
                     disabled={reviewing || wordCount < 10}
-                    className="h-9 px-6 bg-gradient-to-r from-[#4361ee] to-[#7c3aed] text-white rounded-lg text-[13px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    className="h-9 px-6 bg-[var(--hm-primary)] text-white rounded-lg text-[13px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                   >
                     {reviewing ? (
                       <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Reviewing...</>
@@ -197,8 +197,8 @@ export default function ContentReviewPage() {
                   { icon: "¶", title: "Readability", desc: "Sentence variety, paragraph structure, jargon, passive voice" },
                   { icon: "↑", title: "SEO & Structure", desc: "Heading hierarchy, keyword placement, content length, meta readiness" },
                 ].map(d => (
-                  <div key={d.title} className="p-4 bg-white border border-[var(--hm-border)] rounded-xl" style={{ boxShadow: "var(--hm-shadow-card)" }}>
-                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#4361ee]/10 to-[#7c3aed]/10 flex items-center justify-center text-[14px] mb-2">{d.icon}</div>
+                  <div key={d.title} className="p-4 bg-[var(--hm-surface)] border border-[var(--hm-border)] rounded-xl" style={{ boxShadow: "var(--hm-shadow-card)" }}>
+                    <div className="w-8 h-8 rounded-lg bg-[var(--hm-bg-tertiary)] flex items-center justify-center text-[14px] mb-2">{d.icon}</div>
                     <p className="text-[12px] font-medium mb-0.5">{d.title}</p>
                     <p className="text-[11px] text-[var(--hm-text-tertiary)] leading-relaxed">{d.desc}</p>
                   </div>
@@ -211,7 +211,7 @@ export default function ContentReviewPage() {
               <div className="flex items-center justify-between mb-5">
                 <button
                   onClick={() => { setReview(null); setActiveDim(null); setExpandedIssue(null); }}
-                  className="flex items-center gap-2 text-[12px] text-[var(--hm-text-tertiary)] hover:text-[#4361ee] transition-colors"
+                  className="flex items-center gap-2 text-[12px] text-[var(--hm-text-tertiary)] hover:text-[var(--hm-text)] transition-colors"
                 >
                   <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
                   Review new content
@@ -225,7 +225,7 @@ export default function ContentReviewPage() {
 
               {/* Overall score card */}
               <div className={"border rounded-xl p-5 mb-5 flex items-center gap-5 " + scoreBg(review.overallScore)}>
-                <div className="flex-shrink-0 w-[72px] h-[72px] rounded-full border-4 flex items-center justify-center" style={{ borderColor: review.overallScore >= 80 ? "#10B981" : review.overallScore >= 60 ? "#F59E0B" : "#EF4444" }}>
+                <div className="flex-shrink-0 w-[72px] h-[72px] rounded-full border-4 flex items-center justify-center" style={{ borderColor: review.overallScore >= 80 ? "var(--hm-success)" : review.overallScore >= 60 ? "var(--hm-warning)" : "var(--hm-danger)" }}>
                   <span className={"text-[28px] font-bold " + scoreColor(review.overallScore)}>{review.overallScore}</span>
                 </div>
                 <div className="flex-1">
@@ -247,7 +247,7 @@ export default function ContentReviewPage() {
                     <button
                       key={dimKey}
                       onClick={() => { setActiveDim(dimKey); setExpandedIssue(null); }}
-                      className={"p-3 rounded-xl border text-center transition-all duration-150 " + (active ? "border-[#4361ee] bg-blue-50/50 ring-1 ring-[#4361ee]/30" : "border-[var(--hm-border)] bg-white hover:border-[#4361ee]/40")}
+                      className={"p-3 rounded-xl border text-center transition-all duration-150 " + (active ? "border-[var(--hm-primary)] bg-[var(--tag-blue-bg)]/50 ring-1 ring-[var(--hm-link)]/30" : "border-[var(--hm-border)] bg-[var(--hm-surface)] hover:border-[var(--hm-text-tertiary)]")}
                       style={{ boxShadow: active ? "none" : "var(--hm-shadow-card)" }}
                     >
                       <div className="text-[16px] mb-1 opacity-60">{DIM_ICONS[dimKey]}</div>
@@ -268,7 +268,7 @@ export default function ContentReviewPage() {
 
               {/* Active dimension issues */}
               {activeDimData && typeof activeDimData === "object" && "issues" in activeDimData && (
-                <div className="bg-white border border-[var(--hm-border)] rounded-xl p-5" style={{ boxShadow: "var(--hm-shadow-card)" }}>
+                <div className="bg-[var(--hm-surface)] border border-[var(--hm-border)] rounded-xl p-5" style={{ boxShadow: "var(--hm-shadow-card)" }}>
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-2">
                       <span className="text-[16px] opacity-60">{DIM_ICONS[activeDim!]}</span>
@@ -282,10 +282,10 @@ export default function ContentReviewPage() {
 
                   {(activeDimData as Dimension).issues.length === 0 ? (
                     <div className="text-center py-8">
-                      <div className="w-10 h-10 rounded-full bg-emerald-50 flex items-center justify-center mx-auto mb-2">
-                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5l3 3 6-6" stroke="#10B981" strokeWidth="2" strokeLinecap="round" /></svg>
+                      <div className="w-10 h-10 rounded-full bg-[var(--tag-green-bg)] flex items-center justify-center mx-auto mb-2">
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5l3 3 6-6" stroke="var(--hm-success)" strokeWidth="2" strokeLinecap="round" /></svg>
                       </div>
-                      <p className="text-[12px] text-emerald-600 font-medium">No issues found</p>
+                      <p className="text-[12px] text-[var(--tag-green-fg)] font-medium">No issues found</p>
                       <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-0.5">This dimension looks good!</p>
                     </div>
                   ) : (
