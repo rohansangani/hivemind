@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { LogoLoader } from "@/components/LogoLoader";
 import { useUser } from "@/lib/UserContext";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
 import ModuleTour from "@/components/ModuleTour";
@@ -164,7 +165,7 @@ export default function CoachPage() {
           </button>
 
           {lessonLoading ? (
-            <div className="flex justify-center py-20"><div className="w-6 h-6 border-2 border-[#4361ee]/30 border-t-[#4361ee] rounded-full animate-spin" /></div>
+            <div className="flex justify-center py-20"><LogoLoader size={34} /></div>
           ) : !lesson ? (
             <p className="text-[13px] text-[var(--hm-text-tertiary)]">Couldn&apos;t load this lesson.</p>
           ) : (
@@ -304,11 +305,11 @@ export default function CoachPage() {
         )}
 
         {loading ? (
-          <div className="flex justify-center py-20"><div className="w-6 h-6 border-2 border-[#4361ee]/30 border-t-[#4361ee] rounded-full animate-spin" /></div>
+          <div className="flex justify-center py-20"><LogoLoader size={34} /></div>
         ) : tab === "enroll" && canViewTeam ? (
           /* Enrollment (admins) */
           enrollLoading ? (
-            <div className="flex justify-center py-16"><div className="w-6 h-6 border-2 border-[#4361ee]/30 border-t-[#4361ee] rounded-full animate-spin" /></div>
+            <div className="flex justify-center py-16"><LogoLoader size={34} /></div>
           ) : (
             <div>
               <p className="text-[12px] text-[var(--hm-text-tertiary)] mb-3">Choose who gets access to Coach. Only enrolled people (and admins) see the learning experience.</p>
@@ -332,7 +333,7 @@ export default function CoachPage() {
         ) : tab === "team" && canViewTeam ? (
           /* Team readiness */
           teamLoading ? (
-            <div className="flex justify-center py-16"><div className="w-6 h-6 border-2 border-[#4361ee]/30 border-t-[#4361ee] rounded-full animate-spin" /></div>
+            <div className="flex justify-center py-16"><LogoLoader size={34} /></div>
           ) : (
             <div className="bg-white rounded-xl border border-[var(--hm-border)] overflow-hidden">
               {(team || []).map((m, i) => (

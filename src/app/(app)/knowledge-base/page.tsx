@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { LogoLoader } from "@/components/LogoLoader";
 import { upload } from "@vercel/blob/client";
 import { useUser } from "@/lib/UserContext";
 import ModuleTour from "@/components/ModuleTour";
@@ -474,7 +475,7 @@ export default function KnowledgeBasePage() {
   const fl = (f: string) => ({ content_generator: "Content Generator", brand_scoring: "Brand Scoring", ai_assistant: "AI Assistant" }[f] || f);
   const closeAll = () => { setEditingItemId(null); setEditProd(null); setEditPersona(null); setEditComp(null); setEditBrand(null); setShowAddProduct(false); setShowAddPersona(false); setShowAddCompetitor(false); };
 
-  if (!org) return <div role="status" aria-label="Loading knowledge base" className="min-h-screen flex items-center justify-center"><div aria-hidden="true" className="w-5 h-5 border-2 border-[var(--hm-link)]/30 border-t-[var(--hm-link)] rounded-full animate-spin" /></div>;
+  if (!org) return <div role="status" aria-label="Loading knowledge base" className="min-h-screen flex items-center justify-center"><LogoLoader size={34} /></div>;
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -1001,7 +1002,7 @@ export default function KnowledgeBasePage() {
                 <input type="file" className="hidden" disabled={docUploading} multiple accept=".pdf,.txt,.md,.csv,.html,.htm,.json,.docx,.pptx,.xlsx" onChange={e => { if (e.target.files?.length) uploadDocuments(e.target.files); e.target.value = ""; }} />
                 {docUploading ? (
                   <div role="status" aria-label="Uploading and analyzing documents" className="flex flex-col items-center gap-2">
-                    <div aria-hidden="true" className="w-6 h-6 border-2 border-[var(--hm-primary)]/30 border-t-[var(--hm-primary)] rounded-full animate-spin" />
+                    <LogoLoader size={34} />
                     <p className="text-[12px] text-[var(--hm-text)] font-medium">
                       {docProgress ? `Analyzing ${docProgress.total} document${docProgress.total !== 1 ? "s" : ""}...` : "Analyzing..."}
                     </p>
@@ -1866,7 +1867,7 @@ export default function KnowledgeBasePage() {
               {/* Loading */}
               {customLoading && (
                 <div className="flex items-center justify-center py-16">
-                  <div className="w-5 h-5 border-2 border-[var(--hm-primary)]/30 border-t-[var(--hm-primary)] rounded-full animate-spin" />
+                  <LogoLoader size={34} />
                 </div>
               )}
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import { LogoLoader } from "@/components/LogoLoader";
 import { createPortal } from "react-dom";
 import { useUser } from "@/lib/UserContext";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
@@ -1160,7 +1161,7 @@ export default function ContentGeneratorPage() {
                         {applyError && <div className="mb-3 p-2.5 rounded-lg bg-[var(--tag-red-bg)] border border-[var(--hm-border)]"><p className="text-[11px] text-[var(--tag-red-fg)]">⚠ {applyError}</p></div>}
                         {suggestionsLoading[`${generatedId}:${activeTab}`] ? (
                           <div className="flex flex-col items-center gap-2.5 py-12">
-                            <div className="w-5 h-5 border-2 border-[var(--hm-border)] border-t-[var(--hm-text-secondary)] rounded-full animate-spin" />
+                            <LogoLoader size={34} />
                             <p className="text-[12px] text-[var(--hm-text-tertiary)]">Analyzing content…</p>
                           </div>
                         ) : suggestions[`${generatedId}:${activeTab}`]?.length ? (
@@ -1610,7 +1611,7 @@ export default function ContentGeneratorPage() {
             <div className="flex-1 overflow-y-auto px-7 py-6 min-h-0">
               {designBriefLoading ? (
                 <div role="status" aria-label="Generating design brief" className="flex flex-col items-center gap-3 py-20">
-                  <div aria-hidden="true" className="w-6 h-6 border-2 border-[var(--hm-border)] border-t-[var(--hm-text-secondary)] rounded-full animate-spin" />
+                  <LogoLoader size={34} />
                   <p className="text-[12px] text-[var(--hm-text-tertiary)]">Generating design brief…</p>
                 </div>
               ) : (

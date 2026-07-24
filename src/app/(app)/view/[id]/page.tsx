@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { LogoLoader } from "@/components/LogoLoader";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 
@@ -59,7 +60,7 @@ export default function FileViewerPage() {
 
   if (!asset) return (
     <div className="flex-1 flex items-center justify-center gap-3">
-      <div className="w-5 h-5 border-2 border-[var(--hm-accent)]/30 border-t-[var(--hm-accent)] rounded-full animate-spin" />
+      <LogoLoader size={34} />
       <span className="text-[13px] text-[var(--hm-text-tertiary)]">Loading file…</span>
     </div>
   );

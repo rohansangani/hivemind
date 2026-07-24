@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { LogoLoader } from "@/components/LogoLoader";
 
 /**
  * Signals — read-only dashboard over ClickPost Signal (Sai's GTM/expansion-intelligence
@@ -192,7 +193,7 @@ function AccountsSection() {
       <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] overflow-hidden">
         {loading ? (
           <div className="flex items-center justify-center py-14">
-            <div className="w-5 h-5 border-2 border-[var(--hm-accent)]/30 border-t-[var(--hm-accent)] rounded-full animate-spin" />
+            <LogoLoader size={34} />
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -421,7 +422,7 @@ function AccountDrawer({ name, onClose }: { name: string; onClose: () => void })
 function Spinner() {
   return (
     <div className="flex items-center justify-center py-10">
-      <div className="w-5 h-5 border-2 border-[var(--hm-accent)]/30 border-t-[var(--hm-accent)] rounded-full animate-spin" />
+      <LogoLoader size={34} />
     </div>
   );
 }

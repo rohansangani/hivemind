@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { LogoLoader } from "@/components/LogoLoader";
 import { useUser } from "@/lib/UserContext";
 import ModuleTour from "@/components/ModuleTour";
 
@@ -144,7 +145,7 @@ export default function UsagePage() {
         {/* ── Loading / Error ─────────────────────────────────────── */}
         {loading && (
           <div className="flex items-center justify-center py-20">
-            <div className="w-5 h-5 border-2 border-[var(--hm-border)] border-t-[var(--hm-text-secondary)] rounded-full animate-spin" />
+            <LogoLoader size={34} />
           </div>
         )}
 
@@ -443,7 +444,7 @@ function RadarUsageSection() {
 
       {loading ? (
         <div className="flex items-center justify-center py-10">
-          <div className="w-5 h-5 border-2 border-[var(--hm-border)] border-t-[var(--hm-text-secondary)] rounded-full animate-spin" />
+          <LogoLoader size={34} />
         </div>
       ) : !data || data.error ? (
         <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-bg)] p-4 text-[12.5px] text-[var(--hm-text-tertiary)]">

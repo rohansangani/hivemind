@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import { LogoLoader } from "@/components/LogoLoader";
 import { useRouter, useParams } from "next/navigation";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
 import { useUser } from "@/lib/UserContext";
@@ -185,7 +186,7 @@ export default function GeneratedContentDetail() {
 
   if (loading) return (
     <div className="flex-1 flex items-center justify-center gap-3">
-      <div className="w-5 h-5 border-2 border-[var(--hm-accent)]/30 border-t-[var(--hm-accent)] rounded-full animate-spin" />
+      <LogoLoader size={34} />
       <span className="text-[13px] text-[var(--hm-text-tertiary)]">Loading content…</span>
     </div>
   );

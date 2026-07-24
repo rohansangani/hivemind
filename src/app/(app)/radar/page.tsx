@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { LogoLoader } from "@/components/LogoLoader";
 import { useUser } from "@/lib/UserContext";
 import { hasModuleAccess } from "@/lib/modules";
 import { APIFY_LEADS_FINDER_LOCATIONS } from "@/lib/radar/apifyLocations";
@@ -215,7 +216,7 @@ function RadarActivityLogSection() {
 
       {loading ? (
         <div className="flex items-center justify-center py-20">
-          <div className="w-5 h-5 border-2 border-[var(--hm-border)] border-t-[var(--hm-text-secondary)] rounded-full animate-spin" />
+          <LogoLoader size={34} />
         </div>
       ) : error ? (
         <div className="m-4 rounded-lg border border-[var(--hm-border)] bg-[var(--tag-red-bg)] dark:bg-[var(--tag-red-bg)]/20 dark:border-[var(--hm-border)] p-4 text-[13px] text-[var(--tag-red-fg)] dark:text-[var(--tag-red-fg)]">
@@ -341,7 +342,7 @@ function RadarDashboard() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <div className="w-5 h-5 border-2 border-[var(--hm-border)] border-t-[var(--hm-text-secondary)] rounded-full animate-spin" />
+        <LogoLoader size={34} />
       </div>
     );
   }
@@ -827,7 +828,7 @@ function DataTable<T extends { id: string }>({
       {/* Body */}
       {loading ? (
         <div className="flex items-center justify-center py-20">
-          <div className="w-5 h-5 border-2 border-[var(--hm-border)] border-t-[var(--hm-text-secondary)] rounded-full animate-spin" />
+          <LogoLoader size={34} />
         </div>
       ) : error ? (
         <div className="m-4 rounded-lg border border-[var(--hm-border)] bg-[var(--tag-red-bg)] dark:bg-[var(--tag-red-bg)]/20 dark:border-[var(--hm-border)] p-4 text-[13px] text-[var(--tag-red-fg)] dark:text-[var(--tag-red-fg)]">
@@ -1404,7 +1405,7 @@ function AccountContactsPanel({ account, onClose }: { account: AccountRow; onClo
         <div className="flex-1 overflow-y-auto">
           {loading ? (
             <div className="flex items-center justify-center py-16">
-              <div className="w-5 h-5 border-2 border-[var(--hm-border)] border-t-[var(--hm-text-secondary)] rounded-full animate-spin" />
+              <LogoLoader size={34} />
             </div>
           ) : error ? (
             <div className="m-4 rounded-lg border border-[var(--hm-border)] bg-[var(--tag-red-bg)] dark:bg-[var(--tag-red-bg)]/20 dark:border-[var(--hm-border)] p-4 text-[13px] text-[var(--tag-red-fg)] dark:text-[var(--tag-red-fg)]">{error}</div>
@@ -3214,7 +3215,7 @@ function EnrichSection() {
 
         {phase === "running" && (
           <div className="px-5 py-14 flex flex-col items-center justify-center text-center gap-3">
-            <div className="w-5 h-5 border-2 border-[var(--hm-border)] border-t-[var(--hm-text-secondary)] rounded-full animate-spin" />
+            <LogoLoader size={34} />
             <p className="text-[13px] text-[var(--hm-text)]">Enriching via Apify…</p>
             <button onClick={stopSearch} disabled={stopBusy || !runId} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 14px", fontSize: 12.5 }}>
               {stopBusy ? "Stopping…" : "■ Stop"}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { LogoLoader } from "@/components/LogoLoader";
 import { useRouter } from "next/navigation";
 import { useUser } from "@/lib/UserContext";
 import { hasPermission } from "@/lib/permissions";
@@ -749,7 +750,7 @@ function ModuleFeedTab({ module, empty }: { module: string; empty: string }) {
       .finally(() => setLoading(false));
   }, [module]);
 
-  if (loading) return <div className="flex justify-center py-16"><div className="w-6 h-6 border-2 border-[var(--hm-border)] border-t-[var(--hm-text-secondary)] rounded-full animate-spin" /></div>;
+  if (loading) return <div className="flex justify-center py-16"><LogoLoader size={34} /></div>;
   if (!events || events.length === 0) return <p className="text-center text-[13px] py-12" style={{ color: "var(--hm-text-tertiary)" }}>{empty}</p>;
 
   return (
@@ -791,7 +792,7 @@ export default function ActivityPage() {
   if (!user || !hasPermission(user.role, "manage_team")) {
     return (
       <div className="flex-1 flex items-center justify-center">
-        <div className="w-5 h-5 border-2 border-[var(--hm-border)] border-t-[var(--hm-text-secondary)] rounded-full animate-spin" />
+        <LogoLoader size={34} />
       </div>
     );
   }

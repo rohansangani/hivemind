@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { LogoLoader } from "@/components/LogoLoader";
 import { useRouter } from "next/navigation";
 import { useUser } from "@/lib/UserContext";
 import { normalizeRole } from "@/lib/permissions";
@@ -172,7 +173,7 @@ export default function DashboardPage() {
   const showInviteTeam = roleGroup === "admin";
 
   // ── Loading / Error states ─────────────────────────────
-  if (loading && !data) return (<div className="min-h-screen flex items-center justify-center"><div className="w-5 h-5 border-2 border-[var(--hm-border)] border-t-[var(--hm-text-secondary)] rounded-full animate-spin" /></div>);
+  if (loading && !data) return (<div className="min-h-screen flex items-center justify-center"><LogoLoader size={34} /></div>);
   if (error && !data) return (<div className="min-h-screen flex items-center justify-center"><div className="text-center"><div className="w-12 h-12 rounded-full bg-[var(--tag-red-bg)] flex items-center justify-center mx-auto mb-4"><svg width="20" height="20" viewBox="0 0 16 16" fill="none"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zM8 5v3M8 10h.01" stroke="var(--hm-danger)" strokeWidth="1.3" strokeLinecap="round" /></svg></div><p className="text-[14px] font-medium mb-1">Failed to load dashboard</p><p className="text-[12px] text-[var(--hm-text-tertiary)] mb-4">{error}</p><button onClick={() => fetchDashboard()} className="h-9 px-5 bg-[var(--hm-primary)] hover:bg-[var(--hm-primary-hover)] text-white rounded-lg text-[12px] font-medium transition-colors">Retry</button></div></div>);
   if (!data) return null;
 
