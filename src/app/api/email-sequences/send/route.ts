@@ -95,10 +95,11 @@ export async function POST(req: NextRequest) {
       const subject = i === 0 || !isSingleSubject ? `{{step${i + 1}Subject}}` : "";
       // {{accountSignature}} is Instantly's own built-in tag, resolved per sending mailbox at
       // send time — it has to actually appear in the step body for Instantly to substitute it;
-      // it's not something we generate or pass per-lead. Extra blank line for a clearer visual
-      // gap (the raw stored value does contain "\n\n" either way — confirmed via a live test —
-      // Instantly's own template preview just renders it compactly).
-      return { type: "email", delay, variants: [{ subject, body: `{{step${i + 1}Body}}\n\n\n{{accountSignature}}` }] };
+      // it's not something we generate or pass per-lead. Instantly's step editor renders this
+      // field as HTML, not plain text — plain "\n\n" newlines get collapsed to nothing visible
+      // (confirmed live: the editor showed both tags run together on one line despite the raw
+      // stored value containing them), so an actual line break needs real HTML <br> tags.
+      return { type: "email", delay, variants: [{ subject, body: `{{step${i + 1}Body}}<br><br>{{accountSignature}}` }] };
     });
 
     // Default schedule — business hours, weekdays only, Eastern Time — matching the user's own
