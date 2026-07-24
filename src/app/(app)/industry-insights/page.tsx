@@ -21,15 +21,17 @@ interface Insight {
   createdAt: string;
 }
 
+// Signal type = category chip → one tag tone each (colour lives only in the chip,
+// mapping stable per type). border = the left accent stripe on insight cards.
 const SIGNAL_COLORS: Record<string, { border: string; bg: string; text: string; label: string }> = {
-  competitor:           { border: "border-l-red-500",     bg: "bg-red-50",     text: "text-red-600",     label: "Competitor" },
-  industry_report:      { border: "border-l-amber-500",   bg: "bg-amber-50",   text: "text-amber-600",   label: "Industry report" },
-  product_launch:       { border: "border-l-[#4361ee]",   bg: "bg-blue-50",    text: "text-[#4361ee]",   label: "Product launch" },
-  regulatory:           { border: "border-l-emerald-500", bg: "bg-emerald-50", text: "text-emerald-600",  label: "Regulatory" },
-  news_pr:              { border: "border-l-purple-500",  bg: "bg-purple-50",  text: "text-purple-600",  label: "News & PR" },
-  market_trend:         { border: "border-l-teal-500",    bg: "bg-teal-50",    text: "text-teal-600",    label: "Market trend" },
-  technology:           { border: "border-l-sky-500",     bg: "bg-sky-50",     text: "text-sky-600",     label: "Technology" },
-  strategic_opportunity:{ border: "border-l-violet-500",  bg: "bg-violet-50",  text: "text-violet-600",  label: "Strategic opp." },
+  competitor:           { border: "border-l-[var(--tag-red-fg)]",    bg: "bg-[var(--tag-red-bg)]",    text: "text-[var(--tag-red-fg)]",    label: "Competitor" },
+  industry_report:      { border: "border-l-[var(--tag-yellow-fg)]", bg: "bg-[var(--tag-yellow-bg)]", text: "text-[var(--tag-yellow-fg)]", label: "Industry report" },
+  product_launch:       { border: "border-l-[var(--tag-blue-fg)]",   bg: "bg-[var(--tag-blue-bg)]",   text: "text-[var(--tag-blue-fg)]",   label: "Product launch" },
+  regulatory:           { border: "border-l-[var(--tag-green-fg)]",  bg: "bg-[var(--tag-green-bg)]",  text: "text-[var(--tag-green-fg)]",  label: "Regulatory" },
+  news_pr:              { border: "border-l-[var(--tag-purple-fg)]", bg: "bg-[var(--tag-purple-bg)]", text: "text-[var(--tag-purple-fg)]", label: "News & PR" },
+  market_trend:         { border: "border-l-[var(--tag-orange-fg)]", bg: "bg-[var(--tag-orange-bg)]", text: "text-[var(--tag-orange-fg)]", label: "Market trend" },
+  technology:           { border: "border-l-[var(--tag-gray-fg)]",   bg: "bg-[var(--tag-gray-bg)]",   text: "text-[var(--tag-gray-fg)]",   label: "Technology" },
+  strategic_opportunity:{ border: "border-l-[var(--tag-pink-fg)]",   bg: "bg-[var(--tag-pink-bg)]",   text: "text-[var(--tag-pink-fg)]",   label: "Strategic opp." },
 };
 
 const SIGNAL_FILTERS = [
@@ -46,9 +48,9 @@ const SIGNAL_FILTERS = [
 
 // Priority badge config — all three tiers are labelled
 const PRIORITY_CONFIG: Record<string, { bg: string; text: string; dot: string; label: string } | undefined> = {
-  high:   { bg: "bg-red-50",    text: "text-red-600",    dot: "bg-red-500",    label: "High priority" },
-  medium: { bg: "bg-amber-50",  text: "text-amber-600",  dot: "bg-amber-400",  label: "Medium priority" },
-  low:    { bg: "bg-slate-50",  text: "text-slate-500",  dot: "bg-slate-400",  label: "Low priority" },
+  high:   { bg: "bg-[var(--tag-red-bg)]",    text: "text-[var(--tag-red-fg)]",    dot: "bg-[var(--hm-danger)]",         label: "High priority" },
+  medium: { bg: "bg-[var(--tag-yellow-bg)]", text: "text-[var(--tag-yellow-fg)]", dot: "bg-[var(--hm-warning)]",        label: "Medium priority" },
+  low:    { bg: "bg-[var(--tag-gray-bg)]",   text: "text-[var(--tag-gray-fg)]",   dot: "bg-[var(--hm-text-tertiary)]",  label: "Low priority" },
 };
 
 function timeAgo(date: string) {
@@ -69,18 +71,18 @@ function formatDate(date: string) {
 // Skeleton card shown while data loads
 function SkeletonCard() {
   return (
-    <div className="bg-white border border-[var(--hm-border)] border-l-[3px] border-l-slate-200 rounded-xl p-5 animate-pulse">
+    <div className="bg-[var(--hm-surface)] border border-[var(--hm-border)] border-l-[3px] border-l-[var(--hm-border)] rounded-xl p-5 animate-pulse">
       <div className="flex items-center gap-2 mb-3">
-        <div className="h-4 w-20 bg-slate-100 rounded-md" />
-        <div className="h-4 w-14 bg-slate-100 rounded-md" />
-        <div className="h-4 w-16 bg-slate-100 rounded-md ml-auto" />
+        <div className="h-4 w-20 bg-[var(--tag-gray-bg)] rounded-md" />
+        <div className="h-4 w-14 bg-[var(--tag-gray-bg)] rounded-md" />
+        <div className="h-4 w-16 bg-[var(--tag-gray-bg)] rounded-md ml-auto" />
       </div>
-      <div className="h-4 w-3/4 bg-slate-100 rounded mb-2" />
-      <div className="h-3 w-full bg-slate-100 rounded mb-1.5" />
-      <div className="h-3 w-5/6 bg-slate-100 rounded mb-4" />
+      <div className="h-4 w-3/4 bg-[var(--tag-gray-bg)] rounded mb-2" />
+      <div className="h-3 w-full bg-[var(--tag-gray-bg)] rounded mb-1.5" />
+      <div className="h-3 w-5/6 bg-[var(--tag-gray-bg)] rounded mb-4" />
       <div className="flex gap-2">
-        <div className="h-3 w-10 bg-slate-100 rounded-md" />
-        <div className="h-3 w-12 bg-slate-100 rounded-md" />
+        <div className="h-3 w-10 bg-[var(--tag-gray-bg)] rounded-md" />
+        <div className="h-3 w-12 bg-[var(--tag-gray-bg)] rounded-md" />
       </div>
     </div>
   );
@@ -364,38 +366,38 @@ export default function IndustryInsightsPage() {
 
       {/* FIX #2 — 429 cooldown toast */}
       {cooldownToast && (
-        <div className="mx-7 mt-4 flex items-start gap-3 p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-[12px] text-amber-800">
+        <div className="mx-7 mt-4 flex items-start gap-3 p-3.5 bg-[var(--tag-yellow-bg)] border border-[var(--hm-border)] rounded-xl text-[12px] text-[var(--tag-yellow-fg)]">
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none" className="flex-shrink-0 mt-px">
-            <circle cx="8" cy="8" r="6.5" stroke="#D97706" strokeWidth="1.2" />
-            <path d="M8 5v3l2 1" stroke="#D97706" strokeWidth="1.2" strokeLinecap="round" />
+            <circle cx="8" cy="8" r="6.5" stroke="var(--hm-warning)" strokeWidth="1.2" />
+            <path d="M8 5v3l2 1" stroke="var(--hm-warning)" strokeWidth="1.2" strokeLinecap="round" />
           </svg>
           <span className="flex-1">{cooldownToast}</span>
-          <button onClick={() => setCooldownToast(null)} className="text-amber-500 hover:text-amber-700 flex-shrink-0 leading-none text-[14px]">×</button>
+          <button onClick={() => setCooldownToast(null)} className="text-[var(--tag-yellow-fg)] hover:text-[var(--tag-yellow-fg)] flex-shrink-0 leading-none text-[14px]">×</button>
         </div>
       )}
 
       {/* FIX #8 — network / server error banner */}
       {fetchError && (
-        <div className="mx-7 mt-4 flex items-start gap-3 p-3.5 bg-red-50 border border-red-200 rounded-xl text-[12px] text-red-800">
+        <div className="mx-7 mt-4 flex items-start gap-3 p-3.5 bg-[var(--tag-red-bg)] border border-[var(--hm-border)] rounded-xl text-[12px] text-[var(--tag-red-fg)]">
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none" className="flex-shrink-0 mt-px">
-            <circle cx="8" cy="8" r="6.5" stroke="#DC2626" strokeWidth="1.2" />
-            <path d="M8 5v3M8 11h.01" stroke="#DC2626" strokeWidth="1.2" strokeLinecap="round" />
+            <circle cx="8" cy="8" r="6.5" stroke="var(--hm-danger)" strokeWidth="1.2" />
+            <path d="M8 5v3M8 11h.01" stroke="var(--hm-danger)" strokeWidth="1.2" strokeLinecap="round" />
           </svg>
           <span className="flex-1">{fetchError}</span>
-          <button onClick={() => setFetchError(null)} className="text-red-400 hover:text-red-600 flex-shrink-0 leading-none text-[14px]">×</button>
+          <button onClick={() => setFetchError(null)} className="text-[var(--tag-red-fg)] hover:text-[var(--tag-red-fg)] flex-shrink-0 leading-none text-[14px]">×</button>
         </div>
       )}
 
       {/* FIX #12 — auto-refresh in-progress banner */}
       {autoRefreshBanner && (
-        <div className="mx-7 mt-4 flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-xl text-[12px] text-blue-700">
-          <span className="w-3 h-3 border-[1.5px] border-blue-300 border-t-blue-600 rounded-full animate-spin flex-shrink-0" />
+        <div className="mx-7 mt-4 flex items-center gap-3 p-3 bg-[var(--tag-blue-bg)] border border-[var(--hm-border)] rounded-xl text-[12px] text-[var(--tag-blue-fg)]">
+          <span className="w-3 h-3 border-[1.5px] border-[var(--hm-border)] border-t-blue-600 rounded-full animate-spin flex-shrink-0" />
           Auto-refreshing insights in the background…
         </div>
       )}
 
       {/* Header */}
-      <div className="px-7 py-4 bg-white border-b border-[var(--hm-border)] flex items-center justify-between gap-4" style={{ boxShadow: "var(--hm-shadow-xs)" }}>
+      <div className="px-7 py-4 bg-[var(--hm-surface)] border-b border-[var(--hm-border)] flex items-center justify-between gap-4" style={{ boxShadow: "var(--hm-shadow-xs)" }}>
         <div data-tour="ii-header">
           <p className="text-[22px] font-semibold leading-tight">Industry insights</p>
           <p className="text-[12px] text-[var(--hm-text-tertiary)] mt-0.5">
@@ -405,7 +407,7 @@ export default function IndustryInsightsPage() {
         </div>
         <div className="flex items-center gap-3 flex-shrink-0">
           {newCount !== null && (
-            <span className="text-[11px] px-2.5 py-1 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-lg font-medium">
+            <span className="text-[11px] px-2.5 py-1 bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)] border border-[var(--hm-border)] rounded-lg font-medium">
               +{newCount} new insight{newCount !== 1 ? "s" : ""} added
             </span>
           )}
@@ -418,7 +420,7 @@ export default function IndustryInsightsPage() {
               disabled={refreshing || isCoolingDown}
               title={isCoolingDown ? `Next refresh available in ${nextRefreshLabel}` : "Fetch the latest intelligence for your markets"}
               aria-label={refreshing ? "Fetching insights…" : isCoolingDown ? `Next refresh in ${nextRefreshLabel}` : "Refresh insights"}
-              className="h-8 px-3.5 bg-[#4361ee] text-white rounded-lg text-[11px] font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 transition-opacity"
+              className="h-8 px-3.5 bg-[var(--hm-primary)] text-white rounded-lg text-[11px] font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 transition-opacity"
             >
               {refreshing ? (
                 <>
@@ -451,7 +453,7 @@ export default function IndustryInsightsPage() {
               <button
                 onClick={() => setShowBulletinModal(true)}
                 title="Download as branded PDF bulletin"
-                className="h-8 px-3.5 border border-[var(--hm-border)] text-[var(--hm-text-secondary)] rounded-lg text-[11px] font-medium hover:border-[#4361ee]/60 hover:text-[#4361ee] flex items-center gap-1.5 transition-colors bg-white"
+                className="h-8 px-3.5 border border-[var(--hm-border)] text-[var(--hm-text-secondary)] rounded-lg text-[11px] font-medium hover:border-[var(--hm-primary)]/60 hover:text-[var(--hm-text)] flex items-center gap-1.5 transition-colors bg-[var(--hm-surface)]"
               >
                 <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
                   <path d="M8 2v8M5 7l3 3 3-3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
@@ -487,7 +489,7 @@ export default function IndustryInsightsPage() {
       </div>
 
       {/* Filter bar */}
-      <div data-tour="ii-filters" className="px-7 py-3 bg-white border-b border-[var(--hm-border)] flex items-center gap-3 flex-wrap">
+      <div data-tour="ii-filters" className="px-7 py-3 bg-[var(--hm-surface)] border-b border-[var(--hm-border)] flex items-center gap-3 flex-wrap">
 
         {/* Search */}
         <div className="relative flex-shrink-0" style={{ width: 240 }}>
@@ -502,7 +504,7 @@ export default function IndustryInsightsPage() {
             onChange={e => handleSearch(e.target.value)}
             placeholder="Search insights…"
             style={{ paddingLeft: 32, height: 34, fontSize: 12, width: "100%" }}
-            className="rounded-lg border border-[var(--hm-border)] focus:outline-none focus:border-[#4361ee] bg-[var(--hm-bg-secondary)]"
+            className="rounded-lg border border-[var(--hm-border)] focus:outline-none focus:border-[var(--hm-primary)] bg-[var(--hm-bg-secondary)]"
           />
         </div>
 
@@ -514,12 +516,12 @@ export default function IndustryInsightsPage() {
               <button key={f.id} onClick={() => setSignalFilter(f.id)}
                 className={"px-3 py-1.5 rounded-full text-[11px] border whitespace-nowrap transition-all flex items-center gap-1.5 " +
                   (signalFilter === f.id
-                    ? "border-[#4361ee] bg-[#4361ee] text-white font-medium"
-                    : "border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[#4361ee]/40")}
+                    ? "border-[var(--hm-primary)] bg-[var(--hm-primary)] text-white font-medium"
+                    : "border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[var(--hm-text-tertiary)]")}
               >
                 {sc && (
                   <span className={"w-1.5 h-1.5 rounded-full flex-shrink-0 " +
-                    (signalFilter === f.id ? "bg-white/70" : sc.text.replace("text-", "bg-"))} />
+                    (signalFilter === f.id ? "bg-[var(--hm-surface)]/70" : sc.text.replace("text-", "bg-"))} />
                 )}
                 {f.label}
               </button>
@@ -533,7 +535,7 @@ export default function IndustryInsightsPage() {
             value={marketFilter}
             onChange={e => setMarketFilter(e.target.value)}
             style={{ height: 34, fontSize: 12, width: "auto", minWidth: 130 }}
-            className="border border-[var(--hm-border)] rounded-lg bg-[var(--hm-bg-secondary)] cursor-pointer focus:outline-none focus:border-[#4361ee]"
+            className="border border-[var(--hm-border)] rounded-lg bg-[var(--hm-bg-secondary)] cursor-pointer focus:outline-none focus:border-[var(--hm-primary)]"
           >
             <option value="">All markets</option>
             {markets.map(m => <option key={m} value={m}>{m}</option>)}
@@ -545,7 +547,7 @@ export default function IndustryInsightsPage() {
           value={dateRange}
           onChange={e => setDateRange(e.target.value)}
           style={{ height: 34, fontSize: 12, width: "auto", minWidth: 130 }}
-          className="border border-[var(--hm-border)] rounded-lg bg-[var(--hm-bg-secondary)] cursor-pointer focus:outline-none focus:border-[#4361ee]"
+          className="border border-[var(--hm-border)] rounded-lg bg-[var(--hm-bg-secondary)] cursor-pointer focus:outline-none focus:border-[var(--hm-primary)]"
         >
           <option value="">Any time</option>
           <option value="today">Today</option>
@@ -556,7 +558,7 @@ export default function IndustryInsightsPage() {
         </select>
 
         {hasFilters && (
-          <button onClick={clearFilters} className="text-[11px] text-[#4361ee] hover:underline whitespace-nowrap flex-shrink-0">
+          <button onClick={clearFilters} className="text-[11px] text-[var(--hm-link)] hover:underline whitespace-nowrap flex-shrink-0">
             Clear filters
           </button>
         )}
@@ -568,16 +570,16 @@ export default function IndustryInsightsPage() {
           {/* Backdrop */}
           <div className="absolute inset-0 bg-black/30 backdrop-blur-[2px]" onClick={() => setShowBulletinModal(false)} />
           {/* Modal */}
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden" style={{ boxShadow: "0 20px 60px rgba(0,0,0,0.18)" }}>
+          <div className="relative bg-[var(--hm-surface)] rounded-2xl w-full max-w-sm mx-4 overflow-hidden" style={{ boxShadow: "0 20px 60px rgba(0,0,0,0.18)" }}>
             {/* Header */}
             <div className="px-6 pt-6 pb-4 border-b border-[var(--hm-border)]">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="flex items-center gap-2 mb-1">
-                    <div className="w-7 h-7 rounded-lg bg-[#4361ee]/10 flex items-center justify-center flex-shrink-0">
+                    <div className="w-7 h-7 rounded-lg bg-[var(--hm-primary)]/10 flex items-center justify-center flex-shrink-0">
                       <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                        <path d="M3 2h10a1 1 0 011 1v10a1 1 0 01-1 1H3a1 1 0 01-1-1V3a1 1 0 011-1z" stroke="#4361ee" strokeWidth="1.2"/>
-                        <path d="M5 6h6M5 9h4" stroke="#4361ee" strokeWidth="1.2" strokeLinecap="round"/>
+                        <path d="M3 2h10a1 1 0 011 1v10a1 1 0 01-1 1H3a1 1 0 01-1-1V3a1 1 0 011-1z" stroke="var(--hm-primary)" strokeWidth="1.2"/>
+                        <path d="M5 6h6M5 9h4" stroke="var(--hm-primary)" strokeWidth="1.2" strokeLinecap="round"/>
                       </svg>
                     </div>
                     <p className="text-[15px] font-semibold">Download Intelligence Bulletin</p>
@@ -586,7 +588,7 @@ export default function IndustryInsightsPage() {
                     Export a branded, newspaper-style PDF with your insights — ready for internal sharing.
                   </p>
                 </div>
-                <button onClick={() => setShowBulletinModal(false)} className="text-[var(--hm-text-tertiary)] hover:text-[var(--hm-text-primary)] mt-0.5 flex-shrink-0 text-[18px] leading-none">×</button>
+                <button onClick={() => setShowBulletinModal(false)} className="text-[var(--hm-text-tertiary)] hover:text-[var(--hm-text)] mt-0.5 flex-shrink-0 text-[18px] leading-none">×</button>
               </div>
             </div>
             {/* Time range picker */}
@@ -606,10 +608,10 @@ export default function IndustryInsightsPage() {
                     onClick={() => setBulletinRange(opt.id)}
                     className={"p-3 rounded-xl border text-left transition-all " +
                       (bulletinRange === opt.id
-                        ? "border-[#4361ee] bg-[#4361ee]/5"
-                        : "border-[var(--hm-border)] hover:border-[#4361ee]/40 bg-[var(--hm-bg-secondary)]")}
+                        ? "border-[var(--hm-primary)] bg-[var(--hm-primary)]/5"
+                        : "border-[var(--hm-border)] hover:border-[var(--hm-text-tertiary)] bg-[var(--hm-bg-secondary)]")}
                   >
-                    <p className={"text-[12px] font-medium " + (bulletinRange === opt.id ? "text-[#4361ee]" : "text-[var(--hm-text-primary)]")}>{opt.label}</p>
+                    <p className={"text-[12px] font-medium " + (bulletinRange === opt.id ? "text-[var(--hm-text)]" : "text-[var(--hm-text)]")}>{opt.label}</p>
                     <p className="text-[10px] text-[var(--hm-text-tertiary)] mt-0.5">{opt.desc}</p>
                   </button>
                 ))}
@@ -619,14 +621,14 @@ export default function IndustryInsightsPage() {
             <div className="px-6 pb-6 flex gap-2">
               <button
                 onClick={() => setShowBulletinModal(false)}
-                className="flex-1 h-9 border border-[var(--hm-border)] rounded-lg text-[12px] text-[var(--hm-text-secondary)] hover:border-[#4361ee]/40 transition-colors"
+                className="flex-1 h-9 border border-[var(--hm-border)] rounded-lg text-[12px] text-[var(--hm-text-secondary)] hover:border-[var(--hm-text-tertiary)] transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={handleDownloadBulletin}
                 disabled={downloading}
-                className="flex-[2] h-9 bg-[#4361ee] text-white rounded-lg text-[12px] font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-opacity"
+                className="flex-[2] h-9 bg-[var(--hm-primary)] text-white rounded-lg text-[12px] font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-opacity"
               >
                 {downloading ? (
                   <>
@@ -661,35 +663,35 @@ export default function IndustryInsightsPage() {
             {/* Stats */}
             {!hasFilters && allInsights.length > 0 && (
               <div className="grid grid-cols-4 gap-3 mb-5">
-                <div className="p-4 bg-white border border-[var(--hm-border)] rounded-xl overflow-hidden relative" style={{ boxShadow: "var(--hm-shadow-card)" }}>
-                  <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl" style={{ background: "#4361ee" }} />
+                <div className="p-4 bg-[var(--hm-surface)] border border-[var(--hm-border)] rounded-xl overflow-hidden relative" style={{ boxShadow: "var(--hm-shadow-card)" }}>
+                  <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl" style={{ background: "var(--hm-primary)" }} />
                   <div className="pl-1">
                     <p className="text-[10px] text-[var(--hm-text-tertiary)] uppercase tracking-wide font-medium">Total insights</p>
                     <p className="text-[28px] font-bold mt-1 leading-none">{allInsights.length}</p>
                     <p className="text-[10px] text-[var(--hm-text-tertiary)] mt-1.5">Last 90 days</p>
                   </div>
                 </div>
-                <div className="p-4 bg-white border border-[var(--hm-border)] rounded-xl overflow-hidden relative" style={{ boxShadow: "var(--hm-shadow-card)" }}>
-                  <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl" style={{ background: "#EF4444" }} />
+                <div className="p-4 bg-[var(--hm-surface)] border border-[var(--hm-border)] rounded-xl overflow-hidden relative" style={{ boxShadow: "var(--hm-shadow-card)" }}>
+                  <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl" style={{ background: "var(--hm-danger)" }} />
                   <div className="pl-1">
                     <p className="text-[10px] text-[var(--hm-text-tertiary)] uppercase tracking-wide font-medium">High priority</p>
-                    <p className="text-[28px] font-bold text-red-500 mt-1 leading-none">{highPriority}</p>
+                    <p className="text-[28px] font-bold text-[var(--tag-red-fg)] mt-1 leading-none">{highPriority}</p>
                     <p className="text-[10px] text-[var(--hm-text-tertiary)] mt-1.5">Require action</p>
                   </div>
                 </div>
-                <div className="p-4 bg-white border border-[var(--hm-border)] rounded-xl overflow-hidden relative" style={{ boxShadow: "var(--hm-shadow-card)" }}>
-                  <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl" style={{ background: "#F59E0B" }} />
+                <div className="p-4 bg-[var(--hm-surface)] border border-[var(--hm-border)] rounded-xl overflow-hidden relative" style={{ boxShadow: "var(--hm-shadow-card)" }}>
+                  <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl" style={{ background: "var(--hm-warning)" }} />
                   <div className="pl-1">
                     <p className="text-[10px] text-[var(--hm-text-tertiary)] uppercase tracking-wide font-medium">Competitor signals</p>
-                    <p className="text-[28px] font-bold text-amber-500 mt-1 leading-none">{competitorCount}</p>
+                    <p className="text-[28px] font-bold text-[var(--tag-yellow-fg)] mt-1 leading-none">{competitorCount}</p>
                     <p className="text-[10px] text-[var(--hm-text-tertiary)] mt-1.5">Across all markets</p>
                   </div>
                 </div>
-                <div className="p-4 bg-white border border-[var(--hm-border)] rounded-xl overflow-hidden relative" style={{ boxShadow: "var(--hm-shadow-card)" }}>
-                  <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl" style={{ background: "#10B981" }} />
+                <div className="p-4 bg-[var(--hm-surface)] border border-[var(--hm-border)] rounded-xl overflow-hidden relative" style={{ boxShadow: "var(--hm-shadow-card)" }}>
+                  <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl" style={{ background: "var(--hm-success)" }} />
                   <div className="pl-1">
                     <p className="text-[10px] text-[var(--hm-text-tertiary)] uppercase tracking-wide font-medium">Added to KB</p>
-                    <p className="text-[28px] font-bold text-emerald-500 mt-1 leading-none">{kbUpdates}</p>
+                    <p className="text-[28px] font-bold text-[var(--tag-green-fg)] mt-1 leading-none">{kbUpdates}</p>
                     <p className="text-[10px] text-[var(--hm-text-tertiary)] mt-1.5">Auto-synced</p>
                   </div>
                 </div>
@@ -698,7 +700,7 @@ export default function IndustryInsightsPage() {
 
             {/* FIX #6 — empty state with contextual CTA */}
             {filtered.length === 0 && (
-              <div className="bg-white border border-[var(--hm-border)] rounded-xl p-14 text-center">
+              <div className="bg-[var(--hm-surface)] border border-[var(--hm-border)] rounded-xl p-14 text-center">
                 <div className="w-12 h-12 rounded-full bg-[var(--hm-bg-secondary)] flex items-center justify-center mx-auto mb-4">
                   {hasFilters
                     ? <svg width="20" height="20" viewBox="0 0 16 16" fill="none"><circle cx="6.5" cy="6.5" r="5" stroke="#999" strokeWidth="1.1" /><path d="M14 14l-3-3" stroke="#999" strokeWidth="1.1" strokeLinecap="round" /></svg>
@@ -712,12 +714,12 @@ export default function IndustryInsightsPage() {
                     : "Fetch AI-curated market intelligence for your tracked industries and competitors."}
                 </p>
                 {hasFilters
-                  ? <button onClick={clearFilters} className="h-9 px-5 border border-[var(--hm-border)] rounded-lg text-[12px] hover:border-[#4361ee]/40 transition-colors">Clear filters</button>
+                  ? <button onClick={clearFilters} className="h-9 px-5 border border-[var(--hm-border)] rounded-lg text-[12px] hover:border-[var(--hm-text-tertiary)] transition-colors">Clear filters</button>
                   : (
                     <button
                       onClick={handleRefresh}
                       disabled={refreshing || isCoolingDown}
-                      className="h-9 px-5 bg-[#4361ee] text-white rounded-lg text-[12px] font-medium disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2 mx-auto"
+                      className="h-9 px-5 bg-[var(--hm-primary)] text-white rounded-lg text-[12px] font-medium disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2 mx-auto"
                     >
                       {refreshing
                         ? <><span className="w-3 h-3 border-[1.5px] border-white/30 border-t-white rounded-full animate-spin" />Fetching insights…</>
@@ -753,7 +755,7 @@ export default function IndustryInsightsPage() {
                   : insight.summary;
 
                 return (
-                  <div key={insight.id} className={"bg-white border border-[var(--hm-border)] border-l-[3px] rounded-xl p-5 transition-all " + sc.border} style={{ boxShadow: "var(--hm-shadow-card)" }}>
+                  <div key={insight.id} className={"bg-[var(--hm-surface)] border border-[var(--hm-border)] border-l-[3px] rounded-xl p-5 transition-all " + sc.border} style={{ boxShadow: "var(--hm-shadow-card)" }}>
 
                     {/* Meta row */}
                     <div className="flex items-center gap-2 mb-2.5 flex-wrap">
@@ -769,7 +771,7 @@ export default function IndustryInsightsPage() {
                       )}
                       {/* Relevance score badge */}
                       {typeof insight.relevanceScore === "number" && (
-                        <span className="text-[10px] px-2 py-0.5 rounded-md font-medium bg-slate-50 text-slate-500 border border-slate-100" title="Relevance score (1–100)">
+                        <span className="text-[10px] px-2 py-0.5 rounded-md font-medium bg-[var(--tag-gray-bg)] text-[var(--tag-gray-fg)] border border-[var(--hm-border)]" title="Relevance score (1–100)">
                           {insight.relevanceScore}% relevant
                         </span>
                       )}
@@ -777,7 +779,7 @@ export default function IndustryInsightsPage() {
                       {insight.sourceName && (
                         hasLink ? (
                           <a href={insight.sourceUrl!} target="_blank" rel="noopener noreferrer"
-                            className="text-[10px] px-2 py-0.5 bg-[var(--hm-bg-secondary)] text-[#4361ee] rounded-md hover:underline flex items-center gap-1">
+                            className="text-[10px] px-2 py-0.5 bg-[var(--hm-bg-secondary)] text-[var(--hm-text)] rounded-md hover:underline flex items-center gap-1">
                             {insight.sourceName}
                             <svg width="8" height="8" viewBox="0 0 16 16" fill="none"><path d="M7 2H3a1 1 0 00-1 1v10a1 1 0 001 1h10a1 1 0 001-1V9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/><path d="M10 2h4v4M14 2L8 8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
                           </a>
@@ -798,7 +800,7 @@ export default function IndustryInsightsPage() {
                     {summaryIsTruncatable && (
                       <button
                         onClick={() => toggleExpand(insight.id)}
-                        className="text-[11px] text-[#4361ee] hover:underline mb-3 flex items-center gap-0.5"
+                        className="text-[11px] text-[var(--hm-link)] hover:underline mb-3 flex items-center gap-0.5"
                         aria-expanded={isExpanded}
                       >
                         {isExpanded ? (
@@ -810,14 +812,14 @@ export default function IndustryInsightsPage() {
                     )}
                     {/* Keep takeaway always accessible but inside the expand block when collapsed */}
                     {insight.takeaway && (isExpanded || !summaryIsTruncatable) && (
-                      <div className="p-3 bg-amber-50 border border-amber-100 rounded-lg flex items-start gap-2 mb-3">
+                      <div className="p-3 bg-[var(--tag-yellow-bg)] border border-[var(--hm-border)] rounded-lg flex items-start gap-2 mb-3">
                         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className="flex-shrink-0 mt-0.5">
-                          <path d="M8 1a7 7 0 100 14A7 7 0 008 1z" stroke="#F59E0B" strokeWidth="1" />
-                          <path d="M8 5v3M8 10h.01" stroke="#F59E0B" strokeWidth="1.2" strokeLinecap="round" />
+                          <path d="M8 1a7 7 0 100 14A7 7 0 008 1z" stroke="var(--hm-warning)" strokeWidth="1" />
+                          <path d="M8 5v3M8 10h.01" stroke="var(--hm-warning)" strokeWidth="1.2" strokeLinecap="round" />
                         </svg>
                         <div>
-                          <p className="text-[11px] font-medium text-amber-700 mb-0.5">Takeaway for your team</p>
-                          <p className="text-[11px] text-amber-800 leading-[1.55]">{insight.takeaway}</p>
+                          <p className="text-[11px] font-medium text-[var(--tag-yellow-fg)] mb-0.5">Takeaway for your team</p>
+                          <p className="text-[11px] text-[var(--tag-yellow-fg)] leading-[1.55]">{insight.takeaway}</p>
                         </div>
                       </div>
                     )}
@@ -828,12 +830,12 @@ export default function IndustryInsightsPage() {
                         <span key={tag} className="text-[10px] px-2 py-0.5 bg-[var(--hm-bg-secondary)] text-[var(--hm-text-tertiary)] rounded-md">{tag}</span>
                       ))}
                       {insight.addedToKB && (
-                        <span className="text-[10px] px-2 py-0.5 bg-emerald-50 text-emerald-600 rounded-md">Added to KB</span>
+                        <span className="text-[10px] px-2 py-0.5 bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)] rounded-md">Added to KB</span>
                       )}
                       <div className="ml-auto flex-shrink-0 flex items-center gap-3">
                         <button
                           onClick={() => router.push("/content-generator?topic=" + encodeURIComponent(insight.title + ". " + insight.summary + (insight.takeaway ? " Takeaway: " + insight.takeaway : "")))}
-                          className="text-[10px] text-[#4361ee] hover:underline"
+                          className="text-[10px] text-[var(--hm-link)] hover:underline"
                         >
                           Generate content →
                         </button>
@@ -841,11 +843,11 @@ export default function IndustryInsightsPage() {
                           <button
                             onClick={() => deleteInsight(insight.id)}
                             disabled={deletingId === insight.id}
-                            className="text-[10px] text-[var(--hm-text-tertiary)] hover:text-red-500 transition-colors disabled:opacity-50"
+                            className="text-[10px] text-[var(--hm-text-tertiary)] hover:text-[var(--tag-red-fg)] transition-colors disabled:opacity-50"
                             title="Delete this insight"
                           >
                             {deletingId === insight.id ? (
-                              <span className="w-3 h-3 border border-red-300 border-t-red-500 rounded-full animate-spin inline-block" />
+                              <span className="w-3 h-3 border border-[var(--hm-border)] border-t-red-500 rounded-full animate-spin inline-block" />
                             ) : (
                               <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
                                 <path d="M2 4h12M6 4V2.5a.5.5 0 01.5-.5h3a.5.5 0 01.5.5V4M5 4l.5 9h5L11 4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
