@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import ModuleTour from "@/components/ModuleTour";
+import { Modal, Button } from "@/components/ui";
 /* ── Types ──────────────────────────────────────────────────────────────── */
 
 interface Prospect {
@@ -426,6 +427,7 @@ export default function EmailSequencesPage() {
   const [mailboxTags, setMailboxTags] = useState<Array<{ id: string; label: string }>>([]);
   const [mailboxTag, setMailboxTag] = useState("");
   const [sending, setSending] = useState(false);
+  const [showSendConfirm, setShowSendConfirm] = useState(false);
   const [sendError, setSendError] = useState("");
   const [sendResult, setSendResult] = useState<{ campaignId: string; added: number; total: number; failed: number; senders: number } | null>(null);
   // Same duplicate-check behavior Instantly's own manual CSV-import dialog defaults to (checked)
@@ -465,11 +467,17 @@ export default function EmailSequencesPage() {
 
   const sendableProspects = results.filter(r => r.prospect?.email && r.sequence?.emails?.length);
 
-  const sendCampaign = async () => {
+  // Opens the confirmation modal after validating — the actual create happens in confirmSend.
+  const sendCampaign = () => {
     setSendError("");
     if (!mailboxTag) { setSendError("Select a mailbox tag to send from"); return; }
     if (!sendableProspects.length) { setSendError("No prospects with an email address to send to"); return; }
-    if (!confirm(`Create an Instantly campaign for ${sendableProspects.length} prospect(s)? It will NOT be launched automatically — you'll review timing and launch it yourself from Instantly.`)) return;
+    setShowSendConfirm(true);
+  };
+
+  const confirmSend = async () => {
+    setShowSendConfirm(false);
+    setSendError("");
     setSending(true);
     setSendResult(null);
     try {
@@ -761,23 +769,59 @@ export default function EmailSequencesPage() {
 
   /* ── Render ───────────────────────────────────────────────────────────── */
 
-  const inputCls = "w-full h-[36px] px-3 rounded-lg border border-[var(--hm-border)] bg-[var(--hm-bg-primary)] text-[13px] text-[var(--hm-text-primary)] placeholder:text-[var(--hm-text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[#4361ee]/40 focus:border-[#4361ee] transition-colors";
+  // Shared control styles, on the design-system tokens: hairline borders, near-black
+  // primary action, blue reserved for the focus ring, no shadows.
+  const inputCls = "w-full h-[36px] px-3 rounded-lg border border-[var(--hm-border)] bg-[var(--hm-surface)] text-[13px] text-[var(--hm-text)] placeholder:text-[var(--hm-text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--hm-link)]/20 focus:border-[var(--hm-link)] transition-colors";
   const labelCls = "block text-[11px] font-medium text-[var(--hm-text-secondary)] uppercase tracking-wider mb-1.5";
-  const btnPrimary = "h-[38px] px-6 bg-[#4361ee] text-white rounded-lg text-[13px] font-medium hover:opacity-90 active:scale-[0.97] transition-all disabled:opacity-50 disabled:cursor-not-allowed";
-  const btnSecondary = "h-[34px] px-4 border border-[var(--hm-border)] rounded-lg text-[12px] text-[var(--hm-text-secondary)] hover:bg-[var(--hm-bg-secondary)] hover:border-[#4361ee]/40 transition-colors";
-  const cardCls = "rounded-xl border border-[var(--hm-border)] bg-[var(--hm-bg-primary)] p-5";
+  const btnPrimary = "h-[38px] px-6 bg-[var(--hm-primary)] text-white rounded-lg text-[13px] font-medium hover:bg-[var(--hm-primary-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
+  const btnSecondary = "h-[34px] px-4 border border-[var(--hm-border)] rounded-lg text-[12px] text-[var(--hm-text-secondary)] hover:bg-[var(--hm-bg-secondary)] hover:border-[var(--hm-text-tertiary)] hover:text-[var(--hm-text)] transition-colors";
+  const cardCls = "rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] p-5";
 
   const historyGroups = groupHistory(recentJobs);
 
   return (
     <div className="flex-1 flex overflow-hidden">
       <ModuleTour moduleId="email-sequences" />
+
+      {/* Send-to-Instantly confirmation — replaces the old native confirm() so the
+          send flow reads like the rest of the product. */}
+      <Modal
+        open={showSendConfirm}
+        onClose={() => setShowSendConfirm(false)}
+        title="Create Instantly campaign"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setShowSendConfirm(false)}>Cancel</Button>
+            <Button onClick={confirmSend}>Create campaign</Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-[var(--hm-text-secondary)]">
+            This creates a campaign in Instantly and adds{" "}
+            <span className="font-medium text-[var(--hm-text)]">{sendableProspects.length} prospect{sendableProspects.length !== 1 ? "s" : ""}</span> with a verified email.
+          </p>
+          <dl className="rounded-lg border border-[var(--hm-border)] divide-y divide-[var(--hm-border)] overflow-hidden">
+            <div className="flex items-center justify-between px-3 py-2">
+              <dt className="text-[var(--hm-text-tertiary)]">Send from</dt>
+              <dd className="font-medium text-[var(--hm-text)]">{mailboxTags.find(t => t.id === mailboxTag)?.label || mailboxTag}</dd>
+            </div>
+            <div className="flex items-center justify-between px-3 py-2">
+              <dt className="text-[var(--hm-text-tertiary)]">Duplicates already in workspace</dt>
+              <dd className="font-medium text-[var(--hm-text)]">{skipDuplicates ? "Skipped" : "Added anyway"}</dd>
+            </div>
+          </dl>
+          <p className="text-[var(--hm-text-tertiary)] text-[12px]">
+            It will <span className="font-medium text-[var(--hm-text-secondary)]">not</span> be launched automatically — you review the timing and launch it yourself from Instantly.
+          </p>
+        </div>
+      </Modal>
       {/* ── History sidebar — hidden on mobile, visible from md, matching Content Generator/Halo ── */}
       <div className="hidden md:flex w-[240px] flex-shrink-0 border-r border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] flex-col overflow-hidden">
         <div className="p-4 flex-shrink-0">
           <button
             onClick={startNewSequence}
-            className="w-full h-9 rounded-xl bg-[#4361ee] text-white text-[12px] font-medium hover:opacity-90 transition-all flex items-center justify-center gap-2 shadow-sm"
+            className="w-full h-9 rounded-xl bg-[var(--hm-primary)] text-white text-[12px] font-medium hover:opacity-90 transition-all flex items-center justify-center gap-2"
           >
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
               <path d="M4 12l1.5-4L12 2l2 2-6.5 6.5L4 12z" stroke="#fff" strokeWidth="1.3" />
@@ -789,10 +833,10 @@ export default function EmailSequencesPage() {
         <div className="flex-1 overflow-y-auto">
           {recentJobsLoading && recentJobs.length === 0 ? (
             <div className="flex justify-center py-8">
-              <div className="w-4 h-4 border-2 border-[#4361ee]/30 border-t-[#4361ee] rounded-full animate-spin" />
+              <div className="w-4 h-4 border-2 border-[var(--hm-border)] border-t-[var(--hm-text-secondary)] rounded-full animate-spin" />
             </div>
           ) : recentJobsError ? (
-            <p className="px-4 py-4 text-[11.5px] text-red-500">{recentJobsError}</p>
+            <p className="px-4 py-4 text-[11.5px] text-[var(--hm-danger)]">{recentJobsError}</p>
           ) : recentJobs.length === 0 ? (
             <div className="px-4 py-8 text-center">
               <p className="text-[12px] text-[var(--hm-text-tertiary)]">No generations yet.</p>
@@ -811,23 +855,23 @@ export default function EmailSequencesPage() {
                           onClick={() => loadHistoryJob(item.id)}
                           className={
                             "w-full text-left px-3 py-3 transition-colors border-l-2 mx-0 " +
-                            (isActive ? "bg-white border-[#4361ee] shadow-sm" : "hover:bg-white/60 border-transparent")
+                            (isActive ? "bg-[var(--hm-surface)] border-[var(--hm-primary)]" : "hover:bg-[var(--hm-surface)]/60 border-transparent")
                           }
                         >
-                          <p className={"text-[12px] font-medium leading-snug mb-1.5 pr-6 " + (isActive ? "text-[#4361ee]" : "text-[var(--hm-text)]")}
+                          <p className={"text-[12px] font-medium leading-snug mb-1.5 pr-6 " + (isActive ? "text-[var(--hm-text)]" : "text-[var(--hm-text)]")}
                             title={item.label || "Untitled"}
                             style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
                             {item.label || "Untitled"}
                           </p>
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className={"text-[10px] px-1.5 py-0.5 rounded-md font-medium " + (isActive ? "bg-[#4361ee]/10 text-[#4361ee]" : "bg-[var(--hm-border)] text-[var(--hm-text-tertiary)]")}>
+                            <span className={"text-[10px] px-1.5 py-0.5 rounded-md font-medium " + (isActive ? "bg-[var(--hm-bg-tertiary)] text-[var(--hm-text-secondary)]" : "bg-[var(--hm-border)] text-[var(--hm-text-tertiary)]")}>
                               {MODE_SHORT[item.mode] || item.mode}
                             </span>
                             {item.status === "running" && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded-md font-medium bg-[var(--hm-accent-light)] text-[var(--hm-accent)]">{item.processed}/{item.total}</span>
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-md font-medium bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]">{item.processed}/{item.total}</span>
                             )}
                             {item.status === "error" && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded-md font-medium bg-red-50 text-red-600">error</span>
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-md font-medium bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)]">error</span>
                             )}
                             {item.status === "cancelled" && (
                               <span className="text-[10px] px-1.5 py-0.5 rounded-md font-medium bg-[var(--hm-border)] text-[var(--hm-text-tertiary)]">stopped — {item.processed}/{item.total}</span>
@@ -837,7 +881,7 @@ export default function EmailSequencesPage() {
                         </button>
                         <button
                           onClick={(e) => deleteHistoryJob(item.id, e)}
-                          className="absolute top-2.5 right-2 opacity-0 group-hover/item:opacity-100 transition-opacity w-6 h-6 rounded-md flex items-center justify-center text-[var(--hm-text-tertiary)] hover:bg-red-50 hover:text-red-500"
+                          className="absolute top-2.5 right-2 opacity-0 group-hover/item:opacity-100 transition-opacity w-6 h-6 rounded-md flex items-center justify-center text-[var(--hm-text-tertiary)] hover:bg-[var(--tag-red-bg)] hover:text-[var(--hm-danger)]"
                           title="Delete"
                         >
                           <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
@@ -858,7 +902,7 @@ export default function EmailSequencesPage() {
       <div className="flex-1 overflow-y-auto p-6"><div className="max-w-[1100px] mx-auto">
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-[22px] font-semibold text-[var(--hm-text-primary)]">Email Sequences</h1>
+        <h1 className="text-[22px] font-semibold text-[var(--hm-text)]">Email Sequences</h1>
         <p className="text-[13px] text-[var(--hm-text-secondary)] mt-1">Generate hyper-personalised outreach email sequences powered by your knowledge base</p>
       </div>
 
@@ -870,29 +914,29 @@ export default function EmailSequencesPage() {
         <div className="mb-4 p-3 rounded-lg bg-[var(--hm-bg-secondary)] border border-[var(--hm-border)] text-[12.5px] flex items-center justify-between gap-3">
           {activeJobStatus.status === "running" ? (
             <span className="flex items-center gap-2">
-              <span className="w-3 h-3 border-2 border-current/30 border-t-current rounded-full animate-spin text-[var(--hm-accent)]" />
+              <span className="w-3 h-3 border-2 border-current/30 border-t-current rounded-full animate-spin text-[var(--hm-text-secondary)]" />
               Running in the background — {activeJobStatus.processed}/{activeJobStatus.total} done. Safe to close this tab or navigate away; it keeps going and picks back up here.
             </span>
           ) : activeJobStatus.status === "error" ? (
-            <span className="text-red-500">Job stopped: {activeJobStatus.error}</span>
+            <span className="text-[var(--hm-danger)]">Job stopped: {activeJobStatus.error}</span>
           ) : activeJobStatus.status === "cancelled" ? (
             <span className="text-[var(--hm-text-tertiary)]">Stopped — {activeJobStatus.processed}/{activeJobStatus.total} generated before you stopped it.</span>
           ) : (
-            <span className="text-[#059669]">Done — {activeJobStatus.processed}/{activeJobStatus.total} generated.</span>
+            <span className="text-[var(--hm-success)]">Done — {activeJobStatus.processed}/{activeJobStatus.total} generated.</span>
           )}
           {activeJobStatus.status === "running" && (
             <span className="shrink-0 flex items-center gap-3">
               <button
                 onClick={refreshActiveJob}
                 disabled={jobRefreshing || jobCancelling}
-                className="text-[11px] font-medium text-[var(--hm-accent)] hover:underline disabled:opacity-50"
+                className="text-[11px] font-medium text-[var(--hm-link)] hover:underline disabled:opacity-50"
               >
                 {jobRefreshing ? "Refreshing..." : "Refresh"}
               </button>
               <button
                 onClick={cancelActiveJob}
                 disabled={jobRefreshing || jobCancelling}
-                className="text-[11px] font-medium text-red-500 hover:underline disabled:opacity-50"
+                className="text-[11px] font-medium text-[var(--hm-danger)] hover:underline disabled:opacity-50"
               >
                 {jobCancelling ? "Stopping..." : "Stop"}
               </button>
@@ -928,11 +972,11 @@ export default function EmailSequencesPage() {
             if (!tagsLoaded) loadMailboxTags();
             return (
               <div className="flex items-center gap-3 mb-5 p-3 rounded-lg border border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] flex-wrap">
-                <span className="text-[12.5px] font-medium text-[var(--hm-text-primary)] whitespace-nowrap">Send via Instantly</span>
+                <span className="text-[12.5px] font-medium text-[var(--hm-text)] whitespace-nowrap">Send via Instantly</span>
                 <select
                   value={mailboxTag}
                   onChange={(e) => setMailboxTag(e.target.value)}
-                  className="h-[32px] px-2 rounded-lg border border-[var(--hm-border)] text-[12.5px] bg-[var(--hm-bg-primary)]"
+                  className="h-[32px] px-2 rounded-lg border border-[var(--hm-border)] text-[12.5px] bg-[var(--hm-surface)]"
                 >
                   <option value="">— Select mailbox tag —</option>
                   {mailboxTags.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
@@ -956,9 +1000,9 @@ export default function EmailSequencesPage() {
                     Creating the campaign in Instantly and adding {sendableProspects.length} lead{sendableProspects.length !== 1 ? "s" : ""} — this can take up to a minute, don&apos;t close this tab.
                   </span>
                 )}
-                {sendError && <span className="text-[12px] text-red-500">{sendError}</span>}
+                {sendError && <span className="text-[12px] text-[var(--hm-danger)]">{sendError}</span>}
                 {sendResult && (
-                  <span className="text-[12px] text-[#059669]">
+                  <span className="text-[12px] text-[var(--hm-success)]">
                     ✓ Campaign created (not yet launched) — {sendResult.added}/{sendResult.total} added{sendResult.failed > 0 ? `, ${sendResult.failed} failed` : ""} across {sendResult.senders} mailbox(es). Review timing and launch it from Instantly.
                   </span>
                 )}
@@ -999,14 +1043,14 @@ export default function EmailSequencesPage() {
                         <button
                           key={i}
                           onClick={() => { setExpandedResult(i); setExpandedEmail(null); }}
-                          className={`w-full flex items-center gap-3 px-3 py-2 text-left text-[12.5px] border-b border-[var(--hm-border)] last:border-b-0 transition-colors ${expandedResult === i ? "bg-[#4361ee]/10" : "hover:bg-[var(--hm-bg-secondary)]"}`}
+                          className={`w-full flex items-center gap-3 px-3 py-2 text-left text-[12.5px] border-b border-[var(--hm-border)] last:border-b-0 transition-colors ${expandedResult === i ? "bg-[var(--hm-bg-tertiary)]" : "hover:bg-[var(--hm-bg-secondary)]"}`}
                         >
-                          <span className="min-w-0 flex-[1.2] truncate font-medium text-[var(--hm-text-primary)]">
+                          <span className="min-w-0 flex-[1.2] truncate font-medium text-[var(--hm-text)]">
                             {r.prospect?.name || `Prospect ${i + 1}`}
                           </span>
                           <span className="min-w-0 flex-1 truncate text-[var(--hm-text-tertiary)]">{r.prospect?.company || ""}</span>
                           <span className="min-w-0 flex-[1.4] truncate text-[var(--hm-text-tertiary)]">{r.prospect?.email || ""}</span>
-                          <span className={`shrink-0 text-[11px] font-medium ${failed ? "text-red-500" : "text-[#059669]"}`}>
+                          <span className={`shrink-0 text-[11px] font-medium ${failed ? "text-[var(--hm-danger)]" : "text-[var(--hm-success)]"}`}>
                             {failed ? "✗ error" : "✓ ready"}
                           </span>
                         </button>
@@ -1029,11 +1073,11 @@ export default function EmailSequencesPage() {
                 {seq.sequenceStrategy && (
                   <div className={`${cardCls} mb-4`}>
                     <div className="text-[11px] font-medium text-[var(--hm-text-tertiary)] uppercase tracking-wider mb-1">Sequence Strategy</div>
-                    <p className="text-[13px] text-[var(--hm-text-primary)] leading-relaxed">{seq.sequenceStrategy}</p>
+                    <p className="text-[13px] text-[var(--hm-text)] leading-relaxed">{seq.sequenceStrategy}</p>
                     {seq.bestPractices?.length > 0 && (
                       <div className="mt-3 flex flex-wrap gap-2">
                         {seq.bestPractices.map((tip, i) => (
-                          <span key={i} className="inline-block px-2.5 py-1 rounded-md bg-[#4361ee]/10 text-[#4361ee] text-[11px]">{tip}</span>
+                          <span key={i} className="inline-block px-2.5 py-1 rounded-md bg-[var(--hm-bg-tertiary)] text-[var(--hm-text-secondary)] text-[11px]">{tip}</span>
                         ))}
                       </div>
                     )}
@@ -1055,11 +1099,11 @@ export default function EmailSequencesPage() {
                           className="flex items-center gap-3 cursor-pointer"
                           onClick={() => setExpandedEmail(isExpanded && seq.emails.length > 3 ? null : emailKey)}
                         >
-                          <div className="flex items-center justify-center w-7 h-7 rounded-full bg-[#4361ee]/10 text-[#4361ee] text-[12px] font-bold shrink-0">
+                          <div className="flex items-center justify-center w-7 h-7 rounded-full bg-[var(--hm-bg-tertiary)] text-[var(--hm-text-secondary)] text-[12px] font-bold shrink-0">
                             {email.emailNumber}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <div className="text-[13px] font-medium text-[var(--hm-text-primary)] truncate">{email.subject}</div>
+                            <div className="text-[13px] font-medium text-[var(--hm-text)] truncate">{email.subject}</div>
                             <div className="text-[11px] text-[var(--hm-text-tertiary)]">{email.sendDelay}{email.notes ? ` · ${email.notes}` : ""}</div>
                           </div>
                           <div className="flex items-center gap-1.5 shrink-0">
@@ -1111,7 +1155,7 @@ export default function EmailSequencesPage() {
                                 </div>
                               </div>
                             ) : (
-                              <div className="text-[13px] text-[var(--hm-text-primary)] leading-relaxed whitespace-pre-wrap">{email.body}</div>
+                              <div className="text-[13px] text-[var(--hm-text)] leading-relaxed whitespace-pre-wrap">{email.body}</div>
                             )}
                           </div>
                         )}
@@ -1139,9 +1183,9 @@ export default function EmailSequencesPage() {
                 <button
                   key={m.id}
                   onClick={() => setMode(m.id)}
-                  className={`p-3 rounded-lg border text-left transition-all ${mode === m.id ? "border-[#4361ee] bg-[#4361ee]/5 ring-1 ring-[#4361ee]/20" : "border-[var(--hm-border)] hover:border-[var(--hm-border-hover)]"}`}
+                  className={`p-3 rounded-lg border text-left transition-all ${mode === m.id ? "border-[var(--hm-primary)] bg-[var(--hm-bg-tertiary)]" : "border-[var(--hm-border)] hover:border-[var(--hm-text-tertiary)]"}`}
                 >
-                  <div className={`text-[13px] font-medium ${mode === m.id ? "text-[#4361ee]" : "text-[var(--hm-text-primary)]"}`}>{m.label}</div>
+                  <div className={`text-[13px] font-medium ${mode === m.id ? "text-[var(--hm-text)]" : "text-[var(--hm-text)]"}`}>{m.label}</div>
                   <div className="text-[11px] text-[var(--hm-text-tertiary)] mt-0.5">{m.desc}</div>
                 </button>
               ))}
@@ -1188,7 +1232,7 @@ export default function EmailSequencesPage() {
               {!csvFile ? (
                 <div
                   onClick={() => fileRef.current?.click()}
-                  className="border-2 border-dashed border-[var(--hm-border)] rounded-lg p-8 text-center cursor-pointer hover:border-[#4361ee]/40 hover:bg-[#4361ee]/5 transition-all"
+                  className="border-2 border-dashed border-[var(--hm-border)] rounded-lg p-8 text-center cursor-pointer hover:border-[var(--hm-text-tertiary)] hover:bg-[var(--hm-bg-tertiary)] transition-all"
                 >
                   <svg className="mx-auto mb-2" width="32" height="32" viewBox="0 0 32 32" fill="none">
                     <path d="M16 6v20M8 14l8-8 8 8" stroke="var(--hm-text-tertiary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
@@ -1201,11 +1245,11 @@ export default function EmailSequencesPage() {
                 <div>
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-2">
-                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M9 2H4a1 1 0 00-1 1v10a1 1 0 001 1h8a1 1 0 001-1V6L9 2z" stroke="#4361ee" strokeWidth="1.3" strokeLinejoin="round"/><path d="M9 2v4h4" stroke="#4361ee" strokeWidth="1.3"/></svg>
-                      <span className="text-[13px] text-[var(--hm-text-primary)]">{csvFile.name}</span>
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M9 2H4a1 1 0 00-1 1v10a1 1 0 001 1h8a1 1 0 001-1V6L9 2z" stroke="var(--hm-text-secondary)" strokeWidth="1.3" strokeLinejoin="round"/><path d="M9 2v4h4" stroke="var(--hm-text-secondary)" strokeWidth="1.3"/></svg>
+                      <span className="text-[13px] text-[var(--hm-text)]">{csvFile.name}</span>
                       <span className="text-[11px] text-[var(--hm-text-tertiary)]">{csvRows.length} rows</span>
                     </div>
-                    <button onClick={() => { setCsvFile(null); setCsvHeaders([]); setCsvRows([]); setColumnMap({}); }} className="text-[11px] text-red-500 hover:text-red-600">Remove</button>
+                    <button onClick={() => { setCsvFile(null); setCsvHeaders([]); setCsvRows([]); setColumnMap({}); }} className="text-[11px] text-[var(--hm-danger)] hover:text-[var(--hm-danger)]">Remove</button>
                   </div>
 
                   {/* Column mapping */}
@@ -1274,7 +1318,7 @@ export default function EmailSequencesPage() {
                         key={status}
                         type="button"
                         onClick={() => setRadarEmailStatuses(cur => checked ? cur.filter(s => s !== status) : [...cur, status])}
-                        className={`px-2.5 py-1 rounded-md border text-[12px] capitalize transition-all ${checked ? "border-[#4361ee] bg-[#4361ee]/5 text-[#4361ee]" : "border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[var(--hm-border-hover)]"}`}
+                        className={`px-2.5 py-1 rounded-md border text-[12px] capitalize transition-all ${checked ? "border-[var(--hm-primary)] bg-[var(--hm-bg-tertiary)] text-[var(--hm-text)]" : "border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[var(--hm-text-tertiary)]"}`}
                       >
                         {status}
                       </button>
@@ -1298,13 +1342,13 @@ export default function EmailSequencesPage() {
                 <button
                   onClick={loadRadarProspects}
                   disabled={radarLoading}
-                  className="h-[36px] px-4 rounded-lg bg-[#4361ee] text-white text-[13px] font-medium hover:bg-[#4361ee]/90 disabled:opacity-50 transition-all"
+                  className="h-[36px] px-4 rounded-lg bg-[var(--hm-primary)] text-white text-[13px] font-medium hover:bg-[var(--hm-primary-hover)] disabled:opacity-50 transition-all"
                 >
                   {radarLoading ? "Loading..." : "Load Contacts"}
                 </button>
               </div>
 
-              {radarError && <div className="text-[12px] text-red-500 mb-2">{radarError}</div>}
+              {radarError && <div className="text-[12px] text-[var(--hm-danger)] mb-2">{radarError}</div>}
 
               {radarProspects.length > 0 && (
                 <div className="text-[11px] text-[var(--hm-text-tertiary)] p-2 rounded-md bg-[var(--hm-bg-secondary)]">
@@ -1316,14 +1360,14 @@ export default function EmailSequencesPage() {
 
           {/* Template mode info */}
           {mode === "template" && (
-            <div className={`${cardCls} bg-[#4361ee]/5 border-[#4361ee]/20`}>
+            <div className={`${cardCls} bg-[var(--hm-bg-secondary)] border-[var(--hm-border)]`}>
               <div className="flex items-start gap-3">
                 <svg width="18" height="18" viewBox="0 0 16 16" fill="none" className="mt-0.5 shrink-0">
-                  <circle cx="8" cy="8" r="6" stroke="#4361ee" strokeWidth="1.3"/>
-                  <path d="M8 5v3M8 10v.5" stroke="#4361ee" strokeWidth="1.3" strokeLinecap="round"/>
+                  <circle cx="8" cy="8" r="6" stroke="var(--hm-text-secondary)" strokeWidth="1.3"/>
+                  <path d="M8 5v3M8 10v.5" stroke="var(--hm-text-secondary)" strokeWidth="1.3" strokeLinecap="round"/>
                 </svg>
                 <div>
-                  <div className="text-[13px] font-medium text-[var(--hm-text-primary)]">Template Mode</div>
+                  <div className="text-[13px] font-medium text-[var(--hm-text)]">Template Mode</div>
                   <div className="text-[12px] text-[var(--hm-text-secondary)] mt-0.5">
                     Generates an email sequence with [First Name], [Company] and other placeholders.
                     Great for creating reusable templates that your team can personalise for individual prospects.
@@ -1345,7 +1389,7 @@ export default function EmailSequencesPage() {
                   <button
                     key={n}
                     onClick={() => setEmailCount(n)}
-                    className={`w-[38px] h-[36px] rounded-lg text-[13px] font-medium transition-all ${emailCount === n ? "bg-[#4361ee] text-white" : "border border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[#4361ee]/40"}`}
+                    className={`w-[38px] h-[36px] rounded-lg text-[13px] font-medium transition-all ${emailCount === n ? "bg-[var(--hm-primary)] text-white" : "border border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[var(--hm-text-tertiary)]"}`}
                   >
                     {n}
                   </button>
@@ -1362,7 +1406,7 @@ export default function EmailSequencesPage() {
                     <button
                       key={t.id}
                       onClick={() => setTone(t.id)}
-                      className={`h-[32px] px-3 rounded-lg text-[12px] transition-all ${tone === t.id ? "bg-[#4361ee] text-white" : "border border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[#4361ee]/40"}`}
+                      className={`h-[32px] px-3 rounded-lg text-[12px] transition-all ${tone === t.id ? "bg-[var(--hm-primary)] text-white" : "border border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[var(--hm-text-tertiary)]"}`}
                     >
                       {t.label}
                     </button>
@@ -1376,7 +1420,7 @@ export default function EmailSequencesPage() {
                     <button
                       key={l.id}
                       onClick={() => setLength(l.id)}
-                      className={`h-[32px] px-3 rounded-lg text-[12px] transition-all ${length === l.id ? "bg-[#4361ee] text-white" : "border border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[#4361ee]/40"}`}
+                      className={`h-[32px] px-3 rounded-lg text-[12px] transition-all ${length === l.id ? "bg-[var(--hm-primary)] text-white" : "border border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[var(--hm-text-tertiary)]"}`}
                     >
                       {l.label}
                       <span className="text-[10px] opacity-70 ml-1">{l.desc}</span>
@@ -1394,7 +1438,7 @@ export default function EmailSequencesPage() {
                   <button
                     key={c.id}
                     onClick={() => setCta(c.id)}
-                    className={`h-[32px] px-3 rounded-lg text-[12px] transition-all ${cta === c.id ? "bg-[#4361ee] text-white" : "border border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[#4361ee]/40"}`}
+                    className={`h-[32px] px-3 rounded-lg text-[12px] transition-all ${cta === c.id ? "bg-[var(--hm-primary)] text-white" : "border border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[var(--hm-text-tertiary)]"}`}
                   >
                     {c.label}
                   </button>
@@ -1414,7 +1458,7 @@ export default function EmailSequencesPage() {
                 <div className="flex flex-wrap gap-1.5">
                   <button
                     onClick={() => setVertical("")}
-                    className={`h-[32px] px-3 rounded-lg text-[12px] transition-all ${vertical === "" ? "bg-[#4361ee] text-white" : "border border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[#4361ee]/40"}`}
+                    className={`h-[32px] px-3 rounded-lg text-[12px] transition-all ${vertical === "" ? "bg-[var(--hm-primary)] text-white" : "border border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[var(--hm-text-tertiary)]"}`}
                   >
                     All verticals
                   </button>
@@ -1422,7 +1466,7 @@ export default function EmailSequencesPage() {
                     <button
                       key={v}
                       onClick={() => setVertical(v)}
-                      className={`h-[32px] px-3 rounded-lg text-[12px] transition-all ${vertical === v ? "bg-[#4361ee] text-white" : "border border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[#4361ee]/40"}`}
+                      className={`h-[32px] px-3 rounded-lg text-[12px] transition-all ${vertical === v ? "bg-[var(--hm-primary)] text-white" : "border border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[var(--hm-text-tertiary)]"}`}
                     >
                       {v}
                     </button>
@@ -1443,13 +1487,13 @@ export default function EmailSequencesPage() {
               <div className="flex gap-1.5">
                 <button
                   onClick={() => setSubjectMode("variant")}
-                  className={`h-[32px] px-3 rounded-lg text-[12px] transition-all ${subjectMode === "variant" ? "bg-[#4361ee] text-white" : "border border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[#4361ee]/40"}`}
+                  className={`h-[32px] px-3 rounded-lg text-[12px] transition-all ${subjectMode === "variant" ? "bg-[var(--hm-primary)] text-white" : "border border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[var(--hm-text-tertiary)]"}`}
                 >
                   Different per email
                 </button>
                 <button
                   onClick={() => setSubjectMode("single")}
-                  className={`h-[32px] px-3 rounded-lg text-[12px] transition-all ${subjectMode === "single" ? "bg-[#4361ee] text-white" : "border border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[#4361ee]/40"}`}
+                  className={`h-[32px] px-3 rounded-lg text-[12px] transition-all ${subjectMode === "single" ? "bg-[var(--hm-primary)] text-white" : "border border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[var(--hm-text-tertiary)]"}`}
                 >
                   Single subject for whole sequence
                 </button>
@@ -1480,7 +1524,7 @@ export default function EmailSequencesPage() {
                       key={t.id}
                       type="button"
                       onClick={() => setPersonalizationTags(prev => active ? prev.filter(id => id !== t.id) : [...prev, t.id])}
-                      className={`h-[32px] px-3 rounded-lg text-[12px] transition-all ${active ? "bg-[#4361ee] text-white" : "border border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[#4361ee]/40"}`}
+                      className={`h-[32px] px-3 rounded-lg text-[12px] transition-all ${active ? "bg-[var(--hm-primary)] text-white" : "border border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[var(--hm-text-tertiary)]"}`}
                     >
                       {t.label}
                     </button>
@@ -1504,7 +1548,7 @@ export default function EmailSequencesPage() {
 
           {/* Error */}
           {error && (
-            <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-[13px] text-red-500">{error}</div>
+            <div className="p-3 rounded-lg bg-[var(--tag-red-bg)] border border-[var(--hm-border)] text-[13px] text-[var(--hm-danger)]">{error}</div>
           )}
 
           {/* Generate button */}
@@ -1542,12 +1586,12 @@ export default function EmailSequencesPage() {
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <p className="text-[11px] font-medium text-[var(--hm-text-tertiary)] uppercase tracking-wide">Recent generation jobs</p>
-              <button onClick={loadRecentJobs} disabled={recentJobsLoading} className="text-[11px] text-[var(--hm-accent)]">
+              <button onClick={loadRecentJobs} disabled={recentJobsLoading} className="text-[11px] text-[var(--hm-link)]">
                 {recentJobsLoading ? "Refreshing..." : "Refresh"}
               </button>
             </div>
             {recentJobsError ? (
-              <p className="text-[11.5px] text-red-500">{recentJobsError}</p>
+              <p className="text-[11.5px] text-[var(--hm-danger)]">{recentJobsError}</p>
             ) : !recentJobs.length ? (
               <p className="text-[11.5px] text-[var(--hm-text-tertiary)]">{recentJobsLoading ? "Loading..." : "No generation jobs yet."}</p>
             ) : (
@@ -1556,10 +1600,10 @@ export default function EmailSequencesPage() {
                   <button
                     key={j.id}
                     onClick={() => watchJob(j.id)}
-                    className={`w-full flex items-center justify-between text-left text-[11.5px] px-2 py-1.5 rounded-md border ${activeJobId === j.id ? "border-[var(--hm-accent)]" : "border-[var(--hm-border)]"} bg-[var(--hm-bg-primary)] hover:border-[var(--hm-accent)]/40`}
+                    className={`w-full flex items-center justify-between text-left text-[11.5px] px-2 py-1.5 rounded-md border ${activeJobId === j.id ? "border-[var(--hm-primary)]" : "border-[var(--hm-border)]"} bg-[var(--hm-surface)] hover:border-[var(--hm-text-tertiary)]`}
                   >
                     <span className="truncate text-[var(--hm-text-secondary)]">{j.label || "Untitled batch"}</span>
-                    <span className={`shrink-0 ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium ${j.status === "done" ? "bg-[#DCFCE7] text-[#059669]" : j.status === "error" ? "bg-red-50 text-red-600" : j.status === "cancelled" ? "bg-[var(--hm-border)] text-[var(--hm-text-tertiary)]" : "bg-[var(--hm-accent-light)] text-[var(--hm-accent)]"}`}>
+                    <span className={`shrink-0 ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium ${j.status === "done" ? "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]" : j.status === "error" ? "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)]" : j.status === "cancelled" ? "bg-[var(--hm-border)] text-[var(--hm-text-tertiary)]" : "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]"}`}>
                       {j.status === "done" ? `done — ${j.total}/${j.total}` : j.status === "error" ? "error" : j.status === "cancelled" ? `stopped — ${j.processed}/${j.total}` : `running — ${j.processed}/${j.total}`}
                     </span>
                   </button>
