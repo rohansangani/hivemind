@@ -313,20 +313,20 @@ export default function AssistantPage() {
           aria-current={active ? "true" : undefined}
           className={
             "w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-all text-left " +
-            (active ? "bg-[#4361ee]/[0.08]" : "hover:bg-[var(--hm-bg-tertiary)]")
+            (active ? "bg-[var(--hm-bg-tertiary)]" : "hover:bg-[var(--hm-bg-tertiary)]")
           }
         >
           {/* Active accent bar */}
           <div aria-hidden="true" className={
             "w-[3px] h-[26px] rounded-full flex-shrink-0 transition-all " +
-            (active ? "bg-[#4361ee]" : "bg-transparent")
+            (active ? "bg-[var(--hm-primary)]" : "bg-transparent")
           } />
           <div className="flex-1 min-w-0 pr-5">
             <p
               title={cleanTitle(c.title) || "New conversation"}
               className={
                 "truncate text-[13px] leading-snug " +
-                (active ? "font-semibold text-[#4361ee]" : "font-normal text-[var(--hm-text)]")
+                (active ? "font-semibold text-[var(--hm-text)]" : "font-normal text-[var(--hm-text)]")
               }
             >
               {cleanTitle(c.title) || "New conversation"}
@@ -337,7 +337,7 @@ export default function AssistantPage() {
         <button
           onClick={(e) => deleteConversation(c.id, e)}
           aria-label={`Delete conversation: ${cleanTitle(c.title) || "New conversation"}`}
-          className="absolute top-1/2 -translate-y-1/2 right-3 opacity-0 group-hover/conv:opacity-100 transition-opacity w-[22px] h-[22px] rounded-md flex items-center justify-center text-[var(--hm-text-tertiary)] hover:bg-red-50 hover:text-red-500"
+          className="absolute top-1/2 -translate-y-1/2 right-3 opacity-0 group-hover/conv:opacity-100 transition-opacity w-[22px] h-[22px] rounded-md flex items-center justify-center text-[var(--hm-text-tertiary)] hover:bg-[var(--tag-red-bg)] hover:text-[var(--tag-red-fg)]"
         >
           <svg aria-hidden="true" width="10" height="10" viewBox="0 0 16 16" fill="none">
             <path d="M2 4h12M6 4V2.5a.5.5 0 01.5-.5h3a.5.5 0 01.5.5V4M5 4l.5 9h5L11 4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
@@ -355,17 +355,17 @@ export default function AssistantPage() {
   );
 
   return (
-    <div className="flex-1 flex bg-white overflow-hidden">
+    <div className="flex-1 flex bg-[var(--hm-surface)] overflow-hidden">
       <ModuleTour moduleId="assistant" />
       {/* ── Conversations sidebar ── */}
-      <div className="w-[260px] border-r border-[var(--hm-border)] bg-[#fafafa] flex flex-col flex-shrink-0">
+      <div className="w-[260px] border-r border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] flex flex-col flex-shrink-0">
 
         {/* Header */}
         <div className="px-3 pt-3.5 pb-2.5 flex-shrink-0">
           {/* Title row */}
           <div className="flex items-center justify-between mb-2.5">
             <div className="flex items-center gap-2">
-              <div className="w-6 h-6 rounded-md bg-gradient-to-br from-[#4361ee] to-[#7c3aed] flex items-center justify-center flex-shrink-0">
+              <div className="w-6 h-6 rounded-md bg-[var(--hm-primary)] flex items-center justify-center flex-shrink-0">
                 <svg aria-hidden="true" width="11" height="11" viewBox="0 0 32 32"><path d="M16 2L28 9v14l-12 7L4 23V9z" fill="none" stroke="#fff" strokeWidth="2.5" /></svg>
               </div>
               <span className="text-[13px] font-semibold text-[var(--hm-text)]">Ask Halo</span>
@@ -374,7 +374,7 @@ export default function AssistantPage() {
               onClick={startNew}
               data-tour="asst-new"
               aria-label="New conversation"
-              className="w-7 h-7 rounded-lg flex items-center justify-center text-[var(--hm-text-tertiary)] hover:bg-[var(--hm-border)] hover:text-[#4361ee] transition-all"
+              className="w-7 h-7 rounded-lg flex items-center justify-center text-[var(--hm-text-tertiary)] hover:bg-[var(--hm-border)] hover:text-[var(--hm-text)] transition-all"
             >
               <svg aria-hidden="true" width="13" height="13" viewBox="0 0 16 16" fill="none">
                 <path d="M11.5 2.5a1.414 1.414 0 012 2L5 13H3v-2L11.5 2.5z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
@@ -384,7 +384,7 @@ export default function AssistantPage() {
           </div>
 
           {/* Search */}
-          <div className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg bg-[var(--hm-bg-tertiary)] focus-within:bg-white focus-within:ring-1 focus-within:ring-[#4361ee]/30 transition-all">
+          <div className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg bg-[var(--hm-bg-tertiary)] focus-within:bg-[var(--hm-surface)] focus-within:ring-1 focus-within:ring-[var(--hm-link)]/30 transition-all">
             <svg aria-hidden="true" width="12" height="12" viewBox="0 0 16 16" fill="none" className="flex-shrink-0 text-[var(--hm-text-tertiary)]" style={{ minWidth: 12 }}>
               <circle cx="6.5" cy="6.5" r="4" stroke="currentColor" strokeWidth="1.4" />
               <path d="M10 10l3 3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
@@ -435,7 +435,7 @@ export default function AssistantPage() {
                 </>
               ) : (
                 <>
-                  <div className="w-10 h-10 rounded-xl bg-white border border-[var(--hm-border)] flex items-center justify-center mb-3 shadow-sm">
+                  <div className="w-10 h-10 rounded-xl bg-[var(--hm-surface)] border border-[var(--hm-border)] flex items-center justify-center mb-3">
                     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="text-[var(--hm-text-tertiary)]">
                       <path d="M2 2h12a1 1 0 011 1v8a1 1 0 01-1 1H5l-3 3V3a1 1 0 011-1z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
@@ -444,7 +444,7 @@ export default function AssistantPage() {
                   <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-1 leading-relaxed">Start chatting to ask Halo about your company, products, or brand.</p>
                   <button
                     onClick={startNew}
-                    className="mt-4 px-3 py-1.5 rounded-lg bg-[#4361ee] text-white text-[11px] font-medium hover:opacity-90 transition-all"
+                    className="mt-4 px-3 py-1.5 rounded-lg bg-[var(--hm-primary)] text-white text-[11px] font-medium hover:opacity-90 transition-all"
                   >
                     Start a conversation
                   </button>
@@ -473,8 +473,8 @@ export default function AssistantPage() {
 
         {/* User footer */}
         <div className="flex-shrink-0 border-t border-[var(--hm-border)] px-3 py-3">
-          <div className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-white transition-all cursor-default">
-            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[#4361ee] to-[#7c3aed] flex items-center justify-center flex-shrink-0 text-[10px] font-bold text-white shadow-sm">
+          <div className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-[var(--hm-surface)] transition-all cursor-default">
+            <div className="w-7 h-7 rounded-full bg-[var(--hm-primary)] flex items-center justify-center flex-shrink-0 text-[10px] font-bold text-white">
               {getInitials(user?.name || "U")}
             </div>
             <div className="flex-1 min-w-0">
@@ -488,15 +488,15 @@ export default function AssistantPage() {
       {/* ── Chat area ── */}
       <div className="flex-1 flex flex-col">
         {/* Chat header */}
-        <div className="px-6 py-3.5 border-b border-[var(--hm-border)] flex items-center gap-3 bg-white" style={{ boxShadow: "var(--hm-shadow-xs)" }}>
-          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#4361ee] to-[#7c3aed] flex items-center justify-center shadow-sm flex-shrink-0">
+        <div className="px-6 py-3.5 border-b border-[var(--hm-border)] flex items-center gap-3 bg-[var(--hm-surface)]" style={{ boxShadow: "var(--hm-shadow-xs)" }}>
+          <div className="w-9 h-9 rounded-full bg-[var(--hm-primary)] flex items-center justify-center flex-shrink-0">
             <svg width="16" height="16" viewBox="0 0 32 32"><path d="M16 2L28 9v14l-12 7L4 23V9z" fill="none" stroke="#fff" strokeWidth="2" /></svg>
           </div>
           <div>
             <p className="text-[15px] font-semibold text-[var(--hm-text)]">Ask Halo</p>
             <div className="flex items-center gap-1.5 mt-0.5">
-              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              <span className="text-[10px] text-emerald-600 font-medium">Knowledge base synced</span>
+              <div className="w-1.5 h-1.5 rounded-full bg-[var(--hm-success)]" />
+              <span className="text-[10px] text-[var(--tag-green-fg)] font-medium">Knowledge base synced</span>
             </div>
           </div>
         </div>
@@ -519,7 +519,7 @@ export default function AssistantPage() {
           ) : messages.length === 0 ? (
             /* ── Empty state ── */
             <div className="flex flex-col items-center justify-center h-full max-w-[500px] mx-auto text-center animate-fade-in">
-              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#4361ee] to-[#7c3aed] flex items-center justify-center mb-6 shadow-lg shadow-[#4361ee]/20">
+              <div className="w-16 h-16 rounded-2xl bg-[var(--hm-primary)] flex items-center justify-center mb-6 shadow-[var(--hm-primary)]/20">
                 <svg width="28" height="28" viewBox="0 0 32 32"><path d="M16 2L28 9v14l-12 7L4 23V9z" fill="none" stroke="#fff" strokeWidth="2" /></svg>
               </div>
               <h2 className="text-[22px] font-semibold text-[var(--hm-text)] mb-2.5">How can I help you today?</h2>
@@ -531,15 +531,15 @@ export default function AssistantPage() {
                   <button
                     key={s}
                     onClick={() => { doSend(s); }}
-                    className="p-4 border border-[var(--hm-border)] rounded-xl text-left hover:border-[#4361ee]/50 hover:bg-[var(--hm-bg-secondary)] transition-all bg-white group"
+                    className="p-4 border border-[var(--hm-border)] rounded-xl text-left hover:border-[var(--hm-primary)]/50 hover:bg-[var(--hm-bg-secondary)] transition-all bg-[var(--hm-surface)] group"
                     style={{ boxShadow: "var(--hm-shadow-card)" }}
                   >
-                    <div className="w-8 h-8 rounded-lg bg-[var(--hm-bg-secondary)] flex items-center justify-center mb-2.5 group-hover:bg-[var(--hm-accent-light)] transition-colors">
-                      <span className="text-[var(--hm-text-tertiary)] group-hover:text-[#4361ee] transition-colors">
+                    <div className="w-8 h-8 rounded-lg bg-[var(--hm-bg-secondary)] flex items-center justify-center mb-2.5 group-hover:bg-[var(--hm-bg-tertiary)] transition-colors">
+                      <span className="text-[var(--hm-text-tertiary)] group-hover:text-[var(--hm-text)] transition-colors">
                         {SUGGESTED_ICONS[i]}
                       </span>
                     </div>
-                    <span className="text-[13px] font-medium text-[var(--hm-text)] group-hover:text-[#4361ee] transition-colors leading-snug block">{s}</span>
+                    <span className="text-[13px] font-medium text-[var(--hm-text)] group-hover:text-[var(--hm-text)] transition-colors leading-snug block">{s}</span>
                   </button>
                 ))}
               </div>
@@ -550,13 +550,13 @@ export default function AssistantPage() {
               {messages.map((msg, i) => (
                 <div key={i} className={"group flex gap-3 animate-fade-in " + (msg.role === "user" ? "justify-end" : "items-start")}>
                   {msg.role === "assistant" && (
-                    <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#4361ee] to-[#7c3aed] flex items-center justify-center flex-shrink-0 shadow-sm mt-0.5">
+                    <div className="w-8 h-8 rounded-xl bg-[var(--hm-primary)] flex items-center justify-center flex-shrink-0 mt-0.5">
                       <svg width="14" height="14" viewBox="0 0 32 32"><path d="M16 2L28 9v14l-12 7L4 23V9z" fill="none" stroke="#fff" strokeWidth="2.5" /></svg>
                     </div>
                   )}
                   <div className={msg.role === "user" ? "max-w-[75%]" : "flex-1 min-w-0"}>
                     <div className={msg.role === "user"
-                      ? "px-4 py-3 bg-[#4361ee] text-white rounded-2xl rounded-br-md text-[14px] leading-[1.65]"
+                      ? "px-4 py-3 bg-[var(--hm-primary)] text-white rounded-2xl rounded-br-md text-[14px] leading-[1.65]"
                       : "text-[14px] leading-[1.8] text-[var(--hm-text)]"
                     }>
                       {msg.role === "assistant" ? (
@@ -569,7 +569,7 @@ export default function AssistantPage() {
                           <button
                             key={di}
                             onClick={() => downloadCsvString(d.csv, d.filename)}
-                            className="inline-flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5 rounded-lg border border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[#4361ee] hover:text-[#4361ee] transition-colors"
+                            className="inline-flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5 rounded-lg border border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[var(--hm-primary)] hover:text-[var(--hm-text)] transition-colors"
                           >
                             <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 2v8m0 0l-3-3m3 3l3-3M3 13h10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
                             Download CSV{msg.downloads!.length > 1 ? ` ${di + 1}` : ""}
@@ -579,7 +579,7 @@ export default function AssistantPage() {
                     ) : msg.download && (
                       <button
                         onClick={() => downloadCsvString(msg.download!.csv, msg.download!.filename)}
-                        className="mt-2 inline-flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5 rounded-lg border border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[#4361ee] hover:text-[#4361ee] transition-colors"
+                        className="mt-2 inline-flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5 rounded-lg border border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[var(--hm-primary)] hover:text-[var(--hm-text)] transition-colors"
                       >
                         <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 2v8m0 0l-3-3m3 3l3-3M3 13h10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
                         Download CSV
@@ -594,7 +594,7 @@ export default function AssistantPage() {
                         <button
                           onClick={() => copyMessage(msg.content, i)}
                           aria-label={copiedIdx === i ? "Copied" : "Copy response"}
-                          className="flex items-center gap-1 text-[10px] text-[var(--hm-text-tertiary)] hover:text-[#4361ee] transition-colors opacity-0 group-hover:opacity-100"
+                          className="flex items-center gap-1 text-[10px] text-[var(--hm-text-tertiary)] hover:text-[var(--hm-text)] transition-colors opacity-0 group-hover:opacity-100"
                           style={{ opacity: copiedIdx === i ? 1 : undefined }}
                         >
                           {copiedIdx === i ? (
@@ -613,7 +613,7 @@ export default function AssistantPage() {
                     </div>
                   </div>
                   {msg.role === "user" && (
-                    <div className="w-8 h-8 rounded-xl bg-[#4361ee] flex items-center justify-center flex-shrink-0 text-[11px] font-semibold text-white shadow-sm mt-0.5">
+                    <div className="w-8 h-8 rounded-xl bg-[var(--hm-primary)] flex items-center justify-center flex-shrink-0 text-[11px] font-semibold text-white mt-0.5">
                       {getInitials(user!.name || "U")}
                     </div>
                   )}
@@ -623,25 +623,25 @@ export default function AssistantPage() {
               {/* Typing indicator */}
               {sending && (
                 <div role="status" aria-label="Halo is thinking" className="flex gap-3 items-start animate-fade-in">
-                  <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#4361ee] to-[#7c3aed] flex items-center justify-center flex-shrink-0 shadow-sm">
+                  <div className="w-8 h-8 rounded-xl bg-[var(--hm-primary)] flex items-center justify-center flex-shrink-0">
                     <svg aria-hidden="true" width="14" height="14" viewBox="0 0 32 32"><path d="M16 2L28 9v14l-12 7L4 23V9z" fill="none" stroke="#fff" strokeWidth="2.5" /></svg>
                   </div>
                   <div className="flex items-center gap-1.5 px-4 py-3.5 rounded-2xl rounded-bl-md bg-[var(--hm-bg-secondary)] border border-[var(--hm-border)]">
-                    <span aria-hidden="true" className="w-2 h-2 rounded-full bg-[#4361ee]/50 animate-bounce" style={{ animationDelay: "0ms", animationDuration: "1s" }} />
-                    <span aria-hidden="true" className="w-2 h-2 rounded-full bg-[#4361ee]/50 animate-bounce" style={{ animationDelay: "180ms", animationDuration: "1s" }} />
-                    <span aria-hidden="true" className="w-2 h-2 rounded-full bg-[#4361ee]/50 animate-bounce" style={{ animationDelay: "360ms", animationDuration: "1s" }} />
+                    <span aria-hidden="true" className="w-2 h-2 rounded-full bg-[var(--hm-primary)]/50 animate-bounce" style={{ animationDelay: "0ms", animationDuration: "1s" }} />
+                    <span aria-hidden="true" className="w-2 h-2 rounded-full bg-[var(--hm-primary)]/50 animate-bounce" style={{ animationDelay: "180ms", animationDuration: "1s" }} />
+                    <span aria-hidden="true" className="w-2 h-2 rounded-full bg-[var(--hm-primary)]/50 animate-bounce" style={{ animationDelay: "360ms", animationDuration: "1s" }} />
                   </div>
                 </div>
               )}
 
               {/* Inline error + retry */}
               {sendError && (
-                <div role="alert" className="flex items-center gap-3 px-4 py-3 rounded-xl bg-red-50 border border-red-200 animate-fade-in">
-                  <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" className="flex-shrink-0 text-red-500"><circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.3" /><path d="M8 5v3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /><circle cx="8" cy="11" r="0.75" fill="currentColor" /></svg>
-                  <span className="flex-1 text-[12px] text-red-700">{sendError}</span>
+                <div role="alert" className="flex items-center gap-3 px-4 py-3 rounded-xl bg-[var(--tag-red-bg)] border border-[var(--hm-border)] animate-fade-in">
+                  <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" className="flex-shrink-0 text-[var(--tag-red-fg)]"><circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.3" /><path d="M8 5v3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /><circle cx="8" cy="11" r="0.75" fill="currentColor" /></svg>
+                  <span className="flex-1 text-[12px] text-[var(--tag-red-fg)]">{sendError}</span>
                   <button
                     onClick={handleRetry}
-                    className="px-2.5 py-1 rounded-lg bg-red-100 hover:bg-red-200 text-[11px] font-medium text-red-700 transition-colors flex-shrink-0"
+                    className="px-2.5 py-1 rounded-lg bg-[var(--tag-red-bg)] hover:bg-[var(--tag-red-bg)] text-[11px] font-medium text-[var(--tag-red-fg)] transition-colors flex-shrink-0"
                   >
                     Retry
                   </button>
@@ -663,14 +663,14 @@ export default function AssistantPage() {
                   key={s}
                   onClick={() => doSend(s)}
                   disabled={sending}
-                  className="px-3.5 py-1.5 border border-[var(--hm-border)] rounded-full text-[11px] font-medium text-[var(--hm-text-secondary)] hover:border-[#4361ee] hover:text-[#4361ee] hover:bg-[var(--hm-accent-light)] whitespace-nowrap transition-all flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="px-3.5 py-1.5 border border-[var(--hm-border)] rounded-full text-[11px] font-medium text-[var(--hm-text-secondary)] hover:border-[var(--hm-primary)] hover:text-[var(--hm-text)] hover:bg-[var(--hm-bg-tertiary)] whitespace-nowrap transition-all flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   {s}
                 </button>
               ))}
             </div>
           )}
-          <div data-tour="asst-input" className="border border-[var(--hm-border)] rounded-2xl focus-within:border-[#4361ee] focus-within:shadow-[0_0_0_3px_rgba(67,97,238,0.1)] transition-all bg-white" style={{ boxShadow: "var(--hm-shadow-sm)" }}>
+          <div data-tour="asst-input" className="border border-[var(--hm-border)] rounded-2xl focus-within:border-[var(--hm-primary)] focus-within:shadow-[0_0_0_3px_rgba(67,97,238,0.1)] transition-all bg-[var(--hm-surface)]" style={{ boxShadow: "var(--hm-shadow-sm)" }}>
             <div className="flex items-end gap-3 py-3 px-4">
               <textarea
                 ref={inputRef}
@@ -695,7 +695,7 @@ export default function AssistantPage() {
                 aria-label="Send message"
                 className={
                   "w-9 h-9 rounded-xl flex items-center justify-center transition-all flex-shrink-0 mb-0.5 " +
-                  (input.trim() && !sending ? "bg-[#4361ee] hover:opacity-90 shadow-sm shadow-[#4361ee]/30" : "bg-[var(--hm-bg-tertiary)]")
+                  (input.trim() && !sending ? "bg-[var(--hm-primary)] hover:opacity-90 shadow-[var(--hm-primary)]/30" : "bg-[var(--hm-bg-tertiary)]")
                 }
               >
                 {sending ? (
@@ -715,7 +715,7 @@ export default function AssistantPage() {
               <div className="px-4 pb-2.5 flex justify-end">
                 <span className={
                   "text-[10px] font-medium tabular-nums " +
-                  (input.length >= MAX_CHARS ? "text-red-500" : input.length > MAX_CHARS - 50 ? "text-amber-500" : "text-[var(--hm-text-tertiary)]")
+                  (input.length >= MAX_CHARS ? "text-[var(--tag-red-fg)]" : input.length > MAX_CHARS - 50 ? "text-[var(--tag-yellow-fg)]" : "text-[var(--hm-text-tertiary)]")
                 }>
                   {input.length} / {MAX_CHARS}
                 </span>
