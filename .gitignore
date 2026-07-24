@@ -45,5 +45,9 @@ next-env.d.ts
 # local uploads (use Vercel Blob in production)
 /public/uploads/
 
-# Claude Code config
-/.claude/
+# Claude Code config — local state and installed marketplace skills stay ignored,
+# but project-owned shared skills are tracked.
+/.claude/*
+!/.claude/skills/
+/.claude/skills/*
+!/.claude/skills/hivemind-design/
