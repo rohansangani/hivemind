@@ -76,18 +76,10 @@ function userInitials(u: UserRef) {
 }
 
 // Stable color per user id
-const USER_COLORS = [
-  "#4361EE", "#7C3AED", "#059669", "#D97706", "#DC2626",
-  "#0891B2", "#9333EA", "#15803D", "#B45309", "#C2410C",
-];
-const colorCache = new Map<string, string>();
-function userColor(id: string) {
-  if (!colorCache.has(id)) {
-    let h = 0;
-    for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) & 0xffffffff;
-    colorCache.set(id, USER_COLORS[Math.abs(h) % USER_COLORS.length]);
-  }
-  return colorCache.get(id)!;
+// Avatars are uniform near-black tiles — no per-user colour (colour is reserved
+// for tags/status/legends).
+function userColor(_id: string) {
+  return "var(--hm-primary)";
 }
 
 function Avatar({ u, size = 32 }: { u: UserRef; size?: number }) {
@@ -120,7 +112,7 @@ function ContentModal({ item, onClose }: { item: ContentItem; onClose: () => voi
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.55)" }}>
       <div
-        className="w-full max-w-3xl max-h-[90vh] flex flex-col rounded-2xl shadow-2xl border border-[var(--hm-border)] animate-fade-in"
+        className="w-full max-w-3xl max-h-[90vh] flex flex-col rounded-2xl border border-[var(--hm-border)] animate-fade-in"
         style={{ background: "var(--hm-bg)" }}
       >
         {/* Header */}
@@ -154,8 +146,8 @@ function ContentModal({ item, onClose }: { item: ContentItem; onClose: () => voi
                 onClick={() => setActiveFormat(f)}
                 className="px-3 py-1.5 rounded-lg text-[12px] font-medium transition-all"
                 style={{
-                  background: activeFormat === f ? "var(--hm-accent-light)" : "var(--hm-bg-secondary)",
-                  color: activeFormat === f ? "var(--hm-accent)" : "var(--hm-text-secondary)",
+                  background: activeFormat === f ? "var(--hm-bg-tertiary)" : "var(--hm-bg-secondary)",
+                  color: activeFormat === f ? "var(--hm-link)" : "var(--hm-text-secondary)",
                 }}
               >
                 {FORMAT_LABELS[f] ?? f}
@@ -189,7 +181,7 @@ function ContentModal({ item, onClose }: { item: ContentItem; onClose: () => voi
             {output.score && (
               <span className="text-[11px]" style={{ color: "var(--hm-text-tertiary)" }}>
                 Brand score{" "}
-                <strong style={{ color: output.score >= 80 ? "#059669" : output.score >= 60 ? "#D97706" : "#DC2626" }}>
+                <strong style={{ color: output.score >= 80 ? "var(--hm-success)" : output.score >= 60 ? "var(--hm-warning)" : "var(--hm-danger)" }}>
                   {output.score}%
                 </strong>
               </span>
@@ -250,7 +242,7 @@ function ContentTab() {
 
   if (error) return (
     <div className="flex flex-col items-center justify-center py-20 gap-3">
-      <p className="text-[13px] text-red-500">{error}</p>
+      <p className="text-[13px] text-[var(--tag-red-fg)]">{error}</p>
       <button onClick={() => load()} className="text-[12px] px-3 py-1.5 rounded-lg border border-[var(--hm-border)]" style={{ color: "var(--hm-text-secondary)" }}>Retry</button>
     </div>
   );
@@ -311,7 +303,7 @@ function ContentTab() {
                   <div className="flex items-center gap-2 flex-wrap">
                     {item.formats.map(f => (
                       <span key={f} className="text-[10px] px-1.5 py-0.5 rounded font-medium"
-                        style={{ background: "var(--hm-accent-light)", color: "var(--hm-accent)" }}>
+                        style={{ background: "var(--hm-bg-tertiary)", color: "var(--hm-link)" }}>
                         {FORMAT_LABELS[f] ?? f}
                       </span>
                     ))}
@@ -323,7 +315,7 @@ function ContentTab() {
                     )}
                     {outputCount > 0 && (
                       <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
-                        style={{ background: "#DCFCE7", color: "#059669" }}>
+                        style={{ background: "var(--tag-green-bg)", color: "var(--hm-success)" }}>
                         {outputCount} output{outputCount !== 1 ? "s" : ""}
                       </span>
                     )}
@@ -361,15 +353,15 @@ function MessageBubble({ msg }: { msg: Message }) {
     <div className={`flex gap-2.5 ${isUser ? "flex-row-reverse" : ""}`}>
       <div
         className="w-6 h-6 rounded-full flex items-center justify-center text-white flex-shrink-0 mt-0.5 text-[9px] font-bold"
-        style={{ background: isUser ? "var(--hm-accent)" : "#6B7280" }}
+        style={{ background: isUser ? "var(--hm-link)" : "var(--hm-text-tertiary)" }}
       >
         {isUser ? "U" : "AI"}
       </div>
       <div
         className="max-w-[80%] px-3 py-2 rounded-2xl text-[12px] leading-relaxed"
         style={{
-          background: isUser ? "var(--hm-accent-light)" : "var(--hm-bg-secondary)",
-          color: isUser ? "var(--hm-accent)" : "var(--hm-text)",
+          background: isUser ? "var(--hm-bg-tertiary)" : "var(--hm-bg-secondary)",
+          color: isUser ? "var(--hm-link)" : "var(--hm-text)",
           borderBottomRightRadius: isUser ? 4 : undefined,
           borderBottomLeftRadius: !isUser ? 4 : undefined,
         }}
@@ -489,7 +481,7 @@ function ConversationsTab() {
 
   if (error) return (
     <div className="flex flex-col items-center justify-center py-20 gap-3">
-      <p className="text-[13px] text-red-500">{error}</p>
+      <p className="text-[13px] text-[var(--tag-red-fg)]">{error}</p>
       <button onClick={() => load()} className="text-[12px] px-3 py-1.5 rounded-lg border border-[var(--hm-border)]" style={{ color: "var(--hm-text-secondary)" }}>Retry</button>
     </div>
   );
@@ -546,9 +538,11 @@ function ConversationsTab() {
 
 // ── Design Briefs Tab ──────────────────────────────────────────────────────────
 
+// Platform identity chip → one tag tone each (solid pill, white text). Colour lives
+// only in the chip, mapping stable with Design Brief's PlatformBadge.
 const PLATFORM_COLORS: Record<string, string> = {
-  linkedin: "#0A66C2", meta: "#1877F2", instagram: "#E1306C",
-  twitter: "#1DA1F2", blog: "#F59E0B", email: "#8B5CF6", general: "#6B7280",
+  linkedin: "var(--tag-blue-fg)", meta: "var(--tag-purple-fg)", instagram: "var(--tag-pink-fg)",
+  twitter: "var(--tag-blue-fg)", blog: "var(--tag-orange-fg)", email: "var(--tag-green-fg)", general: "var(--hm-text-tertiary)",
 };
 
 function DesignBriefsTab() {
@@ -755,7 +749,7 @@ function ModuleFeedTab({ module, empty }: { module: string; empty: string }) {
       .finally(() => setLoading(false));
   }, [module]);
 
-  if (loading) return <div className="flex justify-center py-16"><div className="w-6 h-6 border-2 border-[var(--hm-accent)]/30 border-t-[var(--hm-accent)] rounded-full animate-spin" /></div>;
+  if (loading) return <div className="flex justify-center py-16"><div className="w-6 h-6 border-2 border-[var(--hm-link)]/30 border-t-[var(--hm-link)] rounded-full animate-spin" /></div>;
   if (!events || events.length === 0) return <p className="text-center text-[13px] py-12" style={{ color: "var(--hm-text-tertiary)" }}>{empty}</p>;
 
   return (
@@ -797,7 +791,7 @@ export default function ActivityPage() {
   if (!user || !hasPermission(user.role, "manage_team")) {
     return (
       <div className="flex-1 flex items-center justify-center">
-        <div className="w-5 h-5 border-2 border-[var(--hm-accent)]/30 border-t-[var(--hm-accent)] rounded-full animate-spin" />
+        <div className="w-5 h-5 border-2 border-[var(--hm-link)]/30 border-t-[var(--hm-link)] rounded-full animate-spin" />
       </div>
     );
   }
@@ -865,8 +859,8 @@ export default function ActivityPage() {
             onClick={() => setTab(t.id)}
             className="flex items-center gap-2 px-4 py-2.5 text-[13px] font-medium border-b-2 transition-all -mb-px"
             style={{
-              borderColor: tab === t.id ? "var(--hm-accent)" : "transparent",
-              color: tab === t.id ? "var(--hm-accent)" : "var(--hm-text-tertiary)",
+              borderColor: tab === t.id ? "var(--hm-link)" : "transparent",
+              color: tab === t.id ? "var(--hm-link)" : "var(--hm-text-tertiary)",
             }}
           >
             {t.icon}
