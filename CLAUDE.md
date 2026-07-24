@@ -46,7 +46,15 @@ advisory locks Migrate takes. Both env vars exist locally and on Vercel.
 - **PostgreSQL** on Neon, accessed via **Prisma 7** with the `PrismaPg` driver adapter
 - **Anthropic Claude** (claude-sonnet-4-6) for all AI features, with BYOK support
 - **Vercel Blob** for file storage
-- **Tailwind CSS 4** for styling (no component library)
+- **Tailwind CSS 4** for styling, on a token-driven design system
+
+### Design System — use the `hivemind-design` skill for ALL UI work
+Any new page, module, component, or visual change MUST follow the design system:
+the Notion-inspired palette (tokens in `src/app/globals.css`), the four visual rules
+(near-black actions; colour only in tags/status/legends; no shadows — 1px borders only;
+stable colour-to-meaning), and the primitives kit in `src/components/ui/`. Invoke the
+`hivemind-design` skill before building UI rather than hand-picking hex or rolling
+one-off components.
 
 ### Database Client (`src/lib/db.ts`)
 Prisma uses the `PrismaPg` adapter with a `pg.Pool` — you cannot use `new PrismaClient()` standalone. The singleton includes staleness detection: if a recently added model is missing from the cached client, it recreates the connection. Always import `db` from `@/lib/db`.
