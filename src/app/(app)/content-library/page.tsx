@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { LogoLoader } from "@/components/LogoLoader";
 import { upload } from "@vercel/blob/client";
 import { useUser } from "@/lib/UserContext";
 import ModuleTour from "@/components/ModuleTour";
@@ -410,8 +411,7 @@ export default function ContentLibraryPage() {
           </div>
         )}
         <span className="absolute top-2 text-[10px] px-2 py-0.5 bg-black/50 text-white rounded-md font-medium uppercase backdrop-blur-sm" style={{ left: "30px" }}>{a.fileType || "FILE"}</span>
-        {a.brandScore !== null ? <span className={"absolute top-2 right-2 text-[10px] px-2 py-0.5 text-white rounded-md font-medium " + scoreBg(a.brandScore)}>{Math.round(a.brandScore)}%</span> : isAutoReviewing ? <span className="absolute top-2 right-2 flex items-center gap-1 text-[10px] px-2 py-0.5 bg-[var(--tag-blue-fg)]/80 text-white rounded-md font-medium backdrop-blur-sm"><span className="w-2 h-2 border border-white/50 border-t-white rounded-full animate-spin inline-block shrink-0" />Analyzing</span> : <span className="absolute top-2 right-2 text-[10px] px-2 py-0.5 bg-black/40 text-white/70 rounded-md font-medium backdrop-blur-sm">Pending</span>}
-        {a.scoreStatus === "analyzed" && <span className="absolute bottom-2 left-2 text-[9px] px-1.5 py-0.5 bg-[var(--tag-purple-fg)]/80 text-white rounded-md backdrop-blur-sm">AI Reviewed</span>}
+        {a.brandScore === null && isAutoReviewing && <span className="absolute top-2 right-2 flex items-center gap-1 text-[10px] px-2 py-0.5 bg-[var(--tag-blue-fg)]/80 text-white rounded-md font-medium backdrop-blur-sm"><span className="w-2 h-2 border border-white/50 border-t-white rounded-full animate-spin inline-block shrink-0" />Analyzing</span>}
         <span className="absolute inset-0 transition-all flex items-center justify-center gap-2" style={{ background: "rgba(0,0,0,0)" }} onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.background = "rgba(0,0,0,0.45)"} onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.background = "rgba(0,0,0,0)"}>
           <span className="opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5" style={{ background: "#ffffff", color: "var(--hm-text)" }}>
             <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M7 2H3a1 1 0 00-1 1v10a1 1 0 001 1h10a1 1 0 001-1V9" stroke="var(--hm-text)" strokeWidth="1.5" strokeLinecap="round" /><path d="M10 2h4v4M14 2L8 8" stroke="var(--hm-text)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
@@ -429,8 +429,7 @@ export default function ContentLibraryPage() {
           <div className={"w-10 h-10 rounded-xl flex items-center justify-center text-[12px] font-medium " + typeColor(a.fileType || "")}>{(a.fileType || "?").toUpperCase().slice(0, 4)}</div>
         </div>
         <span className="absolute top-2 text-[10px] px-2 py-0.5 bg-black/50 text-white rounded-md font-medium uppercase backdrop-blur-sm" style={{ left: "30px" }}>{a.fileType || "FILE"}</span>
-        {a.brandScore !== null ? <span className={"absolute top-2 right-2 text-[10px] px-2 py-0.5 text-white rounded-md font-medium " + scoreBg(a.brandScore)}>{Math.round(a.brandScore)}%</span> : isAutoReviewing ? <span className="absolute top-2 right-2 flex items-center gap-1 text-[10px] px-2 py-0.5 bg-[var(--tag-blue-fg)]/80 text-white rounded-md font-medium backdrop-blur-sm"><span className="w-2 h-2 border border-white/50 border-t-white rounded-full animate-spin inline-block shrink-0" />Analyzing</span> : <span className="absolute top-2 right-2 text-[10px] px-2 py-0.5 bg-black/40 text-white/70 rounded-md font-medium backdrop-blur-sm">Pending</span>}
-        {a.scoreStatus === "analyzed" && <span className="absolute bottom-2 left-2 text-[9px] px-1.5 py-0.5 bg-[var(--tag-purple-fg)]/80 text-white rounded-md backdrop-blur-sm">AI Reviewed</span>}
+        {a.brandScore === null && isAutoReviewing && <span className="absolute top-2 right-2 flex items-center gap-1 text-[10px] px-2 py-0.5 bg-[var(--tag-blue-fg)]/80 text-white rounded-md font-medium backdrop-blur-sm"><span className="w-2 h-2 border border-white/50 border-t-white rounded-full animate-spin inline-block shrink-0" />Analyzing</span>}
       </div>
     )
   );
@@ -676,7 +675,7 @@ export default function ContentLibraryPage() {
 
             {/* Tile view */}
             {assets.length > 0 && view === "tile" && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 2xl:grid-cols-6 gap-2.5">
                 {assets.map((a) => assetTile(a))}
               </div>
             )}
@@ -762,7 +761,7 @@ export default function ContentLibraryPage() {
                           <div className="flex-1 h-px bg-[var(--hm-border)]" />
                         </button>
                         {!isCollapsed && (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 2xl:grid-cols-6 gap-2.5">
                             {items.map((a) => assetTile(a))}
                           </div>
                         )}
@@ -1030,7 +1029,7 @@ export default function ContentLibraryPage() {
                   {runningReview && (
                     <div className="px-5 py-10 flex flex-col items-center justify-center gap-3 text-center">
                       <div className="w-10 h-10 rounded-full bg-[var(--hm-bg-tertiary)] flex items-center justify-center">
-                        <div className="w-5 h-5 border-2 border-[var(--hm-primary)]/30 border-t-[var(--hm-primary)] rounded-full animate-spin" />
+                        <LogoLoader size={34} />
                       </div>
                       <div>
                         <p className="text-[12px] font-medium text-[var(--hm-text)]">Analyzing brand compliance…</p>
