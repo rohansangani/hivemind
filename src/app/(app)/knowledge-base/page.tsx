@@ -26,16 +26,16 @@ const DEFAULTS = [
 
 function MarketPicker({ markets, selected, onChange }: { markets: Market[]; selected: string[]; onChange: (v: string[]) => void }) {
   if (markets.length === 0) return <span className="text-[11px] text-[var(--hm-text-tertiary)]">No markets defined yet</span>;
-  return (<div className="flex flex-wrap gap-1.5">{markets.map(m => { const sel = selected.includes(m.name); return <button key={m.id} type="button" onClick={() => onChange(sel ? selected.filter(x => x !== m.name) : [...selected, m.name])} className={"px-2.5 py-1 rounded-md text-[11px] border transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] " + (sel ? "border-[#4361ee] bg-blue-50 text-[#4361ee] font-medium" : "border-[var(--hm-border)] text-[var(--hm-text-tertiary)] hover:border-[#4361ee] hover:text-[#4361ee]")}>{m.name}</button>; })}</div>);
+  return (<div className="flex flex-wrap gap-1.5">{markets.map(m => { const sel = selected.includes(m.name); return <button key={m.id} type="button" onClick={() => onChange(sel ? selected.filter(x => x !== m.name) : [...selected, m.name])} className={"px-2.5 py-1 rounded-md text-[11px] border transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-link)] " + (sel ? "border-[var(--hm-primary)] bg-[var(--tag-blue-bg)] text-[var(--hm-text)] font-medium" : "border-[var(--hm-border)] text-[var(--hm-text-tertiary)] hover:border-[var(--hm-primary)] hover:text-[var(--hm-text)]")}>{m.name}</button>; })}</div>);
 }
 
 function PillPicker({ items, selected, onChange, emptyLabel }: { items: { id: string; label: string }[]; selected: string[]; onChange: (v: string[]) => void; emptyLabel: string }) {
   if (items.length === 0) return <span className="text-[11px] text-[var(--hm-text-tertiary)]">{emptyLabel}</span>;
-  return (<div className="flex flex-wrap gap-1.5">{items.map(item => { const sel = selected.includes(item.label); return <button key={item.id} type="button" onClick={() => onChange(sel ? selected.filter(x => x !== item.label) : [...selected, item.label])} className={"px-2.5 py-1 rounded-md text-[11px] border transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] " + (sel ? "border-[#4361ee] bg-blue-50 text-[#4361ee] font-medium" : "border-[var(--hm-border)] text-[var(--hm-text-tertiary)] hover:border-[#4361ee] hover:text-[#4361ee]")}>{item.label}</button>; })}</div>);
+  return (<div className="flex flex-wrap gap-1.5">{items.map(item => { const sel = selected.includes(item.label); return <button key={item.id} type="button" onClick={() => onChange(sel ? selected.filter(x => x !== item.label) : [...selected, item.label])} className={"px-2.5 py-1 rounded-md text-[11px] border transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-link)] " + (sel ? "border-[var(--hm-primary)] bg-[var(--tag-blue-bg)] text-[var(--hm-text)] font-medium" : "border-[var(--hm-border)] text-[var(--hm-text-tertiary)] hover:border-[var(--hm-primary)] hover:text-[var(--hm-text)]")}>{item.label}</button>; })}</div>);
 }
 
 function AiBtn({ loading, onClick, label }: { loading: boolean; onClick: () => void; label?: string }) {
-  return <button type="button" onClick={onClick} disabled={loading} aria-label={loading ? "AI thinking" : (label || "AI suggest")} className="h-7 px-2.5 bg-gradient-to-r from-[#4361ee] to-[#7c3aed] text-white rounded-md text-[10px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7c3aed] focus-visible:ring-offset-2">{loading ? <span aria-hidden="true" className="w-3 h-3 border-[1.5px] border-white/30 border-t-white rounded-full animate-spin" /> : <span aria-hidden="true">&#10024;</span>}{loading ? "Thinking..." : (label || "AI suggest")}</button>;
+  return <button type="button" onClick={onClick} disabled={loading} aria-label={loading ? "AI thinking" : (label || "AI suggest")} className="h-7 px-2.5 bg-[var(--hm-primary)] text-white rounded-md text-[10px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-primary)] focus-visible:ring-offset-2">{loading ? <span aria-hidden="true" className="w-3 h-3 border-[1.5px] border-white/30 border-t-white rounded-full animate-spin" /> : <span aria-hidden="true">&#10024;</span>}{loading ? "Thinking..." : (label || "AI suggest")}</button>;
 }
 
 export default function KnowledgeBasePage() {
@@ -200,14 +200,14 @@ export default function KnowledgeBasePage() {
   // Custom knowledge entries state
   interface KnowledgeEntry { id: string; category: string; title: string; content: string; source: string; isAIGenerated: boolean; createdAt: string; updatedAt: string; }
   const ENTRY_CATEGORIES = [
-    { id: "company_facts", label: "Company Facts", color: "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400", desc: "Key facts, stats, and verified claims about your company" },
-    { id: "product_context", label: "Product Context", color: "bg-violet-50 text-violet-600 dark:bg-violet-900/30 dark:text-violet-400", desc: "Additional product details, use cases, or technical specs" },
-    { id: "market_intelligence", label: "Market Intelligence", color: "bg-teal-50 text-teal-600 dark:bg-teal-900/30 dark:text-teal-400", desc: "Market trends, customer insights, or industry knowledge" },
-    { id: "competitive_intel", label: "Competitive Intel", color: "bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400", desc: "Competitor info, positioning notes, differentiators" },
-    { id: "messaging_guidelines", label: "Messaging Guidelines", color: "bg-pink-50 text-pink-600 dark:bg-pink-900/30 dark:text-pink-400", desc: "How to talk about specific topics, approved phrases, disclaimers" },
-    { id: "proof_points", label: "Proof Points", color: "bg-lime-50 text-lime-600 dark:bg-lime-900/30 dark:text-lime-400", desc: "Stats, testimonials, case study highlights, awards" },
-    { id: "corrections", label: "Corrections & Updates", color: "bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400", desc: "Override outdated info or correct AI assumptions" },
-    { id: "general", label: "General", color: "bg-gray-50 text-gray-600 dark:bg-gray-900/30 dark:text-gray-400", desc: "Anything else the AI should know" },
+    { id: "company_facts", label: "Company Facts", color: "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)] dark:bg-[var(--tag-blue-bg)]/30 dark:text-[var(--tag-blue-fg)]", desc: "Key facts, stats, and verified claims about your company" },
+    { id: "product_context", label: "Product Context", color: "bg-[var(--tag-purple-bg)] text-[var(--tag-purple-fg)] dark:bg-[var(--tag-purple-bg)]/30 dark:text-[var(--tag-purple-fg)]", desc: "Additional product details, use cases, or technical specs" },
+    { id: "market_intelligence", label: "Market Intelligence", color: "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)] dark:bg-[var(--tag-blue-bg)]/30 dark:text-[var(--tag-blue-fg)]", desc: "Market trends, customer insights, or industry knowledge" },
+    { id: "competitive_intel", label: "Competitive Intel", color: "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)] dark:bg-[var(--tag-red-bg)]/30 dark:text-[var(--tag-red-fg)]", desc: "Competitor info, positioning notes, differentiators" },
+    { id: "messaging_guidelines", label: "Messaging Guidelines", color: "bg-[var(--tag-pink-bg)] text-[var(--tag-pink-fg)] dark:bg-[var(--tag-pink-bg)]/30 dark:text-[var(--tag-pink-fg)]", desc: "How to talk about specific topics, approved phrases, disclaimers" },
+    { id: "proof_points", label: "Proof Points", color: "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)] dark:bg-[var(--tag-green-bg)]/30 dark:text-[var(--tag-green-fg)]", desc: "Stats, testimonials, case study highlights, awards" },
+    { id: "corrections", label: "Corrections & Updates", color: "bg-[var(--tag-yellow-bg)] text-[var(--tag-yellow-fg)] dark:bg-[var(--tag-yellow-bg)]/30 dark:text-[var(--tag-yellow-fg)]", desc: "Override outdated info or correct AI assumptions" },
+    { id: "general", label: "General", color: "bg-[var(--tag-gray-bg)] text-[var(--tag-gray-fg)] dark:bg-[var(--tag-gray-bg)]/30 dark:text-[var(--tag-gray-fg)]", desc: "Anything else the AI should know" },
   ];
   const [customEntries, setCustomEntries] = useState<KnowledgeEntry[]>([]);
   const [customLoading, setCustomLoading] = useState(false);
@@ -474,16 +474,16 @@ export default function KnowledgeBasePage() {
   const fl = (f: string) => ({ content_generator: "Content Generator", brand_scoring: "Brand Scoring", ai_assistant: "AI Assistant" }[f] || f);
   const closeAll = () => { setEditingItemId(null); setEditProd(null); setEditPersona(null); setEditComp(null); setEditBrand(null); setShowAddProduct(false); setShowAddPersona(false); setShowAddCompetitor(false); };
 
-  if (!org) return <div role="status" aria-label="Loading knowledge base" className="min-h-screen flex items-center justify-center"><div aria-hidden="true" className="w-5 h-5 border-2 border-[var(--hm-accent)]/30 border-t-[var(--hm-accent)] rounded-full animate-spin" /></div>;
+  if (!org) return <div role="status" aria-label="Loading knowledge base" className="min-h-screen flex items-center justify-center"><div aria-hidden="true" className="w-5 h-5 border-2 border-[var(--hm-link)]/30 border-t-[var(--hm-link)] rounded-full animate-spin" /></div>;
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
         <ModuleTour moduleId="knowledge-base" />
-        <div className="px-7 py-4 bg-white border-b border-[var(--hm-border)] flex items-center justify-between" style={{ boxShadow: "var(--hm-shadow-xs)" }}>
+        <div className="px-7 py-4 bg-[var(--hm-surface)] border-b border-[var(--hm-border)] flex items-center justify-between" style={{ boxShadow: "var(--hm-shadow-xs)" }}>
           <div><h1 className="text-[22px] font-semibold leading-tight">Knowledge base</h1><p className="text-[12px] text-[var(--hm-text-tertiary)] mt-0.5">Company intelligence · skills · learning</p></div>
-          {saved && <div className="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 border border-green-200 text-green-700 rounded-lg text-[12px] font-medium animate-fade-in-fast"><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5l3 3 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>{saved}</div>}
+          {saved && <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--tag-green-bg)] border border-[var(--hm-border)] text-[var(--tag-green-fg)] rounded-lg text-[12px] font-medium animate-fade-in-fast"><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5l3 3 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>{saved}</div>}
         </div>
-        <div className="px-7 bg-white border-b border-[var(--hm-border)] flex gap-0">
+        <div className="px-7 bg-[var(--hm-surface)] border-b border-[var(--hm-border)] flex gap-0">
           {([
             { id: "overview" as const, l: "Overview" },
             { id: "brand_style" as const, l: "Brand style", b: (styleGuide.colors.length > 0 || styleGuide.logoVariants.length > 0) ? "✓" : null },
@@ -492,7 +492,7 @@ export default function KnowledgeBasePage() {
             { id: "learning" as const, l: "Learning log", b: logs.length > 0 ? String(logs.length) : null },
             { id: "custom" as const, l: "Custom knowledge", b: customEntries.length > 0 ? String(customEntries.length) : null },
           ] as Array<{ id: typeof tab; l: string; b?: string | null }>).map(t => (
-            <button key={t.id} data-tour={`kb-tab-${t.id}`} onClick={() => setTab(t.id)} className={"px-4 py-2.5 text-[12px] border-b-2 flex items-center gap-1.5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#4361ee] " + (tab === t.id ? "font-medium text-[#4361ee] border-[#4361ee]" : "text-[var(--hm-text-tertiary)] border-transparent hover:text-[var(--hm-text)] hover:bg-[var(--hm-bg-secondary)]")}>{t.l}{t.b && <span className={"text-[9px] px-1.5 py-0.5 rounded-md " + (t.b === "✓" ? "bg-emerald-500 text-white" : "bg-[#4361ee] text-white")}>{t.b}</span>}</button>
+            <button key={t.id} data-tour={`kb-tab-${t.id}`} onClick={() => setTab(t.id)} className={"px-4 py-2.5 text-[12px] border-b-2 flex items-center gap-1.5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--hm-link)] " + (tab === t.id ? "font-medium text-[var(--hm-text)] border-[var(--hm-primary)]" : "text-[var(--hm-text-tertiary)] border-transparent hover:text-[var(--hm-text)] hover:bg-[var(--hm-bg-secondary)]")}>{t.l}{t.b && <span className={"text-[9px] px-1.5 py-0.5 rounded-md " + (t.b === "✓" ? "bg-[var(--hm-success)] text-white" : "bg-[var(--hm-primary)] text-white")}>{t.b}</span>}</button>
           ))}
         </div>
         <div className={tab === "skills" ? "flex-1 overflow-hidden flex flex-col" : "flex-1 overflow-y-auto p-7"}>
@@ -500,34 +500,34 @@ export default function KnowledgeBasePage() {
           {tab === "overview" && (
             <div className="animate-fade-in max-w-[720px]">
               <div className="grid grid-cols-4 gap-3 mb-5">
-                <div className="p-4 bg-white border border-[var(--hm-border)] rounded-xl overflow-hidden relative" style={{ boxShadow: "var(--hm-shadow-card)" }}>
-                  <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl" style={{ background: kbHealth >= 75 ? "#10B981" : "#F59E0B" }} />
+                <div className="p-4 bg-[var(--hm-surface)] border border-[var(--hm-border)] rounded-xl overflow-hidden relative" style={{ boxShadow: "var(--hm-shadow-card)" }}>
+                  <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl" style={{ background: kbHealth >= 75 ? "var(--hm-success)" : "var(--hm-warning)" }} />
                   <div className="pl-1">
                     <p className="text-[10px] text-[var(--hm-text-tertiary)] uppercase tracking-wide font-medium">KB Health</p>
-                    <p className={"text-[28px] font-bold mt-1 leading-none " + (kbHealth >= 75 ? "text-emerald-500" : "text-amber-500")}>{kbHealth}%</p>
+                    <p className={"text-[28px] font-bold mt-1 leading-none " + (kbHealth >= 75 ? "text-[var(--tag-green-fg)]" : "text-[var(--tag-yellow-fg)]")}>{kbHealth}%</p>
                     <div className="w-full h-1 rounded-full bg-[var(--hm-border)] mt-2 overflow-hidden">
-                      <div className={"h-full rounded-full " + (kbHealth >= 75 ? "bg-emerald-500" : "bg-amber-500")} style={{ width: kbHealth + "%" }} />
+                      <div className={"h-full rounded-full " + (kbHealth >= 75 ? "bg-[var(--hm-success)]" : "bg-[var(--hm-warning)]")} style={{ width: kbHealth + "%" }} />
                     </div>
                   </div>
                 </div>
-                <div className="p-4 bg-white border border-[var(--hm-border)] rounded-xl overflow-hidden relative" style={{ boxShadow: "var(--hm-shadow-card)" }}>
-                  <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl" style={{ background: "#4361EE" }} />
+                <div className="p-4 bg-[var(--hm-surface)] border border-[var(--hm-border)] rounded-xl overflow-hidden relative" style={{ boxShadow: "var(--hm-shadow-card)" }}>
+                  <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl" style={{ background: "var(--hm-border)" }} />
                   <div className="pl-1">
                     <p className="text-[10px] text-[var(--hm-text-tertiary)] uppercase tracking-wide font-medium">Products</p>
                     <p className="text-[28px] font-bold mt-1 leading-none">{products.length}</p>
                     <p className="text-[10px] text-[var(--hm-text-tertiary)] mt-1.5">In knowledge base</p>
                   </div>
                 </div>
-                <div className="p-4 bg-white border border-[var(--hm-border)] rounded-xl overflow-hidden relative" style={{ boxShadow: "var(--hm-shadow-card)" }}>
-                  <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl" style={{ background: "#8B5CF6" }} />
+                <div className="p-4 bg-[var(--hm-surface)] border border-[var(--hm-border)] rounded-xl overflow-hidden relative" style={{ boxShadow: "var(--hm-shadow-card)" }}>
+                  <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl" style={{ background: "var(--hm-border)" }} />
                   <div className="pl-1">
                     <p className="text-[10px] text-[var(--hm-text-tertiary)] uppercase tracking-wide font-medium">Personas</p>
                     <p className="text-[28px] font-bold mt-1 leading-none">{personas.length}</p>
                     <p className="text-[10px] text-[var(--hm-text-tertiary)] mt-1.5">Buyer profiles</p>
                   </div>
                 </div>
-                <div className="p-4 bg-white border border-[var(--hm-border)] rounded-xl overflow-hidden relative" style={{ boxShadow: "var(--hm-shadow-card)" }}>
-                  <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl" style={{ background: "#EF4444" }} />
+                <div className="p-4 bg-[var(--hm-surface)] border border-[var(--hm-border)] rounded-xl overflow-hidden relative" style={{ boxShadow: "var(--hm-shadow-card)" }}>
+                  <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl" style={{ background: "var(--hm-border)" }} />
                   <div className="pl-1">
                     <p className="text-[10px] text-[var(--hm-text-tertiary)] uppercase tracking-wide font-medium">Competitors</p>
                     <p className="text-[28px] font-bold mt-1 leading-none">{competitors.length}</p>
@@ -537,9 +537,9 @@ export default function KnowledgeBasePage() {
               </div>
 
               {/* Refresh Knowledge Base banner */}
-              <div className="bg-gradient-to-r from-[#4361ee]/5 to-[#7c3aed]/5 border border-[#4361ee]/20 rounded-xl p-4 mb-5 flex items-center justify-between">
+              <div className="bg-[var(--hm-bg-secondary)] border border-[var(--hm-border)] rounded-xl p-4 mb-5 flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#4361ee] to-[#7c3aed] flex items-center justify-center">
+                  <div className="w-9 h-9 rounded-full bg-[var(--hm-primary)] flex items-center justify-center">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M1 4v6h6M23 20v-6h-6" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M20.49 9A9 9 0 005.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 013.51 15" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
                   </div>
                   <div>
@@ -547,7 +547,7 @@ export default function KnowledgeBasePage() {
                     <p className="text-[11px] text-[var(--hm-text-tertiary)] leading-relaxed">Scan your website for changes and review updates before applying</p>
                   </div>
                 </div>
-                <button onClick={refreshKnowledgeBase} disabled={refreshing} className="h-8 px-4 bg-gradient-to-r from-[#4361ee] to-[#7c3aed] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7c3aed] focus-visible:ring-offset-2">
+                <button onClick={refreshKnowledgeBase} disabled={refreshing} className="h-8 px-4 bg-[var(--hm-primary)] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-primary)] focus-visible:ring-offset-2">
                   {refreshing ? <><span className="w-3.5 h-3.5 border-[1.5px] border-white/30 border-t-white rounded-full animate-spin" />Scanning website...</> : <>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M1 4v6h6M23 20v-6h-6" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/><path d="M20.49 9A9 9 0 005.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 013.51 15" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
                     Refresh
@@ -555,10 +555,10 @@ export default function KnowledgeBasePage() {
                 </button>
               </div>
 
-              {refreshError && <div className="p-3 bg-red-50 border border-red-200 rounded-lg mb-4 text-[12px] text-red-600 flex items-center justify-between">{refreshError}<button onClick={() => setRefreshError("")} className="opacity-50 hover:opacity-100 transition-opacity duration-150 w-6 h-6 flex items-center justify-center rounded-md hover:bg-red-100">&times;</button></div>}
+              {refreshError && <div className="p-3 bg-[var(--tag-red-bg)] border border-[var(--hm-border)] rounded-lg mb-4 text-[12px] text-[var(--tag-red-fg)] flex items-center justify-between">{refreshError}<button onClick={() => setRefreshError("")} className="opacity-50 hover:opacity-100 transition-opacity duration-150 w-6 h-6 flex items-center justify-center rounded-md hover:bg-[var(--tag-red-bg)]">&times;</button></div>}
 
               {refreshSummary && !showRefreshReview && !refreshing && (
-                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg mb-4 text-[12px] text-emerald-700 flex items-center gap-2">
+                <div className="p-3 bg-[var(--tag-green-bg)] border border-[var(--hm-border)] rounded-lg mb-4 text-[12px] text-[var(--tag-green-fg)] flex items-center gap-2">
                   <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5l3 3 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
                   {refreshSummary}
                 </div>
@@ -566,7 +566,7 @@ export default function KnowledgeBasePage() {
 
               {/* Refresh Review UI */}
               {showRefreshReview && refreshChanges.length > 0 && (
-                <div className="bg-white border-2 border-[#4361ee] rounded-xl p-5 mb-5 animate-fade-in">
+                <div className="bg-[var(--hm-surface)] border-2 border-[var(--hm-primary)] rounded-xl p-5 mb-5 animate-fade-in">
                   <div className="flex items-center justify-between mb-1">
                     <h3 className="text-[14px] font-medium">Review Changes</h3>
                     <button onClick={() => { setShowRefreshReview(false); setRefreshChanges([]); }} className="opacity-40 hover:opacity-100 transition-opacity duration-150 w-7 h-7 flex items-center justify-center rounded-md hover:bg-[var(--hm-bg-secondary)]">&times;</button>
@@ -574,9 +574,9 @@ export default function KnowledgeBasePage() {
                   {refreshSummary && <p className="text-[11px] text-[var(--hm-text-tertiary)] mb-4">{refreshSummary}</p>}
 
                   <div className="flex items-center gap-3 mb-4">
-                    <button onClick={() => setApprovedChanges(new Set(refreshChanges.map(c => c.id)))} className="text-[11px] text-[#4361ee] hover:underline">Select all</button>
+                    <button onClick={() => setApprovedChanges(new Set(refreshChanges.map(c => c.id)))} className="text-[11px] text-[var(--hm-link)] hover:underline">Select all</button>
                     <span className="text-[var(--hm-border)]">|</span>
-                    <button onClick={() => setApprovedChanges(new Set())} className="text-[11px] text-[#4361ee] hover:underline">Deselect all</button>
+                    <button onClick={() => setApprovedChanges(new Set())} className="text-[11px] text-[var(--hm-link)] hover:underline">Deselect all</button>
                     <span className="text-[11px] text-[var(--hm-text-tertiary)] ml-auto">{approvedChanges.size} of {refreshChanges.length} selected</span>
                   </div>
 
@@ -585,13 +585,13 @@ export default function KnowledgeBasePage() {
                       const approved = approvedChanges.has(change.id);
                       const expanded = expandedChange === change.id;
                       const edited = editedChanges[change.id] || {};
-                      const typeColor = change.type === "new" ? "bg-emerald-50 text-emerald-600 border-emerald-200" : change.type === "updated" ? "bg-blue-50 text-blue-600 border-blue-200" : "bg-red-50 text-red-600 border-red-200";
+                      const typeColor = change.type === "new" ? "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)] border-[var(--hm-border)]" : change.type === "updated" ? "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)] border-[var(--hm-border)]" : "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)] border-[var(--hm-border)]";
                       const sectionLabel = { company: "Company", products: "Product", markets: "Market", personas: "Persona", competitors: "Competitor", brand: "Brand" }[change.section] || change.section;
 
                       return (
-                        <div key={change.id} className={"border rounded-lg overflow-hidden transition-colors duration-150 " + (approved ? "border-[#4361ee]/40 bg-blue-50/20" : "border-[var(--hm-border)]")}>
+                        <div key={change.id} className={"border rounded-lg overflow-hidden transition-colors duration-150 " + (approved ? "border-[var(--hm-primary)]/40 bg-[var(--tag-blue-bg)]/20" : "border-[var(--hm-border)]")}>
                           <div className="flex items-center gap-3 p-3 cursor-pointer" onClick={() => setExpandedChange(expanded ? null : change.id)}>
-                            <input type="checkbox" checked={approved} onChange={(e) => { e.stopPropagation(); toggleChangeApproval(change.id); }} className="w-4 h-4 rounded border-[var(--hm-border)] text-[#4361ee] focus:ring-[#4361ee] cursor-pointer" onClick={e => e.stopPropagation()} />
+                            <input type="checkbox" checked={approved} onChange={(e) => { e.stopPropagation(); toggleChangeApproval(change.id); }} className="w-4 h-4 rounded border-[var(--hm-border)] text-[var(--hm-text)] focus:ring-[var(--hm-link)] cursor-pointer" onClick={e => e.stopPropagation()} />
                             <span className={"text-[9px] px-2 py-0.5 rounded-md border font-medium uppercase tracking-wide " + typeColor}>{change.type}</span>
                             <span className="text-[10px] px-2 py-0.5 bg-[var(--hm-bg-secondary)] text-[var(--hm-text-tertiary)] rounded-md">{sectionLabel}</span>
                             <span className="text-[12px] font-medium flex-1">{change.title}</span>
@@ -613,7 +613,7 @@ export default function KnowledgeBasePage() {
                                       <div key={field} className="grid grid-cols-2 gap-2">
                                         <div>
                                           <p className="text-[9px] uppercase tracking-wide text-[var(--hm-text-tertiary)] font-medium mb-1">Current: {field}</p>
-                                          <div className="text-[11px] p-2 bg-red-50/50 border border-red-100 rounded-md text-[var(--hm-text-secondary)] min-h-[32px]">
+                                          <div className="text-[11px] p-2 bg-[var(--tag-red-bg)]/50 border border-[var(--hm-border)] rounded-md text-[var(--hm-text-secondary)] min-h-[32px]">
                                             {isArray ? (currentVal as string[])?.join(", ") || "—" : (currentVal as string) || "—"}
                                           </div>
                                         </div>
@@ -624,13 +624,13 @@ export default function KnowledgeBasePage() {
                                               type="text"
                                               value={Array.isArray(suggestedVal) ? suggestedVal.join(", ") : (suggestedVal || "")}
                                               onChange={e => updateEditedField(change.id, field, e.target.value.split(",").map((s: string) => s.trim()).filter(Boolean))}
-                                              className="w-full text-[11px] p-2 bg-emerald-50/50 border border-emerald-200 rounded-md min-h-[32px]"
+                                              className="w-full text-[11px] p-2 bg-[var(--tag-green-bg)]/50 border border-[var(--hm-border)] rounded-md min-h-[32px]"
                                             />
                                           ) : (
                                             <textarea
                                               value={(suggestedVal as string) || ""}
                                               onChange={e => updateEditedField(change.id, field, e.target.value)}
-                                              className="w-full text-[11px] p-2 bg-emerald-50/50 border border-emerald-200 rounded-md min-h-[32px] resize-y"
+                                              className="w-full text-[11px] p-2 bg-[var(--tag-green-bg)]/50 border border-[var(--hm-border)] rounded-md min-h-[32px] resize-y"
                                               rows={1}
                                             />
                                           )}
@@ -654,13 +654,13 @@ export default function KnowledgeBasePage() {
                                             type="text"
                                             value={Array.isArray(val) ? val.join(", ") : (val || "")}
                                             onChange={e => updateEditedField(change.id, field, e.target.value.split(",").map((s: string) => s.trim()).filter(Boolean))}
-                                            className="w-full text-[11px] p-2 border border-emerald-200 bg-emerald-50/30 rounded-md"
+                                            className="w-full text-[11px] p-2 border border-[var(--hm-border)] bg-[var(--tag-green-bg)]/30 rounded-md"
                                           />
                                         ) : (
                                           <textarea
                                             value={(val as string) || ""}
                                             onChange={e => updateEditedField(change.id, field, e.target.value)}
-                                            className="w-full text-[11px] p-2 border border-emerald-200 bg-emerald-50/30 rounded-md resize-y"
+                                            className="w-full text-[11px] p-2 border border-[var(--hm-border)] bg-[var(--tag-green-bg)]/30 rounded-md resize-y"
                                             rows={1}
                                           />
                                         )}
@@ -671,8 +671,8 @@ export default function KnowledgeBasePage() {
                               )}
 
                               {change.type === "removed" && change.current && (
-                                <div className="p-3 bg-red-50/50 border border-red-100 rounded-md">
-                                  <p className="text-[10px] uppercase tracking-wide text-red-400 font-medium mb-1.5">Will be removed</p>
+                                <div className="p-3 bg-[var(--tag-red-bg)]/50 border border-[var(--hm-border)] rounded-md">
+                                  <p className="text-[10px] uppercase tracking-wide text-[var(--tag-red-fg)] font-medium mb-1.5">Will be removed</p>
                                   <div className="text-[11px] text-[var(--hm-text-secondary)] space-y-1">
                                     {Object.entries(change.current).filter(([k]) => k !== "id").map(([k, v]) => (
                                       <div key={k}><span className="font-medium capitalize">{k}:</span> {Array.isArray(v) ? v.join(", ") : String(v || "—")}</div>
@@ -692,7 +692,7 @@ export default function KnowledgeBasePage() {
                     <button
                       onClick={applyRefreshChanges}
                       disabled={applyingRefresh || approvedChanges.size === 0}
-                      className="h-8 px-5 bg-emerald-500 text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                      className="h-8 px-5 bg-[var(--hm-success)] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                     >
                       {applyingRefresh ? <><span className="w-3 h-3 border-[1.5px] border-white/30 border-t-white rounded-full animate-spin" />Applying...</> : `Apply ${approvedChanges.size} change${approvedChanges.size !== 1 ? "s" : ""}`}
                     </button>
@@ -702,44 +702,44 @@ export default function KnowledgeBasePage() {
 
               {/* Auto-populate (initial setup) */}
               {kbHealth < 50 && (
-                <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-4 mb-5 flex items-center justify-between">
+                <div className="bg-[var(--tag-yellow-bg)] border border-[var(--hm-border)] rounded-xl p-4 mb-5 flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-amber-400 to-orange-400 flex items-center justify-center"><svg width="16" height="16" viewBox="0 0 32 32"><path d="M16 2L28 9v14l-12 7L4 23V9z" fill="none" stroke="#fff" strokeWidth="2" /></svg></div>
-                    <div><p className="text-[13px] font-semibold text-amber-800">Need a head start?</p><p className="text-[11px] text-amber-600 leading-relaxed">Auto-populate your KB from your website to get started faster</p></div>
+                    <div className="w-9 h-9 rounded-full bg-[var(--hm-warning)] flex items-center justify-center"><svg width="16" height="16" viewBox="0 0 32 32"><path d="M16 2L28 9v14l-12 7L4 23V9z" fill="none" stroke="#fff" strokeWidth="2" /></svg></div>
+                    <div><p className="text-[13px] font-semibold text-[var(--tag-yellow-fg)]">Need a head start?</p><p className="text-[11px] text-[var(--tag-yellow-fg)] leading-relaxed">Auto-populate your KB from your website to get started faster</p></div>
                   </div>
                   <AiBtn loading={aiLoading === "full"} onClick={() => aiSuggest("full", {}, (data) => { setFullAiSuggestions(data); setShowFullAI(true); })} label="Auto-populate" />
                 </div>
               )}
 
               {showFullAI && fullAiSuggestions && (
-                <div className="bg-white border-2 border-[#4361ee] rounded-xl p-5 mb-5 animate-fade-in">
-                  <div className="flex items-center justify-between mb-3"><h3 className="text-[14px] font-medium">Review AI Suggestions</h3><button onClick={() => { setShowFullAI(false); setFullAiSuggestions(null); }} className="opacity-40 hover:opacity-100 transition-opacity duration-150 w-7 h-7 flex items-center justify-center rounded-md hover:bg-[var(--hm-bg-secondary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee]">&times;</button></div>
+                <div className="bg-[var(--hm-surface)] border-2 border-[var(--hm-primary)] rounded-xl p-5 mb-5 animate-fade-in">
+                  <div className="flex items-center justify-between mb-3"><h3 className="text-[14px] font-medium">Review AI Suggestions</h3><button onClick={() => { setShowFullAI(false); setFullAiSuggestions(null); }} className="opacity-40 hover:opacity-100 transition-opacity duration-150 w-7 h-7 flex items-center justify-center rounded-md hover:bg-[var(--hm-bg-secondary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-link)]">&times;</button></div>
                   <div className="space-y-2 mb-4">
                     {[{ key: "company", label: "Company Profile" }, { key: "products", label: "Products (" + ((fullAiSuggestions.products as unknown[])?.length || 0) + ")" }, { key: "markets", label: "Markets (" + ((fullAiSuggestions.markets as unknown[])?.length || 0) + ")" }, { key: "personas", label: "Personas (" + ((fullAiSuggestions.personas as unknown[])?.length || 0) + ")" }, { key: "competitors", label: "Competitors (" + ((fullAiSuggestions.competitors as unknown[])?.length || 0) + ")" }, { key: "brand", label: "Brand Identity" }].map(s => {
                       const checked = fullAiSections.includes(s.key);
-                      return <label key={s.key} className={"flex items-center gap-3 p-3 rounded-lg border cursor-pointer " + (checked ? "border-[#4361ee] bg-blue-50/30" : "border-[var(--hm-border)]")}><input type="checkbox" checked={checked} onChange={() => setFullAiSections(checked ? fullAiSections.filter(x => x !== s.key) : [...fullAiSections, s.key])} /><span className="text-[13px] font-medium">{s.label}</span></label>;
+                      return <label key={s.key} className={"flex items-center gap-3 p-3 rounded-lg border cursor-pointer " + (checked ? "border-[var(--hm-primary)] bg-[var(--tag-blue-bg)]/30" : "border-[var(--hm-border)]")}><input type="checkbox" checked={checked} onChange={() => setFullAiSections(checked ? fullAiSections.filter(x => x !== s.key) : [...fullAiSections, s.key])} /><span className="text-[13px] font-medium">{s.label}</span></label>;
                     })}
                   </div>
                   <div className="flex justify-end gap-2">
-                    <button onClick={() => { setShowFullAI(false); setFullAiSuggestions(null); }} className="h-8 px-3 border border-[var(--hm-border)] rounded-lg text-[12px] hover:bg-[var(--hm-bg-secondary)] hover:border-[#4361ee]/40 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-1">Cancel</button>
+                    <button onClick={() => { setShowFullAI(false); setFullAiSuggestions(null); }} className="h-8 px-3 border border-[var(--hm-border)] rounded-lg text-[12px] hover:bg-[var(--hm-bg-secondary)] hover:border-[var(--hm-text-tertiary)] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-link)] focus-visible:ring-offset-1">Cancel</button>
                     <button onClick={async () => {
                       setSaving(true);
                       await fetch("/api/knowledge/auto-populate", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ suggestions: fullAiSuggestions, sections: fullAiSections }) });
                       setSaving(false); setShowFullAI(false); setFullAiSuggestions(null); fetchAll(); setSaved("AI data imported!"); setTimeout(() => setSaved(""), 3000);
-                    }} disabled={saving || fullAiSections.length === 0} className="h-8 px-5 bg-emerald-500 text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2">{saving ? "Importing..." : "Import " + fullAiSections.length + " sections"}</button>
+                    }} disabled={saving || fullAiSections.length === 0} className="h-8 px-5 bg-[var(--hm-success)] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2">{saving ? "Importing..." : "Import " + fullAiSections.length + " sections"}</button>
                   </div>
                 </div>
               )}
 
-              {aiError && <div className="p-3 bg-red-50 border border-red-200 rounded-lg mb-4 text-[12px] text-red-600 flex items-center justify-between">{aiError}<button onClick={() => setAiError("")} className="opacity-50 hover:opacity-100 transition-opacity duration-150 w-6 h-6 flex items-center justify-center rounded-md hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400">&times;</button></div>}
+              {aiError && <div className="p-3 bg-[var(--tag-red-bg)] border border-[var(--hm-border)] rounded-lg mb-4 text-[12px] text-[var(--tag-red-fg)] flex items-center justify-between">{aiError}<button onClick={() => setAiError("")} className="opacity-50 hover:opacity-100 transition-opacity duration-150 w-6 h-6 flex items-center justify-center rounded-md hover:bg-[var(--tag-red-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400">&times;</button></div>}
 
               {/* Company */}
-              <div className="bg-white border border-[var(--hm-border)] rounded-xl p-5 mb-3">
+              <div className="bg-[var(--hm-surface)] border border-[var(--hm-border)] rounded-xl p-5 mb-3">
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-[14px] font-medium">Company Profile</h3>
                   <div className="flex items-center gap-2">
                     {editing === "company" && <AiBtn loading={aiLoading === "company"} onClick={() => aiSuggest("company", {}, (d) => setOrg({ ...org, ...(d as Partial<Org>) }))} />}
-                    <button onClick={() => { setEditing(editing === "company" ? null : "company"); closeAll(); }} className="text-[11px] text-[#4361ee] hover:underline transition-colors duration-150 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-1">{editing === "company" ? "Cancel" : "Edit"}</button>
+                    <button onClick={() => { setEditing(editing === "company" ? null : "company"); closeAll(); }} className="text-[11px] text-[var(--hm-link)] hover:underline transition-colors duration-150 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-link)] focus-visible:ring-offset-1">{editing === "company" ? "Cancel" : "Edit"}</button>
                   </div>
                 </div>
                 {editing === "company" ? (
@@ -753,7 +753,7 @@ export default function KnowledgeBasePage() {
                       <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1 font-medium">HQ City</label><input type="text" value={org.hqCity || ""} onChange={e => setOrg({ ...org, hqCity: e.target.value })} className="w-full text-[13px]" /></div>
                       <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1 font-medium">HQ Country</label><input type="text" value={org.hqCountry || ""} onChange={e => setOrg({ ...org, hqCountry: e.target.value })} className="w-full text-[13px]" /></div>
                     </div>
-                    <button onClick={() => { saveEdit("company", org as unknown as Record<string, unknown>); setEditing(null); }} disabled={saving} className="h-8 px-4 bg-[#4361ee] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-2">{saving ? "Saving…" : "Save"}</button>
+                    <button onClick={() => { saveEdit("company", org as unknown as Record<string, unknown>); setEditing(null); }} disabled={saving} className="h-8 px-4 bg-[var(--hm-primary)] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-link)] focus-visible:ring-offset-2">{saving ? "Saving…" : "Save"}</button>
                   </div>
                 ) : (
                   <div className="space-y-1.5">
@@ -766,12 +766,12 @@ export default function KnowledgeBasePage() {
               </div>
 
               {/* Products */}
-              <div className="bg-white border border-[var(--hm-border)] rounded-xl p-5 mb-3">
-                <div className="flex items-center justify-between mb-3"><h3 className="text-[14px] font-medium">Products ({products.length})</h3><button onClick={() => { setEditing(editing === "products" ? null : "products"); closeAll(); }} className="text-[11px] text-[#4361ee] hover:underline transition-colors duration-150 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-1">{editing === "products" ? "Done" : "Edit"}</button></div>
+              <div className="bg-[var(--hm-surface)] border border-[var(--hm-border)] rounded-xl p-5 mb-3">
+                <div className="flex items-center justify-between mb-3"><h3 className="text-[14px] font-medium">Products ({products.length})</h3><button onClick={() => { setEditing(editing === "products" ? null : "products"); closeAll(); }} className="text-[11px] text-[var(--hm-link)] hover:underline transition-colors duration-150 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-link)] focus-visible:ring-offset-1">{editing === "products" ? "Done" : "Edit"}</button></div>
                 {products.map(p => (
                   <div key={p.id}>
                     {editingItemId === p.id && editProd ? (
-                      <div className="border border-[#4361ee] rounded-lg p-4 mb-2 space-y-3 animate-fade-in-fast">
+                      <div className="border border-[var(--hm-primary)] rounded-lg p-4 mb-2 space-y-3 animate-fade-in-fast">
                         <div className="flex justify-between items-start"><div className="flex-1"><label className="block text-xs text-[var(--hm-text-secondary)] mb-1">Name</label><input type="text" value={editProd.name} onChange={e => setEditProd({ ...editProd, name: e.target.value })} className="w-full text-[13px]" /></div><div className="ml-2 mt-4"><AiBtn loading={aiLoading === "product-edit"} onClick={() => aiSuggest("product", { name: editProd.name }, (d) => setEditProd({ ...editProd, ...(d as Partial<Product>) }))} /></div></div>
                         <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1">Description</label><textarea value={editProd.description} onChange={e => setEditProd({ ...editProd, description: e.target.value })} className="w-full text-[13px] min-h-[60px]" /></div>
                         <div className="grid grid-cols-3 gap-3">
@@ -783,18 +783,18 @@ export default function KnowledgeBasePage() {
                         <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1">Target personas</label><PillPicker items={personas.map(p => ({ id: p.id, label: p.title }))} selected={editProd.personaNames || []} onChange={v => setEditProd({ ...editProd, personaNames: v })} emptyLabel="No personas defined yet" /></div>
                         <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1">Competitors</label><PillPicker items={competitors.map(c => ({ id: c.id, label: c.name }))} selected={editProd.competitorNames || []} onChange={v => setEditProd({ ...editProd, competitorNames: v })} emptyLabel="No competitors defined yet" /></div>
                         <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1">Part of bundle/solution</label><select value={editProd.bundleParentId || ""} onChange={e => setEditProd({ ...editProd, bundleParentId: e.target.value || null })} className="w-full text-[13px]"><option value="">None (standalone)</option>{products.filter(pr => pr.id !== editProd.id).map(pr => <option key={pr.id} value={pr.id}>{pr.name}</option>)}</select></div>
-                        <div className="flex justify-between"><button onClick={() => confirmAndDelete("product_delete", p.id, editProd?.name || p.id)} className="text-[11px] text-red-500 hover:underline hover:text-red-600 transition-colors duration-150 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:ring-offset-1">Delete</button><div className="flex gap-2"><button onClick={() => { setEditingItemId(null); setEditProd(null); }} className="h-8 px-3 border border-[var(--hm-border)] rounded-lg text-[12px] hover:bg-[var(--hm-bg-secondary)] hover:border-[#4361ee]/40 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-1">Cancel</button><button onClick={() => saveEdit("product_update", { id: editProd.id, name: editProd.name, description: editProd.description, category: editProd.category, classification: editProd.classification, scope: editProd.scope, features: editProd.features, marketNames: editProd.marketNames || [], personaNames: editProd.personaNames || [], competitorNames: editProd.competitorNames || [], bundleParentId: editProd.bundleParentId || null })} disabled={saving} className="h-8 px-4 bg-[#4361ee] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-2">{saving ? "Saving…" : "Save"}</button></div></div>
+                        <div className="flex justify-between"><button onClick={() => confirmAndDelete("product_delete", p.id, editProd?.name || p.id)} className="text-[11px] text-[var(--tag-red-fg)] hover:underline hover:text-[var(--tag-red-fg)] transition-colors duration-150 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:ring-offset-1">Delete</button><div className="flex gap-2"><button onClick={() => { setEditingItemId(null); setEditProd(null); }} className="h-8 px-3 border border-[var(--hm-border)] rounded-lg text-[12px] hover:bg-[var(--hm-bg-secondary)] hover:border-[var(--hm-text-tertiary)] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-link)] focus-visible:ring-offset-1">Cancel</button><button onClick={() => saveEdit("product_update", { id: editProd.id, name: editProd.name, description: editProd.description, category: editProd.category, classification: editProd.classification, scope: editProd.scope, features: editProd.features, marketNames: editProd.marketNames || [], personaNames: editProd.personaNames || [], competitorNames: editProd.competitorNames || [], bundleParentId: editProd.bundleParentId || null })} disabled={saving} className="h-8 px-4 bg-[var(--hm-primary)] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-link)] focus-visible:ring-offset-2">{saving ? "Saving…" : "Save"}</button></div></div>
                       </div>
                     ) : (
                       <div className={"flex items-center justify-between py-2.5 border-b border-[var(--hm-border)] last:border-b-0 " + (editing === "products" ? "cursor-pointer hover:bg-[var(--hm-bg-secondary)] rounded-lg px-2 -mx-2" : "")} onClick={() => { if (editing === "products") { setEditingItemId(p.id); setEditProd({ ...p }); } }}>
-                        <div><p className="text-[12px] font-medium">{p.name}</p>{p.description && <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-0.5 max-w-[400px] leading-relaxed">{p.description.slice(0, 100)}{p.description.length > 100 ? "..." : ""}</p>}{(p.personaNames?.length > 0 || p.competitorNames?.length > 0 || p.bundleParentId) && <div className="flex flex-wrap gap-1 mt-1">{p.personaNames?.map(n => <span key={n} className="text-[9px] px-1.5 py-0.5 bg-purple-50 text-purple-600 rounded">{n}</span>)}{p.competitorNames?.map(n => <span key={n} className="text-[9px] px-1.5 py-0.5 bg-red-50 text-red-600 rounded">{n}</span>)}{p.bundleParentId && <span className="text-[9px] px-1.5 py-0.5 bg-green-50 text-green-600 rounded">Bundle: {products.find(pr => pr.id === p.bundleParentId)?.name || "Unknown"}</span>}</div>}</div>
-                        <div className="flex items-center gap-2">{p.classification && <span className="text-[10px] px-2 py-0.5 bg-[var(--hm-bg-secondary)] text-[var(--hm-text-tertiary)] rounded-md capitalize">{p.classification}</span>}<span className="text-[10px] px-2 py-0.5 bg-blue-50 text-[#4361ee] rounded-md">{p.scope === "global" ? "Global" : "Specific"}</span>{editing === "products" && <span className="text-[10px] text-[#4361ee]">&#9998;</span>}</div>
+                        <div><p className="text-[12px] font-medium">{p.name}</p>{p.description && <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-0.5 max-w-[400px] leading-relaxed">{p.description.slice(0, 100)}{p.description.length > 100 ? "..." : ""}</p>}{(p.personaNames?.length > 0 || p.competitorNames?.length > 0 || p.bundleParentId) && <div className="flex flex-wrap gap-1 mt-1">{p.personaNames?.map(n => <span key={n} className="text-[9px] px-1.5 py-0.5 bg-[var(--tag-purple-bg)] text-[var(--tag-purple-fg)] rounded">{n}</span>)}{p.competitorNames?.map(n => <span key={n} className="text-[9px] px-1.5 py-0.5 bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)] rounded">{n}</span>)}{p.bundleParentId && <span className="text-[9px] px-1.5 py-0.5 bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)] rounded">Bundle: {products.find(pr => pr.id === p.bundleParentId)?.name || "Unknown"}</span>}</div>}</div>
+                        <div className="flex items-center gap-2">{p.classification && <span className="text-[10px] px-2 py-0.5 bg-[var(--hm-bg-secondary)] text-[var(--hm-text-tertiary)] rounded-md capitalize">{p.classification}</span>}<span className="text-[10px] px-2 py-0.5 bg-[var(--tag-blue-bg)] text-[var(--hm-text)] rounded-md">{p.scope === "global" ? "Global" : "Specific"}</span>{editing === "products" && <span className="text-[10px] text-[var(--hm-text)]">&#9998;</span>}</div>
                       </div>
                     )}
                   </div>
                 ))}
                 {products.length === 0 && editing !== "products" && <p className="text-[12px] text-[var(--hm-text-tertiary)] py-2">No products added yet — click Edit to add your first product.</p>}
-                {editing === "products" && !showAddProduct && !editingItemId && <button onClick={() => setShowAddProduct(true)} className="mt-3 w-full h-9 border-2 border-dashed border-[var(--hm-border)] rounded-lg text-[12px] text-[var(--hm-text-tertiary)] hover:border-[#4361ee] hover:text-[#4361ee]">+ Add product</button>}
+                {editing === "products" && !showAddProduct && !editingItemId && <button onClick={() => setShowAddProduct(true)} className="mt-3 w-full h-9 border-2 border-dashed border-[var(--hm-border)] rounded-lg text-[12px] text-[var(--hm-text-tertiary)] hover:border-[var(--hm-primary)] hover:text-[var(--hm-text)]">+ Add product</button>}
                 {showAddProduct && (
                   <div className="mt-3 border border-[var(--hm-border)] rounded-lg p-4 space-y-3 animate-fade-in-fast">
                     <div className="flex justify-between items-start"><div className="flex-1"><label className="block text-xs text-[var(--hm-text-secondary)] mb-1">Name *</label><input type="text" value={newProd.name} onChange={e => setNewProd({ ...newProd, name: e.target.value })} placeholder="e.g., Carrier Allocation Engine" className="w-full text-[13px]" /></div><div className="ml-2 mt-4"><AiBtn loading={aiLoading === "product"} onClick={() => aiSuggest("product", { name: newProd.name }, (d) => setNewProd({ ...newProd, ...(d as Record<string, string & string[]>) }))} /></div></div>
@@ -808,34 +808,34 @@ export default function KnowledgeBasePage() {
                     <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1">Target personas</label><PillPicker items={personas.map(p => ({ id: p.id, label: p.title }))} selected={newProd.personaNames} onChange={v => setNewProd({ ...newProd, personaNames: v })} emptyLabel="No personas defined yet" /></div>
                     <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1">Competitors</label><PillPicker items={competitors.map(c => ({ id: c.id, label: c.name }))} selected={newProd.competitorNames} onChange={v => setNewProd({ ...newProd, competitorNames: v })} emptyLabel="No competitors defined yet" /></div>
                     <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1">Part of bundle/solution</label><select value={newProd.bundleParentId || ""} onChange={e => setNewProd({ ...newProd, bundleParentId: e.target.value || null })} className="w-full text-[13px]"><option value="">None (standalone)</option>{products.map(pr => <option key={pr.id} value={pr.id}>{pr.name}</option>)}</select></div>
-                    <div className="flex justify-end gap-2"><button onClick={() => setShowAddProduct(false)} className="h-8 px-3 border border-[var(--hm-border)] rounded-lg text-[12px] hover:bg-[var(--hm-bg-secondary)] hover:border-[#4361ee]/40 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-1">Cancel</button><button onClick={() => { if (newProd.name) { saveEdit("product_add", { ...newProd }); setNewProd({ name: "", description: "", category: "core", classification: "", scope: "global", features: [], marketNames: [], personaNames: [], competitorNames: [], bundleParentId: null }); setShowAddProduct(false); } }} disabled={!newProd.name || saving} className="h-8 px-4 bg-[#4361ee] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-2">{saving ? "Saving…" : "Add"}</button></div>
+                    <div className="flex justify-end gap-2"><button onClick={() => setShowAddProduct(false)} className="h-8 px-3 border border-[var(--hm-border)] rounded-lg text-[12px] hover:bg-[var(--hm-bg-secondary)] hover:border-[var(--hm-text-tertiary)] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-link)] focus-visible:ring-offset-1">Cancel</button><button onClick={() => { if (newProd.name) { saveEdit("product_add", { ...newProd }); setNewProd({ name: "", description: "", category: "core", classification: "", scope: "global", features: [], marketNames: [], personaNames: [], competitorNames: [], bundleParentId: null }); setShowAddProduct(false); } }} disabled={!newProd.name || saving} className="h-8 px-4 bg-[var(--hm-primary)] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-link)] focus-visible:ring-offset-2">{saving ? "Saving…" : "Add"}</button></div>
                   </div>
                 )}
               </div>
 
               {/* Markets */}
-              <div className="bg-white border border-[var(--hm-border)] rounded-xl p-5 mb-3">
-                <div className="flex items-center justify-between mb-3"><h3 className="text-[14px] font-medium">Markets ({markets.length})</h3><button onClick={() => { setEditing(editing === "markets" ? null : "markets"); closeAll(); setEditMarket(null); setNewMarket({ name: "", notes: "" }); }} className="text-[11px] text-[#4361ee] hover:underline transition-colors duration-150 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-1">{editing === "markets" ? "Done" : "Edit"}</button></div>
+              <div className="bg-[var(--hm-surface)] border border-[var(--hm-border)] rounded-xl p-5 mb-3">
+                <div className="flex items-center justify-between mb-3"><h3 className="text-[14px] font-medium">Markets ({markets.length})</h3><button onClick={() => { setEditing(editing === "markets" ? null : "markets"); closeAll(); setEditMarket(null); setNewMarket({ name: "", notes: "" }); }} className="text-[11px] text-[var(--hm-link)] hover:underline transition-colors duration-150 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-link)] focus-visible:ring-offset-1">{editing === "markets" ? "Done" : "Edit"}</button></div>
                 {markets.map(m => (
                   <div key={m.id}>
                     {editing === "markets" && editMarket?.id === m.id ? (
-                      <div className="border border-[#4361ee] rounded-lg p-4 mb-2 space-y-3 animate-fade-in-fast">
+                      <div className="border border-[var(--hm-primary)] rounded-lg p-4 mb-2 space-y-3 animate-fade-in-fast">
                         <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1">Name</label><input type="text" value={editMarket.name} onChange={e => setEditMarket({ ...editMarket, name: e.target.value })} className="w-full text-[13px]" /></div>
                         <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1">Notes (optional)</label><input type="text" value={editMarket.notes} onChange={e => setEditMarket({ ...editMarket, notes: e.target.value })} className="w-full text-[13px]" /></div>
                         <div className="flex justify-between">
-                          <button onClick={() => confirmAndDelete("market_delete", m.id, editMarket?.name || m.name)} className="text-[11px] text-red-500 hover:underline hover:text-red-600 transition-colors duration-150 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:ring-offset-1">Delete</button>
+                          <button onClick={() => confirmAndDelete("market_delete", m.id, editMarket?.name || m.name)} className="text-[11px] text-[var(--tag-red-fg)] hover:underline hover:text-[var(--tag-red-fg)] transition-colors duration-150 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:ring-offset-1">Delete</button>
                           <div className="flex gap-2">
-                            <button onClick={() => setEditMarket(null)} className="h-8 px-3 border border-[var(--hm-border)] rounded-lg text-[12px] hover:bg-[var(--hm-bg-secondary)] hover:border-[#4361ee]/40 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-1">Cancel</button>
-                            <button onClick={async () => { if (!editMarket.name.trim()) return; await fetch("/api/knowledge/edit", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ section: "market_update", id: editMarket.id, name: editMarket.name, notes: editMarket.notes }) }); setEditMarket(null); fetchAll(); setSaved("Market updated!"); setTimeout(() => setSaved(""), 2000); }} disabled={saving} className="h-8 px-4 bg-[#4361ee] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-2">{saving ? "Saving…" : "Save"}</button>
+                            <button onClick={() => setEditMarket(null)} className="h-8 px-3 border border-[var(--hm-border)] rounded-lg text-[12px] hover:bg-[var(--hm-bg-secondary)] hover:border-[var(--hm-text-tertiary)] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-link)] focus-visible:ring-offset-1">Cancel</button>
+                            <button onClick={async () => { if (!editMarket.name.trim()) return; await fetch("/api/knowledge/edit", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ section: "market_update", id: editMarket.id, name: editMarket.name, notes: editMarket.notes }) }); setEditMarket(null); fetchAll(); setSaved("Market updated!"); setTimeout(() => setSaved(""), 2000); }} disabled={saving} className="h-8 px-4 bg-[var(--hm-primary)] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-link)] focus-visible:ring-offset-2">{saving ? "Saving…" : "Save"}</button>
                           </div>
                         </div>
                       </div>
                     ) : (
                       <div className={"flex items-center justify-between py-2.5 border-b border-[var(--hm-border)] last:border-b-0 " + (editing === "markets" ? "cursor-pointer hover:bg-[var(--hm-bg-secondary)] rounded-lg px-2 -mx-2" : "")} onClick={() => { if (editing === "markets" && editMarket?.id !== m.id) { setEditMarket({ id: m.id, name: m.name, notes: (m as Market & { notes?: string }).notes || "" }); } }}>
                         <div className="flex items-center gap-2">
-                          <span className={"inline-flex items-center px-2.5 py-1 rounded-md text-[12px] " + (m.type === "primary" ? "bg-[#4361ee] text-white" : "bg-[var(--hm-bg-secondary)] text-[var(--hm-text-secondary)]")}>{m.name}</span>
+                          <span className={"inline-flex items-center px-2.5 py-1 rounded-md text-[12px] " + (m.type === "primary" ? "bg-[var(--hm-primary)] text-white" : "bg-[var(--hm-bg-secondary)] text-[var(--hm-text-secondary)]")}>{m.name}</span>
                         </div>
-                        {editing === "markets" && <span className="text-[10px] text-[#4361ee]">&#9998;</span>}
+                        {editing === "markets" && <span className="text-[10px] text-[var(--hm-text)]">&#9998;</span>}
                       </div>
                     )}
                   </div>
@@ -848,19 +848,19 @@ export default function KnowledgeBasePage() {
                       <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1">Notes (optional)</label><input type="text" placeholder="Any context" value={newMarket.notes} onChange={e => setNewMarket({ ...newMarket, notes: e.target.value })} className="w-full text-[13px]" /></div>
                     </div>
                     <div className="flex justify-end">
-                      <button onClick={async () => { if (!newMarket.name.trim()) return; await fetch("/api/knowledge/edit", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ section: "market_add", name: newMarket.name, notes: newMarket.notes }) }); setNewMarket({ name: "", notes: "" }); fetchAll(); setSaved("Market added!"); setTimeout(() => setSaved(""), 2000); }} disabled={!newMarket.name.trim() || saving} className="h-8 px-4 bg-[#4361ee] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-2">Add market</button>
+                      <button onClick={async () => { if (!newMarket.name.trim()) return; await fetch("/api/knowledge/edit", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ section: "market_add", name: newMarket.name, notes: newMarket.notes }) }); setNewMarket({ name: "", notes: "" }); fetchAll(); setSaved("Market added!"); setTimeout(() => setSaved(""), 2000); }} disabled={!newMarket.name.trim() || saving} className="h-8 px-4 bg-[var(--hm-primary)] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-link)] focus-visible:ring-offset-2">Add market</button>
                     </div>
                   </div>
                 )}
               </div>
 
               {/* Personas */}
-              <div className="bg-white border border-[var(--hm-border)] rounded-xl p-5 mb-3">
-                <div className="flex items-center justify-between mb-3"><h3 className="text-[14px] font-medium">Personas ({personas.length})</h3><button onClick={() => { setEditing(editing === "personas" ? null : "personas"); closeAll(); }} className="text-[11px] text-[#4361ee] hover:underline transition-colors duration-150 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-1">{editing === "personas" ? "Done" : "Edit"}</button></div>
+              <div className="bg-[var(--hm-surface)] border border-[var(--hm-border)] rounded-xl p-5 mb-3">
+                <div className="flex items-center justify-between mb-3"><h3 className="text-[14px] font-medium">Personas ({personas.length})</h3><button onClick={() => { setEditing(editing === "personas" ? null : "personas"); closeAll(); }} className="text-[11px] text-[var(--hm-link)] hover:underline transition-colors duration-150 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-link)] focus-visible:ring-offset-1">{editing === "personas" ? "Done" : "Edit"}</button></div>
                 {personas.map(p => (
                   <div key={p.id}>
                     {editingItemId === p.id && editPersona ? (
-                      <div className="border border-[#4361ee] rounded-lg p-4 mb-2 space-y-3 animate-fade-in-fast">
+                      <div className="border border-[var(--hm-primary)] rounded-lg p-4 mb-2 space-y-3 animate-fade-in-fast">
                         <div className="flex justify-between items-end"><div className="grid grid-cols-3 gap-3 flex-1">
                           <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1">Title</label><input type="text" value={editPersona.title} onChange={e => setEditPersona({ ...editPersona, title: e.target.value })} className="w-full text-[13px]" /></div>
                           <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1">Department</label><input type="text" value={editPersona.department} onChange={e => setEditPersona({ ...editPersona, department: e.target.value })} className="w-full text-[13px]" /></div>
@@ -868,18 +868,18 @@ export default function KnowledgeBasePage() {
                         </div><div className="ml-2"><AiBtn loading={aiLoading === "persona-edit"} onClick={() => aiSuggest("persona", { title: editPersona.title }, (d) => setEditPersona({ ...editPersona, ...(d as Partial<Persona>) }))} /></div></div>
                         <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1">Pain points</label><textarea value={editPersona.painPoints} onChange={e => setEditPersona({ ...editPersona, painPoints: e.target.value })} className="w-full text-[13px] min-h-[52px]" /></div>
                         <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1">How we help</label><textarea value={editPersona.howWeHelp} onChange={e => setEditPersona({ ...editPersona, howWeHelp: e.target.value })} className="w-full text-[13px] min-h-[52px]" /></div>
-                        <div className="flex justify-between"><button onClick={() => confirmAndDelete("persona_delete", p.id, editPersona?.title || p.id)} className="text-[11px] text-red-500 hover:underline hover:text-red-600 transition-colors duration-150 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:ring-offset-1">Delete</button><div className="flex gap-2"><button onClick={() => { setEditingItemId(null); setEditPersona(null); }} className="h-8 px-3 border border-[var(--hm-border)] rounded-lg text-[12px] hover:bg-[var(--hm-bg-secondary)] hover:border-[#4361ee]/40 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-1">Cancel</button><button onClick={() => saveEdit("persona_update", { id: editPersona.id, title: editPersona.title, department: editPersona.department, seniority: editPersona.seniority, painPoints: editPersona.painPoints, howWeHelp: editPersona.howWeHelp, contentPrefs: editPersona.contentPrefs })} disabled={saving} className="h-8 px-4 bg-[#4361ee] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-2">{saving ? "Saving…" : "Save"}</button></div></div>
+                        <div className="flex justify-between"><button onClick={() => confirmAndDelete("persona_delete", p.id, editPersona?.title || p.id)} className="text-[11px] text-[var(--tag-red-fg)] hover:underline hover:text-[var(--tag-red-fg)] transition-colors duration-150 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:ring-offset-1">Delete</button><div className="flex gap-2"><button onClick={() => { setEditingItemId(null); setEditPersona(null); }} className="h-8 px-3 border border-[var(--hm-border)] rounded-lg text-[12px] hover:bg-[var(--hm-bg-secondary)] hover:border-[var(--hm-text-tertiary)] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-link)] focus-visible:ring-offset-1">Cancel</button><button onClick={() => saveEdit("persona_update", { id: editPersona.id, title: editPersona.title, department: editPersona.department, seniority: editPersona.seniority, painPoints: editPersona.painPoints, howWeHelp: editPersona.howWeHelp, contentPrefs: editPersona.contentPrefs })} disabled={saving} className="h-8 px-4 bg-[var(--hm-primary)] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-link)] focus-visible:ring-offset-2">{saving ? "Saving…" : "Save"}</button></div></div>
                       </div>
                     ) : (
                       <div className={"flex items-center justify-between py-2.5 border-b border-[var(--hm-border)] last:border-b-0 " + (editing === "personas" ? "cursor-pointer hover:bg-[var(--hm-bg-secondary)] rounded-lg px-2 -mx-2" : "")} onClick={() => { if (editing === "personas") { setEditingItemId(p.id); setEditPersona({ ...p }); } }}>
-                        <div className="flex items-center gap-2.5"><div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-xs font-medium text-[#4361ee]">{p.title.split(" ").map(w => w[0]).join("").slice(0, 2)}</div><div><p className="text-[12px] font-medium">{p.title}</p><p className="text-[11px] text-[var(--hm-text-tertiary)]">{[p.seniority, p.department].filter(Boolean).join(" · ")}</p></div></div>
-                        {editing === "personas" && <span className="text-[10px] text-[#4361ee]">&#9998;</span>}
+                        <div className="flex items-center gap-2.5"><div className="w-8 h-8 rounded-full bg-[var(--tag-blue-bg)] flex items-center justify-center text-xs font-medium text-[var(--hm-text)]">{p.title.split(" ").map(w => w[0]).join("").slice(0, 2)}</div><div><p className="text-[12px] font-medium">{p.title}</p><p className="text-[11px] text-[var(--hm-text-tertiary)]">{[p.seniority, p.department].filter(Boolean).join(" · ")}</p></div></div>
+                        {editing === "personas" && <span className="text-[10px] text-[var(--hm-text)]">&#9998;</span>}
                       </div>
                     )}
                   </div>
                 ))}
                 {personas.length === 0 && editing !== "personas" && <p className="text-[12px] text-[var(--hm-text-tertiary)] py-2">No personas defined yet — click Edit to add buyer profiles.</p>}
-                {editing === "personas" && !showAddPersona && !editingItemId && <button onClick={() => setShowAddPersona(true)} className="mt-3 w-full h-9 border-2 border-dashed border-[var(--hm-border)] rounded-lg text-[12px] text-[var(--hm-text-tertiary)] hover:border-[#4361ee] hover:text-[#4361ee]">+ Add persona</button>}
+                {editing === "personas" && !showAddPersona && !editingItemId && <button onClick={() => setShowAddPersona(true)} className="mt-3 w-full h-9 border-2 border-dashed border-[var(--hm-border)] rounded-lg text-[12px] text-[var(--hm-text-tertiary)] hover:border-[var(--hm-primary)] hover:text-[var(--hm-text)]">+ Add persona</button>}
                 {showAddPersona && (
                   <div className="mt-3 border border-[var(--hm-border)] rounded-lg p-4 space-y-3 animate-fade-in-fast">
                     <div className="flex justify-between items-end"><div className="grid grid-cols-3 gap-3 flex-1">
@@ -889,18 +889,18 @@ export default function KnowledgeBasePage() {
                     </div><div className="ml-2"><AiBtn loading={aiLoading === "persona"} onClick={() => aiSuggest("persona", { title: newPersona.title }, (d) => setNewPersona({ ...newPersona, ...(d as Record<string, string>) }))} /></div></div>
                     <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1">Pain points</label><textarea value={newPersona.painPoints} onChange={e => setNewPersona({ ...newPersona, painPoints: e.target.value })} className="w-full text-[13px] min-h-[52px]" /></div>
                     <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1">How we help</label><textarea value={newPersona.howWeHelp} onChange={e => setNewPersona({ ...newPersona, howWeHelp: e.target.value })} className="w-full text-[13px] min-h-[52px]" /></div>
-                    <div className="flex justify-end gap-2"><button onClick={() => setShowAddPersona(false)} className="h-8 px-3 border border-[var(--hm-border)] rounded-lg text-[12px] hover:bg-[var(--hm-bg-secondary)] hover:border-[#4361ee]/40 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-1">Cancel</button><button onClick={() => { if (newPersona.title) { saveEdit("persona_add", { ...newPersona, contentPrefs: [] }); setNewPersona({ title: "", department: "", seniority: "", painPoints: "", howWeHelp: "" }); setShowAddPersona(false); } }} disabled={!newPersona.title || saving} className="h-8 px-4 bg-[#4361ee] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-2">{saving ? "Saving…" : "Add"}</button></div>
+                    <div className="flex justify-end gap-2"><button onClick={() => setShowAddPersona(false)} className="h-8 px-3 border border-[var(--hm-border)] rounded-lg text-[12px] hover:bg-[var(--hm-bg-secondary)] hover:border-[var(--hm-text-tertiary)] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-link)] focus-visible:ring-offset-1">Cancel</button><button onClick={() => { if (newPersona.title) { saveEdit("persona_add", { ...newPersona, contentPrefs: [] }); setNewPersona({ title: "", department: "", seniority: "", painPoints: "", howWeHelp: "" }); setShowAddPersona(false); } }} disabled={!newPersona.title || saving} className="h-8 px-4 bg-[var(--hm-primary)] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-link)] focus-visible:ring-offset-2">{saving ? "Saving…" : "Add"}</button></div>
                   </div>
                 )}
               </div>
 
               {/* Competitors */}
-              <div className="bg-white border border-[var(--hm-border)] rounded-xl p-5 mb-3">
-                <div className="flex items-center justify-between mb-3"><h3 className="text-[14px] font-medium">Competitors ({competitors.length})</h3><button onClick={() => { setEditing(editing === "competitors" ? null : "competitors"); closeAll(); }} className="text-[11px] text-[#4361ee] hover:underline transition-colors duration-150 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-1">{editing === "competitors" ? "Done" : "Edit"}</button></div>
+              <div className="bg-[var(--hm-surface)] border border-[var(--hm-border)] rounded-xl p-5 mb-3">
+                <div className="flex items-center justify-between mb-3"><h3 className="text-[14px] font-medium">Competitors ({competitors.length})</h3><button onClick={() => { setEditing(editing === "competitors" ? null : "competitors"); closeAll(); }} className="text-[11px] text-[var(--hm-link)] hover:underline transition-colors duration-150 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-link)] focus-visible:ring-offset-1">{editing === "competitors" ? "Done" : "Edit"}</button></div>
                 {competitors.map(c => (
                   <div key={c.id}>
                     {editingItemId === c.id && editComp ? (
-                      <div className="border border-[#4361ee] rounded-lg p-4 mb-2 space-y-3 animate-fade-in-fast">
+                      <div className="border border-[var(--hm-primary)] rounded-lg p-4 mb-2 space-y-3 animate-fade-in-fast">
                         <div className="flex justify-between items-start"><div className="grid grid-cols-2 gap-3 flex-1">
                           <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1">Name</label><input type="text" value={editComp.name} onChange={e => setEditComp({ ...editComp, name: e.target.value })} className="w-full text-[13px]" /></div>
                           <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1">Website</label><input type="text" value={editComp.website} onChange={e => setEditComp({ ...editComp, website: e.target.value })} className="w-full text-[13px]" /></div>
@@ -908,18 +908,18 @@ export default function KnowledgeBasePage() {
                         <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1">Their positioning</label><textarea value={editComp.positioning} onChange={e => setEditComp({ ...editComp, positioning: e.target.value })} className="w-full text-[13px] min-h-[52px]" /></div>
                         <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1">How we differentiate</label><textarea value={editComp.differentiator} onChange={e => setEditComp({ ...editComp, differentiator: e.target.value })} className="w-full text-[13px] min-h-[52px]" /></div>
                         <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1">Markets they compete in</label><MarketPicker markets={markets} selected={editComp.marketOverlap} onChange={v => setEditComp({ ...editComp, marketOverlap: v })} /></div>
-                        <div className="flex justify-between"><button onClick={() => confirmAndDelete("competitor_delete", c.id, editComp?.name || c.id)} className="text-[11px] text-red-500 hover:underline hover:text-red-600 transition-colors duration-150 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:ring-offset-1">Delete</button><div className="flex gap-2"><button onClick={() => { setEditingItemId(null); setEditComp(null); }} className="h-8 px-3 border border-[var(--hm-border)] rounded-lg text-[12px] hover:bg-[var(--hm-bg-secondary)] hover:border-[#4361ee]/40 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-1">Cancel</button><button onClick={() => saveEdit("competitor_update", { id: editComp.id, name: editComp.name, website: editComp.website, positioning: editComp.positioning, differentiator: editComp.differentiator, marketOverlap: editComp.marketOverlap })} disabled={saving} className="h-8 px-4 bg-[#4361ee] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-2">{saving ? "Saving…" : "Save"}</button></div></div>
+                        <div className="flex justify-between"><button onClick={() => confirmAndDelete("competitor_delete", c.id, editComp?.name || c.id)} className="text-[11px] text-[var(--tag-red-fg)] hover:underline hover:text-[var(--tag-red-fg)] transition-colors duration-150 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:ring-offset-1">Delete</button><div className="flex gap-2"><button onClick={() => { setEditingItemId(null); setEditComp(null); }} className="h-8 px-3 border border-[var(--hm-border)] rounded-lg text-[12px] hover:bg-[var(--hm-bg-secondary)] hover:border-[var(--hm-text-tertiary)] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-link)] focus-visible:ring-offset-1">Cancel</button><button onClick={() => saveEdit("competitor_update", { id: editComp.id, name: editComp.name, website: editComp.website, positioning: editComp.positioning, differentiator: editComp.differentiator, marketOverlap: editComp.marketOverlap })} disabled={saving} className="h-8 px-4 bg-[var(--hm-primary)] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-link)] focus-visible:ring-offset-2">{saving ? "Saving…" : "Save"}</button></div></div>
                       </div>
                     ) : (
                       <div className={"flex items-center justify-between py-2.5 border-b border-[var(--hm-border)] last:border-b-0 " + (editing === "competitors" ? "cursor-pointer hover:bg-[var(--hm-bg-secondary)] rounded-lg px-2 -mx-2" : "")} onClick={() => { if (editing === "competitors") { setEditingItemId(c.id); setEditComp({ ...c }); } }}>
-                        <div className="flex items-center gap-2.5"><div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center text-[13px] font-medium text-red-600">{c.name[0]}</div><div><p className="text-[12px] font-medium">{c.name}</p>{c.website && <p className="text-[11px] text-[var(--hm-text-tertiary)]">{c.website}</p>}{c.marketOverlap.length > 0 && <div className="flex flex-wrap gap-1 mt-1">{c.marketOverlap.map((m, i) => <span key={i} className="text-[9px] px-1.5 py-0.5 bg-blue-50 text-[#4361ee] rounded-md">{m}</span>)}</div>}</div></div>
-                        {editing === "competitors" && <span className="text-[10px] text-[#4361ee]">&#9998;</span>}
+                        <div className="flex items-center gap-2.5"><div className="w-8 h-8 rounded-lg bg-[var(--tag-red-bg)] flex items-center justify-center text-[13px] font-medium text-[var(--tag-red-fg)]">{c.name[0]}</div><div><p className="text-[12px] font-medium">{c.name}</p>{c.website && <p className="text-[11px] text-[var(--hm-text-tertiary)]">{c.website}</p>}{c.marketOverlap.length > 0 && <div className="flex flex-wrap gap-1 mt-1">{c.marketOverlap.map((m, i) => <span key={i} className="text-[9px] px-1.5 py-0.5 bg-[var(--tag-blue-bg)] text-[var(--hm-text)] rounded-md">{m}</span>)}</div>}</div></div>
+                        {editing === "competitors" && <span className="text-[10px] text-[var(--hm-text)]">&#9998;</span>}
                       </div>
                     )}
                   </div>
                 ))}
                 {competitors.length === 0 && editing !== "competitors" && <p className="text-[12px] text-[var(--hm-text-tertiary)] py-2">No competitors tracked yet — click Edit to add competitors.</p>}
-                {editing === "competitors" && !showAddCompetitor && !editingItemId && <button onClick={() => setShowAddCompetitor(true)} className="mt-3 w-full h-9 border-2 border-dashed border-[var(--hm-border)] rounded-lg text-[12px] text-[var(--hm-text-tertiary)] hover:border-[#4361ee] hover:text-[#4361ee]">+ Add competitor</button>}
+                {editing === "competitors" && !showAddCompetitor && !editingItemId && <button onClick={() => setShowAddCompetitor(true)} className="mt-3 w-full h-9 border-2 border-dashed border-[var(--hm-border)] rounded-lg text-[12px] text-[var(--hm-text-tertiary)] hover:border-[var(--hm-primary)] hover:text-[var(--hm-text)]">+ Add competitor</button>}
                 {showAddCompetitor && (
                   <div className="mt-3 border border-[var(--hm-border)] rounded-lg p-4 space-y-3 animate-fade-in-fast">
                     <div className="flex justify-between items-start"><div className="grid grid-cols-2 gap-3 flex-1">
@@ -929,18 +929,18 @@ export default function KnowledgeBasePage() {
                     <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1">Their positioning</label><textarea value={newComp.positioning} onChange={e => setNewComp({ ...newComp, positioning: e.target.value })} className="w-full text-[13px] min-h-[52px]" /></div>
                     <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1">How we differentiate</label><textarea value={newComp.differentiator} onChange={e => setNewComp({ ...newComp, differentiator: e.target.value })} className="w-full text-[13px] min-h-[52px]" /></div>
                     <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1">Markets they compete in</label><MarketPicker markets={markets} selected={newComp.marketOverlap} onChange={v => setNewComp({ ...newComp, marketOverlap: v })} /></div>
-                    <div className="flex justify-end gap-2"><button onClick={() => setShowAddCompetitor(false)} className="h-8 px-3 border border-[var(--hm-border)] rounded-lg text-[12px] hover:bg-[var(--hm-bg-secondary)] hover:border-[#4361ee]/40 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-1">Cancel</button><button onClick={() => { if (newComp.name) { saveEdit("competitor_add", { ...newComp }); setNewComp({ name: "", website: "", positioning: "", differentiator: "", marketOverlap: [] }); setShowAddCompetitor(false); } }} disabled={!newComp.name || saving} className="h-8 px-4 bg-[#4361ee] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-2">{saving ? "Saving…" : "Add"}</button></div>
+                    <div className="flex justify-end gap-2"><button onClick={() => setShowAddCompetitor(false)} className="h-8 px-3 border border-[var(--hm-border)] rounded-lg text-[12px] hover:bg-[var(--hm-bg-secondary)] hover:border-[var(--hm-text-tertiary)] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-link)] focus-visible:ring-offset-1">Cancel</button><button onClick={() => { if (newComp.name) { saveEdit("competitor_add", { ...newComp }); setNewComp({ name: "", website: "", positioning: "", differentiator: "", marketOverlap: [] }); setShowAddCompetitor(false); } }} disabled={!newComp.name || saving} className="h-8 px-4 bg-[var(--hm-primary)] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-link)] focus-visible:ring-offset-2">{saving ? "Saving…" : "Add"}</button></div>
                   </div>
                 )}
               </div>
 
               {/* Brand */}
-              <div className="bg-white border border-[var(--hm-border)] rounded-xl p-5">
+              <div className="bg-[var(--hm-surface)] border border-[var(--hm-border)] rounded-xl p-5">
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-[14px] font-medium">Brand Identity</h3>
                   <div className="flex items-center gap-2">
                     {editing === "brand" && <AiBtn loading={aiLoading === "brand"} onClick={() => aiSuggest("brand", {}, (d) => setEditBrand(eb => ({ ...(eb || brand || { traits: [], archetype: "", toneFormal: 50, toneTechnical: 50, toneSerious: 50, toneCorporate: 50, voiceDescription: "", wordsWeUse: [], wordsWeAvoid: [], competitiveMoat: "" }), ...(d as Partial<Brand>) })))} />}
-                    <button onClick={() => { if (editing === "brand") { setEditing(null); setEditBrand(null); } else { closeAll(); setEditing("brand"); setEditBrand(brand ? { ...brand } : { traits: [], archetype: "", toneFormal: 50, toneTechnical: 50, toneSerious: 50, toneCorporate: 50, voiceDescription: "", wordsWeUse: [], wordsWeAvoid: [], competitiveMoat: "" }); } }} className="text-[11px] text-[#4361ee] hover:underline transition-colors duration-150 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-1">{editing === "brand" ? "Cancel" : "Edit"}</button>
+                    <button onClick={() => { if (editing === "brand") { setEditing(null); setEditBrand(null); } else { closeAll(); setEditing("brand"); setEditBrand(brand ? { ...brand } : { traits: [], archetype: "", toneFormal: 50, toneTechnical: 50, toneSerious: 50, toneCorporate: 50, voiceDescription: "", wordsWeUse: [], wordsWeAvoid: [], competitiveMoat: "" }); } }} className="text-[11px] text-[var(--hm-link)] hover:underline transition-colors duration-150 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-link)] focus-visible:ring-offset-1">{editing === "brand" ? "Cancel" : "Edit"}</button>
                   </div>
                 </div>
                 {editing === "brand" && editBrand ? (
@@ -952,8 +952,8 @@ export default function KnowledgeBasePage() {
                     <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1 font-medium">Voice description</label><textarea value={editBrand.voiceDescription || ""} onChange={e => setEditBrand({ ...editBrand, voiceDescription: e.target.value })} className="w-full text-[13px] min-h-[60px]" /></div>
                     <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1 font-medium">Competitive moat</label><textarea value={editBrand.competitiveMoat || ""} onChange={e => setEditBrand({ ...editBrand, competitiveMoat: e.target.value })} className="w-full text-[13px] min-h-[52px]" /></div>
                     <div className="grid grid-cols-2 gap-3">
-                      <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1 font-medium">Words we use <span className="font-normal opacity-60">(Enter to add)</span></label><div className="flex flex-wrap gap-1 p-1.5 border border-[var(--hm-border)] rounded-lg min-h-[34px] bg-white">{editBrand.wordsWeUse.map((w,i)=><span key={i} className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full">{w}<button type="button" onClick={()=>setEditBrand({...editBrand,wordsWeUse:editBrand.wordsWeUse.filter((_,j)=>j!==i)})} className="hover:text-red-500 font-bold">&times;</button></span>)}<input type="text" placeholder={editBrand.wordsWeUse.length===0?"e.g. precise":""} className="border-none outline-none text-[12px] bg-transparent min-w-[80px] flex-1 p-0 focus:ring-0" onKeyDown={e=>{if((e.key==="Enter"||e.key===",")&&(e.target as HTMLInputElement).value.trim()){e.preventDefault();const v=(e.target as HTMLInputElement).value.trim().replace(/,$/,"");if(v)setEditBrand({...editBrand,wordsWeUse:[...editBrand.wordsWeUse,v]});(e.target as HTMLInputElement).value="";}}} /></div></div>
-                      <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1 font-medium">Words we avoid <span className="font-normal opacity-60">(Enter to add)</span></label><div className="flex flex-wrap gap-1 p-1.5 border border-[var(--hm-border)] rounded-lg min-h-[34px] bg-white">{editBrand.wordsWeAvoid.map((w,i)=><span key={i} className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 bg-red-50 text-red-600 border border-red-200 rounded-full">{w}<button type="button" onClick={()=>setEditBrand({...editBrand,wordsWeAvoid:editBrand.wordsWeAvoid.filter((_,j)=>j!==i)})} className="hover:text-red-800 font-bold">&times;</button></span>)}<input type="text" placeholder={editBrand.wordsWeAvoid.length===0?"e.g. leverage":""} className="border-none outline-none text-[12px] bg-transparent min-w-[80px] flex-1 p-0 focus:ring-0" onKeyDown={e=>{if((e.key==="Enter"||e.key===",")&&(e.target as HTMLInputElement).value.trim()){e.preventDefault();const v=(e.target as HTMLInputElement).value.trim().replace(/,$/,"");if(v)setEditBrand({...editBrand,wordsWeAvoid:[...editBrand.wordsWeAvoid,v]});(e.target as HTMLInputElement).value="";}}} /></div></div>
+                      <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1 font-medium">Words we use <span className="font-normal opacity-60">(Enter to add)</span></label><div className="flex flex-wrap gap-1 p-1.5 border border-[var(--hm-border)] rounded-lg min-h-[34px] bg-[var(--hm-surface)]">{editBrand.wordsWeUse.map((w,i)=><span key={i} className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)] border border-[var(--hm-border)] rounded-full">{w}<button type="button" onClick={()=>setEditBrand({...editBrand,wordsWeUse:editBrand.wordsWeUse.filter((_,j)=>j!==i)})} className="hover:text-[var(--tag-red-fg)] font-bold">&times;</button></span>)}<input type="text" placeholder={editBrand.wordsWeUse.length===0?"e.g. precise":""} className="border-none outline-none text-[12px] bg-transparent min-w-[80px] flex-1 p-0 focus:ring-0" onKeyDown={e=>{if((e.key==="Enter"||e.key===",")&&(e.target as HTMLInputElement).value.trim()){e.preventDefault();const v=(e.target as HTMLInputElement).value.trim().replace(/,$/,"");if(v)setEditBrand({...editBrand,wordsWeUse:[...editBrand.wordsWeUse,v]});(e.target as HTMLInputElement).value="";}}} /></div></div>
+                      <div><label className="block text-xs text-[var(--hm-text-secondary)] mb-1 font-medium">Words we avoid <span className="font-normal opacity-60">(Enter to add)</span></label><div className="flex flex-wrap gap-1 p-1.5 border border-[var(--hm-border)] rounded-lg min-h-[34px] bg-[var(--hm-surface)]">{editBrand.wordsWeAvoid.map((w,i)=><span key={i} className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)] border border-[var(--hm-border)] rounded-full">{w}<button type="button" onClick={()=>setEditBrand({...editBrand,wordsWeAvoid:editBrand.wordsWeAvoid.filter((_,j)=>j!==i)})} className="hover:text-[var(--tag-red-fg)] font-bold">&times;</button></span>)}<input type="text" placeholder={editBrand.wordsWeAvoid.length===0?"e.g. leverage":""} className="border-none outline-none text-[12px] bg-transparent min-w-[80px] flex-1 p-0 focus:ring-0" onKeyDown={e=>{if((e.key==="Enter"||e.key===",")&&(e.target as HTMLInputElement).value.trim()){e.preventDefault();const v=(e.target as HTMLInputElement).value.trim().replace(/,$/,"");if(v)setEditBrand({...editBrand,wordsWeAvoid:[...editBrand.wordsWeAvoid,v]});(e.target as HTMLInputElement).value="";}}} /></div></div>
                     </div>
                     <div className="space-y-2">
                       <label className="block text-xs text-[var(--hm-text-secondary)] font-medium">Tone sliders</label>
@@ -961,22 +961,22 @@ export default function KnowledgeBasePage() {
                         <div key={key as string}>
                           <div className="flex items-center justify-between mb-1">
                             <span className="text-[11px] text-[var(--hm-text-secondary)] font-medium">{left} <span className="opacity-40">↔</span> {right}</span>
-                            <span className="text-[11px] font-semibold tabular-nums text-[#4361ee] bg-blue-50 px-1.5 py-0.5 rounded">{editBrand[key] as number}</span>
+                            <span className="text-[11px] font-semibold tabular-nums text-[var(--hm-text)] bg-[var(--tag-blue-bg)] px-1.5 py-0.5 rounded">{editBrand[key] as number}</span>
                           </div>
                           <input type="range" min={0} max={100} value={editBrand[key] as number} onChange={e => setEditBrand({ ...editBrand, [key]: parseInt(e.target.value) })} className="w-full" />
                         </div>
                       ))}
                     </div>
                     <div className="flex justify-end">
-                      <button onClick={() => { saveEdit("brand", editBrand as unknown as Record<string, unknown>); setEditing(null); setEditBrand(null); }} disabled={saving} className="h-8 px-4 bg-[#4361ee] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-2">{saving ? "Saving…" : "Save"}</button>
+                      <button onClick={() => { saveEdit("brand", editBrand as unknown as Record<string, unknown>); setEditing(null); setEditBrand(null); }} disabled={saving} className="h-8 px-4 bg-[var(--hm-primary)] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-link)] focus-visible:ring-offset-2">{saving ? "Saving…" : "Save"}</button>
                     </div>
                   </div>
                 ) : brand ? (<div className="space-y-1.5">
                   <div className="flex justify-between"><span className="text-[12px] text-[var(--hm-text-secondary)]">Archetype</span><span className="text-[12px] text-[var(--hm-text-tertiary)]">{brand.archetype || "Not set"}</span></div>
                   <div className="flex justify-between"><span className="text-[12px] text-[var(--hm-text-secondary)]">Traits</span><span className="text-[12px] text-[var(--hm-text-tertiary)]">{brand.traits.join(", ") || "None"}</span></div>
                   {brand.voiceDescription && <p className="text-[12px] text-[var(--hm-text-secondary)] leading-relaxed mt-1">{brand.voiceDescription}</p>}
-                  {brand.wordsWeUse.length > 0 && <div className="mt-2"><p className="text-[10px] text-[var(--hm-text-tertiary)] uppercase tracking-wide font-medium mb-1">Words we use</p><div className="flex flex-wrap gap-1">{brand.wordsWeUse.map((w, i) => <span key={i} className="text-[10px] px-2 py-0.5 bg-emerald-50 text-emerald-600 border border-emerald-100 rounded-full">{w}</span>)}</div></div>}
-                  {brand.wordsWeAvoid.length > 0 && <div className="mt-2"><p className="text-[10px] text-[var(--hm-text-tertiary)] uppercase tracking-wide font-medium mb-1">Words we avoid</p><div className="flex flex-wrap gap-1">{brand.wordsWeAvoid.map((w, i) => <span key={i} className="text-[10px] px-2 py-0.5 bg-red-50 text-red-500 border border-red-100 rounded-full">{w}</span>)}</div></div>}
+                  {brand.wordsWeUse.length > 0 && <div className="mt-2"><p className="text-[10px] text-[var(--hm-text-tertiary)] uppercase tracking-wide font-medium mb-1">Words we use</p><div className="flex flex-wrap gap-1">{brand.wordsWeUse.map((w, i) => <span key={i} className="text-[10px] px-2 py-0.5 bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)] border border-[var(--hm-border)] rounded-full">{w}</span>)}</div></div>}
+                  {brand.wordsWeAvoid.length > 0 && <div className="mt-2"><p className="text-[10px] text-[var(--hm-text-tertiary)] uppercase tracking-wide font-medium mb-1">Words we avoid</p><div className="flex flex-wrap gap-1">{brand.wordsWeAvoid.map((w, i) => <span key={i} className="text-[10px] px-2 py-0.5 bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)] border border-[var(--hm-border)] rounded-full">{w}</span>)}</div></div>}
                 </div>) : <p className="text-[12px] text-[var(--hm-text-tertiary)]">Not configured — click Edit to set up brand identity</p>}
               </div>
             </div>
@@ -989,11 +989,11 @@ export default function KnowledgeBasePage() {
                 <div><h3 className="text-[15px] font-medium">Knowledge documents</h3><p className="text-[12px] text-[var(--hm-text-tertiary)] mt-0.5">Upload any document — AI will extract learnings and add them to the learning log</p></div>
               </div>
 
-              {docError && <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-[12px] text-red-600 flex items-center justify-between animate-fade-in"><span>{docError}</span><button onClick={() => setDocError("")} className="opacity-50 hover:opacity-100 transition-opacity duration-150 w-6 h-6 flex items-center justify-center rounded-md hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400">&times;</button></div>}
+              {docError && <div className="mt-3 p-3 bg-[var(--tag-red-bg)] border border-[var(--hm-border)] rounded-lg text-[12px] text-[var(--tag-red-fg)] flex items-center justify-between animate-fade-in"><span>{docError}</span><button onClick={() => setDocError("")} className="opacity-50 hover:opacity-100 transition-opacity duration-150 w-6 h-6 flex items-center justify-center rounded-md hover:bg-[var(--tag-red-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400">&times;</button></div>}
 
               {/* Upload zone */}
               <label
-                className={"mt-4 flex flex-col items-center justify-center w-full h-40 border-2 border-dashed rounded-xl cursor-pointer transition-all " + (docUploading ? "border-[#4361ee] bg-blue-50/40 cursor-default" : dragOver ? "border-[#4361ee] bg-blue-50/30" : "border-[var(--hm-border)] hover:border-[#4361ee] hover:bg-blue-50/20")}
+                className={"mt-4 flex flex-col items-center justify-center w-full h-40 border-2 border-dashed rounded-xl cursor-pointer transition-all " + (docUploading ? "border-[var(--hm-primary)] bg-[var(--tag-blue-bg)]/40 cursor-default" : dragOver ? "border-[var(--hm-primary)] bg-[var(--tag-blue-bg)]/30" : "border-[var(--hm-border)] hover:border-[var(--hm-primary)] hover:bg-[var(--tag-blue-bg)]/20")}
                 onDragOver={e => { e.preventDefault(); setDragOver(true); }}
                 onDragLeave={() => setDragOver(false)}
                 onDrop={e => { e.preventDefault(); setDragOver(false); if (!docUploading && e.dataTransfer.files.length) uploadDocuments(e.dataTransfer.files); }}
@@ -1001,16 +1001,16 @@ export default function KnowledgeBasePage() {
                 <input type="file" className="hidden" disabled={docUploading} multiple accept=".pdf,.txt,.md,.csv,.html,.htm,.json,.docx,.pptx,.xlsx" onChange={e => { if (e.target.files?.length) uploadDocuments(e.target.files); e.target.value = ""; }} />
                 {docUploading ? (
                   <div role="status" aria-label="Uploading and analyzing documents" className="flex flex-col items-center gap-2">
-                    <div aria-hidden="true" className="w-6 h-6 border-2 border-[#4361ee]/30 border-t-[#4361ee] rounded-full animate-spin" />
-                    <p className="text-[12px] text-[#4361ee] font-medium">
+                    <div aria-hidden="true" className="w-6 h-6 border-2 border-[var(--hm-primary)]/30 border-t-[var(--hm-primary)] rounded-full animate-spin" />
+                    <p className="text-[12px] text-[var(--hm-text)] font-medium">
                       {docProgress ? `Analyzing ${docProgress.total} document${docProgress.total !== 1 ? "s" : ""}...` : "Analyzing..."}
                     </p>
                     <p className="text-[11px] text-[var(--hm-text-tertiary)]">AI is extracting learnings — this may take a moment</p>
                   </div>
                 ) : (
                   <div className="flex flex-col items-center gap-2">
-                    <div className={"w-10 h-10 rounded-full flex items-center justify-center transition-all " + (dragOver ? "bg-[#4361ee]/20" : "bg-gradient-to-br from-[#4361ee]/10 to-[#7c3aed]/10")}>
-                      <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 3v12M7 8l5-5 5 5" stroke="#4361ee" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/><path d="M3 17v2a2 2 0 002 2h14a2 2 0 002-2v-2" stroke="#4361ee" strokeWidth="1.8" strokeLinecap="round"/></svg>
+                    <div className={"w-10 h-10 rounded-full flex items-center justify-center transition-all " + (dragOver ? "bg-[var(--hm-bg-tertiary)]" : "bg-[var(--hm-bg-tertiary)]")}>
+                      <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 3v12M7 8l5-5 5 5" stroke="var(--hm-primary)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/><path d="M3 17v2a2 2 0 002 2h14a2 2 0 002-2v-2" stroke="var(--hm-primary)" strokeWidth="1.8" strokeLinecap="round"/></svg>
                     </div>
                     <p className="text-[13px] font-medium text-[var(--hm-text-secondary)]">{dragOver ? "Drop files here" : "Drag & drop or click to upload"}</p>
                     <p className="text-[11px] text-[var(--hm-text-tertiary)]">PDF, TXT, MD, CSV, HTML, JSON, DOCX, PPTX, XLSX &nbsp;·&nbsp; Multiple files supported</p>
@@ -1018,8 +1018,8 @@ export default function KnowledgeBasePage() {
                 )}
               </label>
 
-              <div className="mt-3 p-3 bg-gradient-to-r from-[#4361ee]/5 to-[#7c3aed]/5 border border-[#4361ee]/20 rounded-lg flex items-start gap-2.5">
-                <div className="w-5 h-5 rounded-full bg-gradient-to-br from-[#4361ee] to-[#7c3aed] flex items-center justify-center flex-shrink-0 mt-0.5"><svg width="9" height="9" viewBox="0 0 32 32"><path d="M16 2L28 9v14l-12 7L4 23V9z" fill="none" stroke="#fff" strokeWidth="2.5" /></svg></div>
+              <div className="mt-3 p-3 bg-[var(--hm-bg-secondary)] border border-[var(--hm-border)] rounded-lg flex items-start gap-2.5">
+                <div className="w-5 h-5 rounded-full bg-[var(--hm-primary)] flex items-center justify-center flex-shrink-0 mt-0.5"><svg width="9" height="9" viewBox="0 0 32 32"><path d="M16 2L28 9v14l-12 7L4 23V9z" fill="none" stroke="#fff" strokeWidth="2.5" /></svg></div>
                 <p className="text-[11px] text-[var(--hm-text-secondary)] leading-[1.6]">Documents are analyzed by AI and their insights are automatically added to your learning log and context engine — making future content generation and AI assistant responses more accurate and brand-aligned.</p>
               </div>
 
@@ -1029,10 +1029,10 @@ export default function KnowledgeBasePage() {
                   <p className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-3">{docs.length} document{docs.length !== 1 ? "s" : ""} uploaded</p>
                   <div className="space-y-2">
                     {docs.map(doc => {
-                      const extColors: Record<string, string> = { pdf: "bg-red-50 text-red-600", txt: "bg-gray-50 text-gray-600", md: "bg-gray-50 text-gray-600", csv: "bg-emerald-50 text-emerald-600", json: "bg-amber-50 text-amber-600", html: "bg-orange-50 text-orange-600", docx: "bg-blue-50 text-blue-600", pptx: "bg-orange-50 text-orange-600", xlsx: "bg-emerald-50 text-emerald-600" };
-                      const ec = extColors[doc.fileType] || "bg-gray-50 text-gray-600";
+                      const extColors: Record<string, string> = { pdf: "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)]", txt: "bg-[var(--tag-gray-bg)] text-[var(--tag-gray-fg)]", md: "bg-[var(--tag-gray-bg)] text-[var(--tag-gray-fg)]", csv: "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]", json: "bg-[var(--tag-yellow-bg)] text-[var(--tag-yellow-fg)]", html: "bg-[var(--tag-orange-bg)] text-[var(--tag-orange-fg)]", docx: "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]", pptx: "bg-[var(--tag-orange-bg)] text-[var(--tag-orange-fg)]", xlsx: "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]" };
+                      const ec = extColors[doc.fileType] || "bg-[var(--tag-gray-bg)] text-[var(--tag-gray-fg)]";
                       return (
-                        <div key={doc.id} className="flex items-center gap-3 p-3.5 bg-white border border-[var(--hm-border)] rounded-xl">
+                        <div key={doc.id} className="flex items-center gap-3 p-3.5 bg-[var(--hm-surface)] border border-[var(--hm-border)] rounded-xl">
                           <div className={"w-9 h-9 rounded-lg flex items-center justify-center text-[10px] font-bold uppercase " + ec}>{doc.fileType}</div>
                           <div className="flex-1 min-w-0">
                             <p className="text-[12px] font-medium truncate">{doc.name}</p>
@@ -1043,10 +1043,10 @@ export default function KnowledgeBasePage() {
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
-                            {doc.status === "analyzed" && <span className="text-[10px] px-2 py-0.5 bg-emerald-50 text-emerald-600 rounded-md">{doc.learningsCount} learning{doc.learningsCount !== 1 ? "s" : ""}</span>}
-                            {doc.status === "processing" && <span className="text-[10px] px-2 py-0.5 bg-amber-50 text-amber-600 rounded-md">Processing</span>}
-                            {doc.status === "failed" && <span className="text-[10px] px-2 py-0.5 bg-red-50 text-red-600 rounded-md">Failed</span>}
-                            <button onClick={() => deleteDocument(doc.id)} className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-red-50 active:bg-red-100 text-[var(--hm-text-tertiary)] hover:text-red-500 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400" title="Remove document">
+                            {doc.status === "analyzed" && <span className="text-[10px] px-2 py-0.5 bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)] rounded-md">{doc.learningsCount} learning{doc.learningsCount !== 1 ? "s" : ""}</span>}
+                            {doc.status === "processing" && <span className="text-[10px] px-2 py-0.5 bg-[var(--tag-yellow-bg)] text-[var(--tag-yellow-fg)] rounded-md">Processing</span>}
+                            {doc.status === "failed" && <span className="text-[10px] px-2 py-0.5 bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)] rounded-md">Failed</span>}
+                            <button onClick={() => deleteDocument(doc.id)} className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-[var(--tag-red-bg)] active:bg-[var(--tag-red-bg)] text-[var(--hm-text-tertiary)] hover:text-[var(--tag-red-fg)] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400" title="Remove document">
                               <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M5 4V2h6v2M6 7v5M10 7v5M3 4l1 9h8l1-9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" /></svg>
                             </button>
                           </div>
@@ -1054,12 +1054,12 @@ export default function KnowledgeBasePage() {
                       );
                     })}
                   </div>
-                  <button onClick={() => setTab("learning")} className="mt-4 w-full h-9 border border-[var(--hm-border)] rounded-lg text-[12px] text-[var(--hm-text-secondary)] hover:border-[#4361ee] hover:text-[#4361ee] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-1">View learning log &rarr;</button>
+                  <button onClick={() => setTab("learning")} className="mt-4 w-full h-9 border border-[var(--hm-border)] rounded-lg text-[12px] text-[var(--hm-text-secondary)] hover:border-[var(--hm-primary)] hover:text-[var(--hm-text)] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-link)] focus-visible:ring-offset-1">View learning log &rarr;</button>
                 </div>
               )}
 
               {docs.length === 0 && !docUploading && (
-                <div className="mt-5 bg-white border border-[var(--hm-border)] rounded-xl p-8 text-center">
+                <div className="mt-5 bg-[var(--hm-surface)] border border-[var(--hm-border)] rounded-xl p-8 text-center">
                   <p className="text-[13px] font-medium mb-1">No documents yet</p>
                   <p className="text-[12px] text-[var(--hm-text-tertiary)]">Upload brand guidelines, product specs, case studies, or any other documents to instantly enrich the AI's context</p>
                 </div>
@@ -1141,59 +1141,59 @@ export default function KnowledgeBasePage() {
                   <div className="flex items-center gap-2">
                     {/* Hidden file input for .md import */}
                     <input ref={skillImportRef} type="file" accept=".md,text/markdown" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) importSkillsMd(f); }} />
-                    <button onClick={downloadAllMd} className="h-8 px-3 border border-[var(--hm-border)] rounded-lg text-[12px] flex items-center gap-1.5 hover:border-[#4361ee] hover:text-[#4361ee] transition-all">
+                    <button onClick={downloadAllMd} className="h-8 px-3 border border-[var(--hm-border)] rounded-lg text-[12px] flex items-center gap-1.5 hover:border-[var(--hm-primary)] hover:text-[var(--hm-text)] transition-all">
                       <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M8 2v8M5 7l3 3 3-3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/><path d="M2 13h12" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>
                       Export .md
                     </button>
-                    <button onClick={() => skillImportRef.current?.click()} disabled={importingSkills} className="h-8 px-3 border border-[var(--hm-border)] rounded-lg text-[12px] flex items-center gap-1.5 hover:border-[#4361ee] hover:text-[#4361ee] transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                    <button onClick={() => skillImportRef.current?.click()} disabled={importingSkills} className="h-8 px-3 border border-[var(--hm-border)] rounded-lg text-[12px] flex items-center gap-1.5 hover:border-[var(--hm-primary)] hover:text-[var(--hm-text)] transition-all disabled:opacity-50 disabled:cursor-not-allowed">
                       {importingSkills
                         ? <><span className="w-3 h-3 border-[1.5px] border-current/30 border-t-current rounded-full animate-spin" />Importing…</>
                         : <><svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M8 14V6M5 9l3-3 3 3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/><path d="M2 13h12" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>Import .md</>
                       }
                     </button>
-                    <button onClick={() => { setShowAddSkill(true); setEditingSkill(null); }} className="h-8 px-3.5 bg-[#4361ee] text-white rounded-lg text-[12px] font-medium flex items-center gap-1.5 hover:opacity-90 active:scale-95 transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-2">+ Add skill</button>
+                    <button onClick={() => { setShowAddSkill(true); setEditingSkill(null); }} className="h-8 px-3.5 bg-[var(--hm-primary)] text-white rounded-lg text-[12px] font-medium flex items-center gap-1.5 hover:opacity-90 active:scale-95 transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-link)] focus-visible:ring-offset-2">+ Add skill</button>
                   </div>
                 </div>
 
                 {importResult && (
-                  <div className="mb-3 p-3 bg-emerald-50 border border-emerald-100 rounded-lg flex items-center gap-2">
-                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="#10b981" strokeWidth="1.2"/><path d="M5 8l2 2 4-4" stroke="#10b981" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                    <p className="text-[11px] text-emerald-700">{importResult.imported} skill{importResult.imported !== 1 ? "s" : ""} imported{importResult.skipped > 0 ? ` · ${importResult.skipped} skipped (already exist)` : ""}.</p>
+                  <div className="mb-3 p-3 bg-[var(--tag-green-bg)] border border-[var(--hm-border)] rounded-lg flex items-center gap-2">
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="var(--hm-success)" strokeWidth="1.2"/><path d="M5 8l2 2 4-4" stroke="var(--hm-success)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                    <p className="text-[11px] text-[var(--tag-green-fg)]">{importResult.imported} skill{importResult.imported !== 1 ? "s" : ""} imported{importResult.skipped > 0 ? ` · ${importResult.skipped} skipped (already exist)` : ""}.</p>
                   </div>
                 )}
                 {importError && (
-                  <div className="mb-3 p-3 bg-red-50 border border-red-100 rounded-lg flex items-center justify-between gap-2">
-                    <p className="text-[11px] text-red-600">{importError}</p>
-                    <button onClick={() => setImportError("")} className="text-red-400 hover:text-red-600 text-[12px]">✕</button>
+                  <div className="mb-3 p-3 bg-[var(--tag-red-bg)] border border-[var(--hm-border)] rounded-lg flex items-center justify-between gap-2">
+                    <p className="text-[11px] text-[var(--tag-red-fg)]">{importError}</p>
+                    <button onClick={() => setImportError("")} className="text-[var(--tag-red-fg)] hover:text-[var(--tag-red-fg)] text-[12px]">✕</button>
                   </div>
                 )}
                 {synthResult && synthResult.synthesized === -1 && (
-                  <div className="mb-3 p-3 bg-amber-50 border border-amber-100 rounded-lg flex items-center gap-2">
-                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="#d97706" strokeWidth="1.2"/><path d="M8 5v3M8 10h.01" stroke="#d97706" strokeWidth="1.4" strokeLinecap="round"/></svg>
-                    <p className="text-[11px] text-amber-700">Skills were recently synthesized. Try again in a few minutes.</p>
+                  <div className="mb-3 p-3 bg-[var(--tag-yellow-bg)] border border-[var(--hm-border)] rounded-lg flex items-center gap-2">
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="var(--hm-warning)" strokeWidth="1.2"/><path d="M8 5v3M8 10h.01" stroke="var(--hm-warning)" strokeWidth="1.4" strokeLinecap="round"/></svg>
+                    <p className="text-[11px] text-[var(--tag-yellow-fg)]">Skills were recently synthesized. Try again in a few minutes.</p>
                   </div>
                 )}
                 {synthError && (
-                  <div className="mb-3 p-3 bg-red-50 border border-red-100 rounded-lg flex items-center gap-2">
-                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="#ef4444" strokeWidth="1.2"/><path d="M6 6l4 4M10 6l-4 4" stroke="#ef4444" strokeWidth="1.4" strokeLinecap="round"/></svg>
-                    <p className="text-[11px] text-red-700">Synthesis failed: {synthError}</p>
+                  <div className="mb-3 p-3 bg-[var(--tag-red-bg)] border border-[var(--hm-border)] rounded-lg flex items-center gap-2">
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="var(--hm-danger)" strokeWidth="1.2"/><path d="M6 6l4 4M10 6l-4 4" stroke="var(--hm-danger)" strokeWidth="1.4" strokeLinecap="round"/></svg>
+                    <p className="text-[11px] text-[var(--tag-red-fg)]">Synthesis failed: {synthError}</p>
                   </div>
                 )}
                 {synthResult && synthResult.synthesized === 0 && (
-                  <div className="mb-3 p-3 bg-amber-50 border border-amber-100 rounded-lg flex items-center gap-2">
-                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="#d97706" strokeWidth="1.2"/><path d="M8 5v3M8 10h.01" stroke="#d97706" strokeWidth="1.4" strokeLinecap="round"/></svg>
-                    <p className="text-[11px] text-amber-700">No learnings found to synthesize. Upload content or chat with Halo to build learnings first.</p>
+                  <div className="mb-3 p-3 bg-[var(--tag-yellow-bg)] border border-[var(--hm-border)] rounded-lg flex items-center gap-2">
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="var(--hm-warning)" strokeWidth="1.2"/><path d="M8 5v3M8 10h.01" stroke="var(--hm-warning)" strokeWidth="1.4" strokeLinecap="round"/></svg>
+                    <p className="text-[11px] text-[var(--tag-yellow-fg)]">No learnings found to synthesize. Upload content or chat with Halo to build learnings first.</p>
                   </div>
                 )}
                 {synthResult && synthResult.synthesized > 0 && (
-                  <div className="mb-3 p-3 bg-emerald-50 border border-emerald-100 rounded-lg flex items-center gap-2">
-                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="#10b981" strokeWidth="1.2"/><path d="M5 8l2 2 4-4" stroke="#10b981" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                    <p className="text-[11px] text-emerald-700">{synthResult.synthesized} skills synthesized — {synthResult.categories.map(c => `${c.name} (${c.count})`).join(", ")}</p>
+                  <div className="mb-3 p-3 bg-[var(--tag-green-bg)] border border-[var(--hm-border)] rounded-lg flex items-center gap-2">
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="var(--hm-success)" strokeWidth="1.2"/><path d="M5 8l2 2 4-4" stroke="var(--hm-success)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                    <p className="text-[11px] text-[var(--tag-green-fg)]">{synthResult.synthesized} skills synthesized — {synthResult.categories.map(c => `${c.name} (${c.count})`).join(", ")}</p>
                   </div>
                 )}
 
                 {/* 3-column body */}
-                <div className="flex-1 flex gap-0 border border-[var(--hm-border)] rounded-xl overflow-hidden bg-white min-h-0">
+                <div className="flex-1 flex gap-0 border border-[var(--hm-border)] rounded-xl overflow-hidden bg-[var(--hm-surface)] min-h-0">
 
                   {/* Col 1 — Category nav */}
                   <div className="w-[190px] flex-shrink-0 border-r border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] flex flex-col">
@@ -1208,20 +1208,20 @@ export default function KnowledgeBasePage() {
                           <button
                             key={g.key}
                             onClick={() => setActiveGroup(g.key)}
-                            className={"w-full flex items-center justify-between px-3 py-2 rounded-lg text-left transition-all " + (isActive ? (g.accent ? "bg-violet-100 text-violet-700" : "bg-white shadow-sm text-[var(--hm-text-primary)]") : "text-[var(--hm-text-secondary)] hover:bg-white/60")}
+                            className={"w-full flex items-center justify-between px-3 py-2 rounded-lg text-left transition-all " + (isActive ? (g.accent ? "bg-[var(--tag-purple-bg)] text-[var(--tag-purple-fg)]" : "bg-[var(--hm-surface)] text-[var(--hm-text-primary)]") : "text-[var(--hm-text-secondary)] hover:bg-[var(--hm-surface)]/60")}
                           >
                             <span className="flex items-center gap-2 text-[12px] font-medium">
                               <span className="text-[13px]">{g.icon}</span>
                               {g.label}
                             </span>
-                            {count > 0 && <span className={"text-[10px] px-1.5 py-0.5 rounded-md font-medium " + (isActive && g.accent ? "bg-violet-200 text-violet-700" : isActive ? "bg-[var(--hm-bg-secondary)] text-[var(--hm-text-secondary)]" : "bg-[var(--hm-bg-secondary)] text-[var(--hm-text-tertiary)]")}>{count}</span>}
+                            {count > 0 && <span className={"text-[10px] px-1.5 py-0.5 rounded-md font-medium " + (isActive && g.accent ? "bg-[var(--tag-purple-bg)] text-[var(--tag-purple-fg)]" : isActive ? "bg-[var(--hm-bg-secondary)] text-[var(--hm-text-secondary)]" : "bg-[var(--hm-bg-secondary)] text-[var(--hm-text-tertiary)]")}>{count}</span>}
                           </button>
                         );
                       })}
                     </div>
                     {/* Synthesize button in nav */}
                     <div className="p-3 border-t border-[var(--hm-border)]">
-                      <button onClick={synthesizeSkills} disabled={synthesizing} className="w-full h-8 bg-gradient-to-r from-violet-500 to-indigo-600 text-white rounded-lg text-[11px] font-medium flex items-center justify-center gap-1.5 hover:opacity-90 disabled:opacity-60">
+                      <button onClick={synthesizeSkills} disabled={synthesizing} className="w-full h-8 bg-[var(--hm-primary)] text-white rounded-lg text-[11px] font-medium flex items-center justify-center gap-1.5 hover:opacity-90 disabled:opacity-60">
                         {synthesizing
                           ? <><span className="w-3 h-3 border-[1.5px] border-white/30 border-t-white rounded-full animate-spin" />Synthesizing...</>
                           : <><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M13.5 8a5.5 5.5 0 1 1-1.1-3.3" stroke="white" strokeWidth="1.5" strokeLinecap="round"/><path d="M13.5 2.5v3.5H10" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>Refresh learned</>
@@ -1235,7 +1235,7 @@ export default function KnowledgeBasePage() {
                     <div className="p-3 border-b border-[var(--hm-border)] flex items-center justify-between">
                       <p className="text-[11px] font-semibold text-[var(--hm-text-secondary)]">{NAV_GROUPS.find(g => g.key === activeGroup)?.label}</p>
                       {activeGroup !== "synthesized" && skills.filter(s => s.category === activeGroup && s.isActive).length > 0 && (
-                        <span className="text-[9px] px-1.5 py-0.5 bg-emerald-50 text-emerald-600 rounded-md">{skills.filter(s => s.category === activeGroup && s.isActive).length} active</span>
+                        <span className="text-[9px] px-1.5 py-0.5 bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)] rounded-md">{skills.filter(s => s.category === activeGroup && s.isActive).length} active</span>
                       )}
                     </div>
                     <div className="flex-1 overflow-y-auto p-2 space-y-1">
@@ -1245,7 +1245,7 @@ export default function KnowledgeBasePage() {
                             {activeGroup === "synthesized" ? "No learned skills yet — click Refresh learned to synthesize from your learning log." : "No skills yet."}
                           </p>
                           {activeGroup !== "synthesized" && !seeded && (
-                            <button onClick={seedDefaults} className="mt-2 text-[11px] text-[#4361ee] hover:underline">Load defaults</button>
+                            <button onClick={seedDefaults} className="mt-2 text-[11px] text-[var(--hm-link)] hover:underline">Load defaults</button>
                           )}
                         </div>
                       ) : visibleSkills.map(s => {
@@ -1255,11 +1255,11 @@ export default function KnowledgeBasePage() {
                           <button
                             key={s.id}
                             onClick={() => { setEditingSkill(s); setShowAddSkill(false); }}
-                            className={"w-full text-left p-3 rounded-lg border transition-all " + (isSelected ? (isSynth ? "border-violet-300 bg-violet-50" : "border-[#4361ee] bg-blue-50") : "border-transparent hover:border-[var(--hm-border)] hover:bg-[var(--hm-bg-secondary)]")}
+                            className={"w-full text-left p-3 rounded-lg border transition-all " + (isSelected ? (isSynth ? "border-[var(--hm-border)] bg-[var(--tag-purple-bg)]" : "border-[var(--hm-primary)] bg-[var(--tag-blue-bg)]") : "border-transparent hover:border-[var(--hm-border)] hover:bg-[var(--hm-bg-secondary)]")}
                           >
                             <div className="flex items-center justify-between mb-1">
-                              <p className={"text-[12px] font-medium truncate " + (isSelected ? (isSynth ? "text-violet-700" : "text-[#4361ee]") : "text-[var(--hm-text-primary)]")}>{s.name}</p>
-                              <div className={"w-1.5 h-1.5 rounded-full flex-shrink-0 ml-1 " + (s.isActive ? (isSynth ? "bg-violet-500" : "bg-emerald-500") : "bg-gray-300")} />
+                              <p className={"text-[12px] font-medium truncate " + (isSelected ? (isSynth ? "text-[var(--tag-purple-fg)]" : "text-[var(--hm-text)]") : "text-[var(--hm-text-primary)]")}>{s.name}</p>
+                              <div className={"w-1.5 h-1.5 rounded-full flex-shrink-0 ml-1 " + (s.isActive ? (isSynth ? "bg-[var(--tag-purple-bg)]" : "bg-[var(--hm-success)]") : "bg-[var(--hm-bg-tertiary)]")} />
                             </div>
                             <p className="text-[10px] text-[var(--hm-text-tertiary)] leading-[1.5] line-clamp-2">{s.instructions.slice(0, 75)}{s.instructions.length > 75 ? "…" : ""}</p>
                           </button>
@@ -1268,7 +1268,7 @@ export default function KnowledgeBasePage() {
                     </div>
                     {activeGroup !== "synthesized" && (
                       <div className="p-2 border-t border-[var(--hm-border)]">
-                        <button onClick={() => { setShowAddSkill(true); setEditingSkill(null); }} className="w-full h-8 border border-dashed border-[var(--hm-border)] rounded-lg text-[11px] text-[var(--hm-text-tertiary)] hover:border-[#4361ee] hover:text-[#4361ee] transition-all">+ New skill</button>
+                        <button onClick={() => { setShowAddSkill(true); setEditingSkill(null); }} className="w-full h-8 border border-dashed border-[var(--hm-border)] rounded-lg text-[11px] text-[var(--hm-text-tertiary)] hover:border-[var(--hm-primary)] hover:text-[var(--hm-text)] transition-all">+ New skill</button>
                       </div>
                     )}
                   </div>
@@ -1278,7 +1278,7 @@ export default function KnowledgeBasePage() {
                     {!editingSkill && !showAddSkill ? (
                       <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
                         <div className="w-12 h-12 rounded-xl bg-[var(--hm-bg-secondary)] flex items-center justify-center mb-3">
-                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 2l2.4 4.8L20 8l-4 3.9 1 5.6L12 15l-5 2.5 1-5.6L4 8l5.6-.8z" stroke="#9ca3af" strokeWidth="1.5" strokeLinejoin="round"/></svg>
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 2l2.4 4.8L20 8l-4 3.9 1 5.6L12 15l-5 2.5 1-5.6L4 8l5.6-.8z" stroke="var(--hm-text-tertiary)" strokeWidth="1.5" strokeLinejoin="round"/></svg>
                         </div>
                         <p className="text-[13px] font-medium text-[var(--hm-text-secondary)] mb-1">Select a skill to view or edit</p>
                         <p className="text-[11px] text-[var(--hm-text-tertiary)]">Or click + New skill to create one</p>
@@ -1287,7 +1287,7 @@ export default function KnowledgeBasePage() {
                       <div className="flex-1 flex flex-col overflow-hidden">
                         <div className="flex items-center justify-between p-5 pb-4 flex-shrink-0">
                           <p className="text-[13px] font-semibold">New skill</p>
-                          <button onClick={() => setShowAddSkill(false)} className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-[var(--hm-bg-secondary)] text-[var(--hm-text-tertiary)] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee]">✕</button>
+                          <button onClick={() => setShowAddSkill(false)} className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-[var(--hm-bg-secondary)] text-[var(--hm-text-tertiary)] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-link)]">✕</button>
                         </div>
                         <div className="flex-1 overflow-y-auto px-5 space-y-3">
                           <div><label className="block text-[11px] text-[var(--hm-text-secondary)] mb-1 font-medium">Name *</label><input type="text" value={newSkill.name} onChange={e => setNewSkill({ ...newSkill, name: e.target.value })} className="w-full text-[13px]" placeholder="e.g. Email subject lines" /></div>
@@ -1299,8 +1299,8 @@ export default function KnowledgeBasePage() {
                           <div className="flex-1"><label className="block text-[11px] text-[var(--hm-text-secondary)] mb-1 font-medium">Instructions *</label><textarea value={newSkill.instructions} onChange={e => setNewSkill({ ...newSkill, instructions: e.target.value })} className="w-full text-[13px] min-h-[180px]" placeholder="Describe exactly how the AI should behave for this skill..." /></div>
                         </div>
                         <div className="flex justify-end gap-2 px-5 py-3 border-t border-[var(--hm-border)] flex-shrink-0">
-                          <button onClick={() => setShowAddSkill(false)} className="h-8 px-3 border border-[var(--hm-border)] rounded-lg text-[12px] hover:bg-[var(--hm-bg-secondary)] hover:border-[#4361ee]/40 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-1">Cancel</button>
-                          <button onClick={addSkill} disabled={saving || !newSkill.name || !newSkill.instructions} className="h-8 px-4 bg-[#4361ee] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-2">Add skill</button>
+                          <button onClick={() => setShowAddSkill(false)} className="h-8 px-3 border border-[var(--hm-border)] rounded-lg text-[12px] hover:bg-[var(--hm-bg-secondary)] hover:border-[var(--hm-text-tertiary)] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-link)] focus-visible:ring-offset-1">Cancel</button>
+                          <button onClick={addSkill} disabled={saving || !newSkill.name || !newSkill.instructions} className="h-8 px-4 bg-[var(--hm-primary)] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-link)] focus-visible:ring-offset-2">Add skill</button>
                         </div>
                       </div>
                     ) : editingSkill ? (
@@ -1309,7 +1309,7 @@ export default function KnowledgeBasePage() {
                           <div className="flex items-start justify-between gap-3 p-5 pb-4 flex-shrink-0">
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-1">
-                                <span className="text-[9px] px-2 py-0.5 bg-violet-50 text-violet-600 border border-violet-100 rounded-full font-medium">Auto-synthesized</span>
+                                <span className="text-[9px] px-2 py-0.5 bg-[var(--tag-purple-bg)] text-[var(--tag-purple-fg)] border border-[var(--hm-border)] rounded-full font-medium">Auto-synthesized</span>
                                 <span className="text-[9px] text-[var(--hm-text-tertiary)]">{fl(editingSkill.linkedFeature)}</span>
                               </div>
                               <p className="text-[15px] font-semibold">{editingSkill.name}</p>
@@ -1323,9 +1323,9 @@ export default function KnowledgeBasePage() {
                                 aria-checked={editingSkill.isActive}
                                 aria-label={editingSkill.isActive ? "Disable skill" : "Enable skill"}
                                 onClick={e => { e.stopPropagation(); toggleSkill(editingSkill); setEditingSkill({ ...editingSkill, isActive: !editingSkill.isActive }); }}
-                                className={"w-9 h-5 rounded-full transition-all flex items-center " + (editingSkill.isActive ? "bg-violet-500" : "bg-gray-200")}
+                                className={"w-9 h-5 rounded-full transition-all flex items-center " + (editingSkill.isActive ? "bg-[var(--tag-purple-bg)]" : "bg-[var(--hm-bg-tertiary)]")}
                               >
-                                <div aria-hidden="true" className={"w-4 h-4 bg-white rounded-full shadow-sm transition-transform " + (editingSkill.isActive ? "translate-x-4" : "translate-x-0.5")} />
+                                <div aria-hidden="true" className={"w-4 h-4 bg-[var(--hm-surface)] rounded-full transition-transform " + (editingSkill.isActive ? "translate-x-4" : "translate-x-0.5")} />
                               </button>
                             </div>
                           </div>
@@ -1337,12 +1337,12 @@ export default function KnowledgeBasePage() {
                           <div className="flex items-center justify-between px-5 py-3 border-t border-[var(--hm-border)] flex-shrink-0">
                             <button
                               onClick={() => downloadOneMd(editingSkill)}
-                              className="h-8 px-3 border border-[var(--hm-border)] rounded-lg text-[12px] flex items-center gap-1.5 hover:border-[#4361ee] hover:text-[#4361ee] transition-all"
+                              className="h-8 px-3 border border-[var(--hm-border)] rounded-lg text-[12px] flex items-center gap-1.5 hover:border-[var(--hm-primary)] hover:text-[var(--hm-text)] transition-all"
                             >
                               <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M8 2v8M5 7l3 3 3-3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/><path d="M2 13h12" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>
                               Download .md
                             </button>
-                            <button onClick={() => setEditingSkill(null)} className="h-8 px-3 border border-[var(--hm-border)] rounded-lg text-[12px] hover:bg-[var(--hm-bg-secondary)] hover:border-[#4361ee]/40 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-1">Close</button>
+                            <button onClick={() => setEditingSkill(null)} className="h-8 px-3 border border-[var(--hm-border)] rounded-lg text-[12px] hover:bg-[var(--hm-bg-secondary)] hover:border-[var(--hm-text-tertiary)] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-link)] focus-visible:ring-offset-1">Close</button>
                           </div>
                         </div>
                       ) : (
@@ -1369,9 +1369,9 @@ export default function KnowledgeBasePage() {
                               aria-checked={editingSkill.isActive}
                               aria-label={editingSkill.isActive ? "Disable skill" : "Enable skill"}
                               onClick={e => { e.stopPropagation(); toggleSkill(editingSkill); setEditingSkill({ ...editingSkill, isActive: !editingSkill.isActive }); }}
-                              className={"w-9 h-5 rounded-full transition-all flex items-center " + (editingSkill.isActive ? "bg-emerald-500" : "bg-gray-200")}
+                              className={"w-9 h-5 rounded-full transition-all flex items-center " + (editingSkill.isActive ? "bg-[var(--hm-success)]" : "bg-[var(--hm-bg-tertiary)]")}
                             >
-                              <div aria-hidden="true" className={"w-4 h-4 bg-white rounded-full shadow-sm transition-transform " + (editingSkill.isActive ? "translate-x-4" : "translate-x-0.5")} />
+                              <div aria-hidden="true" className={"w-4 h-4 bg-[var(--hm-surface)] rounded-full transition-transform " + (editingSkill.isActive ? "translate-x-4" : "translate-x-0.5")} />
                             </button>
                           </div>
                         </div>
@@ -1384,25 +1384,25 @@ export default function KnowledgeBasePage() {
                           <textarea
                             value={editingSkill.instructions}
                             onChange={e => setEditingSkill({ ...editingSkill, instructions: e.target.value })}
-                            className="w-full text-[13px] leading-[1.7] resize-none border border-[var(--hm-border)] rounded-lg p-3 bg-[var(--hm-bg-secondary)] focus:bg-white focus:border-[#4361ee] transition-all min-h-[260px]"
+                            className="w-full text-[13px] leading-[1.7] resize-none border border-[var(--hm-border)] rounded-lg p-3 bg-[var(--hm-bg-secondary)] focus:bg-[var(--hm-surface)] focus:border-[var(--hm-primary)] transition-all min-h-[260px]"
                           />
                         </div>
 
                         {/* Actions */}
                         <div className="flex items-center justify-between px-5 py-3 border-t border-[var(--hm-border)] flex-shrink-0">
                           <div className="flex items-center gap-2">
-                            <button onClick={() => confirmAndDelSkill(editingSkill.id, editingSkill.name)} className="h-8 px-3 text-red-500 text-[12px] hover:bg-red-50 active:bg-red-100 rounded-lg transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:ring-offset-1">Delete</button>
+                            <button onClick={() => confirmAndDelSkill(editingSkill.id, editingSkill.name)} className="h-8 px-3 text-[var(--tag-red-fg)] text-[12px] hover:bg-[var(--tag-red-bg)] active:bg-[var(--tag-red-bg)] rounded-lg transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:ring-offset-1">Delete</button>
                             <button
                               onClick={() => downloadOneMd(editingSkill)}
-                              className="h-8 px-3 border border-[var(--hm-border)] rounded-lg text-[12px] flex items-center gap-1.5 hover:border-[#4361ee] hover:text-[#4361ee] transition-all"
+                              className="h-8 px-3 border border-[var(--hm-border)] rounded-lg text-[12px] flex items-center gap-1.5 hover:border-[var(--hm-primary)] hover:text-[var(--hm-text)] transition-all"
                             >
                               <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M8 2v8M5 7l3 3 3-3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/><path d="M2 13h12" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>
                               Download .md
                             </button>
                           </div>
                           <div className="flex gap-2">
-                            <button onClick={() => setEditingSkill(null)} className="h-8 px-3 border border-[var(--hm-border)] rounded-lg text-[12px] hover:bg-[var(--hm-bg-secondary)] hover:border-[#4361ee]/40 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-1">Cancel</button>
-                            <button onClick={updateSkill} disabled={saving} className="h-8 px-4 bg-[#4361ee] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-2">{saving ? "Saving…" : "Save"}</button>
+                            <button onClick={() => setEditingSkill(null)} className="h-8 px-3 border border-[var(--hm-border)] rounded-lg text-[12px] hover:bg-[var(--hm-bg-secondary)] hover:border-[var(--hm-text-tertiary)] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-link)] focus-visible:ring-offset-1">Cancel</button>
+                            <button onClick={updateSkill} disabled={saving} className="h-8 px-4 bg-[var(--hm-primary)] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-link)] focus-visible:ring-offset-2">{saving ? "Saving…" : "Save"}</button>
                           </div>
                         </div>
                       </div>
@@ -1426,7 +1426,7 @@ export default function KnowledgeBasePage() {
                 <button
                   onClick={() => saveStyleGuide(styleGuide)}
                   disabled={styleSaving}
-                  className="h-8 px-4 bg-[#4361ee] text-white rounded-lg text-[12px] font-medium hover:opacity-90 disabled:opacity-50 flex items-center gap-1.5 flex-shrink-0"
+                  className="h-8 px-4 bg-[var(--hm-primary)] text-white rounded-lg text-[12px] font-medium hover:opacity-90 disabled:opacity-50 flex items-center gap-1.5 flex-shrink-0"
                 >
                   {styleSaving ? <><span className="w-3 h-3 border-[1.5px] border-white/30 border-t-white rounded-full animate-spin" />Saving…</> : styleSaved ? <>✓ Saved</> : <>Save style guide</>}
                 </button>
@@ -1434,13 +1434,13 @@ export default function KnowledgeBasePage() {
 
               {!styleLoaded ? (
                 <div className="flex items-center gap-2 py-12 justify-center text-[12px] text-[var(--hm-text-tertiary)]">
-                  <span className="w-4 h-4 border-2 border-[#4361ee]/30 border-t-[#4361ee] rounded-full animate-spin" />Loading…
+                  <span className="w-4 h-4 border-2 border-[var(--hm-primary)]/30 border-t-[var(--hm-primary)] rounded-full animate-spin" />Loading…
                 </div>
               ) : (
                 <div className="space-y-6">
 
                   {/* ── Color palette ── */}
-                  <div className="bg-white border border-[var(--hm-border)] rounded-xl p-5" style={{ boxShadow: "var(--hm-shadow-card)" }}>
+                  <div className="bg-[var(--hm-surface)] border border-[var(--hm-border)] rounded-xl p-5" style={{ boxShadow: "var(--hm-shadow-card)" }}>
                     <div className="flex items-center justify-between mb-4">
                       <div>
                         <p className="text-[13px] font-medium">Color palette</p>
@@ -1449,7 +1449,7 @@ export default function KnowledgeBasePage() {
                       {styleGuide.colors.length < 10 && (
                         <button
                           onClick={() => setStyleGuide(g => ({ ...g, colors: [...g.colors, { name: "New color", hex: "#4361EE", usage: "" }] }))}
-                          className="h-7 px-3 border border-[var(--hm-border)] rounded-lg text-[11px] text-[var(--hm-text-secondary)] hover:border-[#4361ee] hover:text-[#4361ee] transition-colors flex items-center gap-1"
+                          className="h-7 px-3 border border-[var(--hm-border)] rounded-lg text-[11px] text-[var(--hm-text-secondary)] hover:border-[var(--hm-primary)] hover:text-[var(--hm-text)] transition-colors flex items-center gap-1"
                         >
                           <svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="M8 2v12M2 8h12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
                           Add color
@@ -1484,20 +1484,20 @@ export default function KnowledgeBasePage() {
                             <input type="text" value={color.hex}
                               onChange={e => { const next = [...styleGuide.colors]; next[i] = { ...next[i], hex: e.target.value }; setStyleGuide(g => ({ ...g, colors: next })); }}
                               placeholder="#000000"
-                              className="h-8 px-2.5 text-[11px] font-mono border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[#4361ee] bg-white w-full" />
+                              className="h-8 px-2.5 text-[11px] font-mono border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[var(--hm-primary)] bg-[var(--hm-surface)] w-full" />
                             {/* Name */}
                             <input type="text" value={color.name}
                               onChange={e => { const next = [...styleGuide.colors]; next[i] = { ...next[i], name: e.target.value }; setStyleGuide(g => ({ ...g, colors: next })); }}
                               placeholder="e.g. Primary"
-                              className="h-8 px-2.5 text-[12px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[#4361ee] bg-white w-full" />
+                              className="h-8 px-2.5 text-[12px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[var(--hm-primary)] bg-[var(--hm-surface)] w-full" />
                             {/* Usage */}
                             <input type="text" value={color.usage}
                               onChange={e => { const next = [...styleGuide.colors]; next[i] = { ...next[i], usage: e.target.value }; setStyleGuide(g => ({ ...g, colors: next })); }}
                               placeholder="e.g. CTAs, headlines, links"
-                              className="h-8 px-2.5 text-[12px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[#4361ee] bg-white w-full" />
+                              className="h-8 px-2.5 text-[12px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[var(--hm-primary)] bg-[var(--hm-surface)] w-full" />
                             {/* Delete */}
                             <button onClick={() => setStyleGuide(g => ({ ...g, colors: g.colors.filter((_, j) => j !== i) }))}
-                              className="w-6 h-6 flex items-center justify-center text-[var(--hm-text-tertiary)] hover:text-red-500 transition-colors mx-auto">
+                              className="w-6 h-6 flex items-center justify-center text-[var(--hm-text-tertiary)] hover:text-[var(--tag-red-fg)] transition-colors mx-auto">
                               <svg width="10" height="10" viewBox="0 0 16 16" fill="none"><path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
                             </button>
                           </div>
@@ -1507,7 +1507,7 @@ export default function KnowledgeBasePage() {
                   </div>
 
                   {/* ── Typography ── */}
-                  <div className="bg-white border border-[var(--hm-border)] rounded-xl p-5" style={{ boxShadow: "var(--hm-shadow-card)" }}>
+                  <div className="bg-[var(--hm-surface)] border border-[var(--hm-border)] rounded-xl p-5" style={{ boxShadow: "var(--hm-shadow-card)" }}>
                     <div className="mb-4">
                       <p className="text-[13px] font-medium">Typography</p>
                       <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-0.5">Font families passed as-is to design briefs — use exact names (e.g. "Inter", "Söhne", "GT Walsheim")</p>
@@ -1526,29 +1526,29 @@ export default function KnowledgeBasePage() {
                           <input type="text" value={styleGuide.typography[level].family}
                             onChange={e => setStyleGuide(g => ({ ...g, typography: { ...g.typography, [level]: { ...g.typography[level], family: e.target.value } } }))}
                             placeholder="e.g. Inter"
-                            className="h-8 px-2.5 text-[12px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[#4361ee] bg-[var(--hm-bg-secondary)] w-full" />
+                            className="h-8 px-2.5 text-[12px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[var(--hm-primary)] bg-[var(--hm-bg-secondary)] w-full" />
                           <input type="text" value={styleGuide.typography[level].weight}
                             onChange={e => setStyleGuide(g => ({ ...g, typography: { ...g.typography, [level]: { ...g.typography[level], weight: e.target.value } } }))}
                             placeholder="e.g. 700"
-                            className="h-8 px-2.5 text-[12px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[#4361ee] bg-[var(--hm-bg-secondary)] w-full" />
+                            className="h-8 px-2.5 text-[12px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[var(--hm-primary)] bg-[var(--hm-bg-secondary)] w-full" />
                           <input type="text" value={styleGuide.typography[level].notes}
                             onChange={e => setStyleGuide(g => ({ ...g, typography: { ...g.typography, [level]: { ...g.typography[level], notes: e.target.value } } }))}
                             placeholder="e.g. 16px, tight tracking"
-                            className="h-8 px-2.5 text-[12px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[#4361ee] bg-[var(--hm-bg-secondary)] w-full" />
+                            className="h-8 px-2.5 text-[12px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[var(--hm-primary)] bg-[var(--hm-bg-secondary)] w-full" />
                         </div>
                       ))}
                     </div>
                   </div>
 
                   {/* ── Logo variants ── */}
-                  <div className="bg-white border border-[var(--hm-border)] rounded-xl p-5" style={{ boxShadow: "var(--hm-shadow-card)" }}>
+                  <div className="bg-[var(--hm-surface)] border border-[var(--hm-border)] rounded-xl p-5" style={{ boxShadow: "var(--hm-shadow-card)" }}>
                     <div className="flex items-center justify-between mb-4">
                       <div>
                         <p className="text-[13px] font-medium">Logo variants</p>
                         <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-0.5">Upload PNG, SVG, or JPG — URLs are embedded in design briefs for direct use</p>
                       </div>
-                      <label className={"h-7 px-3 border border-[var(--hm-border)] rounded-lg text-[11px] text-[var(--hm-text-secondary)] hover:border-[#4361ee] hover:text-[#4361ee] transition-colors flex items-center gap-1 cursor-pointer " + (logoUploading ? "opacity-50 pointer-events-none" : "")}>
-                        {logoUploading ? <><span className="w-3 h-3 border-[1.5px] border-[#4361ee]/30 border-t-[#4361ee] rounded-full animate-spin" />Uploading…</> : <><svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="M8 2v8M5 7l3-3 3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><path d="M3 13h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>Upload logo</>}
+                      <label className={"h-7 px-3 border border-[var(--hm-border)] rounded-lg text-[11px] text-[var(--hm-text-secondary)] hover:border-[var(--hm-primary)] hover:text-[var(--hm-text)] transition-colors flex items-center gap-1 cursor-pointer " + (logoUploading ? "opacity-50 pointer-events-none" : "")}>
+                        {logoUploading ? <><span className="w-3 h-3 border-[1.5px] border-[var(--hm-primary)]/30 border-t-[var(--hm-primary)] rounded-full animate-spin" />Uploading…</> : <><svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="M8 2v8M5 7l3-3 3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><path d="M3 13h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>Upload logo</>}
                         <input
                           type="file"
                           accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
@@ -1586,7 +1586,7 @@ export default function KnowledgeBasePage() {
                           {styleGuide.logoVariants.map((logo, i) => (
                             <div key={i} className="grid items-center gap-2 p-2 bg-[var(--hm-bg-secondary)] rounded-lg" style={{ gridTemplateColumns: "40px 180px 1fr 44px 24px" }}>
                               {/* Preview */}
-                              <div className="w-10 h-10 rounded-lg border border-[var(--hm-border)] bg-white flex items-center justify-center overflow-hidden p-1">
+                              <div className="w-10 h-10 rounded-lg border border-[var(--hm-border)] bg-[var(--hm-surface)] flex items-center justify-center overflow-hidden p-1">
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img src={logo.url} alt={logo.name} className="max-w-full max-h-full object-contain" />
                               </div>
@@ -1594,20 +1594,20 @@ export default function KnowledgeBasePage() {
                               <input type="text" value={logo.name}
                                 onChange={e => { const next = [...styleGuide.logoVariants]; next[i] = { ...next[i], name: e.target.value }; setStyleGuide(g => ({ ...g, logoVariants: next })); }}
                                 placeholder="e.g. Full logo (light)"
-                                className="h-8 px-2.5 text-[12px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[#4361ee] bg-white w-full" />
+                                className="h-8 px-2.5 text-[12px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[var(--hm-primary)] bg-[var(--hm-surface)] w-full" />
                               {/* Usage */}
                               <input type="text" value={logo.usage}
                                 onChange={e => { const next = [...styleGuide.logoVariants]; next[i] = { ...next[i], usage: e.target.value }; setStyleGuide(g => ({ ...g, logoVariants: next })); }}
                                 placeholder="e.g. Use on dark or coloured backgrounds"
-                                className="h-8 px-2.5 text-[12px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[#4361ee] bg-white w-full" />
+                                className="h-8 px-2.5 text-[12px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[var(--hm-primary)] bg-[var(--hm-surface)] w-full" />
                               {/* View link */}
                               <a href={logo.url} target="_blank" rel="noopener noreferrer"
-                                className="h-8 px-2 text-[11px] text-[#4361ee] hover:underline flex items-center justify-center border border-[var(--hm-border)] rounded-lg bg-white hover:border-[#4361ee]/40 transition-colors whitespace-nowrap">
+                                className="h-8 px-2 text-[11px] text-[var(--hm-link)] hover:underline flex items-center justify-center border border-[var(--hm-border)] rounded-lg bg-[var(--hm-surface)] hover:border-[var(--hm-text-tertiary)] transition-colors whitespace-nowrap">
                                 View ↗
                               </a>
                               {/* Delete */}
                               <button onClick={() => setStyleGuide(g => ({ ...g, logoVariants: g.logoVariants.filter((_, j) => j !== i) }))}
-                                className="w-6 h-6 flex items-center justify-center text-[var(--hm-text-tertiary)] hover:text-red-500 transition-colors mx-auto">
+                                className="w-6 h-6 flex items-center justify-center text-[var(--hm-text-tertiary)] hover:text-[var(--tag-red-fg)] transition-colors mx-auto">
                                 <svg width="10" height="10" viewBox="0 0 16 16" fill="none"><path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
                               </button>
                             </div>
@@ -1618,28 +1618,28 @@ export default function KnowledgeBasePage() {
                   </div>
 
                   {/* ── Design rules ── */}
-                  <div className="bg-white border border-[var(--hm-border)] rounded-xl p-5" style={{ boxShadow: "var(--hm-shadow-card)" }}>
+                  <div className="bg-[var(--hm-surface)] border border-[var(--hm-border)] rounded-xl p-5" style={{ boxShadow: "var(--hm-shadow-card)" }}>
                     <p className="text-[13px] font-medium mb-1">Design rules</p>
                     <p className="text-[11px] text-[var(--hm-text-tertiary)] mb-4">Specific do's and don'ts passed verbatim to every design brief</p>
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-[11px] font-medium text-emerald-700 mb-1.5">✓ Always do</label>
+                        <label className="block text-[11px] font-medium text-[var(--tag-green-fg)] mb-1.5">✓ Always do</label>
                         <textarea
                           value={styleGuide.guidelines}
                           onChange={e => setStyleGuide(g => ({ ...g, guidelines: e.target.value }))}
                           placeholder={"e.g.\n- Maintain clear space equal to the logo height\n- Use Inter for all digital touchpoints\n- Keep primary blue dominant at 60%"}
                           rows={5}
-                          className="w-full px-3 py-2.5 text-[12px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[#4361ee] resize-none bg-[var(--hm-bg-secondary)] leading-relaxed"
+                          className="w-full px-3 py-2.5 text-[12px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[var(--hm-primary)] resize-none bg-[var(--hm-bg-secondary)] leading-relaxed"
                         />
                       </div>
                       <div>
-                        <label className="block text-[11px] font-medium text-red-600 mb-1.5">✗ Never do</label>
+                        <label className="block text-[11px] font-medium text-[var(--tag-red-fg)] mb-1.5">✗ Never do</label>
                         <textarea
                           value={styleGuide.doNotUse}
                           onChange={e => setStyleGuide(g => ({ ...g, doNotUse: e.target.value }))}
                           placeholder={"e.g.\n- Do not stretch or recolour the logo\n- Do not use gradients on text\n- Do not use more than 3 typefaces"}
                           rows={5}
-                          className="w-full px-3 py-2.5 text-[12px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[#4361ee] resize-none bg-[var(--hm-bg-secondary)] leading-relaxed"
+                          className="w-full px-3 py-2.5 text-[12px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[var(--hm-primary)] resize-none bg-[var(--hm-bg-secondary)] leading-relaxed"
                         />
                       </div>
                     </div>
@@ -1650,7 +1650,7 @@ export default function KnowledgeBasePage() {
                     <button
                       onClick={() => saveStyleGuide(styleGuide)}
                       disabled={styleSaving}
-                      className="h-9 px-6 bg-[#4361ee] text-white rounded-lg text-[12px] font-medium hover:opacity-90 disabled:opacity-50 flex items-center gap-2"
+                      className="h-9 px-6 bg-[var(--hm-primary)] text-white rounded-lg text-[12px] font-medium hover:opacity-90 disabled:opacity-50 flex items-center gap-2"
                     >
                       {styleSaving ? <><span className="w-3 h-3 border-[1.5px] border-white/30 border-t-white rounded-full animate-spin" />Saving…</> : styleSaved ? <>✓ Saved</> : <>Save style guide</>}
                     </button>
@@ -1670,16 +1670,16 @@ export default function KnowledgeBasePage() {
               </div>
               <div className="mb-5" />
               {logs.length === 0 ? (
-                <div className="bg-white border border-[var(--hm-border)] rounded-xl p-10 text-center"><p className="text-[14px] font-medium mb-1">No learnings yet</p><p className="text-[12px] text-[var(--hm-text-tertiary)]">Upload documents or refresh industry insights to populate the learning log</p></div>
+                <div className="bg-[var(--hm-surface)] border border-[var(--hm-border)] rounded-xl p-10 text-center"><p className="text-[14px] font-medium mb-1">No learnings yet</p><p className="text-[12px] text-[var(--hm-text-tertiary)]">Upload documents or refresh industry insights to populate the learning log</p></div>
               ) : logs.map((log, i) => {
-                const sourceColors: Record<string, string> = { website_update: "bg-blue-50 text-blue-600", competitor_update: "bg-red-50 text-red-600", industry_report: "bg-amber-50 text-amber-600", regulatory: "bg-emerald-50 text-emerald-600", document_upload: "bg-violet-50 text-violet-600", industry_insight: "bg-teal-50 text-teal-600", content_analysis: "bg-sky-50 text-sky-600", proof_point: "bg-lime-50 text-lime-600", messaging_pattern: "bg-pink-50 text-pink-600" };
-                const kbColors: Record<string, string> = { brand: "bg-pink-50 text-pink-600", product: "bg-blue-50 text-blue-600", market: "bg-teal-50 text-teal-600", persona: "bg-orange-50 text-orange-600", competitor: "bg-red-50 text-red-600", messaging: "bg-purple-50 text-purple-600", proof_point: "bg-lime-50 text-lime-600", general: "bg-gray-50 text-gray-600" };
+                const sourceColors: Record<string, string> = { website_update: "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]", competitor_update: "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)]", industry_report: "bg-[var(--tag-yellow-bg)] text-[var(--tag-yellow-fg)]", regulatory: "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]", document_upload: "bg-[var(--tag-purple-bg)] text-[var(--tag-purple-fg)]", industry_insight: "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]", content_analysis: "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]", proof_point: "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]", messaging_pattern: "bg-[var(--tag-pink-bg)] text-[var(--tag-pink-fg)]" };
+                const kbColors: Record<string, string> = { brand: "bg-[var(--tag-pink-bg)] text-[var(--tag-pink-fg)]", product: "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]", market: "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]", persona: "bg-[var(--tag-orange-bg)] text-[var(--tag-orange-fg)]", competitor: "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)]", messaging: "bg-[var(--tag-purple-bg)] text-[var(--tag-purple-fg)]", proof_point: "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]", general: "bg-[var(--tag-gray-bg)] text-[var(--tag-gray-fg)]" };
                 const kbLabels: Record<string, string> = { brand: "Brand voice", product: "Product knowledge", market: "Market signal", persona: "Persona insight", competitor: "Competitive intel", messaging: "Messaging pattern", proof_point: "Proof point", general: "General" };
                 const isDocUpload = log.sourceType === "document_upload";
                 const isInsight = log.sourceType === "industry_insight";
                 const kbCat = isDocUpload ? (log.kbCategories?.[0] || "general") : null;
-                const badgeColor = kbCat ? (kbColors[kbCat] || "bg-gray-50 text-gray-600") : (sourceColors[log.sourceType] || "bg-gray-50 text-gray-600");
-                const c = sourceColors[log.sourceType] || "bg-gray-50 text-gray-600";
+                const badgeColor = kbCat ? (kbColors[kbCat] || "bg-[var(--tag-gray-bg)] text-[var(--tag-gray-fg)]") : (sourceColors[log.sourceType] || "bg-[var(--tag-gray-bg)] text-[var(--tag-gray-fg)]");
+                const c = sourceColors[log.sourceType] || "bg-[var(--tag-gray-bg)] text-[var(--tag-gray-fg)]";
                 return (
                   <div key={i} className="flex gap-3 mb-3">
                     <div className="flex flex-col items-center">
@@ -1694,14 +1694,14 @@ export default function KnowledgeBasePage() {
                       </div>
                       {i < logs.length - 1 && <div className="w-px flex-1 bg-[var(--hm-border)] mt-1" />}
                     </div>
-                    <div className={"flex-1 bg-white border rounded-xl p-4 mb-1 " + (isDocUpload ? "border-violet-100" : "border-[var(--hm-border)]")}>
+                    <div className={"flex-1 bg-[var(--hm-surface)] border rounded-xl p-4 mb-1 " + (isDocUpload ? "border-[var(--hm-border)]" : "border-[var(--hm-border)]")}>
                       <div className="flex items-start justify-between gap-2 mb-2">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span className={"text-[10px] px-2 py-0.5 rounded-md font-medium " + badgeColor}>
                             {kbCat ? (kbLabels[kbCat] || kbCat.replace(/_/g, " ")) : isInsight ? "Market signal" : log.sourceType.replace(/_/g, " ")}
                           </span>
                           {isDocUpload && log.sourceDocumentName && (
-                            <span className="text-[10px] px-2 py-0.5 rounded-md bg-violet-50 text-violet-500 border border-violet-100 flex items-center gap-1">
+                            <span className="text-[10px] px-2 py-0.5 rounded-md bg-[var(--tag-purple-bg)] text-[var(--tag-purple-fg)] border border-[var(--hm-border)] flex items-center gap-1">
                               <svg width="8" height="8" viewBox="0 0 16 16" fill="none"><path d="M3 2h7l3 3v9H3V2z" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
                               {log.sourceDocumentFile?.split(".").pop()?.toUpperCase()} · {log.sourceDocumentName}
                             </span>
@@ -1712,9 +1712,9 @@ export default function KnowledgeBasePage() {
                       <p className="text-[12px] font-medium mb-1.5">{log.title}</p>
                       <p className="text-[12px] text-[var(--hm-text-secondary)] leading-[1.6]">{log.summary}</p>
                       {log.takeaway && (
-                        <div className="mt-2.5 p-2.5 bg-amber-50 border border-amber-100 rounded-lg flex items-start gap-2">
-                          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className="flex-shrink-0 mt-0.5"><path d="M8 1a7 7 0 100 14A7 7 0 008 1z" stroke="#F59E0B" strokeWidth="1"/><path d="M8 5v3M8 10h.01" stroke="#F59E0B" strokeWidth="1.2" strokeLinecap="round"/></svg>
-                          <p className="text-[11px] text-amber-700 leading-[1.5]"><span className="font-medium">AI implication: </span>{log.takeaway}</p>
+                        <div className="mt-2.5 p-2.5 bg-[var(--tag-yellow-bg)] border border-[var(--hm-border)] rounded-lg flex items-start gap-2">
+                          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className="flex-shrink-0 mt-0.5"><path d="M8 1a7 7 0 100 14A7 7 0 008 1z" stroke="var(--hm-warning)" strokeWidth="1"/><path d="M8 5v3M8 10h.01" stroke="var(--hm-warning)" strokeWidth="1.2" strokeLinecap="round"/></svg>
+                          <p className="text-[11px] text-[var(--tag-yellow-fg)] leading-[1.5]"><span className="font-medium">AI implication: </span>{log.takeaway}</p>
                         </div>
                       )}
                       {log.tags?.length > 0 && (
@@ -1743,7 +1743,7 @@ export default function KnowledgeBasePage() {
                 {!showAddEntry && !editingEntry && (
                   <button
                     onClick={() => { setShowAddEntry(true); setEntryForm({ category: "company_facts", title: "", content: "" }); }}
-                    className="h-8 px-4 bg-[#4361ee] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all flex items-center gap-1.5 flex-shrink-0"
+                    className="h-8 px-4 bg-[var(--hm-primary)] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all flex items-center gap-1.5 flex-shrink-0"
                   >
                     <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
                     Add entry
@@ -1753,14 +1753,14 @@ export default function KnowledgeBasePage() {
 
               {/* Success / error message */}
               {entryMessage && (
-                <div className={`mb-4 px-3 py-2 rounded-lg text-[12px] font-medium animate-fade-in ${entryMessage.includes("error") || entryMessage.includes("Failed") ? "bg-red-50 text-red-600 border border-red-200" : "bg-green-50 text-green-700 border border-green-200"}`}>
+                <div className={`mb-4 px-3 py-2 rounded-lg text-[12px] font-medium animate-fade-in ${entryMessage.includes("error") || entryMessage.includes("Failed") ? "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)] border border-[var(--hm-border)]" : "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)] border border-[var(--hm-border)]"}`}>
                   {entryMessage}
                 </div>
               )}
 
               {/* Add / Edit form */}
               {(showAddEntry || editingEntry) && (
-                <div className="bg-white border border-[var(--hm-border)] rounded-xl p-5 mb-5 shadow-sm">
+                <div className="bg-[var(--hm-surface)] border border-[var(--hm-border)] rounded-xl p-5 mb-5">
                   <h4 className="text-[13px] font-semibold mb-4">{editingEntry ? "Edit entry" : "Add new knowledge entry"}</h4>
 
                   {/* Category selector */}
@@ -1774,11 +1774,11 @@ export default function KnowledgeBasePage() {
                           onClick={() => setEntryForm(f => ({ ...f, category: cat.id }))}
                           className={`px-3 py-2 rounded-lg text-[11px] border transition-all text-left ${
                             entryForm.category === cat.id
-                              ? "border-[#4361ee] bg-blue-50 ring-1 ring-[#4361ee]/30"
-                              : "border-[var(--hm-border)] hover:border-[#4361ee]/40"
+                              ? "border-[var(--hm-primary)] bg-[var(--tag-blue-bg)] ring-1 ring-[var(--hm-link)]/30"
+                              : "border-[var(--hm-border)] hover:border-[var(--hm-text-tertiary)]"
                           }`}
                         >
-                          <span className={`inline-block w-2 h-2 rounded-full mr-1.5 ${cat.color.split(" ")[0]}`} style={{ backgroundColor: cat.color.includes("blue") ? "#3b82f6" : cat.color.includes("violet") ? "#8b5cf6" : cat.color.includes("teal") ? "#14b8a6" : cat.color.includes("red") ? "#ef4444" : cat.color.includes("pink") ? "#ec4899" : cat.color.includes("lime") ? "#84cc16" : cat.color.includes("amber") ? "#f59e0b" : "#6b7280" }} />
+                          <span className={`inline-block w-2 h-2 rounded-full mr-1.5 ${cat.color.split(" ")[0]}`} style={{ backgroundColor: cat.color.includes("blue") ? "var(--tag-blue-fg)" : cat.color.includes("violet") ? "var(--tag-purple-fg)" : cat.color.includes("teal") ? "var(--tag-blue-fg)" : cat.color.includes("red") ? "var(--hm-danger)" : cat.color.includes("pink") ? "var(--tag-pink-fg)" : cat.color.includes("lime") ? "var(--tag-green-fg)" : cat.color.includes("amber") ? "var(--hm-warning)" : "var(--hm-text-tertiary)" }} />
                           {cat.label}
                         </button>
                       ))}
@@ -1796,7 +1796,7 @@ export default function KnowledgeBasePage() {
                       value={entryForm.title}
                       onChange={e => setEntryForm(f => ({ ...f, title: e.target.value }))}
                       placeholder="e.g. Q4 2024 ARR milestone, New compliance requirement, Updated pricing tiers..."
-                      className="w-full h-9 px-3 text-[13px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[#4361ee]"
+                      className="w-full h-9 px-3 text-[13px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[var(--hm-primary)]"
                     />
                   </div>
 
@@ -1808,7 +1808,7 @@ export default function KnowledgeBasePage() {
                       onChange={e => setEntryForm(f => ({ ...f, content: e.target.value }))}
                       placeholder="Write the information the AI should know. Be specific and factual. You can include numbers, dates, approved phrasing, or corrections to existing knowledge."
                       rows={5}
-                      className="w-full px-3 py-2.5 text-[13px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[#4361ee] resize-none leading-relaxed"
+                      className="w-full px-3 py-2.5 text-[13px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[var(--hm-primary)] resize-none leading-relaxed"
                     />
                   </div>
 
@@ -1823,7 +1823,7 @@ export default function KnowledgeBasePage() {
                     <button
                       onClick={saveEntry}
                       disabled={entrySaving || !entryForm.title.trim() || !entryForm.content.trim()}
-                      className="h-8 px-5 bg-[#4361ee] text-white rounded-lg text-[12px] font-medium hover:opacity-90 disabled:opacity-40 flex items-center gap-2 transition-all"
+                      className="h-8 px-5 bg-[var(--hm-primary)] text-white rounded-lg text-[12px] font-medium hover:opacity-90 disabled:opacity-40 flex items-center gap-2 transition-all"
                     >
                       {entrySaving ? <><span className="w-3 h-3 border-[1.5px] border-white/30 border-t-white rounded-full animate-spin" />Saving...</> : editingEntry ? "Update entry" : "Add to knowledge base"}
                     </button>
@@ -1840,13 +1840,13 @@ export default function KnowledgeBasePage() {
                       value={entrySearch}
                       onChange={e => setEntrySearch(e.target.value)}
                       placeholder="Search entries..."
-                      className="w-full h-9 px-3 text-[12px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[#4361ee]"
+                      className="w-full h-9 px-3 text-[12px] border border-[var(--hm-border)] rounded-lg focus:outline-none focus:border-[var(--hm-primary)]"
                     />
                   </div>
                   <div className="flex gap-1.5 flex-wrap">
                     <button
                       onClick={() => setEntryFilter("all")}
-                      className={`px-3 py-1.5 rounded-lg text-[11px] border transition-colors ${entryFilter === "all" ? "border-[#4361ee] bg-blue-50 text-[#4361ee] font-medium" : "border-[var(--hm-border)] text-[var(--hm-text-tertiary)] hover:border-[#4361ee]/40"}`}
+                      className={`px-3 py-1.5 rounded-lg text-[11px] border transition-colors ${entryFilter === "all" ? "border-[var(--hm-primary)] bg-[var(--tag-blue-bg)] text-[var(--hm-text)] font-medium" : "border-[var(--hm-border)] text-[var(--hm-text-tertiary)] hover:border-[var(--hm-text-tertiary)]"}`}
                     >
                       All ({customEntries.length})
                     </button>
@@ -1854,7 +1854,7 @@ export default function KnowledgeBasePage() {
                       <button
                         key={cat.id}
                         onClick={() => setEntryFilter(cat.id)}
-                        className={`px-3 py-1.5 rounded-lg text-[11px] border transition-colors ${entryFilter === cat.id ? "border-[#4361ee] bg-blue-50 text-[#4361ee] font-medium" : "border-[var(--hm-border)] text-[var(--hm-text-tertiary)] hover:border-[#4361ee]/40"}`}
+                        className={`px-3 py-1.5 rounded-lg text-[11px] border transition-colors ${entryFilter === cat.id ? "border-[var(--hm-primary)] bg-[var(--tag-blue-bg)] text-[var(--hm-text)] font-medium" : "border-[var(--hm-border)] text-[var(--hm-text-tertiary)] hover:border-[var(--hm-text-tertiary)]"}`}
                       >
                         {cat.label} ({customEntries.filter(e => e.category === cat.id).length})
                       </button>
@@ -1866,15 +1866,15 @@ export default function KnowledgeBasePage() {
               {/* Loading */}
               {customLoading && (
                 <div className="flex items-center justify-center py-16">
-                  <div className="w-5 h-5 border-2 border-[#4361ee]/30 border-t-[#4361ee] rounded-full animate-spin" />
+                  <div className="w-5 h-5 border-2 border-[var(--hm-primary)]/30 border-t-[var(--hm-primary)] rounded-full animate-spin" />
                 </div>
               )}
 
               {/* Empty state */}
               {!customLoading && customEntries.length === 0 && !showAddEntry && (
-                <div className="bg-white border border-[var(--hm-border)] rounded-xl p-10 text-center">
-                  <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-blue-50 flex items-center justify-center">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="#4361ee" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                <div className="bg-[var(--hm-surface)] border border-[var(--hm-border)] rounded-xl p-10 text-center">
+                  <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-[var(--tag-blue-bg)] flex items-center justify-center">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="var(--hm-primary)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
                   </div>
                   <p className="text-[14px] font-medium mb-1">No custom knowledge entries yet</p>
                   <p className="text-[12px] text-[var(--hm-text-tertiary)] mb-4 max-w-sm mx-auto">
@@ -1882,7 +1882,7 @@ export default function KnowledgeBasePage() {
                   </p>
                   <button
                     onClick={() => { setShowAddEntry(true); setEntryForm({ category: "company_facts", title: "", content: "" }); }}
-                    className="h-9 px-5 bg-[#4361ee] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all inline-flex items-center gap-1.5"
+                    className="h-9 px-5 bg-[var(--hm-primary)] text-white rounded-lg text-[12px] font-medium hover:opacity-90 active:scale-95 transition-all inline-flex items-center gap-1.5"
                   >
                     <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
                     Add your first entry
@@ -1902,7 +1902,7 @@ export default function KnowledgeBasePage() {
 
                 if (filtered.length === 0 && customEntries.length > 0) {
                   return (
-                    <div className="bg-white border border-[var(--hm-border)] rounded-xl p-8 text-center">
+                    <div className="bg-[var(--hm-surface)] border border-[var(--hm-border)] rounded-xl p-8 text-center">
                       <p className="text-[13px] text-[var(--hm-text-tertiary)]">No entries match your filters.</p>
                     </div>
                   );
@@ -1913,18 +1913,18 @@ export default function KnowledgeBasePage() {
                     {filtered.map(entry => {
                       const cat = ENTRY_CATEGORIES.find(c => c.id === entry.category);
                       return (
-                        <div key={entry.id} className="bg-white border border-[var(--hm-border)] rounded-xl p-4 hover:border-[#4361ee]/30 transition-colors group">
+                        <div key={entry.id} className="bg-[var(--hm-surface)] border border-[var(--hm-border)] rounded-xl p-4 hover:border-[var(--hm-primary)]/30 transition-colors group">
                           <div className="flex items-start justify-between gap-3">
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-1.5">
-                                <span className={`text-[10px] px-2 py-0.5 rounded-md font-medium ${cat?.color || "bg-gray-50 text-gray-600"}`}>
+                                <span className={`text-[10px] px-2 py-0.5 rounded-md font-medium ${cat?.color || "bg-[var(--tag-gray-bg)] text-[var(--tag-gray-fg)]"}`}>
                                   {cat?.label || entry.category}
                                 </span>
                                 {entry.source === "manual" && (
                                   <span className="text-[10px] text-[var(--hm-text-tertiary)]">Manual</span>
                                 )}
                                 {entry.isAIGenerated && (
-                                  <span className="text-[10px] text-violet-500">AI-generated</span>
+                                  <span className="text-[10px] text-[var(--tag-purple-fg)]">AI-generated</span>
                                 )}
                               </div>
                               <h4 className="text-[13px] font-medium text-[var(--hm-text)] mb-1">{entry.title}</h4>
@@ -1942,7 +1942,7 @@ export default function KnowledgeBasePage() {
                                   setEntryForm({ category: entry.category, title: entry.title, content: entry.content });
                                   setShowAddEntry(false);
                                 }}
-                                className="w-7 h-7 flex items-center justify-center rounded-md border border-[var(--hm-border)] text-[var(--hm-text-tertiary)] hover:text-[#4361ee] hover:border-[#4361ee]/40 transition-colors"
+                                className="w-7 h-7 flex items-center justify-center rounded-md border border-[var(--hm-border)] text-[var(--hm-text-tertiary)] hover:text-[var(--hm-text)] hover:border-[var(--hm-text-tertiary)] transition-colors"
                                 title="Edit"
                               >
                                 <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M11.5 2.5l2 2L5 13H3v-2l8.5-8.5z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" /></svg>
@@ -1950,11 +1950,11 @@ export default function KnowledgeBasePage() {
                               <button
                                 onClick={() => { if (confirm(`Delete "${entry.title}"?`)) deleteEntry(entry.id); }}
                                 disabled={deletingEntryId === entry.id}
-                                className="w-7 h-7 flex items-center justify-center rounded-md border border-[var(--hm-border)] text-[var(--hm-text-tertiary)] hover:text-red-500 hover:border-red-300 transition-colors disabled:opacity-50"
+                                className="w-7 h-7 flex items-center justify-center rounded-md border border-[var(--hm-border)] text-[var(--hm-text-tertiary)] hover:text-[var(--tag-red-fg)] hover:border-[var(--hm-border)] transition-colors disabled:opacity-50"
                                 title="Delete"
                               >
                                 {deletingEntryId === entry.id ? (
-                                  <span className="w-3 h-3 border-[1.5px] border-red-300 border-t-red-500 rounded-full animate-spin" />
+                                  <span className="w-3 h-3 border-[1.5px] border-[var(--hm-border)] border-t-red-500 rounded-full animate-spin" />
                                 ) : (
                                   <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M3 4h10M6 4V3h4v1M5 4v8.5a1 1 0 001 1h4a1 1 0 001-1V4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>
                                 )}
@@ -1988,12 +1988,12 @@ export default function KnowledgeBasePage() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="confirm-delete-title"
-            className="bg-white rounded-xl shadow-xl border border-[var(--hm-border)] p-6 max-w-[340px] w-full mx-4"
+            className="bg-[var(--hm-surface)] rounded-xl border border-[var(--hm-border)] p-6 max-w-[340px] w-full mx-4"
           >
             <p id="confirm-delete-title" className="text-[14px] font-semibold mb-1">Delete &ldquo;{confirmDelete.label}&rdquo;?</p>
             <p className="text-[12px] text-[var(--hm-text-tertiary)] mb-5">This cannot be undone.</p>
             <div className="flex justify-end gap-2">
-              <button onClick={() => setConfirmDelete(null)} className="h-8 px-4 border border-[var(--hm-border)] rounded-lg text-[12px] hover:bg-[var(--hm-bg-secondary)] hover:border-[#4361ee]/40 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4361ee] focus-visible:ring-offset-1">Cancel</button>
+              <button onClick={() => setConfirmDelete(null)} className="h-8 px-4 border border-[var(--hm-border)] rounded-lg text-[12px] hover:bg-[var(--hm-bg-secondary)] hover:border-[var(--hm-text-tertiary)] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--hm-link)] focus-visible:ring-offset-1">Cancel</button>
               <button
                 onClick={async () => {
                   const { section, id } = confirmDelete;
@@ -2002,7 +2002,7 @@ export default function KnowledgeBasePage() {
                   else if (section === "market_delete") { await fetch("/api/knowledge/edit", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ section: "market_delete", id }) }); setEditMarket(null); fetchAll(); }
                   else { await deleteItem(section, id); }
                 }}
-                className="h-8 px-4 bg-red-500 text-white rounded-lg text-[12px] font-medium hover:bg-red-600 active:bg-red-700 active:scale-95 transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:ring-offset-2"
+                className="h-8 px-4 bg-[var(--hm-danger)] text-white rounded-lg text-[12px] font-medium hover:bg-[var(--hm-danger)] active:bg-[var(--tag-red-bg)] active:scale-95 transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:ring-offset-2"
               >Delete</button>
             </div>
           </div>
