@@ -749,7 +749,7 @@ function ModuleFeedTab({ module, empty }: { module: string; empty: string }) {
       .finally(() => setLoading(false));
   }, [module]);
 
-  if (loading) return <div className="flex justify-center py-16"><div className="w-6 h-6 border-2 border-[var(--hm-link)]/30 border-t-[var(--hm-link)] rounded-full animate-spin" /></div>;
+  if (loading) return <div className="flex justify-center py-16"><div className="w-6 h-6 border-2 border-[var(--hm-border)] border-t-[var(--hm-text-secondary)] rounded-full animate-spin" /></div>;
   if (!events || events.length === 0) return <p className="text-center text-[13px] py-12" style={{ color: "var(--hm-text-tertiary)" }}>{empty}</p>;
 
   return (
@@ -791,7 +791,7 @@ export default function ActivityPage() {
   if (!user || !hasPermission(user.role, "manage_team")) {
     return (
       <div className="flex-1 flex items-center justify-center">
-        <div className="w-5 h-5 border-2 border-[var(--hm-link)]/30 border-t-[var(--hm-link)] rounded-full animate-spin" />
+        <div className="w-5 h-5 border-2 border-[var(--hm-border)] border-t-[var(--hm-text-secondary)] rounded-full animate-spin" />
       </div>
     );
   }

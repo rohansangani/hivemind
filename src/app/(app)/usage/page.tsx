@@ -19,17 +19,19 @@ const FEATURE_LABELS: Record<string, string> = {
 };
 
 /* ── Feature colors for chart bars ──────────────────────────────────── */
+// Data-viz legend for token usage by feature — drawn from the locked tag palette
+// so the bars match chips elsewhere instead of off-brand brights.
 const FEATURE_COLORS: Record<string, string> = {
-  assistant: "#6366f1",
-  content_generator: "#8b5cf6",
-  design_brief: "#ec4899",
-  seo: "#f59e0b",
-  brand_review: "#10b981",
-  content_analysis: "#06b6d4",
-  knowledge: "#3b82f6",
-  industry_insights: "#f97316",
-  setup_wizard: "#64748b",
-  skills: "#a855f7",
+  assistant: "var(--tag-blue-fg)",
+  content_generator: "var(--tag-purple-fg)",
+  design_brief: "var(--tag-pink-fg)",
+  seo: "var(--tag-yellow-fg)",
+  brand_review: "var(--tag-green-fg)",
+  content_analysis: "var(--tag-blue-fg)",
+  knowledge: "var(--tag-blue-fg)",
+  industry_insights: "var(--tag-orange-fg)",
+  setup_wizard: "var(--hm-text-tertiary)",
+  skills: "var(--tag-purple-fg)",
 };
 
 type Range = "7d" | "30d" | "90d";
@@ -96,8 +98,8 @@ export default function UsagePage() {
     return (
       <div className="flex-1 overflow-auto p-6">
         <div className="max-w-4xl mx-auto">
-          <div className="rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 p-6 text-center">
-            <p className="text-[14px] text-amber-700 dark:text-amber-400">Only workspace owners and admins can view usage data.</p>
+          <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--tag-yellow-bg)] dark:bg-[var(--hm-warning)]/20 dark:border-[var(--hm-border)] p-6 text-center">
+            <p className="text-[14px] text-[var(--tag-yellow-fg)] dark:text-[var(--tag-yellow-fg)]">Only workspace owners and admins can view usage data.</p>
           </div>
         </div>
       </div>
@@ -129,7 +131,7 @@ export default function UsagePage() {
                 onClick={() => setRange(r)}
                 className={`px-4 py-1.5 text-[12px] font-medium transition-colors ${
                   range === r
-                    ? "bg-[var(--hm-accent)] text-white"
+                    ? "bg-[var(--hm-primary)] text-white"
                     : "bg-[var(--hm-bg)] text-[var(--hm-text-secondary)] hover:bg-[var(--hm-surface-hover)]"
                 }`}
               >
@@ -142,13 +144,13 @@ export default function UsagePage() {
         {/* ── Loading / Error ─────────────────────────────────────── */}
         {loading && (
           <div className="flex items-center justify-center py-20">
-            <div className="w-5 h-5 border-2 border-[var(--hm-accent)]/30 border-t-[var(--hm-accent)] rounded-full animate-spin" />
+            <div className="w-5 h-5 border-2 border-[var(--hm-border)] border-t-[var(--hm-text-secondary)] rounded-full animate-spin" />
           </div>
         )}
 
         {error && (
-          <div className="rounded-xl border border-red-200 bg-red-50 dark:bg-red-900/20 dark:border-red-800 p-4 text-center">
-            <p className="text-[13px] text-red-600 dark:text-red-400">{error}</p>
+          <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--tag-red-bg)] dark:bg-[var(--hm-danger)]/20 dark:border-[var(--hm-border)] p-4 text-center">
+            <p className="text-[13px] text-[var(--tag-red-fg)] dark:text-[var(--tag-red-fg)]">{error}</p>
           </div>
         )}
 
@@ -203,7 +205,7 @@ export default function UsagePage() {
                           >
                             {/* Tooltip */}
                             <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 hidden group-hover:block z-10">
-                              <div className="bg-[var(--hm-bg-secondary)] border border-[var(--hm-border)] rounded-lg shadow-lg p-2 whitespace-nowrap text-[11px]">
+                              <div className="bg-[var(--hm-bg-secondary)] border border-[var(--hm-border)] rounded-lg p-2 whitespace-nowrap text-[11px]">
                                 <p className="font-medium text-[var(--hm-text)]">{day.date}</p>
                                 <p className="text-[var(--hm-text-secondary)]">{fmt(day.totalTokens)} tokens</p>
                                 <p className="text-[var(--hm-text-tertiary)]">{day.calls} calls</p>
@@ -214,7 +216,7 @@ export default function UsagePage() {
                               className="w-full rounded-t-sm"
                               style={{
                                 height: `${outputH}%`,
-                                backgroundColor: "var(--hm-accent)",
+                                backgroundColor: "var(--hm-link)",
                                 opacity: 0.9,
                                 minHeight: day.outputTokens > 0 ? 2 : 0,
                               }}
@@ -224,7 +226,7 @@ export default function UsagePage() {
                               className="w-full"
                               style={{
                                 height: `${inputH}%`,
-                                backgroundColor: "var(--hm-accent)",
+                                backgroundColor: "var(--hm-link)",
                                 opacity: 0.4,
                                 minHeight: day.inputTokens > 0 ? 2 : 0,
                               }}
@@ -245,11 +247,11 @@ export default function UsagePage() {
                   {/* Legend */}
                   <div className="flex items-center gap-4 mt-3 ml-14 text-[11px] text-[var(--hm-text-tertiary)]">
                     <span className="flex items-center gap-1.5">
-                      <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: "var(--hm-accent)", opacity: 0.9 }} />
+                      <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: "var(--hm-link)", opacity: 0.9 }} />
                       Output
                     </span>
                     <span className="flex items-center gap-1.5">
-                      <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: "var(--hm-accent)", opacity: 0.4 }} />
+                      <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: "var(--hm-link)", opacity: 0.4 }} />
                       Input
                     </span>
                   </div>
@@ -286,7 +288,7 @@ export default function UsagePage() {
                         const pct = data.totals.totalTokens > 0
                           ? (row.totalTokens / data.totals.totalTokens) * 100
                           : 0;
-                        const color = FEATURE_COLORS[row.feature] || "#6366f1";
+                        const color = FEATURE_COLORS[row.feature] || "var(--hm-text-tertiary)";
                         return (
                           <tr key={row.feature} className="hover:bg-[var(--hm-surface-hover)] transition-colors">
                             <td className="px-5 py-3">
@@ -351,7 +353,7 @@ export default function UsagePage() {
                 </div>
                 <div>
                   <p className="text-[var(--hm-text-tertiary)] text-[11px] uppercase tracking-wider">Total Estimated</p>
-                  <p className="text-[20px] font-semibold text-[var(--hm-accent)] mt-0.5">{fmtCost(data.estimatedCost)}</p>
+                  <p className="text-[20px] font-semibold text-[var(--hm-link)] mt-0.5">{fmtCost(data.estimatedCost)}</p>
                   <p className="text-[var(--hm-text-tertiary)] text-[11px]">Based on Anthropic Claude Sonnet</p>
                 </div>
               </div>
@@ -433,15 +435,15 @@ function RadarUsageSection() {
     <div className="pt-2">
       <div className="flex items-center gap-2 mb-3">
         <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-          <circle cx="7" cy="7" r="4.5" stroke="var(--hm-accent)" strokeWidth="1.4" />
-          <path d="M10.4 10.4L14 14" stroke="var(--hm-accent)" strokeWidth="1.4" strokeLinecap="round" />
+          <circle cx="7" cy="7" r="4.5" stroke="var(--hm-link)" strokeWidth="1.4" />
+          <path d="M10.4 10.4L14 14" stroke="var(--hm-link)" strokeWidth="1.4" strokeLinecap="round" />
         </svg>
         <h2 className="text-[16px] font-semibold text-[var(--hm-text)]">Radar — Prospecting</h2>
       </div>
 
       {loading ? (
         <div className="flex items-center justify-center py-10">
-          <div className="w-5 h-5 border-2 border-[var(--hm-accent)]/30 border-t-[var(--hm-accent)] rounded-full animate-spin" />
+          <div className="w-5 h-5 border-2 border-[var(--hm-border)] border-t-[var(--hm-text-secondary)] rounded-full animate-spin" />
         </div>
       ) : !data || data.error ? (
         <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-bg)] p-4 text-[12.5px] text-[var(--hm-text-tertiary)]">
@@ -550,7 +552,7 @@ function RadarUsageSection() {
                 {(data.credentials ?? []).map((c) => (
                   <div key={c.key} className="flex items-center justify-between px-5 py-3">
                     <div className="flex items-center gap-3">
-                      <span className={`w-2 h-2 rounded-full ${c.configured ? "bg-emerald-500" : "bg-[var(--hm-text-tertiary)]/40"}`} />
+                      <span className={`w-2 h-2 rounded-full ${c.configured ? "bg-[var(--hm-success)]" : "bg-[var(--hm-text-tertiary)]/40"}`} />
                       <div>
                         <div className="text-[13px] font-medium text-[var(--hm-text)]">{c.label}</div>
                         <div className="text-[11.5px] text-[var(--hm-text-tertiary)]">{c.detail}</div>
