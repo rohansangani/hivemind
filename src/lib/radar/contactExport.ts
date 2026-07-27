@@ -163,8 +163,14 @@ export async function exportContactsCsv(
   });
   matched = applyGroupCap(matched, groupCap);
 
+  // contacts_view's own "domain" column is the contact's OWN row, which is often blank when the
+  // contact only ever got a domain via its linked account — the Contacts table UI already falls
+  // back to account_domain for exactly this reason (see ContactsSection's domain cell), but this
+  // export was reading the raw column and shipping blanks for every such row.
   const csvRows = [CONTACT_EXPORT_LABELS.join(",")];
-  for (const c of matched) csvRows.push(CONTACT_EXPORT_COLS.map((col) => csvCell(c[col])).join(","));
+  for (const c of matched) {
+    csvRows.push(CONTACT_EXPORT_COLS.map((col) => csvCell(col === "domain" ? (c.domain || c.account_domain) : c[col])).join(","));
+  }
 
   return { csv: csvRows.join("\n"), matched: all.length, exported: csvRows.length - 1, truncated };
 }
