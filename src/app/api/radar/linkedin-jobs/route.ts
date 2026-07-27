@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { requireRadarAccess, logRadarUsage } from "@/lib/radar/supabase";
 import { logRadarActivity } from "@/lib/radar/activityLog";
 import { runLinkedInCheck } from "@/lib/radar/checkLinkedin";
+import { runLinkedInCompanyCheck } from "@/lib/radar/checkLinkedinCompany";
 
 /**
  * Background job runner for Radar's "Check LinkedIn" — each chunk is a real paid Apify call, so a
@@ -36,6 +37,7 @@ interface JobRow {
   userId: string;
   label: string | null;
   status: string;
+  checkType: string;
   urls: unknown;
   scrapeMode: string;
   vertical: string;
@@ -69,8 +71,10 @@ async function continueJob(job: JobRow, budgetMs: number, actorEmail: string | n
   while (processed < job.total && Date.now() - startedAt < budgetMs) {
     const batch = urls.slice(processed, processed + CHUNK);
     try {
-      const d = await runLinkedInCheck(batch, job.scrapeMode, job.vertical);
-      await logRadarUsage(actorEmail, job.scrapeMode === "email" ? "linkedin_email" : "linkedin_check", batch.length);
+      const d = job.checkType === "company"
+        ? await runLinkedInCompanyCheck(batch, job.vertical)
+        : await runLinkedInCheck(batch, job.scrapeMode, job.vertical);
+      await logRadarUsage(actorEmail, job.checkType === "company" ? "linkedin_company" : job.scrapeMode === "email" ? "linkedin_email" : "linkedin_check", batch.length);
       results.push(...(d.results || []));
       matched += d.matched || 0;
       mismatched += d.mismatched || 0;
@@ -164,8 +168,8 @@ export async function POST(req: NextRequest) {
 
   try {
     if (action === "start") {
-      const { urls, scrapeMode, vertical, label } = body as {
-        urls?: string[]; scrapeMode?: string; vertical?: string; label?: string;
+      const { urls, scrapeMode, vertical, label, checkType } = body as {
+        urls?: string[]; scrapeMode?: string; vertical?: string; label?: string; checkType?: string;
       };
       if (!Array.isArray(urls) || !urls.length) {
         return NextResponse.json({ error: "No LinkedIn URLs given" }, { status: 400 });
@@ -173,12 +177,14 @@ export async function POST(req: NextRequest) {
       if (!vertical) {
         return NextResponse.json({ error: "Vertical is required" }, { status: 400 });
       }
+      const type = checkType === "company" ? "company" : "profile";
 
       const job = await db.linkedinCheckJob.create({
         data: {
           organizationId: orgId,
           userId,
           label: label || null,
+          checkType: type,
           urls: urls as object,
           scrapeMode: scrapeMode === "email" ? "email" : "basic",
           vertical,
@@ -189,7 +195,7 @@ export async function POST(req: NextRequest) {
       const actorEmail = await getActorEmail(userId);
       await continueJob(job as unknown as JobRow, START_BUDGET_MS, actorEmail);
       const fresh = await db.linkedinCheckJob.findUnique({ where: { id: job.id } });
-      await logRadarActivity(userId, "linkedin_job_start", `Started a Check LinkedIn job — ${urls.length} profile(s)`);
+      await logRadarActivity(userId, "linkedin_job_start", `Started a Check LinkedIn ${type} job — ${urls.length} ${type === "company" ? "compan(ies)" : "profile(s)"}`);
       return NextResponse.json({ job: fresh });
     }
 
@@ -220,7 +226,7 @@ export async function POST(req: NextRequest) {
         orderBy: { createdAt: "desc" },
         take: 50,
         select: {
-          id: true, label: true, status: true, processed: true, total: true,
+          id: true, label: true, status: true, checkType: true, processed: true, total: true,
           matched: true, mismatched: true, notFound: true, created: true, uncertain: true,
           error: true, createdAt: true, updatedAt: true,
         },

@@ -3377,6 +3377,20 @@ interface LinkedInCheckRow {
   created?: boolean;
 }
 
+interface LinkedInCompanyCheckRow {
+  linkedinUrl: string | null;
+  name: string | null;
+  website: string | null;
+  domain: string | null;
+  employeeCount: number | null;
+  dbDomain: string | null;
+  dbAccountId: string | null;
+  match: boolean | null;
+  uncertain?: boolean;
+  error?: string;
+  created?: boolean;
+}
+
 interface PersonInput {
   first_name: string;
   middle_name?: string;
@@ -3430,12 +3444,16 @@ function ValidateSection() {
   const [retestCount, setRetestCount] = useState<number | null>(null);
   const [retestCounting, setRetestCounting] = useState(false);
 
-  // Check LinkedIn — standalone flow, doesn't touch phase/jobId/candidates.
+  // Check LinkedIn — standalone flow, doesn't touch phase/jobId/candidates. Two sibling scraper
+  // types sharing one job/history system: "profile" (against contacts) and "company" (against
+  // accounts) — see LinkedinCheckJob.checkType.
+  const [linkedinCheckType, setLinkedinCheckType] = useState<"profile" | "company">("profile");
   const [linkedinUrlsText, setLinkedinUrlsText] = useState("");
   const [linkedinScrapeMode, setLinkedinScrapeMode] = useState<"basic" | "email">("basic");
   const [linkedinVertical, setLinkedinVertical] = useState("");
   const [linkedinBusy, setLinkedinBusy] = useState(false);
   const [linkedinResults, setLinkedinResults] = useState<LinkedInCheckRow[]>([]);
+  const [linkedinCompanyResults, setLinkedinCompanyResults] = useState<LinkedInCompanyCheckRow[]>([]);
   const [linkedinSummary, setLinkedinSummary] = useState<{ matched: number; mismatched: number; notFound: number; created: number; uncertain: number } | null>(null);
   // Which uncertain rows currently have a Same/Moved resolve in flight — keyed by dbContactId
   // so the buttons show a busy state instead of looking like nothing happened on click.
@@ -3446,9 +3464,9 @@ function ValidateSection() {
   // keeps a history so past runs can be revisited/downloaded later. Mirrors Email Sequences'
   // job pattern.
   interface LinkedinJobRow {
-    id: string; label: string | null; status: string; processed: number; total: number;
+    id: string; label: string | null; status: string; checkType?: "profile" | "company"; processed: number; total: number;
     matched: number; mismatched: number; notFound: number; created: number; uncertain: number;
-    error: string | null; createdAt: string; updatedAt: string; results?: LinkedInCheckRow[];
+    error: string | null; createdAt: string; updatedAt: string; results?: (LinkedInCheckRow | LinkedInCompanyCheckRow)[];
   }
   const [activeLinkedinJobId, setActiveLinkedinJobId] = useState<string | null>(null);
   const [activeLinkedinJob, setActiveLinkedinJob] = useState<LinkedinJobRow | null>(null);
@@ -3480,13 +3498,25 @@ function ValidateSection() {
 
   useEffect(() => { loadRecentLinkedinJobs(); }, [loadRecentLinkedinJobs]);
 
+  // Dispatches a job's results into the right state for its own checkType (a job keeps whatever
+  // type it was started as, regardless of which type is currently toggled in the form above) and
+  // flips the toggle to match, so reopening a past company check shows the company table/columns.
+  const applyLinkedinJobResults = (job: LinkedinJobRow) => {
+    const type = job.checkType === "company" ? "company" : "profile";
+    setLinkedinCheckType(type);
+    if (Array.isArray(job.results)) {
+      if (type === "company") setLinkedinCompanyResults(job.results as LinkedInCompanyCheckRow[]);
+      else setLinkedinResults(job.results as LinkedInCheckRow[]);
+    }
+  };
+
   const fetchLinkedinJobStatus = useCallback(async (jobId: string) => {
     try {
       const d = await linkedinJobCall({ action: "status", jobId });
       if (activeLinkedinJobIdRef.current !== jobId) return; // stale — user navigated away
       const job: LinkedinJobRow = d.job;
       setActiveLinkedinJob(job);
-      if (Array.isArray(job.results)) setLinkedinResults(job.results);
+      applyLinkedinJobResults(job);
       setLinkedinSummary({ matched: job.matched, mismatched: job.mismatched, notFound: job.notFound, created: job.created, uncertain: job.uncertain });
       setRecentLinkedinJobs((prev) => prev.map((j) => (j.id === jobId ? { ...j, ...job, results: undefined } : j)));
       if (job.status !== "running") loadRecentLinkedinJobs();
@@ -3514,7 +3544,7 @@ function ValidateSection() {
       if (activeLinkedinJobIdRef.current === jobId) {
         const job: LinkedinJobRow = d.job;
         setActiveLinkedinJob(job);
-        if (Array.isArray(job.results)) setLinkedinResults(job.results);
+        applyLinkedinJobResults(job);
         setLinkedinSummary({ matched: job.matched, mismatched: job.mismatched, notFound: job.notFound, created: job.created, uncertain: job.uncertain });
         setRecentLinkedinJobs((prev) => prev.map((j) => (j.id === jobId ? { ...j, ...job, results: undefined } : j)));
         if (job.status !== "running") loadRecentLinkedinJobs();
@@ -3563,6 +3593,7 @@ function ValidateSection() {
         setActiveLinkedinJobId(null);
         setActiveLinkedinJob(null);
         setLinkedinResults([]);
+        setLinkedinCompanyResults([]);
         setLinkedinSummary(null);
       }
     } catch (e2) {
@@ -3688,21 +3719,24 @@ function ValidateSection() {
   const runLinkedInCheck = async () => {
     setError("");
     if (!linkedinVertical) { setError("Select a vertical before running the check."); return; }
+    const isCompany = linkedinCheckType === "company";
     const urls = [...new Set(linkedinUrlsText.split(/[\n,]+/).map((u) => u.trim()).filter(Boolean))];
-    if (!urls.length) { setError("Add at least one LinkedIn URL."); return; }
-    const costNote = linkedinScrapeMode === "email" ? "$10 per 1,000 profiles" : "$4 per 1,000 profiles";
-    if (!confirm(`Scrape ${urls.length} LinkedIn profile(s) via Apify (${costNote})? This is a real paid API call.`)) return;
+    if (!urls.length) { setError(`Add at least one LinkedIn ${isCompany ? "company" : "profile"} URL.`); return; }
+    const costNote = isCompany ? "$4 per 1,000 companies" : linkedinScrapeMode === "email" ? "$10 per 1,000 profiles" : "$4 per 1,000 profiles";
+    if (!confirm(`Scrape ${urls.length} LinkedIn ${isCompany ? "compan(ies)" : "profile(s)"} via Apify (${costNote})? This is a real paid API call.`)) return;
 
     setLinkedinBusy(true);
     setLinkedinResults([]);
+    setLinkedinCompanyResults([]);
     setLinkedinSummary(null);
     try {
       const d = await linkedinJobCall({
         action: "start",
         urls,
+        checkType: linkedinCheckType,
         scrapeMode: linkedinScrapeMode,
         vertical: linkedinVertical,
-        label: `LinkedIn check — ${new Date().toISOString().slice(0, 10)}`,
+        label: `LinkedIn ${isCompany ? "company" : "profile"} check — ${new Date().toISOString().slice(0, 10)}`,
       });
       watchLinkedinJob(d.job.id);
       loadRecentLinkedinJobs();
@@ -3750,8 +3784,9 @@ function ValidateSection() {
       // Loose parse: any cell that looks like a LinkedIn URL, whether the CSV has a header row,
       // a "linkedin url" column among others, or is just a bare one-per-line list.
       const cells = text.split(/\r?\n/).flatMap((line) => line.split(",")).map((c) => c.trim().replace(/^"|"$/g, ""));
-      const values = cells.filter((c) => c && /linkedin\.com\/in\//i.test(c));
-      if (!values.length) { setError("No LinkedIn profile URLs found in that CSV."); return; }
+      const urlPattern = linkedinCheckType === "company" ? /linkedin\.com\/(company|showcase)\//i : /linkedin\.com\/in\//i;
+      const values = cells.filter((c) => c && urlPattern.test(c));
+      if (!values.length) { setError(`No LinkedIn ${linkedinCheckType === "company" ? "company" : "profile"} URLs found in that CSV.`); return; }
       setLinkedinUrlsText((prev) => {
         const existing = prev.split(/[\n,]+/).map((u) => u.trim()).filter(Boolean);
         const merged = [...new Set([...existing, ...values])];
@@ -4248,7 +4283,7 @@ function ValidateSection() {
     setPeople([]); setDraft(emptyPerson()); setPatternsLabel(""); setPatternsVertical(""); setBlankEmailMsg(""); setPhase("input"); setJobId(null); setCandidates([]);
     setCheckResult(null); setSavedCount(0); setSavedInvalidCount(0); setError(""); setMailboxTag(""); setAutoRefresh(false);
     setInputMode("patterns"); setRetestCount(null); setRetestLabel(""); setRetestVertical("");
-    setLinkedinUrlsText(""); setLinkedinResults([]); setLinkedinSummary(null); setLinkedinVertical("");
+    setLinkedinUrlsText(""); setLinkedinResults([]); setLinkedinCompanyResults([]); setLinkedinSummary(null); setLinkedinVertical("");
   };
 
   const loadJobs = async () => {
@@ -4430,16 +4465,33 @@ function ValidateSection() {
                   <div className="px-5 py-4 border-b border-[var(--hm-border)]">
                     <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Check LinkedIn</h2>
                     <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">
-                      Scrape each profile&apos;s current employer and compare it to what we have on file — catches people who&apos;ve moved on. Saves the result directly to the matching contact.
+                      {linkedinCheckType === "company"
+                        ? "Scrape each company page and compare its domain to what we have on file — catches stale/wrong account domains. Saves the result directly to the matching account."
+                        : "Scrape each profile's current employer and compare it to what we have on file — catches people who've moved on. Saves the result directly to the matching contact."}
                     </p>
+                    <div className="flex gap-1.5 mt-3">
+                      {(["profile", "company"] as const).map((t) => (
+                        <button
+                          key={t}
+                          onClick={() => { setLinkedinCheckType(t); setLinkedinUrlsText(""); setError(""); }}
+                          className={`text-[12px] px-3 py-1.5 rounded-lg border font-medium transition-colors ${linkedinCheckType === t ? "border-[var(--hm-primary)] bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]" : "border-[var(--hm-border)] text-[var(--hm-text-secondary)]"}`}
+                        >
+                          {t === "profile" ? "Profile" : "Company"}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                   <div className="px-5 py-5 space-y-4">
                     <div>
-                      <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">LinkedIn profile URLs (one per line, or comma-separated)</label>
+                      <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">
+                        {linkedinCheckType === "company" ? "LinkedIn company URLs (one per line, or comma-separated)" : "LinkedIn profile URLs (one per line, or comma-separated)"}
+                      </label>
                       <textarea
                         value={linkedinUrlsText}
                         onChange={(e) => setLinkedinUrlsText(e.target.value)}
-                        placeholder={"https://www.linkedin.com/in/johndoe\nhttps://www.linkedin.com/in/janedoe"}
+                        placeholder={linkedinCheckType === "company"
+                          ? "https://www.linkedin.com/company/acme\nhttps://www.linkedin.com/company/other-co"
+                          : "https://www.linkedin.com/in/johndoe\nhttps://www.linkedin.com/in/janedoe"}
                         style={{ minHeight: 120 }}
                       />
                       <label className="hm-btn hm-btn-secondary cursor-pointer mt-2 inline-flex" style={{ height: 32, padding: "0 12px", fontSize: 12 }}>
@@ -4447,32 +4499,40 @@ function ValidateSection() {
                         <input type="file" accept=".csv,text/csv" onChange={loadLinkedinCsv} style={{ display: "none" }} />
                       </label>
                     </div>
-                    <div>
-                      <p className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5">Mode</p>
-                      <div className="flex gap-1.5">
-                        <button
-                          onClick={() => setLinkedinScrapeMode("basic")}
-                          className={`text-[11.5px] px-2.5 py-1 rounded-md border ${linkedinScrapeMode === "basic" ? "border-[var(--hm-primary)] bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)] font-medium" : "border-[var(--hm-border)] text-[var(--hm-text-secondary)]"}`}
-                        >
-                          Profile details ($4/1k)
-                        </button>
-                        <button
-                          onClick={() => setLinkedinScrapeMode("email")}
-                          className={`text-[11.5px] px-2.5 py-1 rounded-md border ${linkedinScrapeMode === "email" ? "border-[var(--hm-primary)] bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)] font-medium" : "border-[var(--hm-border)] text-[var(--hm-text-secondary)]"}`}
-                        >
-                          Profile details + email ($10/1k)
-                        </button>
+                    {linkedinCheckType === "profile" && (
+                      <div>
+                        <p className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5">Mode</p>
+                        <div className="flex gap-1.5">
+                          <button
+                            onClick={() => setLinkedinScrapeMode("basic")}
+                            className={`text-[11.5px] px-2.5 py-1 rounded-md border ${linkedinScrapeMode === "basic" ? "border-[var(--hm-primary)] bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)] font-medium" : "border-[var(--hm-border)] text-[var(--hm-text-secondary)]"}`}
+                          >
+                            Profile details ($4/1k)
+                          </button>
+                          <button
+                            onClick={() => setLinkedinScrapeMode("email")}
+                            className={`text-[11.5px] px-2.5 py-1 rounded-md border ${linkedinScrapeMode === "email" ? "border-[var(--hm-primary)] bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)] font-medium" : "border-[var(--hm-border)] text-[var(--hm-text-secondary)]"}`}
+                          >
+                            Profile details + email ($10/1k)
+                          </button>
+                        </div>
                       </div>
-                    </div>
+                    )}
                     <div>
-                      <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Vertical for new contacts</label>
-                      <select value={linkedinVertical} onChange={(e) => setLinkedinVertical(e.target.value)} style={{ width: 180 }} title="Required — new contacts are never saved without a vertical">
+                      <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">
+                        {linkedinCheckType === "company" ? "Vertical for new accounts" : "Vertical for new contacts"}
+                      </label>
+                      <select value={linkedinVertical} onChange={(e) => setLinkedinVertical(e.target.value)} style={{ width: 180 }} title="Required — new records are never saved without a vertical">
                         <option value="">— Select vertical —</option>
                         <option value="B2B">B2B</option>
                         <option value="US">US</option>
                         <option value="D2C">D2C</option>
                       </select>
-                      <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-1">Required. Used when a profile has no matching contact — the new contact and its account (if the profile has a company domain, needs the "+ email" mode) are created under this vertical.</p>
+                      <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-1">
+                        {linkedinCheckType === "company"
+                          ? "Required. Used when a company page has no matching account — a new account is created under this vertical."
+                          : "Required. Used when a profile has no matching contact — the new contact and its account (if the profile has a company domain, needs the \"+ email\" mode) are created under this vertical."}
+                      </p>
                     </div>
                     <button onClick={runLinkedInCheck} disabled={linkedinBusy} className="hm-btn hm-btn-primary w-full" style={{ height: 38, fontSize: 13 }}>
                       {linkedinBusy ? "Starting…" : "Run check"}
@@ -4533,7 +4593,10 @@ function ValidateSection() {
                                 onClick={() => watchLinkedinJob(j.id)}
                                 className={`w-full flex items-center justify-between text-left text-[11.5px] px-2 py-1.5 rounded-md border ${activeLinkedinJobId === j.id ? "border-[var(--hm-primary)]" : "border-[var(--hm-border)]"} bg-[var(--hm-surface)] hover:border-[var(--hm-primary)]/40 pr-7`}
                               >
-                                <span className="truncate text-[var(--hm-text-secondary)]">{j.label || "Untitled check"}</span>
+                                <span className="truncate text-[var(--hm-text-secondary)] flex items-center gap-1.5">
+                                  <span className="shrink-0 px-1 py-0.5 rounded text-[9.5px] font-medium bg-[var(--hm-bg-tertiary)] text-[var(--hm-text-tertiary)] uppercase">{j.checkType === "company" ? "Co" : "Pf"}</span>
+                                  {j.label || "Untitled check"}
+                                </span>
                                 <span className={`shrink-0 ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium ${j.status === "done" ? "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]" : j.status === "error" ? "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)]" : j.status === "cancelled" ? "bg-[var(--hm-border)] text-[var(--hm-text-tertiary)]" : "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]"}`}>
                                   {j.status === "done" ? `done — ${j.total}/${j.total}` : j.status === "error" ? "error" : j.status === "cancelled" ? `stopped — ${j.processed}/${j.total}` : `running — ${j.processed}/${j.total}`}
                                 </span>
@@ -4551,7 +4614,7 @@ function ValidateSection() {
                       )}
                     </div>
 
-                    {linkedinSummary && (
+                    {linkedinCheckType === "profile" && linkedinSummary && (
                       <div className="flex items-center gap-4 text-[12.5px] flex-wrap">
                         <span className="text-[var(--tag-green-fg)]">✓ {linkedinSummary.matched} same company</span>
                         <span className="text-[var(--tag-red-fg)]">✗ {linkedinSummary.mismatched} different company (marked moved)</span>
@@ -4575,7 +4638,30 @@ function ValidateSection() {
                       </div>
                     )}
 
-                    {linkedinResults.length > 0 && (
+                    {linkedinCheckType === "company" && linkedinSummary && (
+                      <div className="flex items-center gap-4 text-[12.5px] flex-wrap">
+                        <span className="text-[var(--tag-green-fg)]">✓ {linkedinSummary.matched} same domain</span>
+                        <span className="text-[var(--tag-red-fg)]">✗ {linkedinSummary.mismatched} different domain</span>
+                        {linkedinSummary.uncertain > 0 && (
+                          <span className="text-[var(--tag-yellow-fg)]">? {linkedinSummary.uncertain} uncertain — no website found</span>
+                        )}
+                        <span className="text-[var(--hm-link)]">+ {linkedinSummary.created} new account(s) created</span>
+                        <span className="text-[var(--hm-text-tertiary)]">— {linkedinSummary.notFound} compan(ies) not found</span>
+                        <button
+                          onClick={() => downloadCSV(linkedinCompanyResults.map((r) => ({
+                            name: r.name, linkedin_url: r.linkedinUrl, website: r.website, domain: r.domain,
+                            employee_count: r.employeeCount, db_domain: r.dbDomain,
+                            status: r.error ? "not found" : r.uncertain ? "uncertain — no website found" : r.match === true ? "same domain" : r.match === false ? "different domain" : r.created ? "created" : "no db match",
+                          })), `radar_linkedin_company_check_${today()}.csv`)}
+                          className="hm-btn hm-btn-secondary ml-auto"
+                          style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}
+                        >
+                          Export CSV
+                        </button>
+                      </div>
+                    )}
+
+                    {linkedinCheckType === "profile" && linkedinResults.length > 0 && (
                       <div className="overflow-x-auto rounded-lg border border-[var(--hm-border)]">
                         <table className="w-full border-collapse text-[12.5px]">
                           <thead>
@@ -4630,6 +4716,41 @@ function ValidateSection() {
                                 {linkedinScrapeMode === "email" && (
                                   <td className="px-3 py-2 border-b border-[var(--hm-border-light)]">{r.email || "—"}</td>
                                 )}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    {linkedinCheckType === "company" && linkedinCompanyResults.length > 0 && (
+                      <div className="overflow-x-auto rounded-lg border border-[var(--hm-border)]">
+                        <table className="w-full border-collapse text-[12.5px]">
+                          <thead>
+                            <tr>
+                              {["Name", "LinkedIn", "Website", "Employees", "DB Domain", "Status"].map((h) => (
+                                <th key={h} className="text-left text-[10.5px] font-semibold uppercase tracking-wide text-[var(--hm-text-tertiary)] px-3 py-2 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] whitespace-nowrap">{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {linkedinCompanyResults.map((r, i) => (
+                              <tr key={i} className="hover:bg-[var(--hm-surface-hover)]">
+                                <td className="px-3 py-2 border-b border-[var(--hm-border-light)]">{r.name || "—"}</td>
+                                <td className="px-3 py-2 border-b border-[var(--hm-border-light)]">
+                                  {r.linkedinUrl ? <a href={linkedinHref(r.linkedinUrl)} target="_blank" rel="noreferrer" className="text-[var(--hm-link)]">Company</a> : "—"}
+                                </td>
+                                <td className="px-3 py-2 border-b border-[var(--hm-border-light)]">{r.domain || "—"}</td>
+                                <td className="px-3 py-2 border-b border-[var(--hm-border-light)]">{r.employeeCount ?? "—"}</td>
+                                <td className="px-3 py-2 border-b border-[var(--hm-border-light)]">{r.dbDomain || "—"}</td>
+                                <td className="px-3 py-2 border-b border-[var(--hm-border-light)]">
+                                  {r.error ? <span className="text-[var(--hm-text-tertiary)]" title={r.error}>Not found</span>
+                                    : r.uncertain ? <span className="text-[var(--tag-yellow-fg)] font-medium">? No website found</span>
+                                    : r.match === true ? <span className="text-[var(--tag-green-fg)] font-medium">✓ Same domain</span>
+                                    : r.match === false ? <span className="text-[var(--tag-red-fg)] font-medium">✗ Different domain</span>
+                                    : r.created ? <span className="text-[var(--hm-link)] font-medium">+ Created</span>
+                                    : <span className="text-[var(--hm-text-tertiary)]">No DB match</span>}
+                                </td>
                               </tr>
                             ))}
                           </tbody>

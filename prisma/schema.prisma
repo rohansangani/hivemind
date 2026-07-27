@@ -161,8 +161,9 @@ model LinkedinCheckJob {
   userId         String
   label          String?
   status         String   @default("running") // running | done | cancelled | error
+  checkType      String   @default("profile") // "profile" (harvestapi/linkedin-profile-scraper, vs contacts) | "company" (harvestapi/linkedin-company, vs accounts)
   urls           Json // string[] — full input list, fixed at start time
-  scrapeMode     String // "basic" | "email"
+  scrapeMode     String // "basic" | "email" — profile mode only; ignored for checkType "company"
   vertical       String
   results        Json     @default("[]") // LinkedInCheckRow[] — accumulates as chunks complete
   processed      Int      @default(0)
