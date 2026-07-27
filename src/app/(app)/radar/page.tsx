@@ -2144,6 +2144,11 @@ function parseCSV(text: string): { headers: string[]; rows: Record<string, strin
 
 function UploadSection() {
   const [table, setTable] = useState<UploadTable>("accounts");
+  // Mandatory batch-level fallback vertical — every uploaded account/contact needs a real
+  // vertical, never blank. If a row also has its own vertical mapped from the CSV, that wins;
+  // this is only the fallback for rows that don't (confirmed live: an upload with no vertical
+  // mapped/selected produced "unassigned" accounts and contacts).
+  const [uploadVertical, setUploadVertical] = useState("");
   const [fileName, setFileName] = useState("");
   const [parsed, setParsed] = useState<{ headers: string[]; rows: Record<string, string>[] } | null>(null);
   const [mapping, setMapping] = useState<Record<string, string>>({}); // csv header -> db field ("" = skip)
@@ -2204,7 +2209,7 @@ function UploadSection() {
       const res = await fetch("/api/radar/upload", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ table: uploadTable, rows: chunk, jobId: jid, filename: fileName, isLast }),
+        body: JSON.stringify({ table: uploadTable, rows: chunk, jobId: jid, filename: fileName, isLast, vertical: uploadVertical }),
       });
       const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.error || `Upload failed at row ${i}`);
@@ -2218,6 +2223,7 @@ function UploadSection() {
   const doUpload = async () => {
     if (!parsed || !parsed.rows.length) return;
     if (!mappedCount) { setMsg({ kind: "err", text: "Map at least one column first." }); return; }
+    if (!uploadVertical) { setMsg({ kind: "err", text: "Select a vertical for this upload first." }); return; }
 
     setBusy(true);
     setMsg(null);
@@ -2316,6 +2322,17 @@ function UploadSection() {
                 {t === "smart" ? "Smart (Accounts + Contacts)" : t.charAt(0).toUpperCase() + t.slice(1)}
               </button>
             ))}
+          </div>
+
+          {/* Vertical — mandatory fallback for any row that doesn't map its own vertical column */}
+          <div className="flex items-center gap-2">
+            <span className="text-[12px] font-medium text-[var(--hm-text-secondary)]">Vertical *</span>
+            <select value={uploadVertical} onChange={(e) => setUploadVertical(e.target.value)} style={{ maxWidth: 160 }}>
+              <option value="">— Select —</option>
+              <option value="B2B">B2B</option>
+              <option value="D2C">D2C</option>
+              <option value="US">US</option>
+            </select>
           </div>
 
           {/* File picker */}
@@ -2421,7 +2438,7 @@ function UploadSection() {
             <div className="flex items-center gap-3">
               <button
                 onClick={doUpload}
-                disabled={busy || !parsed.rows.length || !mappedCount}
+                disabled={busy || !parsed.rows.length || !mappedCount || !uploadVertical}
                 className="hm-btn hm-btn-primary"
                 style={{ height: 38, padding: "0 18px", fontSize: 13 }}
               >

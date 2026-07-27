@@ -88,12 +88,21 @@ interface UploadBody {
   userEmail?: string;
   filename?: string;
   isLast?: boolean;
+  /** Batch-level fallback — applied to any row that doesn't carry its own vertical (via a
+   * mapped CSV column). Mandatory: every account/contact must land with a real vertical, never
+   * blank/"unassigned" (confirmed live: rows uploaded without this produced 3 "unassigned"
+   * accounts and 2,267 "unassigned" contacts in one batch). */
+  vertical?: string;
 }
 
 async function handleUpload(body: UploadBody): Promise<{ status: number; body: Record<string, unknown> }> {
-  const { table, rows, jobId, userEmail, filename, isLast } = body;
+  const { table, rows, jobId, userEmail, filename, isLast, vertical: batchVertical } = body;
   if (!table || !rows?.length) return { status: 400, body: { error: "Missing table or rows" } };
   if (!["accounts", "contacts"].includes(table)) return { status: 400, body: { error: "Invalid table" } };
+  if (!batchVertical || !["B2B", "D2C", "US"].includes(batchVertical.toUpperCase())) {
+    return { status: 400, body: { error: "Vertical is required" } };
+  }
+  const fallbackVertical = batchVertical.toUpperCase();
 
   // Job tracking: lets the frontend show a shared upload log and hit Stop mid-upload. When a jobId
   // is present, register/refresh the job row and read its current status in one round-trip.
@@ -123,7 +132,7 @@ async function handleUpload(body: UploadBody): Promise<{ status: number; body: R
   // value wins when non-blank.
   const cleanRows: Row[] = table === "contacts"
     ? rows.map((r) => {
-        const out: Row = stripDropped({ ...r, domain: r.domain ? toDomain(String(r.domain)) : r.domain, country: normalizeCountry(r.country ? String(r.country) : null), source: (r.source ? String(r.source).trim() : "") || "CSV Upload" });
+        const out: Row = stripDropped({ ...r, domain: r.domain ? toDomain(String(r.domain)) : r.domain, country: normalizeCountry(r.country ? String(r.country) : null), source: (r.source ? String(r.source).trim() : "") || "CSV Upload", vertical: (r.vertical ? String(r.vertical).trim() : "") || fallbackVertical });
         if (r.email_status && r.email) {
           out.email_status = String(r.email_status).toLowerCase().trim();
           out.validated_at = new Date().toISOString();
@@ -134,7 +143,7 @@ async function handleUpload(body: UploadBody): Promise<{ status: number; body: R
       }).filter((r) => r.email || r.first_name || r.last_name || r.company_name)
     : rows.map((r) => {
         const domain = r.domain ? toDomain(String(r.domain)) : r.domain;
-        return stripDropped({ ...r, domain, name: r.name || domain || null, country: normalizeCountry(r.country ? String(r.country) : null), source: (r.source ? String(r.source).trim() : "") || "CSV Upload" });
+        return stripDropped({ ...r, domain, name: r.name || domain || null, country: normalizeCountry(r.country ? String(r.country) : null), source: (r.source ? String(r.source).trim() : "") || "CSV Upload", vertical: (r.vertical ? String(r.vertical).trim() : "") || fallbackVertical });
       }).filter((r) => r.name);
 
   // Deduplicate rows (used in both upload and post-processing)
@@ -482,25 +491,26 @@ async function handleUpload(body: UploadBody): Promise<{ status: number; body: R
   if (table === "contacts") {
     // Step 1: collect unique (company_name, website) pairs from uploaded contacts that have both
     // fields and no existing account with that name.
-    const candidates: { name: string; website: string }[] = [];
+    const candidates: { name: string; website: string; vertical: string }[] = [];
     const seen = new Set<string>();
     for (const r of dedupedRows) {
       const name = String(r.company_name || "").trim();
       const website = String((r as unknown as { company_website?: string }).company_website || r.website || "").trim();
       if (!name || !website) continue;
       const key = name.toLowerCase();
-      if (!seen.has(key)) { seen.add(key); candidates.push({ name, website }); }
+      // Every contact row is guaranteed a real vertical by this point (cleanRows fell back to
+      // the batch's vertical) — this placeholder account inherits the SAME contact's vertical
+      // instead of hardcoding blank, which is what previously left auto-created accounts
+      // "unassigned" even though the contacts uploaded alongside them had a real vertical.
+      if (!seen.has(key)) { seen.add(key); candidates.push({ name, website, vertical: String(r.vertical || fallbackVertical) }); }
     }
 
     if (candidates.length) {
       try {
-        // Insert only where no account with that name already exists (upsert on domain,vertical).
-        // vertical is explicitly "" (not omitted/null) — a bare NULL vertical would never conflict
-        // with itself on repeat runs and silently duplicate this placeholder row every time.
         const newAccounts = candidates.map((c) => ({
           name: c.name,
           domain: toDomain(c.website),
-          vertical: "",
+          vertical: c.vertical,
           source: "CSV Upload",
         }));
         const ACHUNK = 200;
