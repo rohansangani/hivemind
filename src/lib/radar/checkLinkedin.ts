@@ -23,6 +23,11 @@ export interface LinkedInCheckResult {
   uncertain?: boolean;
   created?: boolean;
   error?: string;
+  /** The FULL, unprocessed Apify item for this profile — every field the scraper actually
+   * returned (experience, education, skills, location, etc.), not just what we parse above. Kept
+   * so CSV export can hand back everything Apify gave, while the on-page preview table still only
+   * shows the curated fields. */
+  raw?: Record<string, unknown>;
 }
 
 export interface LinkedInCheckSummary {
@@ -120,6 +125,7 @@ export async function runLinkedInCheck(urls: string[], mode: string | undefined,
         firstName: null, lastName: null, headline: null, company: null, email: null,
         dbCompany: null, dbContactId: null, match: null,
         error: item?.error || "Profile not found",
+        raw: item as unknown as Record<string, unknown>,
       });
       continue;
     }
@@ -130,6 +136,7 @@ export async function runLinkedInCheck(urls: string[], mode: string | undefined,
       linkedinUrl, firstName: item.firstName || null, lastName: item.lastName || null,
       headline: item.headline || null, company, email,
       dbCompany: null, dbContactId: null, match: null, uncertain: false,
+      raw: item as unknown as Record<string, unknown>,
     };
     // Stored linkedin_url values have no https:// prefix and inconsistent trailing slashes, so an
     // exact match against Apify's full URL would never hit — match on the public identifier slug

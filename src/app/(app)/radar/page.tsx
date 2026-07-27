@@ -974,11 +974,19 @@ function today(): string {
 }
 
 /** Downloads an arbitrary array of flat row objects as a CSV — used for
- * "export selected" actions where the rows are already loaded client-side. */
+ * "export selected" actions where the rows are already loaded client-side.
+ * Columns are the UNION of every row's keys (in first-seen order), not just row[0]'s — rows built
+ * from raw, per-item API responses (e.g. Check LinkedIn's "export everything Apify returned") can
+ * legitimately have different fields from one row to the next. */
 function downloadCSV<T extends object>(rows: T[], filename: string) {
   if (!rows.length) return;
-  const cols = Object.keys(rows[0]);
-  const esc = (v: unknown) => `"${(v ?? "").toString().replace(/"/g, '""')}"`;
+  const cols: string[] = [];
+  const seen = new Set<string>();
+  for (const r of rows) for (const k of Object.keys(r)) if (!seen.has(k)) { seen.add(k); cols.push(k); }
+  const esc = (v: unknown) => {
+    const s = v == null ? "" : typeof v === "object" ? JSON.stringify(v) : String(v);
+    return `"${s.replace(/"/g, '""')}"`;
+  };
   const lines = [cols.join(",")];
   for (const r of rows) lines.push(cols.map((c) => esc((r as Record<string, unknown>)[c])).join(","));
   const blob = new Blob([lines.join("\n")], { type: "text/csv" });
@@ -3375,6 +3383,9 @@ interface LinkedInCheckRow {
   uncertain?: boolean;
   error?: string;
   created?: boolean;
+  /** Full raw Apify item — only used for "export everything Apify returned" CSVs, never shown
+   * in the on-page preview table. */
+  raw?: Record<string, unknown>;
 }
 
 interface LinkedInCompanyCheckRow {
@@ -3389,6 +3400,7 @@ interface LinkedInCompanyCheckRow {
   uncertain?: boolean;
   error?: string;
   created?: boolean;
+  raw?: Record<string, unknown>;
 }
 
 interface PersonInput {
@@ -4625,10 +4637,12 @@ function ValidateSection() {
                         <span className="text-[var(--hm-text-tertiary)]">— {linkedinSummary.notFound} profile(s) not found</span>
                         <button
                           onClick={() => downloadCSV(linkedinResults.map((r) => ({
-                            first_name: r.firstName, last_name: r.lastName, linkedin_url: r.linkedinUrl,
-                            current_company: r.company, db_company: r.dbCompany,
-                            status: r.error ? "not found" : r.uncertain ? "uncertain — needs review" : r.match === true ? "same company" : r.match === false ? "different company (marked moved)" : r.created ? "created" : "no db match",
-                            ...(linkedinScrapeMode === "email" ? { email: r.email } : {}),
+                            // Full raw Apify response first (every field the scraper returned —
+                            // experience, education, skills, location, etc.), then our own
+                            // DB-match verdict columns appended after.
+                            ...(r.raw || {}),
+                            db_company: r.dbCompany,
+                            db_match_status: r.error ? "not found" : r.uncertain ? "uncertain — needs review" : r.match === true ? "same company" : r.match === false ? "different company (marked moved)" : r.created ? "created" : "no db match",
                           })), `radar_linkedin_check_${today()}.csv`)}
                           className="hm-btn hm-btn-secondary ml-auto"
                           style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}
@@ -4649,9 +4663,11 @@ function ValidateSection() {
                         <span className="text-[var(--hm-text-tertiary)]">— {linkedinSummary.notFound} compan(ies) not found</span>
                         <button
                           onClick={() => downloadCSV(linkedinCompanyResults.map((r) => ({
-                            name: r.name, linkedin_url: r.linkedinUrl, website: r.website, domain: r.domain,
-                            employee_count: r.employeeCount, db_domain: r.dbDomain,
-                            status: r.error ? "not found" : r.uncertain ? "uncertain — no website found" : r.match === true ? "same domain" : r.match === false ? "different domain" : r.created ? "created" : "no db match",
+                            // Full raw Apify response first (locations, industries, specialities,
+                            // fundingData, etc.), then our own DB-match verdict columns after.
+                            ...(r.raw || {}),
+                            db_domain: r.dbDomain,
+                            db_match_status: r.error ? "not found" : r.uncertain ? "uncertain — no website found" : r.match === true ? "same domain" : r.match === false ? "different domain" : r.created ? "created" : "no db match",
                           })), `radar_linkedin_company_check_${today()}.csv`)}
                           className="hm-btn hm-btn-secondary ml-auto"
                           style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}

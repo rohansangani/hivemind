@@ -29,6 +29,11 @@ export interface LinkedInCompanyCheckResult {
   uncertain?: boolean;
   created?: boolean;
   error?: string;
+  /** The FULL, unprocessed Apify item — every field the scraper actually returned (locations,
+   * industries, specialities, fundingData, etc.), not just what we parse/persist above. Kept so
+   * CSV export can hand back everything Apify gave, while the on-page preview table still only
+   * shows the curated fields. */
+  raw?: Record<string, unknown>;
 }
 
 export interface LinkedInCompanyCheckSummary {
@@ -196,6 +201,7 @@ export async function runLinkedInCompanyCheck(urls: string[], vertical: string):
         name: null, website: null, domain: null, employeeCount: null,
         dbDomain: null, dbAccountId: null, match: null,
         error: item?.error || "Company not found",
+        raw: item as unknown as Record<string, unknown>,
       });
       continue;
     }
@@ -206,6 +212,7 @@ export async function runLinkedInCompanyCheck(urls: string[], vertical: string):
       linkedinUrl, name: item.name || null, website: item.website || null,
       domain, employeeCount: item.employeeCount ?? null,
       dbDomain: null, dbAccountId: null, match: null, uncertain: false,
+      raw: item as unknown as Record<string, unknown>,
     };
 
     // Stored account linkedin_url values are inconsistently shaped (with/without protocol, www,
