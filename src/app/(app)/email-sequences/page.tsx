@@ -435,9 +435,12 @@ export default function EmailSequencesPage() {
   // all the way through instead of the job and the campaign drifting apart under different names.
   const [campaignTitle, setCampaignTitle] = useState("");
 
-  // Send via Instantly
+  // Send via Instantly or lemlist — same generated sequence, two possible destinations.
+  const [sendProvider, setSendProvider] = useState<"instantly" | "lemlist">("instantly");
   const [mailboxTags, setMailboxTags] = useState<Array<{ id: string; label: string }>>([]);
   const [mailboxTag, setMailboxTag] = useState("");
+  const [lemlistSenders, setLemlistSenders] = useState<Array<{ id: string; label: string }>>([]);
+  const [lemlistSenderId, setLemlistSenderId] = useState("");
   const [sending, setSending] = useState(false);
   const [showSendConfirm, setShowSendConfirm] = useState(false);
   const [sendError, setSendError] = useState("");
@@ -465,6 +468,7 @@ export default function EmailSequencesPage() {
   // Mailbox tags for "Send via Instantly" — lazy-loaded only once results exist, not on every
   // page load, since most visits never reach the send step.
   const [tagsLoaded, setTagsLoaded] = useState(false);
+  const [lemlistSendersLoaded, setLemlistSendersLoaded] = useState(false);
   const loadMailboxTags = useCallback(async () => {
     if (tagsLoaded) return;
     setTagsLoaded(true);
@@ -477,12 +481,25 @@ export default function EmailSequencesPage() {
     } catch { /* ignore */ }
   }, [tagsLoaded]);
 
+  const loadLemlistSenders = useCallback(async () => {
+    if (lemlistSendersLoaded) return;
+    setLemlistSendersLoaded(true);
+    try {
+      const res = await fetch("/api/email-sequences/senders-lemlist", { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        setLemlistSenders(data.senders || []);
+      }
+    } catch { /* ignore */ }
+  }, [lemlistSendersLoaded]);
+
   const sendableProspects = results.filter(r => r.prospect?.email && r.sequence?.emails?.length);
 
   // Opens the confirmation modal after validating — the actual create happens in confirmSend.
   const sendCampaign = () => {
     setSendError("");
-    if (!mailboxTag) { setSendError("Select a mailbox tag to send from"); return; }
+    if (sendProvider === "instantly" && !mailboxTag) { setSendError("Select a mailbox tag to send from"); return; }
+    if (sendProvider === "lemlist" && !lemlistSenderId) { setSendError("Select a sender to send from"); return; }
     if (!sendableProspects.length) { setSendError("No prospects with an email address to send to"); return; }
     if (mode === "bulk" && !campaignTitle.trim()) { setSendError("Give this batch a campaign title first"); return; }
     setShowSendConfirm(true);
@@ -494,11 +511,13 @@ export default function EmailSequencesPage() {
     setSending(true);
     setSendResult(null);
     try {
-      const res = await fetch("/api/email-sequences/send", {
+      const endpoint = sendProvider === "lemlist" ? "/api/email-sequences/send-lemlist" : "/api/email-sequences/send";
+      const providerBody = sendProvider === "lemlist" ? { senderId: lemlistSenderId } : { mailboxTag };
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          results: sendableProspects, mailboxTag, skipDuplicates,
+          results: sendableProspects, ...providerBody, skipDuplicates,
           campaignName: campaignTitle.trim() || undefined,
           personalization: personalizationTags.includes("personalization") ? personalizationText : undefined,
         }),
@@ -810,7 +829,7 @@ export default function EmailSequencesPage() {
       <Modal
         open={showSendConfirm}
         onClose={() => setShowSendConfirm(false)}
-        title="Create Instantly campaign"
+        title={sendProvider === "lemlist" ? "Create lemlist campaign" : "Create Instantly campaign"}
         footer={
           <>
             <Button variant="secondary" onClick={() => setShowSendConfirm(false)}>Cancel</Button>
@@ -820,13 +839,17 @@ export default function EmailSequencesPage() {
       >
         <div className="space-y-3">
           <p className="text-[var(--hm-text-secondary)]">
-            This creates a campaign in Instantly and adds{" "}
+            This creates a campaign in {sendProvider === "lemlist" ? "lemlist" : "Instantly"} and adds{" "}
             <span className="font-medium text-[var(--hm-text)]">{sendableProspects.length} prospect{sendableProspects.length !== 1 ? "s" : ""}</span> with a verified email.
           </p>
           <dl className="rounded-lg border border-[var(--hm-border)] divide-y divide-[var(--hm-border)] overflow-hidden">
             <div className="flex items-center justify-between px-3 py-2">
               <dt className="text-[var(--hm-text-tertiary)]">Send from</dt>
-              <dd className="font-medium text-[var(--hm-text)]">{mailboxTags.find(t => t.id === mailboxTag)?.label || mailboxTag}</dd>
+              <dd className="font-medium text-[var(--hm-text)]">
+                {sendProvider === "lemlist"
+                  ? (lemlistSenders.find(s => s.id === lemlistSenderId)?.label || lemlistSenderId)
+                  : (mailboxTags.find(t => t.id === mailboxTag)?.label || mailboxTag)}
+              </dd>
             </div>
             <div className="flex items-center justify-between px-3 py-2">
               <dt className="text-[var(--hm-text-tertiary)]">Duplicates already in workspace</dt>
@@ -834,7 +857,7 @@ export default function EmailSequencesPage() {
             </div>
           </dl>
           <p className="text-[var(--hm-text-tertiary)] text-[12px]">
-            It will <span className="font-medium text-[var(--hm-text-secondary)]">not</span> be launched automatically — you review the timing and launch it yourself from Instantly.
+            It will <span className="font-medium text-[var(--hm-text-secondary)]">not</span> be launched automatically — you review the timing and launch it yourself from {sendProvider === "lemlist" ? "lemlist" : "Instantly"}.
           </p>
         </div>
       </Modal>
@@ -991,23 +1014,44 @@ export default function EmailSequencesPage() {
               Creates the campaign + adds leads but does NOT activate it — the user reviews/adjusts
               timing and launches it themselves from Instantly's own UI. */}
           {sendableProspects.length > 0 && (() => {
-            if (!tagsLoaded) loadMailboxTags();
+            if (sendProvider === "instantly" && !tagsLoaded) loadMailboxTags();
+            if (sendProvider === "lemlist" && !lemlistSendersLoaded) loadLemlistSenders();
+            const destReady = sendProvider === "lemlist" ? !!lemlistSenderId : !!mailboxTag;
             return (
               <div className="flex items-center gap-3 mb-5 p-3 rounded-lg border border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] flex-wrap">
-                <span className="text-[12.5px] font-medium text-[var(--hm-text)] whitespace-nowrap">Send via Instantly</span>
+                <span className="text-[12.5px] font-medium text-[var(--hm-text)] whitespace-nowrap">Send via</span>
                 <select
-                  value={mailboxTag}
-                  onChange={(e) => setMailboxTag(e.target.value)}
+                  value={sendProvider}
+                  onChange={(e) => { setSendProvider(e.target.value as "instantly" | "lemlist"); setSendError(""); setSendResult(null); }}
                   className="h-[32px] px-2 rounded-lg border border-[var(--hm-border)] text-[12.5px] bg-[var(--hm-surface)]"
                 >
-                  <option value="">— Select mailbox tag —</option>
-                  {mailboxTags.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+                  <option value="instantly">Instantly</option>
+                  <option value="lemlist">lemlist</option>
                 </select>
+                {sendProvider === "lemlist" ? (
+                  <select
+                    value={lemlistSenderId}
+                    onChange={(e) => setLemlistSenderId(e.target.value)}
+                    className="h-[32px] px-2 rounded-lg border border-[var(--hm-border)] text-[12.5px] bg-[var(--hm-surface)]"
+                  >
+                    <option value="">— Select sender —</option>
+                    {lemlistSenders.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+                  </select>
+                ) : (
+                  <select
+                    value={mailboxTag}
+                    onChange={(e) => setMailboxTag(e.target.value)}
+                    className="h-[32px] px-2 rounded-lg border border-[var(--hm-border)] text-[12.5px] bg-[var(--hm-surface)]"
+                  >
+                    <option value="">— Select mailbox tag —</option>
+                    {mailboxTags.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+                  </select>
+                )}
                 <label className="flex items-center gap-1.5 text-[12px] text-[var(--hm-text-secondary)] cursor-pointer whitespace-nowrap" title="Skip a prospect if their email already exists in another campaign/list anywhere in the workspace, instead of adding them again">
                   <input type="checkbox" checked={skipDuplicates} onChange={e => setSkipDuplicates(e.target.checked)} />
                   Skip duplicates already in workspace
                 </label>
-                <button onClick={sendCampaign} disabled={sending || !mailboxTag} className={btnPrimary + " flex items-center gap-2"} style={{ opacity: sending || !mailboxTag ? 0.6 : 1 }}>
+                <button onClick={sendCampaign} disabled={sending || !destReady} className={btnPrimary + " flex items-center gap-2"} style={{ opacity: sending || !destReady ? 0.6 : 1 }}>
                   {sending ? (
                     <>
                       <svg className="animate-spin" width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="white" strokeWidth="2" opacity="0.3"/><path d="M14 8a6 6 0 00-6-6" stroke="white" strokeWidth="2" strokeLinecap="round"/></svg>
@@ -1019,13 +1063,13 @@ export default function EmailSequencesPage() {
                 </button>
                 {sending && (
                   <span className="text-[12px] text-[var(--hm-text-tertiary)]">
-                    Creating the campaign in Instantly and adding {sendableProspects.length} lead{sendableProspects.length !== 1 ? "s" : ""} — this can take up to a minute, don&apos;t close this tab.
+                    Creating the campaign in {sendProvider === "lemlist" ? "lemlist" : "Instantly"} and adding {sendableProspects.length} lead{sendableProspects.length !== 1 ? "s" : ""} — this can take up to a minute, don&apos;t close this tab.
                   </span>
                 )}
                 {sendError && <span className="text-[12px] text-[var(--hm-danger)]">{sendError}</span>}
                 {sendResult && (
                   <span className="text-[12px] text-[var(--hm-success)]">
-                    ✓ Campaign created (not yet launched) — {sendResult.added}/{sendResult.total} added{sendResult.failed > 0 ? `, ${sendResult.failed} failed` : ""} across {sendResult.senders} mailbox(es). Review timing and launch it from Instantly.
+                    ✓ Campaign created (not yet launched) — {sendResult.added}/{sendResult.total} added{sendResult.failed > 0 ? `, ${sendResult.failed} failed` : ""}{sendProvider === "instantly" ? ` across ${sendResult.senders} mailbox(es)` : ""}. Review timing and launch it from {sendProvider === "lemlist" ? "lemlist" : "Instantly"}.
                   </span>
                 )}
               </div>

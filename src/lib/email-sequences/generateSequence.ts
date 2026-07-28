@@ -138,7 +138,29 @@ function ensureCompanyInSubject(subject: string, companyRef: string): string {
   if (!companyRef) return subject;
   const bareName = companyRef.replace(/[{}]/g, "");
   if (subject.toLowerCase().includes(bareName.toLowerCase())) return subject;
-  return `${companyRef} — ${subject}`;
+  return `${companyRef}: ${subject}`;
+}
+
+/** Deterministic guarantee: the "no em-dashes" prompt instruction wasn't holding reliably (the
+ * model still slips them in, and `ensureCompanyInSubject` used to inject one itself). Replaces
+ * every em-dash (and the em-dash-like " -- " / spaced hyphen a model sometimes substitutes) with
+ * a comma when it's joining a clause, or a period when it's closing a thought — a plain hyphen
+ * swap reads wrong in both cases, so pick by what follows: a lowercase continuation gets a comma,
+ * anything else gets a period. */
+function stripEmDashes(text: string): string {
+  if (!/[—–]/.test(text) && !/\s-{1,2}\s/.test(text)) return text;
+  return text
+    .replace(/\s*[—–]\s*/g, (_m, offset, str) => {
+      const rest = str.slice(offset + _m.length);
+      return /^[a-z]/.test(rest) ? ", " : ". ";
+    })
+    .replace(/\s-{2}\s/g, (_m, offset, str) => {
+      const rest = str.slice(offset + _m.length);
+      return /^[a-z]/.test(rest) ? ", " : ". ";
+    })
+    .replace(/\s{2,}/g, " ")
+    .replace(/([,.])\s*\./g, "$1")
+    .trim();
 }
 
 export async function generateSequenceForProspect({
@@ -409,7 +431,8 @@ Return ONLY valid JSON, no markdown or explanation.`;
   if (Array.isArray(parsed?.emails)) {
     parsed.emails = parsed.emails.map((email: { subject: string; body: string }) => ({
       ...email,
-      subject: ensureCompanyInSubject(stripNumbersFromSubject(email.subject), companyRef),
+      subject: stripEmDashes(ensureCompanyInSubject(stripNumbersFromSubject(email.subject), companyRef)),
+      body: stripEmDashes(email.body),
     }));
   }
 
