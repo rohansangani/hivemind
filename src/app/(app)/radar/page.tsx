@@ -4488,7 +4488,7 @@ function ValidateSection() {
                           onClick={() => { setLinkedinCheckType(t); setLinkedinUrlsText(""); setError(""); }}
                           className={`text-[12px] px-3 py-1.5 rounded-lg border font-medium transition-colors ${linkedinCheckType === t ? "border-[var(--hm-primary)] bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]" : "border-[var(--hm-border)] text-[var(--hm-text-secondary)]"}`}
                         >
-                          {t === "profile" ? "Profile" : "Company"}
+                          {t === "profile" ? "Contact" : "Company"}
                         </button>
                       ))}
                     </div>
