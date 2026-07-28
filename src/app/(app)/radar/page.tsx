@@ -60,9 +60,7 @@ export default function RadarPage() {
   // of Accounts, Contacts, Validate, Upload, ICP, or Enrich. "edit" sees everything.
   const viewOnly = modulePermissions.radar === "view";
   const visibleSections = (viewOnly ? SECTIONS.filter((s) => s.id === "dashboard" || s.id === "export") : SECTIONS)
-    .filter((s) => s.id !== "logs" || isAdmin)
-    // Hidden for now, per explicit request — not removed, just kept out of the visible tab list.
-    .filter((s) => s.id !== "icp");
+    .filter((s) => s.id !== "logs" || isAdmin);
 
   useEffect(() => {
     if (viewOnly && active !== "dashboard" && active !== "export") setActive("dashboard");
