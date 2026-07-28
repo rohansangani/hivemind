@@ -900,6 +900,7 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
     if (!overrideAction && auth !== `Bearer ${CRON_SECRET}`) return { status: 401, body: { error: "Unauthorized" } };
     await radarSql(`ALTER TABLE email_validation_jobs ADD COLUMN IF NOT EXISTS resolved_at timestamptz`);
     await radarSql(`ALTER TABLE email_validation_jobs ADD COLUMN IF NOT EXISTS check_cursor text`);
+    await radarSql(`ALTER TABLE email_validation_jobs ADD COLUMN IF NOT EXISTS last_checked_at timestamptz`);
 
     const jobRows = await radarSql<{ job_id: number }>(`
       SELECT DISTINCT c.job_id FROM email_validation_candidates c
@@ -909,7 +910,7 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
           c.bounce_status = 'pending'
           OR (c.bounce_status = 'valid' AND c.saved_to_contacts = true AND j.resolved_at >= now() - interval '72 hours')
         )
-      ORDER BY c.job_id DESC
+      ORDER BY j.last_checked_at ASC NULLS FIRST, c.job_id DESC
       LIMIT 15
     `);
 
@@ -919,6 +920,16 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
     // job further down the list never gets a turn, tick after tick (confirmed live: a 2,730-lead
     // job sat completely untouched — cursor still null, counts frozen — across several real ticks
     // while two other eligible jobs consumed the whole budget first every single time).
+    //
+    // That per-job time BUDGET only ever bounded the Instantly pagination call though — the
+    // several sequential Management-API round trips every job makes regardless of its own size
+    // (SELECT campaign_id, UPDATE cursor, applyLeadStatuses' SELECT+UPDATE, totals SELECT, status
+    // UPDATE) cost real wall-clock on their own, and with a STATIC `ORDER BY job_id DESC`, if those
+    // round trips alone ate most of a 26s tick across just 4 jobs, the same lowest-id job(s) got
+    // skipped on EVERY tick forever, not just once (confirmed live: jobs 110/111 skipped on repeat
+    // real ticks while 116/115/114/112 always ran first). ORDER BY last_checked_at now rotates
+    // priority to whichever eligible job has gone longest without an actual turn, so a
+    // budget-starved job stops being starved specifically because it was starved.
     const TOTAL_BUDGET_MS = 26000;
     const startedAt = Date.now();
     const results: Record<string, unknown>[] = [];
@@ -933,7 +944,9 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
         if (!j?.campaign_id) continue;
 
         const r = await pageInstantlyLeads(j.campaign_id, j.check_cursor ?? null, Math.max(2000, perJobBudget - (Date.now() - jobStartedAt) - 3000));
-        await radarSql(`UPDATE email_validation_jobs SET check_cursor = ${r.nextCursor ? `'${esc(r.nextCursor)}'` : "NULL"} WHERE id = ${jid}`);
+        // last_checked_at only gets bumped for a job that actually ran (not one skipped above by
+        // the time-budget check) — that's what lets a starved job rotate to the front next tick.
+        await radarSql(`UPDATE email_validation_jobs SET check_cursor = ${r.nextCursor ? `'${esc(r.nextCursor)}'` : "NULL"}, last_checked_at = now() WHERE id = ${jid}`);
 
         const { updated, feedback, delayedBounceEmails } = await applyLeadStatuses(jid, r.statusByEmail);
         if (delayedBounceEmails.length) {
