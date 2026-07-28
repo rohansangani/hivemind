@@ -1234,6 +1234,18 @@ export default function EmailSequencesPage() {
                   <label className={labelCls}>Industry</label>
                   <input className={inputCls} placeholder="E-commerce" value={prospect.industry} onChange={e => setProspect(p => ({ ...p, industry: e.target.value }))} />
                 </div>
+                {personalizationTags.includes("personalization") && (
+                  <div className="col-span-2">
+                    <label className={labelCls}>Personalization line *</label>
+                    <input
+                      className={inputCls}
+                      placeholder="e.g. Saw your team just launched the new warehouse in Austin"
+                      value={prospect.personalization || ""}
+                      onChange={e => setProspect(p => ({ ...p, personalization: e.target.value }))}
+                    />
+                    <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-1">You checked "Personalization" above, so the sequence writes {"{{personalization}}"} instead of a real opening line — this is what fills it in when you send.</p>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -1278,8 +1290,16 @@ export default function EmailSequencesPage() {
 
                   {/* Column mapping */}
                   <div className={labelCls + " mb-2"}>Map Columns</div>
+                  {personalizationTags.includes("personalization") && (
+                    <p className="text-[11px] text-[var(--hm-text-tertiary)] -mt-1 mb-2">
+                      You checked "Personalization" above — map a column with each lead&apos;s pre-written opening line below, or {"{{personalization}}"} will go out unresolved.
+                    </p>
+                  )}
                   <div className="grid grid-cols-3 gap-2 mb-3">
-                    {(["name", "company", "website", "title", "email", "industry"] as const).map(field => (
+                    {[
+                      "name", "company", "website", "title", "email", "industry",
+                      ...(personalizationTags.includes("personalization") ? ["personalization"] : []),
+                    ].map(field => (
                       <div key={field}>
                         <label className="text-[10px] text-[var(--hm-text-tertiary)] uppercase">{field}</label>
                         <select

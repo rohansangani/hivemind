@@ -143,6 +143,10 @@ export async function POST(req: NextRequest) {
         if (i === 0 || !isSingleSubject) customVariables[`step${i + 1}Subject`] = e.subject;
         customVariables[`step${i + 1}Body`] = e.body;
       });
+      // Only meaningful when the "Personalization" tag was selected at generation time (the
+      // sequence text then contains a literal "{{personalization}}" instead of a real line) — the
+      // per-lead value comes from a CSV column (bulk mode) or the single-prospect form field.
+      if (r.prospect!.personalization) customVariables.personalization = r.prospect!.personalization;
       const nameParts = (r.prospect!.name || "").trim().split(/\s+/);
       try {
         const lead = await instantly<{ id?: string }>("/leads", {
