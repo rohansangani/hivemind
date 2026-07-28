@@ -82,7 +82,14 @@ async function applyLeadStatuses(jobId: number, statusByEmail: Record<string, nu
       feedback[k] = feedback[k] || { domain: dom, type: c.pattern_type, valid: 0, bounced: 0 };
       if (bs === "valid") feedback[k].valid++; else feedback[k].bounced++;
     }
-    if (bs === "bounced" && c.bounce_status === "valid" && c.saved_to_contacts) delayedBounceEmails.push(c.pattern_email);
+    // Any transition TO bounced downgrades an already-saved contact, not just valid->bounced —
+    // saved_to_contacts can be true while the local bounce_status was still "pending" (e.g. a job
+    // whose save step ran before its own bounce check ever fully resolved, confirmed live: a job
+    // stuck starved of check_all turns for days had saved_to_contacts=true on candidates that were
+    // still "pending" locally). Requiring the OLD status be exactly "valid" missed that entire
+    // class of delayed bounce, silently leaving contacts saying "verified" for an email that had
+    // already bounced.
+    if (bs === "bounced" && c.bounce_status !== "bounced" && c.saved_to_contacts) delayedBounceEmails.push(c.pattern_email);
   }
   if (updates.length) await radarSql(`UPDATE email_validation_candidates AS c SET bounce_status = v.bs FROM (VALUES ${updates.join(",")}) AS v(id, bs) WHERE c.id = v.id::bigint`);
   return { updated: updates.length, feedback, delayedBounceEmails };
