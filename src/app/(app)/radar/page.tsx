@@ -3199,11 +3199,57 @@ function EnrichSection() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Job titles include</label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-[12px] font-medium text-[var(--hm-text-secondary)]">Job titles include</label>
+                  <label className="text-[11px] text-[var(--hm-link)] cursor-pointer" title="Upload a CSV of titles (one per row, or a single comma-separated row) — added to whatever's already here">
+                    Upload CSV
+                    <input
+                      type="file"
+                      accept=".csv,text/csv"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = "";
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = (ev) => {
+                          const uploaded = extractTitlesFromCsv(String(ev.target?.result || ""));
+                          if (!uploaded.length) return;
+                          const existing = titles ? titles.split(",").map((s) => s.trim()).filter(Boolean) : [];
+                          setTitles(Array.from(new Set([...existing, ...uploaded])).join(", "));
+                        };
+                        reader.readAsText(file);
+                      }}
+                      style={{ display: "none" }}
+                    />
+                  </label>
+                </div>
                 <input type="text" value={titles} onChange={(e) => setTitles(e.target.value)} placeholder="VP Operations, Director" />
               </div>
               <div>
-                <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Job titles exclude</label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-[12px] font-medium text-[var(--hm-text-secondary)]">Job titles exclude</label>
+                  <label className="text-[11px] text-[var(--hm-link)] cursor-pointer" title="Upload a CSV of titles (one per row, or a single comma-separated row) — added to whatever's already here">
+                    Upload CSV
+                    <input
+                      type="file"
+                      accept=".csv,text/csv"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = "";
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = (ev) => {
+                          const uploaded = extractTitlesFromCsv(String(ev.target?.result || ""));
+                          if (!uploaded.length) return;
+                          const existing = notTitles ? notTitles.split(",").map((s) => s.trim()).filter(Boolean) : [];
+                          setNotTitles(Array.from(new Set([...existing, ...uploaded])).join(", "));
+                        };
+                        reader.readAsText(file);
+                      }}
+                      style={{ display: "none" }}
+                    />
+                  </label>
+                </div>
                 <input type="text" value={notTitles} onChange={(e) => setNotTitles(e.target.value)} placeholder="Intern, Assistant" />
               </div>
               <div>
