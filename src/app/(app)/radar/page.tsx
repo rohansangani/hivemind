@@ -2624,12 +2624,18 @@ interface EnrichLead {
   last_name: string | null;
   full_name: string | null;
   email: string | null;
+  personal_email: string | null;
   title: string | null;
   company_name: string | null;
   linkedin_url: string | null;
   phone: string | null;
+  mobile_number: string | null;
   country: string | null;
   location: string | null;
+  // Untouched Apify item — carried alongside the trimmed fields above so CSV export can flatten
+  // every field the actor returned (company financials, tech stack, addresses, etc.) into readable
+  // columns, same pattern as Check LinkedIn's export.
+  raw?: Record<string, unknown>;
 }
 
 interface ExistingContact {
@@ -3040,7 +3046,10 @@ function EnrichSection() {
       for (const r of newRows) {
         const email = String((r as Record<string, unknown>).email || "").toLowerCase();
         if (!email || merged.has(email)) continue;
-        merged.set(email, { ...r, validated_at: null, source: "new" });
+        const { raw, ...rest } = r as Record<string, unknown>;
+        // Flatten the raw Apify item into readable columns instead of leaving it as a nested
+        // object that downloadCSV would otherwise JSON-stringify into a single unreadable cell.
+        merged.set(email, { ...rest, ...(raw ? flattenForCsv(raw) : {}), validated_at: null, source: "new" });
       }
 
       const toExport = [...merged.values()];
@@ -3063,17 +3072,13 @@ function EnrichSection() {
     if (!leads.length) return;
     const rows = leads.filter((_, i) => selected.has(i));
     if (!rows.length) return;
-    const cols = ["full_name", "first_name", "last_name", "title", "company_name", "email", "phone", "linkedin_url", "location", "country"] as const;
-    const esc = (v: unknown) => `"${(v ?? "").toString().replace(/"/g, '""')}"`;
-    const lines = [cols.join(",")];
-    rows.forEach((r) => lines.push(cols.map((c) => esc(r[c as keyof EnrichLead])).join(",")));
-    const blob = new Blob([lines.join("\n")], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `enrich-${(jobLabel || "leads").toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    // Flattened Apify response first (every field the actor returned — mobile number, personal
+    // email, seniority, company financials/tech-stack/address, etc. — as readable columns, not a
+    // raw JSON blob), same pattern as Check LinkedIn's export.
+    downloadCSV(
+      rows.map((r) => flattenForCsv(r.raw || r)),
+      `enrich-${(jobLabel || "leads").toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${new Date().toISOString().slice(0, 10)}.csv`
+    );
   };
 
   const sortedLeads = [...leads].map((l, i) => ({ l, i })).sort((a, b) => {
@@ -3359,7 +3364,7 @@ function EnrichSection() {
                       <th className="px-4 py-2.5 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)]">
                         <input type="checkbox" checked={leads.length > 0 && selected.size === leads.length} onChange={toggleAllLeads} />
                       </th>
-                      {["Name", "Title", "Company", "Email", "LinkedIn", ...(Object.keys(scores).length ? ["ICP Fit"] : [])].map((h) => (
+                      {["Name", "Title", "Company", "Email", "Personal Email", "Mobile", "LinkedIn", ...(Object.keys(scores).length ? ["ICP Fit"] : [])].map((h) => (
                         <th key={h} className="text-left text-[11px] font-semibold uppercase tracking-wide text-[var(--hm-text-tertiary)] px-4 py-2.5 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] whitespace-nowrap">{h}</th>
                       ))}
                     </tr>
@@ -3376,6 +3381,8 @@ function EnrichSection() {
                           <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">{l.title || "—"}</td>
                           <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">{l.company_name || "—"}</td>
                           <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text-secondary)]">{l.email || "—"}</td>
+                          <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text-secondary)]">{l.personal_email || "—"}</td>
+                          <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text-secondary)]">{l.mobile_number || "—"}</td>
                           <td className="px-4 py-2.5 border-b border-[var(--hm-border-light)]">
                             {l.linkedin_url ? <a href={linkedinHref(l.linkedin_url)} target="_blank" rel="noreferrer" className="text-[var(--hm-link)]">Profile</a> : "—"}
                           </td>

@@ -262,12 +262,18 @@ async function handleAction(req: NextRequest, userEmail: string | null): Promise
       last_name: item.last_name || item.lastName || null,
       full_name: item.full_name || item.name || null,
       email: item.email || null,
+      personal_email: item.personal_email || null,
       title: item.job_title || item.title || null,
       company_name: item.company_name || item.company || null,
       linkedin_url: item.linkedin || item.linkedin_url || null,
       phone: item.mobile_number || item.phone || null,
+      mobile_number: item.mobile_number || null,
       country: item.country || null,
       location: item.city || item.location || null,
+      // Kept alongside the trimmed fields above (not a replacement) so the CSV export can flatten
+      // every Apify field into readable columns — same pattern as Check LinkedIn's export — without
+      // needing a second round-trip to the dataset just to get the fields the table doesn't show.
+      raw: item,
     })).filter((r) => r.email);
     return { status: 200, body: { items: mapped } };
   }
@@ -322,6 +328,7 @@ async function handleAction(req: NextRequest, userEmail: string | null): Promise
       first_name: it.first_name || null,
       last_name: it.last_name || null,
       email: it.email,
+      personal_email: it.personal_email || null,
       email_status: statuses[idx],
       title: it.job_title || it.title || null,
       company_name: it.company_name || null,
@@ -329,8 +336,10 @@ async function handleAction(req: NextRequest, userEmail: string | null): Promise
       industry: it.industry || null,
       linkedin_url: it.linkedin || it.linkedin_url || null,
       phone: it.mobile_number || it.phone || null,
+      mobile_number: it.mobile_number || null,
       location: it.city || null,
       country: it.country || null,
+      raw: it,
     }));
     await logRadarUsage(userEmail, "debounce", rows.length);
     return { status: 200, body: { rows, done: offset + batch.length >= scoped.length, next_offset: offset + batch.length, total: scoped.length } };
