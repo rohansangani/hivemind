@@ -30,6 +30,64 @@ const CRON_SECRET = "a3f5e8d1c9b2647fa0e5d8c4b7f21e6d9a3c5b8f1e4d7a0c3b6f9e2d5a8
 const esc = (s: unknown) => (s == null ? "" : String(s).replace(/'/g, "''"));
 const cleanDom = (d: string | null | undefined) => (d || "").toLowerCase().replace(/^https?:\/\/(www\.)?/, "").replace(/\/.*$/, "").trim();
 
+/** Pages through a campaign's Instantly leads, resuming from a previously-persisted cursor instead
+ * of always restarting at page 1. A large campaign (thousands of leads) can't be paginated fully
+ * within one request's time budget — without resuming, every tick re-scanned only the SAME
+ * reachable prefix of leads forever, and leads beyond that point were NEVER reached (confirmed
+ * live: two real jobs with 2,700 and 5,500+ leads stayed stuck at the same valid/bounced counts
+ * indefinitely). Returns nextCursor: null once a full pass completes (so the NEXT call starts a
+ * fresh pass, re-confirming everyone — needed to catch delayed bounces on already-seen leads). */
+async function pageInstantlyLeads(campaignId: string, cursor: string | null, budgetMs: number): Promise<{ statusByEmail: Record<string, number>; nextCursor: string | null }> {
+  const statusByEmail: Record<string, number> = {};
+  const startedAt = Date.now();
+  let startingAfter = cursor;
+  for (let i = 0; i < 300; i++) {
+    if (Date.now() - startedAt > budgetMs) return { statusByEmail, nextCursor: startingAfter };
+    const bodyObj: Record<string, unknown> = { campaign: campaignId, limit: 100 };
+    if (startingAfter) bodyObj.starting_after = startingAfter;
+    const page = await instantly<{ items?: { email?: string; status?: number }[]; next_starting_after?: string }>("/leads/list", { method: "POST", body: JSON.stringify(bodyObj) });
+    const items = page.items || [];
+    for (const it of items) statusByEmail[(it.email || "").toLowerCase()] = it.status ?? 0;
+    if (!page.next_starting_after || items.length === 0) return { statusByEmail, nextCursor: null };
+    startingAfter = page.next_starting_after;
+  }
+  return { statusByEmail, nextCursor: startingAfter };
+}
+
+/** Applies this tick's fetched lead statuses to the job's candidates — ONLY for candidates whose
+ * email was actually found in statusByEmail. Candidates outside this tick's reachable page range
+ * are left completely untouched (previously this unconditionally wrote 'pending' for every
+ * candidate not seen in the current, possibly-partial scan, silently REGRESSING already-resolved
+ * valid/bounced candidates back to pending on the very next tick — the real reason large campaigns
+ * never converged). Also flags "delayed bounces" (a lead marked valid/saved earlier that now shows
+ * bounced) and domain-pattern learning feedback, same as before. */
+async function applyLeadStatuses(jobId: number, statusByEmail: Record<string, number>): Promise<{
+  updated: number;
+  feedback: Record<string, { domain: string; type: string; valid: number; bounced: number }>;
+  delayedBounceEmails: string[];
+}> {
+  const feedback: Record<string, { domain: string; type: string; valid: number; bounced: number }> = {};
+  const delayedBounceEmails: string[] = [];
+  const cands = await radarSql<{ id: number; pattern_email: string; domain?: string; pattern_type?: string; bounce_status?: string; saved_to_contacts?: boolean }>(`SELECT id, pattern_email, domain, pattern_type, bounce_status, saved_to_contacts FROM email_validation_candidates WHERE job_id = ${jobId} AND instantly_lead_id IS NOT NULL`);
+  const updates: string[] = [];
+  for (const c of cands) {
+    const st = statusByEmail[(c.pattern_email || "").toLowerCase()];
+    if (st === undefined) continue; // not in this tick's reachable page range — leave as-is
+    const bs = st === -1 ? "bounced" : st === 3 ? "valid" : "pending";
+    if (bs === (c.bounce_status || "pending")) continue; // no change, skip the write
+    updates.push(`(${c.id}, '${bs}')`);
+    if ((bs === "valid" || bs === "bounced") && c.bounce_status === "pending" && c.pattern_type && c.pattern_type !== "ai-suggested") {
+      const dom = cleanDom(c.domain);
+      const k = `${dom}||${c.pattern_type}`;
+      feedback[k] = feedback[k] || { domain: dom, type: c.pattern_type, valid: 0, bounced: 0 };
+      if (bs === "valid") feedback[k].valid++; else feedback[k].bounced++;
+    }
+    if (bs === "bounced" && c.bounce_status === "valid" && c.saved_to_contacts) delayedBounceEmails.push(c.pattern_email);
+  }
+  if (updates.length) await radarSql(`UPDATE email_validation_candidates AS c SET bounce_status = v.bs FROM (VALUES ${updates.join(",")}) AS v(id, bs) WHERE c.id = v.id::bigint`);
+  return { updated: updates.length, feedback, delayedBounceEmails };
+}
+
 // Strip accents, lowercase, keep only [a-z0-9]
 function clean(s: string | null | undefined): string {
   if (!s) return "";
@@ -841,6 +899,7 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
     const auth = req.headers.get("authorization");
     if (!overrideAction && auth !== `Bearer ${CRON_SECRET}`) return { status: 401, body: { error: "Unauthorized" } };
     await radarSql(`ALTER TABLE email_validation_jobs ADD COLUMN IF NOT EXISTS resolved_at timestamptz`);
+    await radarSql(`ALTER TABLE email_validation_jobs ADD COLUMN IF NOT EXISTS check_cursor text`);
 
     const jobRows = await radarSql<{ job_id: number }>(`
       SELECT DISTINCT c.job_id FROM email_validation_candidates c
@@ -859,43 +918,13 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
     for (const { job_id: jid } of jobRows) {
       if (Date.now() - startedAt > 28000) { results.push({ jobId: jid, skipped: "time budget — will run next tick" }); continue; }
       try {
-        const j = (await radarSql<{ campaign_id?: string; vertical?: string }>(`SELECT campaign_id, vertical FROM email_validation_jobs WHERE id = ${jid}`))[0];
+        const j = (await radarSql<{ campaign_id?: string; vertical?: string; check_cursor?: string | null }>(`SELECT campaign_id, vertical, check_cursor FROM email_validation_jobs WHERE id = ${jid}`))[0];
         if (!j?.campaign_id) continue;
 
-        const statusByEmail: Record<string, number> = {};
-        let startingAfter: string | null = null;
-        for (let i = 0; i < 300; i++) {
-          if (Date.now() - startedAt > 25000) break;
-          const bodyObj: Record<string, unknown> = { campaign: j.campaign_id, limit: 100 };
-          if (startingAfter) bodyObj.starting_after = startingAfter;
-          const page = await instantly<{ items?: { email?: string; status?: number }[]; next_starting_after?: string }>("/leads/list", { method: "POST", body: JSON.stringify(bodyObj) });
-          const items = page.items || [];
-          for (const it of items) statusByEmail[(it.email || "").toLowerCase()] = it.status ?? 0;
-          if (!page.next_starting_after || items.length === 0) break;
-          startingAfter = page.next_starting_after;
-        }
+        const r = await pageInstantlyLeads(j.campaign_id, j.check_cursor ?? null, Date.now() - startedAt > 25000 ? 0 : 25000 - (Date.now() - startedAt));
+        await radarSql(`UPDATE email_validation_jobs SET check_cursor = ${r.nextCursor ? `'${esc(r.nextCursor)}'` : "NULL"} WHERE id = ${jid}`);
 
-        let bounced = 0, valid = 0, pending = 0;
-        const updates: string[] = [];
-        const feedback: Record<string, { domain: string; type: string; valid: number; bounced: number }> = {};
-        const delayedBounceEmails: string[] = [];
-        const cands = await radarSql<{ id: number; pattern_email: string; domain?: string; pattern_type?: string; bounce_status?: string; saved_to_contacts?: boolean }>(`SELECT id, pattern_email, domain, pattern_type, bounce_status, saved_to_contacts FROM email_validation_candidates WHERE job_id = ${jid} AND instantly_lead_id IS NOT NULL`);
-        for (const c of cands) {
-          const st = statusByEmail[(c.pattern_email || "").toLowerCase()];
-          let bs = "pending";
-          if (st === -1) { bs = "bounced"; bounced++; }
-          else if (st === 3) { bs = "valid"; valid++; }
-          else pending++;
-          updates.push(`(${c.id}, '${bs}')`);
-          if ((bs === "valid" || bs === "bounced") && c.bounce_status === "pending" && c.pattern_type && c.pattern_type !== "ai-suggested") {
-            const dom = cleanDom(c.domain);
-            const k = `${dom}||${c.pattern_type}`;
-            feedback[k] = feedback[k] || { domain: dom, type: c.pattern_type, valid: 0, bounced: 0 };
-            if (bs === "valid") feedback[k].valid++; else feedback[k].bounced++;
-          }
-          if (bs === "bounced" && c.bounce_status === "valid" && c.saved_to_contacts) delayedBounceEmails.push(c.pattern_email);
-        }
-        if (updates.length) await radarSql(`UPDATE email_validation_candidates AS c SET bounce_status = v.bs FROM (VALUES ${updates.join(",")}) AS v(id, bs) WHERE c.id = v.id::bigint`);
+        const { updated, feedback, delayedBounceEmails } = await applyLeadStatuses(jid, r.statusByEmail);
         if (delayedBounceEmails.length) {
           const emailsList = delayedBounceEmails.map((e) => `'${esc(e.toLowerCase())}'`).join(",");
           await radarSql(`UPDATE contacts SET email_status = 'invalid', validated_at = now() WHERE LOWER(email) IN (${emailsList}) AND email_status = 'verified'`).catch(() => {});
@@ -913,7 +942,19 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
           } catch { /* non-fatal */ }
         }
 
-        const allResolved = pending === 0;
+        // Cumulative counts across every candidate as currently stored — NOT just what this tick's
+        // (possibly partial, resumed-by-cursor) page scan touched, since most ticks only cover a
+        // slice of a large campaign's lead list.
+        const totals = (await radarSql<{ bounce_status: string; n: number }>(`SELECT bounce_status, count(*)::int AS n FROM email_validation_candidates WHERE job_id = ${jid} AND instantly_lead_id IS NOT NULL GROUP BY bounce_status`));
+        const bounced = totals.find((t) => t.bounce_status === "bounced")?.n ?? 0;
+        const valid = totals.find((t) => t.bounce_status === "valid")?.n ?? 0;
+        const pending = totals.find((t) => t.bounce_status === "pending")?.n ?? 0;
+
+        // Only "fully resolved" once every candidate has a final status AND we've made at least
+        // one complete pass over the campaign's lead list (cursor reset to null at the end of a
+        // pass) — otherwise a large campaign could look done just because this tick's partial scan
+        // happened to touch only already-resolved leads.
+        const allResolved = pending === 0 && !r.nextCursor;
         if (allResolved) await radarSql(`UPDATE email_validation_jobs SET status = 'checked', resolved_at = COALESCE(resolved_at, now()) WHERE id = ${jid}`);
 
         let saved = 0, savedInvalid = 0;
@@ -925,7 +966,7 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
             savedInvalid = row?.saved_invalid ?? 0;
           } catch { /* non-fatal — will retry next tick */ }
         }
-        results.push({ jobId: jid, bounced, valid, pending, delayedBounces: delayedBounceEmails.length, saved, savedInvalid });
+        results.push({ jobId: jid, bounced, valid, pending, updatedThisTick: updated, delayedBounces: delayedBounceEmails.length, saved, savedInvalid });
       } catch (e) {
         results.push({ jobId: jid, error: (e as Error).message });
       }
@@ -938,44 +979,14 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
     const { jobId } = reqBody as { jobId?: number };
     if (!jobId) return { status: 400, body: { error: "No jobId" } };
     await radarSql(`ALTER TABLE email_validation_jobs ADD COLUMN IF NOT EXISTS resolved_at timestamptz`);
-    const job = (await radarSql<{ campaign_id?: string; vertical?: string; status?: string }>(`SELECT * FROM email_validation_jobs WHERE id = ${jobId}`))[0];
+    await radarSql(`ALTER TABLE email_validation_jobs ADD COLUMN IF NOT EXISTS check_cursor text`);
+    const job = (await radarSql<{ campaign_id?: string; vertical?: string; status?: string; check_cursor?: string | null }>(`SELECT * FROM email_validation_jobs WHERE id = ${jobId}`))[0];
     if (!job?.campaign_id) return { status: 400, body: { error: "Job not sent yet" } };
 
-    const checkStartedAt = Date.now();
-    const statusByEmail: Record<string, number> = {};
-    let startingAfter: string | null = null;
-    for (let i = 0; i < 300; i++) {
-      if (Date.now() - checkStartedAt > 50000) break;
-      const bodyObj: Record<string, unknown> = { campaign: job.campaign_id, limit: 100 };
-      if (startingAfter) bodyObj.starting_after = startingAfter;
-      const page = await instantly<{ items?: { email?: string; status?: number }[]; next_starting_after?: string }>("/leads/list", { method: "POST", body: JSON.stringify(bodyObj) });
-      const items = page.items || [];
-      for (const it of items) statusByEmail[(it.email || "").toLowerCase()] = it.status ?? 0;
-      if (!page.next_starting_after || items.length === 0) break;
-      startingAfter = page.next_starting_after;
-    }
+    const r = await pageInstantlyLeads(job.campaign_id, job.check_cursor ?? null, 50000);
+    await radarSql(`UPDATE email_validation_jobs SET check_cursor = ${r.nextCursor ? `'${esc(r.nextCursor)}'` : "NULL"} WHERE id = ${jobId}`);
 
-    let bounced = 0, valid = 0, pending = 0;
-    const updates: string[] = [];
-    const feedback: Record<string, { domain: string; type: string; valid: number; bounced: number }> = {};
-    const delayedBounceEmails: string[] = [];
-    const cands = await radarSql<{ id: number; pattern_email: string; domain?: string; pattern_type?: string; bounce_status?: string; saved_to_contacts?: boolean }>(`SELECT id, pattern_email, domain, pattern_type, bounce_status, saved_to_contacts FROM email_validation_candidates WHERE job_id = ${jobId} AND instantly_lead_id IS NOT NULL`);
-    for (const c of cands) {
-      const st = statusByEmail[(c.pattern_email || "").toLowerCase()];
-      let bs = "pending";
-      if (st === -1) { bs = "bounced"; bounced++; }
-      else if (st === 3) { bs = "valid"; valid++; }
-      else pending++;
-      updates.push(`(${c.id}, '${bs}')`);
-      if ((bs === "valid" || bs === "bounced") && c.bounce_status === "pending" && c.pattern_type && c.pattern_type !== "ai-suggested") {
-        const dom = cleanDom(c.domain);
-        const k = `${dom}||${c.pattern_type}`;
-        feedback[k] = feedback[k] || { domain: dom, type: c.pattern_type, valid: 0, bounced: 0 };
-        if (bs === "valid") feedback[k].valid++; else feedback[k].bounced++;
-      }
-      if (bs === "bounced" && c.bounce_status === "valid" && c.saved_to_contacts) delayedBounceEmails.push(c.pattern_email);
-    }
-    if (updates.length) await radarSql(`UPDATE email_validation_candidates AS c SET bounce_status = v.bs FROM (VALUES ${updates.join(",")}) AS v(id, bs) WHERE c.id = v.id::bigint`);
+    const { feedback, delayedBounceEmails } = await applyLeadStatuses(jobId, r.statusByEmail);
     if (delayedBounceEmails.length) {
       const emailsList = delayedBounceEmails.map((e) => `'${esc(e.toLowerCase())}'`).join(",");
       await radarSql(`UPDATE contacts SET email_status = 'invalid', validated_at = now() WHERE LOWER(email) IN (${emailsList}) AND email_status = 'verified'`).catch(() => {});
@@ -992,7 +1003,15 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
             last_source = 'bounce', updated_at = now()`);
       } catch { /* non-fatal */ }
     }
-    const allResolved = pending === 0;
+
+    const totals = (await radarSql<{ bounce_status: string; n: number }>(`SELECT bounce_status, count(*)::int AS n FROM email_validation_candidates WHERE job_id = ${jobId} AND instantly_lead_id IS NOT NULL GROUP BY bounce_status`));
+    const bounced = totals.find((t) => t.bounce_status === "bounced")?.n ?? 0;
+    const valid = totals.find((t) => t.bounce_status === "valid")?.n ?? 0;
+    const pending = totals.find((t) => t.bounce_status === "pending")?.n ?? 0;
+
+    // Same "full pass" requirement as check_all — pending===0 alone isn't enough for a large
+    // campaign this single call didn't fully paginate through yet.
+    const allResolved = pending === 0 && !r.nextCursor;
     if (allResolved) await radarSql(`UPDATE email_validation_jobs SET status = 'checked', resolved_at = COALESCE(resolved_at, now()) WHERE id = ${jobId}`);
 
     let saved = 0, savedInvalid = 0;
