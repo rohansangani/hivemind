@@ -2685,6 +2685,10 @@ function EnrichSection() {
   const [existingSelected, setExistingSelected] = useState<Set<number>>(new Set());
   const [exportBusy, setExportBusy] = useState(false);
   const [exportProgress, setExportProgress] = useState<{ processed: number; validated: number; total: number } | null>(null);
+  // Separate busy/progress state from exportBusy/exportProgress above — this is the plain "Export
+  // CSV" button's own Debounce-validate-then-export option, not the combined existing+new export.
+  const [validateExportBusy, setValidateExportBusy] = useState(false);
+  const [validateExportProgress, setValidateExportProgress] = useState<{ processed: number; total: number } | null>(null);
   const [runId, setRunId] = useState<string | null>(null);
   const [datasetId, setDatasetId] = useState<string | null>(null);
   const [leads, setLeads] = useState<EnrichLead[]>([]);
@@ -3081,6 +3085,40 @@ function EnrichSection() {
     );
   };
 
+  // Same selected new leads as exportLeadsCsv above, but Debounce-validates each one first (via
+  // the export_leads action — chunked/looped the same way exportAll's new-leads half works) and
+  // includes the resulting email_status column, instead of exporting the raw unvalidated pull.
+  const exportLeadsValidatedCsv = async () => {
+    const rows = leads.filter((_, i) => selected.has(i));
+    const emails = rows.map((r) => r.email).filter((e): e is string => !!e);
+    if (!emails.length || !datasetId) return;
+    setValidateExportBusy(true);
+    setValidateExportProgress({ processed: 0, total: emails.length });
+    try {
+      const validated: Record<string, unknown>[] = [];
+      let offset = 0, done = false;
+      for (let guard = 0; guard < 200 && !done; guard++) {
+        const d = await call({ action: "export_leads", datasetId, selectedEmails: emails, offset });
+        validated.push(...(d.rows || []));
+        offset = d.next_offset ?? offset + (d.rows?.length || 0);
+        done = d.done || !d.rows?.length;
+        setValidateExportProgress({ processed: offset, total: d.total ?? emails.length });
+      }
+      downloadCSV(
+        validated.map((r) => {
+          const { raw, ...rest } = r as Record<string, unknown>;
+          return { ...rest, ...(raw ? flattenForCsv(raw) : {}) };
+        }),
+        `enrich-validated-${(jobLabel || "leads").toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${new Date().toISOString().slice(0, 10)}.csv`
+      );
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setValidateExportBusy(false);
+      setValidateExportProgress(null);
+    }
+  };
+
   const sortedLeads = [...leads].map((l, i) => ({ l, i })).sort((a, b) => {
     const sa = scores[(a.l.email || "").toLowerCase()]?.score ?? -1;
     const sb = scores[(b.l.email || "").toLowerCase()]?.score ?? -1;
@@ -3325,7 +3363,20 @@ function EnrichSection() {
                       {scoring ? "Scoring…" : `✨ Score vs ${icpVertical} ICP`}
                     </button>
                   )}
-                  <button onClick={exportLeadsCsv} disabled={!selected.size} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 12px", fontSize: 12 }}>Export CSV</button>
+                  <button onClick={exportLeadsCsv} disabled={!selected.size} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 12px", fontSize: 12 }} title="Export the raw Apify pull as-is, no email validation">
+                    Export raw
+                  </button>
+                  <button
+                    onClick={exportLeadsValidatedCsv}
+                    disabled={!selected.size || validateExportBusy}
+                    className="hm-btn hm-btn-secondary"
+                    style={{ height: 32, padding: "0 12px", fontSize: 12 }}
+                    title="Runs Debounce email validation on the selected leads first, then exports with an email_status column"
+                  >
+                    {validateExportBusy
+                      ? `Validating… ${validateExportProgress?.processed ?? 0}/${validateExportProgress?.total ?? 0}`
+                      : "Validate & export"}
+                  </button>
                   <button onClick={reset} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 12px", fontSize: 12 }}>New search</button>
                   <select value={saveVertical} onChange={(e) => setSaveVertical(e.target.value)} style={{ width: 150, height: 32, fontSize: 12 }} title="Vertical is required to save">
                     <option value="">— Select vertical —</option>
