@@ -87,9 +87,15 @@ export async function POST(req: NextRequest) {
       const delay = i === 0 ? 0 : Math.max(1, day - prevDay);
       const subject = i === 0 || !isSingleSubject ? `{{step${i + 1}Subject}}` : "";
       const personalizationBlock = i === 0 && personalization ? "<p>{{personalization}}</p>" : "";
+      // {{Sender > signature}} is lemlist's own built-in tag, resolved per sending user at send
+      // time (same idea as Instantly's {{accountSignature}}) — it has to be written into the
+      // message for every step, not just the first, since add-step doesn't inherit it from the
+      // campaign's auto-generated default step. The unsubscribe link is a compliance requirement
+      // on every cold email, so it goes on every step too.
+      const message = `<p>{{step${i + 1}Body}}</p>${personalizationBlock}<p>{{Sender > signature}}</p><p><a href="{{unsubscribeLink}}">unsubscribe</a></p>`;
       await lemlist(`/sequences/${sequenceId}/steps`, {
         method: "POST",
-        body: JSON.stringify({ type: "email", subject, message: `<p>{{step${i + 1}Body}}</p>${personalizationBlock}`, delay, index: i }),
+        body: JSON.stringify({ type: "email", subject, message, delay, index: i }),
       }, decoded.orgId);
     }
 
