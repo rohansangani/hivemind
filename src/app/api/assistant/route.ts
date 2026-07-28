@@ -74,7 +74,15 @@ async function callClaude(
 const RADAR_FILTER_PROPERTIES = {
   vertical: { type: "string", enum: ["B2B", "D2C", "US"], description: "Radar's vertical bucket for the account/contact." },
   industry: { type: "string", description: "Exact industry value as stored in Radar (ask the user or infer from the org's ICP/knowledge-base context if unsure of exact wording)." },
-  title: { type: "string", description: "Job title contains this text (case-insensitive), e.g. \"Director\" or \"VP Marketing\"." },
+  title: {
+    description:
+      "Job title contains this text (case-insensitive), e.g. \"Director\" or \"VP Marketing\". When the user wants " +
+      "several title buckets in ONE combined export (e.g. \"Founder, Co-Founder, Operations, and Support titles\"), " +
+      "pass an array of strings here instead of calling the export tool once per title — that produces ONE CSV " +
+      "covering all of them. Only use separate tool calls (and separate CSVs) if the user explicitly asks for a " +
+      "separate file per category.",
+    anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }],
+  },
   employeeRange: { type: "string", description: "Company employee-count bucket, exact value as stored in Radar." },
   country: { type: "string" },
   company: { type: "string", description: "Company name contains this text (case-insensitive)." },
@@ -127,7 +135,10 @@ const RADAR_TOOLS = [
     description:
       "Generate a downloadable CSV of contacts matching the given filters. ONLY call this after the user has " +
       "explicitly confirmed (e.g. said \"yes\", \"export it\", \"download\") having already seen the count from " +
-      "search_radar_contacts for the SAME filters in this conversation. Never call this on the first turn of a request.",
+      "search_radar_contacts for the SAME filters in this conversation. Never call this on the first turn of a request. " +
+      "Default to exactly ONE call per export request, combining every filter (including multiple title buckets, via " +
+      "title's array form) into that single call so the user gets ONE CSV — do not call this tool multiple times to " +
+      "produce several smaller files unless the user explicitly asked for separate files.",
     input_schema: { type: "object", properties: RADAR_FILTER_PROPERTIES },
   },
   {

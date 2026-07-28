@@ -27,7 +27,15 @@ export function buildContactQuery(filters: Record<string, unknown>): string {
   if (filters.employeeRange) q += `&employee_range=eq.${encodeURIComponent(String(filters.employeeRange))}`;
   if (filters.country) q += `&country=eq.${encodeURIComponent(String(filters.country))}`;
   if (filters.company) q += `&company_name=ilike.*${encodeURIComponent(String(filters.company))}*`;
-  if (filters.title) q += `&title=ilike.*${encodeURIComponent(String(filters.title))}*`;
+  // title may be a single string or an array of strings (multiple job-title buckets in one
+  // combined export, e.g. ["Founder", "Co-Founder", "Operations"]) — OR'd together so one query/
+  // one CSV covers all of them instead of needing a separate call per title.
+  if (filters.title) {
+    const titles = Array.isArray(filters.title) ? filters.title : [filters.title];
+    const clean = titles.map((t) => String(t).trim()).filter(Boolean);
+    if (clean.length === 1) q += `&title=ilike.*${encodeURIComponent(clean[0])}*`;
+    else if (clean.length > 1) q += `&or=(${clean.map((t) => `title.ilike.*${encodeURIComponent(t)}*`).join(",")})`;
+  }
   if (filters.search) {
     const s = encodeURIComponent(String(filters.search));
     q += `&or=(email.ilike.*${s}*,first_name.ilike.*${s}*,last_name.ilike.*${s}*)`;
