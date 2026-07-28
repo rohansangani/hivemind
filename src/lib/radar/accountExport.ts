@@ -7,7 +7,7 @@
  */
 
 import { selectFrom } from "@/lib/radar/supabase";
-import { fetchAllPages, csvCell } from "@/lib/radar/contactExport";
+import { fetchAllPages, csvCell, buildInFilter } from "@/lib/radar/contactExport";
 
 export const ACCOUNT_EXPORT_COLS = [
   "name", "domain", "vertical", "industry", "sub_industry", "account_size",
@@ -23,7 +23,7 @@ export const ACCOUNT_EXPORT_LABELS = [
 export function buildAccountQuery(filters: Record<string, unknown>): string {
   let q = "select=*&order=name.asc";
   if (filters.vertical) q += `&vertical=eq.${encodeURIComponent(String(filters.vertical))}`;
-  if (filters.industry) q += `&industry=eq.${encodeURIComponent(String(filters.industry))}`;
+  if (filters.industry) q += buildInFilter("industry", filters.industry);
   if (filters.subIndustry) q += `&sub_industry=eq.${encodeURIComponent(String(filters.subIndustry))}`;
   if (filters.accountSize) q += `&account_size=eq.${encodeURIComponent(String(filters.accountSize))}`;
   if (filters.employeeRange) q += `&employee_range=eq.${encodeURIComponent(String(filters.employeeRange))}`;

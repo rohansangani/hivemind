@@ -20,22 +20,39 @@ export const CONTACT_EXPORT_LABELS = [
 ];
 export const DEFAULT_EMAIL_STATUSES = ["safe to send", "verified"];
 
+/** A field value may arrive as a single string or an array of strings — the array form lets one
+ * query cover several DB-side variants of the "same" value (e.g. industry stored inconsistently
+ * as "Ecommerce"/"E-commerce"/"D2C - Ecommerce") in a single request/single CSV, via PostgREST's
+ * `in.()` for exact-match fields. Returns "" when there's nothing to filter on. */
+export function buildInFilter(column: string, value: unknown): string {
+  const values = Array.isArray(value) ? value : [value];
+  const clean = values.map((v) => String(v).trim()).filter(Boolean);
+  if (!clean.length) return "";
+  if (clean.length === 1) return `&${column}=eq.${encodeURIComponent(clean[0])}`;
+  return `&${column}=in.(${clean.map(encodeURIComponent).join(",")})`;
+}
+
+/** Same idea as buildInFilter but for partial/ilike match columns (title, company) — OR's the
+ * ilike clauses together instead of using `in.()`, which only does exact matches. */
+export function buildIlikeOrFilter(column: string, value: unknown): string {
+  const values = Array.isArray(value) ? value : [value];
+  const clean = values.map((v) => String(v).trim()).filter(Boolean);
+  if (!clean.length) return "";
+  if (clean.length === 1) return `&${column}=ilike.*${encodeURIComponent(clean[0])}*`;
+  return `&or=(${clean.map((v) => `${column}.ilike.*${encodeURIComponent(v)}*`).join(",")})`;
+}
+
 export function buildContactQuery(filters: Record<string, unknown>): string {
   let q = "select=*&order=id.asc";
   if (filters.vertical) q += `&vertical=eq.${encodeURIComponent(String(filters.vertical))}`;
-  if (filters.industry) q += `&industry=eq.${encodeURIComponent(String(filters.industry))}`;
+  if (filters.industry) q += buildInFilter("industry", filters.industry);
   if (filters.employeeRange) q += `&employee_range=eq.${encodeURIComponent(String(filters.employeeRange))}`;
   if (filters.country) q += `&country=eq.${encodeURIComponent(String(filters.country))}`;
   if (filters.company) q += `&company_name=ilike.*${encodeURIComponent(String(filters.company))}*`;
   // title may be a single string or an array of strings (multiple job-title buckets in one
   // combined export, e.g. ["Founder", "Co-Founder", "Operations"]) — OR'd together so one query/
   // one CSV covers all of them instead of needing a separate call per title.
-  if (filters.title) {
-    const titles = Array.isArray(filters.title) ? filters.title : [filters.title];
-    const clean = titles.map((t) => String(t).trim()).filter(Boolean);
-    if (clean.length === 1) q += `&title=ilike.*${encodeURIComponent(clean[0])}*`;
-    else if (clean.length > 1) q += `&or=(${clean.map((t) => `title.ilike.*${encodeURIComponent(t)}*`).join(",")})`;
-  }
+  if (filters.title) q += buildIlikeOrFilter("title", filters.title);
   if (filters.search) {
     const s = encodeURIComponent(String(filters.search));
     q += `&or=(email.ilike.*${s}*,first_name.ilike.*${s}*,last_name.ilike.*${s}*)`;

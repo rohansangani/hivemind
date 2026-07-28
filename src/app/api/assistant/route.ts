@@ -13,7 +13,7 @@ import { ensureFeatureRegistered } from "@/lib/featureBootstrap";
 import { recordSignal } from "@/lib/signalCapture";
 import { countContacts, exportContactsCsv, logContactExport } from "@/lib/radar/contactExport";
 import { countAccounts, exportAccountsCsv, logAccountExport } from "@/lib/radar/accountExport";
-import { getRadarAccessLevel } from "@/lib/radar/supabase";
+import { getRadarAccessLevel, distinctValues } from "@/lib/radar/supabase";
 import { getSignalsAccessLevel, getAccounts as getSignalsAccounts, getAccount as getSignalsAccount, searchCalls as searchSignalsCalls } from "@/lib/signals";
 import pg from "pg";
 
@@ -73,7 +73,14 @@ async function callClaude(
 
 const RADAR_FILTER_PROPERTIES = {
   vertical: { type: "string", enum: ["B2B", "D2C", "US"], description: "Radar's vertical bucket for the account/contact." },
-  industry: { type: "string", description: "Exact industry value as stored in Radar (ask the user or infer from the org's ICP/knowledge-base context if unsure of exact wording)." },
+  industry: {
+    description:
+      "Exact industry value(s) as stored in Radar. Industry is stored inconsistently across rows, so ALWAYS call " +
+      "list_radar_distinct_values({column: \"industry\"}) first, then pass every real stored value that matches " +
+      "what the user means as an array here (e.g. [\"Ecommerce\", \"E-commerce\", \"D2C - Ecommerce\"]) — never " +
+      "guess a single exact string from context.",
+    anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }],
+  },
   title: {
     description:
       "Job title contains this text (case-insensitive), e.g. \"Director\" or \"VP Marketing\". When the user wants " +
@@ -112,7 +119,14 @@ const RADAR_FILTER_PROPERTIES = {
 
 const ACCOUNT_FILTER_PROPERTIES = {
   vertical: { type: "string", enum: ["B2B", "D2C", "US"], description: "Radar's vertical bucket for the account." },
-  industry: { type: "string", description: "Exact industry value as stored in Radar (ask the user or infer from the org's ICP/knowledge-base context if unsure of exact wording)." },
+  industry: {
+    description:
+      "Exact industry value(s) as stored in Radar. Industry is stored inconsistently across rows, so ALWAYS call " +
+      "list_radar_distinct_values({column: \"industry\"}) first, then pass every real stored value that matches " +
+      "what the user means as an array here (e.g. [\"Ecommerce\", \"E-commerce\", \"D2C - Ecommerce\"]) — never " +
+      "guess a single exact string from context.",
+    anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }],
+  },
   subIndustry: { type: "string" },
   accountSize: { type: "string" },
   employeeRange: { type: "string", description: "Company employee-count bucket, exact value as stored in Radar." },
@@ -122,6 +136,24 @@ const ACCOUNT_FILTER_PROPERTIES = {
 } as const;
 
 const RADAR_TOOLS = [
+  {
+    name: "list_radar_distinct_values",
+    description:
+      "List every distinct value actually stored in Radar for one column (industry, vertical, employeeRange, " +
+      "country, accountSize, revenueRange, subIndustry). Industry in particular is stored inconsistently — the " +
+      "same real industry can appear as several different strings (e.g. \"Ecommerce\", \"E-commerce\", " +
+      "\"D2C - Ecommerce\"). ALWAYS call this for the 'industry' column before filtering/exporting by industry, " +
+      "read the real values back, and pass every value that matches what the user means as an array in the " +
+      "industry filter (buildInFilter OR's them together into one query/one CSV) — never guess a single exact " +
+      "industry string from context alone.",
+    input_schema: {
+      type: "object",
+      properties: {
+        column: { type: "string", enum: ["industry", "vertical", "employeeRange", "country", "accountSize", "revenueRange", "subIndustry"] },
+      },
+      required: ["column"],
+    },
+  },
   {
     name: "search_radar_contacts",
     description:
@@ -275,11 +307,26 @@ function toAccountFilters(input: Record<string, unknown>): Record<string, unknow
   return filters;
 }
 
+// Tool's camelCase column names → the actual snake_case column on Radar's "accounts" table
+// (the same deduplicated-company table /api/radar/options already reads distinct filter values
+// from — contacts inherit their account's industry/vertical/etc, so this is the right source of
+// truth for "what values actually exist" regardless of which tool is filtering by it).
+const DISTINCT_VALUE_COLUMN: Record<string, string> = {
+  industry: "industry", vertical: "vertical", employeeRange: "employee_range",
+  country: "country", accountSize: "account_size", revenueRange: "revenue_range", subIndustry: "sub_industry",
+};
+
 async function executeRadarTool(
   toolName: string,
   input: Record<string, unknown>,
   actorUserId: string
 ): Promise<{ toolResult: unknown; download?: { filename: string; csv: string } }> {
+  if (toolName === "list_radar_distinct_values") {
+    const column = DISTINCT_VALUE_COLUMN[String(input.column ?? "")];
+    if (!column) return { toolResult: { error: "Unknown column" } };
+    const values = await distinctValues("accounts", column);
+    return { toolResult: { column: input.column, values } };
+  }
   if (toolName === "search_radar_contacts") {
     const count = await countContacts(toRadarFilters(input), input.emailStatuses, toGroupCap(input));
     return { toolResult: { count } };
@@ -666,7 +713,8 @@ export async function POST(req: NextRequest) {
           ? `
 
 RADAR CONTACTS & ACCOUNTS (search_radar_contacts/accounts, export_radar_contacts/accounts_csv tools):
-- You have direct access to Radar via four tools: two for CONTACTS (individual people) and two for ACCOUNTS (real, deduplicated companies — one row per company, not per contact).
+- You have direct access to Radar via five tools: list_radar_distinct_values, plus two each for CONTACTS (individual people) and ACCOUNTS (real, deduplicated companies — one row per company, not per contact).
+- Whenever a request involves industry (or any other inconsistently-worded column), call list_radar_distinct_values first to see the REAL stored values instead of guessing an exact string — industry especially is stored inconsistently (e.g. "Ecommerce"/"E-commerce"/"D2C - Ecommerce" might all be separate real values for what the user means by one industry). Pass every matching value as an array in the industry filter so one call/one result covers all of them.
 - If the user asks about companies/accounts specifically — "how many accounts", "which companies", "unique companies", a company/account-level count or export — use the ACCOUNTS tools. Never approximate an account-level answer by counting or deduplicating contacts yourself; Radar's accounts table is already the real deduplicated source, query it directly.
 - If the user asks about people/leads/contacts, use the CONTACTS tools.
 - When the user wants to find, count, or export either, translate their request into filters using the ICP/persona/product/industry knowledge above (e.g. "our ideal customers in D2C haircare" → vertical: D2C, industry: something matching the known ICP) — ask a clarifying question instead of guessing if the request is genuinely ambiguous.
