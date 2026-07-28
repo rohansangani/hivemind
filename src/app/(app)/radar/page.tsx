@@ -4618,7 +4618,13 @@ function ValidateSection() {
       setJobId(jid);
       setCandidates((d.candidates || []).map((c: ValidateCandidate) => ({ ...c, selected: !!c.selected })));
       const status = d.job?.status;
-      setPhase(status === "sent" || status === "checked" ? "sent" : "candidates");
+      // "done" (fully resolved AND already saved to contacts, the most complete status a job
+      // reaches — see apply_results/check's stillPending===0 branch) was falling through to
+      // "candidates" here, since it matched neither "sent" nor "checked" — that regressed an
+      // already-finished job all the way back to the pre-send "Send test" screen on reopen,
+      // hiding the valid/bounced stats entirely instead of showing them like "checked" already did.
+      const wasSentOrLater = status === "sent" || status === "checked" || status === "done";
+      setPhase(wasSentOrLater ? "sent" : "candidates");
       setCheckResult(null);
       // Reopening a job whose bounce checks aren't fully resolved yet almost always means the
       // user wants to keep watching it — default auto-refresh back on instead of making them
@@ -4629,8 +4635,11 @@ function ValidateSection() {
       // happened to be in the DB from the last check (could be 15+ minutes stale) and making
       // the user click "Check bounces" themselves just to see where things actually stand. For a
       // big job this pagination can take several seconds — the "Opening…" button state above
-      // covers that wait, so switching views only happens once there's something to show.
-      if (status === "sent") await runCheck(jid);
+      // covers that wait, so switching views only happens once there's something to show. Runs
+      // for "checked"/"done" too now, not just "sent" — checkResult (which is what actually
+      // renders the valid/bounced/pending numbers) is otherwise left null even once phase shows
+      // the Check-bounces screen, so the stats area would render empty.
+      if (wasSentOrLater) await runCheck(jid);
       setView("current");
     } catch (e) {
       setError((e as Error).message);
