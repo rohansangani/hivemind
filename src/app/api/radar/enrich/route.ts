@@ -146,6 +146,11 @@ async function ensureEnrichJobsTable(): Promise<void> {
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now()
   )`);
+  // Added after the table already existed in prod — lets reopening a past job show it was
+  // already saved instead of looking unsaved every time (the whole point of this feature).
+  await radarSql(`ALTER TABLE enrich_jobs ADD COLUMN IF NOT EXISTS saved_count integer NOT NULL DEFAULT 0`);
+  await radarSql(`ALTER TABLE enrich_jobs ADD COLUMN IF NOT EXISTS saved_accounts_count integer NOT NULL DEFAULT 0`);
+  await radarSql(`ALTER TABLE enrich_jobs ADD COLUMN IF NOT EXISTS saved_at timestamptz`);
 }
 
 async function handleAction(req: NextRequest, userEmail: string | null): Promise<{ status: number; body: Record<string, unknown> }> {
@@ -225,7 +230,7 @@ async function handleAction(req: NextRequest, userEmail: string | null): Promise
   // ── list recent Enrich jobs (so a page refresh doesn't lose track of a running/finished search) ──
   if (action === "list_enrich_jobs") {
     await ensureEnrichJobsTable();
-    const rows = await radarSql(`SELECT id, label, created_by, run_id, dataset_id, status, item_count, created_at FROM enrich_jobs ORDER BY id DESC LIMIT 50`);
+    const rows = await radarSql(`SELECT id, label, created_by, run_id, dataset_id, status, item_count, saved_count, saved_accounts_count, saved_at, created_at FROM enrich_jobs ORDER BY id DESC LIMIT 50`);
     return { status: 200, body: { jobs: rows } };
   }
 
@@ -233,14 +238,19 @@ async function handleAction(req: NextRequest, userEmail: string | null): Promise
   if (action === "enrich_job_sync") {
     if (!jobId) return { status: 400, body: { error: "No jobId" } };
     await ensureEnrichJobsTable();
-    const row = (await radarSql<{ run_id: string; dataset_id: string }>(`SELECT run_id, dataset_id FROM enrich_jobs WHERE id = ${Number(jobId)}`))[0];
+    const row = (await radarSql<{ run_id: string; dataset_id: string; saved_count: number; saved_accounts_count: number; saved_at: string | null }>(
+      `SELECT run_id, dataset_id, saved_count, saved_accounts_count, saved_at FROM enrich_jobs WHERE id = ${Number(jobId)}`
+    ))[0];
     if (!row) return { status: 404, body: { error: "Job not found" } };
     const r = await fetch(`https://api.apify.com/v2/actor-runs/${row.run_id}?token=${APIFY_TOKEN}`);
     const data = await r.json();
     const status = data.data?.status || "UNKNOWN";
     const itemCount = data.data?.stats?.itemCount || 0;
     await radarSql(`UPDATE enrich_jobs SET status = '${status}', item_count = ${itemCount}, updated_at = now() WHERE id = ${Number(jobId)}`);
-    return { status: 200, body: { runId: row.run_id, datasetId: row.dataset_id, status, itemCount } };
+    return {
+      status: 200,
+      body: { runId: row.run_id, datasetId: row.dataset_id, status, itemCount, savedCount: row.saved_count, savedAccountsCount: row.saved_accounts_count, savedAt: row.saved_at },
+    };
   }
 
   // ── poll run status ──────────────────────────────────────────────────
@@ -301,6 +311,13 @@ async function handleAction(req: NextRequest, userEmail: string | null): Promise
     }
     await logRadarUsage(userEmail, "leads_finder", rows.length);
     triggerSyncExclusions();
+    // Persist the save result on the job row (when this save came from a tracked job, not a
+    // one-off dataset) so reopening it later shows it was already saved instead of looking
+    // untouched every time.
+    if (jobId) {
+      await ensureEnrichJobsTable();
+      await radarSql(`UPDATE enrich_jobs SET saved_count = ${Number(result?.saved_contacts ?? 0)}, saved_accounts_count = ${Number(result?.saved_accounts ?? 0)}, saved_at = now() WHERE id = ${Number(jobId)}`);
+    }
     return { status: 200, body: { saved: result?.saved_contacts ?? 0, savedAccounts: result?.saved_accounts ?? 0, total: items.length } };
   }
 

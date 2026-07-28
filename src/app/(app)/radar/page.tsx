@@ -2723,7 +2723,8 @@ interface EnrichScore { email: string; score: number; reason: string; }
 
 interface EnrichJobRow {
   id: number; label: string; created_by: string | null; run_id: string; dataset_id: string;
-  status: string; item_count: number; created_at: string;
+  status: string; item_count: number; saved_count: number; saved_accounts_count: number; saved_at: string | null;
+  created_at: string;
 }
 
 function EnrichSection() {
@@ -2757,6 +2758,9 @@ function EnrichSection() {
   const [validateExportProgress, setValidateExportProgress] = useState<{ processed: number; total: number } | null>(null);
   const [runId, setRunId] = useState<string | null>(null);
   const [datasetId, setDatasetId] = useState<string | null>(null);
+  // Tracks which enrich_jobs row this run/dataset belongs to, so Save can persist its result back
+  // onto that row — without this, reopening an already-saved job had no way to know it was saved.
+  const [currentJobId, setCurrentJobId] = useState<number | null>(null);
   const [leads, setLeads] = useState<EnrichLead[]>([]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [error, setError] = useState("");
@@ -2802,6 +2806,7 @@ function EnrichSection() {
     setOpeningJobId(job.id);
     setError("");
     setJobLabel(job.label);
+    setCurrentJobId(job.id);
     try {
       const s = await call({ action: "enrich_job_sync", jobId: job.id });
       setRunId(s.runId);
@@ -2810,7 +2815,15 @@ function EnrichSection() {
         const f = await call({ action: "fetch", datasetId: s.datasetId });
         setLeads(f.items || []);
         setSelected(new Set((f.items || []).map((_: unknown, i: number) => i)));
-        setPhase("results");
+        // Already saved previously (persisted on the job row) — show that state directly
+        // instead of the unsaved "results" screen, so reopening a saved job reads as saved.
+        if (s.savedCount > 0) {
+          setSavedCount(s.savedCount);
+          setSavedAccountsCount(s.savedAccountsCount || 0);
+          setPhase("saved");
+        } else {
+          setPhase("results");
+        }
       } else if (s.status === "FAILED" || s.status === "ABORTED" || s.status === "TIMED-OUT") {
         setError(`This job ${s.status.toLowerCase()}.`);
       } else {
@@ -2912,6 +2925,7 @@ function EnrichSection() {
       const started = await call({ action: "start", params, label: jobLabel.trim() });
       setRunId(started.runId);
       setDatasetId(started.datasetId);
+      setCurrentJobId(started.jobId ?? null);
       setPhase("running");
       loadJobsList();
     } catch (e) {
@@ -2998,7 +3012,7 @@ function EnrichSection() {
     if (!saveVertical) { setError("Select a vertical before saving."); return; }
     setSaveBusy(true);
     try {
-      const d = await call({ action: "save", datasetId, vertical: saveVertical });
+      const d = await call({ action: "save", datasetId, vertical: saveVertical, jobId: currentJobId });
       setSavedCount(d.saved || 0);
       setSavedAccountsCount(d.savedAccounts || 0);
 
@@ -3136,7 +3150,7 @@ function EnrichSection() {
   };
 
   const reset = () => {
-    setPhase("form"); setRunId(null); setDatasetId(null); setLeads([]); setSelected(new Set());
+    setPhase("form"); setRunId(null); setDatasetId(null); setCurrentJobId(null); setLeads([]); setSelected(new Set());
     setExistingLeads([]); setExistingSelected(new Set()); setError(""); setSavedCount(0); setSavedAccountsCount(0); setSaveVertical(""); setScores({}); setValidateResult(null); setJobLabel("");
   };
 
@@ -3228,7 +3242,9 @@ function EnrichSection() {
                 >
                   <span className="font-medium text-[var(--hm-text)] truncate">{j.label}</span>
                   <span className="text-[11px] text-[var(--hm-text-tertiary)] whitespace-nowrap">
-                    {openingJobId === j.id ? "Opening…" : `${j.status.toLowerCase()} · ${j.item_count} found · ${new Date(j.created_at).toLocaleString()}`}
+                    {openingJobId === j.id
+                      ? "Opening…"
+                      : `${j.status.toLowerCase()} · ${j.item_count} found${j.saved_count > 0 ? ` · saved (${j.saved_count})` : ""} · ${new Date(j.created_at).toLocaleString()}`}
                   </span>
                 </button>
               ))}
@@ -3505,7 +3521,7 @@ function EnrichSection() {
                     style={{ height: 32, padding: "0 14px", fontSize: 12 }}
                     title="Saves every lead Apify returned for this search, not just the checked ones"
                   >
-                    {saveBusy ? "Saving & validating…" : `Save all ${leads.length} to database`}
+                    {saveBusy ? "Saving…" : `Save all ${leads.length} to database`}
                   </button>
                 </div>
               )}
