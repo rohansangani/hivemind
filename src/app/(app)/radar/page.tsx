@@ -5834,6 +5834,15 @@ function SearchableMultiSelect({ options, selected, onChange, placeholder = "Sel
   );
 }
 
+/** Pulls a flat list of job titles out of an uploaded CSV — deliberately not tied to a specific
+ * column layout (a single column of titles, with or without a "title"/"titles" header, or even a
+ * comma-separated one-liner) since this is just meant to bulk-fill the same free-text titles
+ * field the manual input already uses, not a structured import. */
+function extractTitlesFromCsv(text: string): string[] {
+  const tokens = text.split(/[\n,]/).map((t) => t.replace(/^"|"$/g, "").trim()).filter(Boolean);
+  return tokens.filter((t) => !/^titles?$/i.test(t));
+}
+
 function IcpBaseSection() {
   const [vertical, setVertical] = useState<IcpVertical>("B2B");
   const [icps, setIcps] = useState<Record<string, IcpProfile>>({});
@@ -5857,6 +5866,24 @@ function IcpBaseSection() {
   };
 
   const update = (patch: Partial<IcpProfile>) => { setDraft((d) => ({ ...d, ...patch })); setSaved(false); };
+
+  // Uploaded titles are merged into (not replacing) whatever's already typed, deduped — same
+  // comma-separated free-text field the manual input edits, just bulk-filled from a file instead
+  // of typed one at a time.
+  const uploadTitlesCsv = (which: "titles" | "notTitles") => (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const uploaded = extractTitlesFromCsv(String(ev.target?.result || ""));
+      if (!uploaded.length) return;
+      const existing = draft[which] ? draft[which].split(",").map((s) => s.trim()).filter(Boolean) : [];
+      const merged = Array.from(new Set([...existing, ...uploaded]));
+      update({ [which]: merged.join(", ") });
+    };
+    reader.readAsText(file);
+  };
 
   const save = () => {
     const next = { ...icps, [vertical]: draft };
@@ -5939,11 +5966,23 @@ function IcpBaseSection() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Titles include</label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-[12px] font-medium text-[var(--hm-text-secondary)]">Titles include</label>
+              <label className="text-[11px] text-[var(--hm-link)] cursor-pointer" title="Upload a CSV of titles (one per row, or a single comma-separated row) — added to whatever's already here">
+                Upload CSV
+                <input type="file" accept=".csv,text/csv" onChange={uploadTitlesCsv("titles")} style={{ display: "none" }} />
+              </label>
+            </div>
             <input type="text" value={draft.titles} onChange={(e) => update({ titles: e.target.value })} placeholder="VP Sales, Head of Logistics" />
           </div>
           <div>
-            <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Titles exclude</label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-[12px] font-medium text-[var(--hm-text-secondary)]">Titles exclude</label>
+              <label className="text-[11px] text-[var(--hm-link)] cursor-pointer" title="Upload a CSV of titles (one per row, or a single comma-separated row) — added to whatever's already here">
+                Upload CSV
+                <input type="file" accept=".csv,text/csv" onChange={uploadTitlesCsv("notTitles")} style={{ display: "none" }} />
+              </label>
+            </div>
             <input type="text" value={draft.notTitles} onChange={(e) => update({ notTitles: e.target.value })} placeholder="Intern, Trainee" />
           </div>
         </div>
