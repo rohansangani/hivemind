@@ -1012,6 +1012,8 @@ interface AccountRow {
   id: string;
   name: string | null;
   domain: string | null;
+  hubspot_lifecycle_stage: string | null;
+  hubspot_lead_status: string | null;
   vertical: string | null;
   industry: string | null;
   sub_industry: string | null;
@@ -1417,6 +1419,8 @@ function AccountsSection() {
         </a>
       ) : <span className="text-[var(--hm-text-tertiary)]">—</span>,
     },
+    { key: "hubspot_stage", header: "HubSpot Lifecycle Stage", render: (r) => <HubspotBadge v={r.hubspot_lifecycle_stage} /> },
+    { key: "hubspot_status", header: "HubSpot Lead Status", render: (r) => <HubspotBadge v={r.hubspot_lead_status} /> },
     { key: "industry", header: "Industry", render: (r) => <Cell value={r.industry} /> },
     { key: "sub_industry", header: "Sub-Industry", render: (r) => <Cell value={r.sub_industry} /> },
     { key: "account_size", header: "Account Size", render: (r) => <Cell value={r.account_size} /> },
@@ -1599,6 +1603,8 @@ interface ContactRow {
   email_status: string | null;
   validated_at: string | null;
   hubspot_excluded: boolean | null;
+  hubspot_lifecycle_stage: string | null;
+  hubspot_lead_status: string | null;
   vertical: string | null;
   industry: string | null;
   sub_industry: string | null;
@@ -1637,6 +1643,17 @@ function formatStatusBreakdown(byStatus: Record<string, number>): string {
     .filter((s) => byStatus[s])
     .map((s) => `${byStatus[s]} ${s}`)
     .join(", ");
+}
+
+/** HubSpot lifecycle stage / lead status pill — plain neutral badge since the
+ * vocabulary is HubSpot's own (raw internal values), not something we color-code. */
+function HubspotBadge({ v }: { v: string | null }) {
+  if (!v) return <span className="text-[var(--hm-text-tertiary)]">—</span>;
+  return (
+    <span className="text-[11px] px-2 py-0.5 rounded-md font-medium whitespace-nowrap bg-[var(--hm-bg-tertiary)] text-[var(--hm-text-secondary)]">
+      {v}
+    </span>
+  );
 }
 
 function ContactsSection() {
@@ -1679,6 +1696,8 @@ function ContactsSection() {
     { key: "status", header: "Email Status", render: (r) => <EmailStatusPill status={r.email_status} /> },
     { key: "validated_at", header: "Validated", render: (r) => fmtDateTimeIST(r.validated_at) },
     { key: "hubspot", header: "HubSpot Excluded", render: (r) => <YesNo v={r.hubspot_excluded} /> },
+    { key: "hubspot_stage", header: "HubSpot Lifecycle Stage", render: (r) => <HubspotBadge v={r.hubspot_lifecycle_stage} /> },
+    { key: "hubspot_status", header: "HubSpot Lead Status", render: (r) => <HubspotBadge v={r.hubspot_lead_status} /> },
     { key: "industry", header: "Industry", render: (r) => <Cell value={r.industry} /> },
     { key: "sub_industry", header: "Sub-Industry", render: (r) => <Cell value={r.sub_industry} /> },
     { key: "employees", header: "Employees", className: "tabular-nums", render: (r) => <Cell value={r.employee_range} /> },
