@@ -2936,8 +2936,10 @@ function EnrichSection() {
       setSavedCount(d.saved || 0);
       setSavedAccountsCount(d.savedAccounts || 0);
 
-      // Debounce-validate the just-saved leads immediately — no separate manual step.
-      const savedEmails = leads.filter((_, i) => selected.has(i)).map((l) => l.email).filter(Boolean).map((email) => ({ email }));
+      // Debounce-validate every just-saved lead immediately — no separate manual step. Save
+      // itself covers the whole dataset regardless of checkbox state (see the button above), so
+      // this must too, or an unchecked-but-saved lead would sit unvalidated.
+      const savedEmails = leads.map((l) => l.email).filter(Boolean).map((email) => ({ email }));
       const domains = csv(domain);
       if (savedEmails.length) {
         const v = await call({ action: "validate_and_save", params: { apifyEmails: savedEmails, domains } });
@@ -3384,8 +3386,14 @@ function EnrichSection() {
                     <option value="US">US</option>
                     <option value="D2C">D2C</option>
                   </select>
-                  <button onClick={saveSelected} disabled={!selected.size || !saveVertical || saveBusy} className="hm-btn hm-btn-primary" style={{ height: 32, padding: "0 14px", fontSize: 12 }}>
-                    {saveBusy ? "Saving & validating…" : `Save ${selected.size} to database`}
+                  <button
+                    onClick={saveSelected}
+                    disabled={!leads.length || !saveVertical || saveBusy}
+                    className="hm-btn hm-btn-primary"
+                    style={{ height: 32, padding: "0 14px", fontSize: 12 }}
+                    title="Saves every lead Apify returned for this search, not just the checked ones"
+                  >
+                    {saveBusy ? "Saving & validating…" : `Save all ${leads.length} to database`}
                   </button>
                 </div>
               )}
