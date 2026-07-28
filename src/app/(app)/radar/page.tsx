@@ -2817,13 +2817,12 @@ function EnrichSection() {
         setSelected(new Set((f.items || []).map((_: unknown, i: number) => i)));
         // Already saved previously (persisted on the job row) — show that state directly
         // instead of the unsaved "results" screen, so reopening a saved job reads as saved.
-        if (s.savedCount > 0) {
-          setSavedCount(s.savedCount);
-          setSavedAccountsCount(s.savedAccountsCount || 0);
-          setPhase("saved");
-        } else {
-          setPhase("results");
-        }
+        // Still land on the normal results view (with the full lead list to browse) even for an
+        // already-saved job — only the Save button itself reflects the saved state, rather than
+        // replacing the whole preview with the compact "saved" summary screen.
+        setSavedCount(s.savedCount || 0);
+        setSavedAccountsCount(s.savedAccountsCount || 0);
+        setPhase("results");
       } else if (s.status === "FAILED" || s.status === "ABORTED" || s.status === "TIMED-OUT") {
         setError(`This job ${s.status.toLowerCase()}.`);
       } else {
@@ -2901,6 +2900,8 @@ function EnrichSection() {
     if (!domain.trim()) { setError("Enter at least one domain to search."); return; }
     const domains = csv(domain);
     setSearchBusy(true);
+    setSavedCount(0);
+    setSavedAccountsCount(0);
     try {
       const chk = await call({ action: "check_existing", params: { company_domain: domains } });
       const existing = (chk.existing || []) as ExistingContact[];
@@ -3516,12 +3517,12 @@ function EnrichSection() {
                   </select>
                   <button
                     onClick={saveSelected}
-                    disabled={!leads.length || !saveVertical || saveBusy}
+                    disabled={!leads.length || !saveVertical || saveBusy || savedCount > 0}
                     className="hm-btn hm-btn-primary"
                     style={{ height: 32, padding: "0 14px", fontSize: 12 }}
-                    title="Saves every lead Apify returned for this search, not just the checked ones"
+                    title={savedCount > 0 ? `Already saved — ${savedCount} contact(s), ${savedAccountsCount} account(s)` : "Saves every lead Apify returned for this search, not just the checked ones"}
                   >
-                    {saveBusy ? "Saving…" : `Save all ${leads.length} to database`}
+                    {saveBusy ? "Saving…" : savedCount > 0 ? "✓ Saved" : `Save all ${leads.length} to database`}
                   </button>
                 </div>
               )}
