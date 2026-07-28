@@ -3224,35 +3224,6 @@ function EnrichSection() {
           </p>
         </div>
 
-        {(jobsList.length > 0 || jobsListLoading || jobsListError) && phase === "form" && (
-          <div className="px-5 py-3 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)]">
-            <div className="flex items-center justify-between mb-1.5">
-              <p className="text-[11px] font-medium text-[var(--hm-text-tertiary)] uppercase tracking-wide">Recent Enrich jobs</p>
-              <button onClick={loadJobsList} disabled={jobsListLoading} className="text-[11.5px] text-[var(--hm-link)] hover:underline">
-                {jobsListLoading ? "Loading…" : "Refresh"}
-              </button>
-            </div>
-            {jobsListError && <p className="text-[12px] text-[var(--tag-red-fg)]">{jobsListError}</p>}
-            <div className="space-y-1 max-h-40 overflow-y-auto">
-              {jobsList.map((j) => (
-                <button
-                  key={j.id}
-                  onClick={() => openJob(j)}
-                  disabled={openingJobId === j.id}
-                  className="w-full flex items-center justify-between gap-2 text-left px-2.5 py-1.5 rounded-md hover:bg-[var(--hm-surface-hover)] text-[12.5px]"
-                >
-                  <span className="font-medium text-[var(--hm-text)] truncate">{j.label}</span>
-                  <span className="text-[11px] text-[var(--hm-text-tertiary)] whitespace-nowrap">
-                    {openingJobId === j.id
-                      ? "Opening…"
-                      : `${j.status.toLowerCase()} · ${j.item_count} found${j.saved_count > 0 ? ` · saved (${j.saved_count})` : ""} · ${new Date(j.created_at).toLocaleString()}`}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
         {phase === "form" && (
           <div className="px-5 py-5 space-y-4">
             <div>
@@ -3412,6 +3383,35 @@ function EnrichSection() {
             <button onClick={startSearch} disabled={searchBusy || !jobLabel.trim()} className="hm-btn hm-btn-primary" style={{ height: 38, padding: "0 18px", fontSize: 13 }}>
               {searchBusy ? "Enriching…" : "Enrich"}
             </button>
+          </div>
+        )}
+
+        {(jobsList.length > 0 || jobsListLoading || jobsListError) && phase === "form" && (
+          <div className="px-5 py-3 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)]">
+            <div className="flex items-center justify-between mb-1.5">
+              <p className="text-[11px] font-medium text-[var(--hm-text-tertiary)] uppercase tracking-wide">Recent Enrich jobs</p>
+              <button onClick={loadJobsList} disabled={jobsListLoading} className="text-[11.5px] text-[var(--hm-link)] hover:underline">
+                {jobsListLoading ? "Loading…" : "Refresh"}
+              </button>
+            </div>
+            {jobsListError && <p className="text-[12px] text-[var(--tag-red-fg)]">{jobsListError}</p>}
+            <div className="space-y-1 max-h-40 overflow-y-auto">
+              {jobsList.map((j) => (
+                <button
+                  key={j.id}
+                  onClick={() => openJob(j)}
+                  disabled={openingJobId === j.id}
+                  className="w-full flex items-center justify-between gap-2 text-left px-2.5 py-1.5 rounded-md hover:bg-[var(--hm-surface-hover)] text-[12.5px]"
+                >
+                  <span className="font-medium text-[var(--hm-text)] truncate">{j.label}</span>
+                  <span className="text-[11px] text-[var(--hm-text-tertiary)] whitespace-nowrap">
+                    {openingJobId === j.id
+                      ? "Opening…"
+                      : `${j.status.toLowerCase()} · ${j.item_count} found${j.saved_count > 0 ? ` · saved (${j.saved_count})` : ""} · ${new Date(j.created_at).toLocaleString()}`}
+                  </span>
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
