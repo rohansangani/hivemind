@@ -979,33 +979,42 @@ function today(): string {
 const CSV_FLATTEN_SKIP_KEYS = new Set(["logo", "logos", "backgroundCovers"]);
 
 /** Turns a nested API response (arrays/objects) into flat, readable CSV columns instead of one
- * cell containing a raw JSON blob. Objects flatten to "parent_child" keys; arrays of objects get a
- * 1-based index in the key ("locations_1_city", "locations_2_city", ...); arrays of plain values
- * (or of objects reduced to a single primitive) join into one "; "-separated cell. */
+ * cell containing a raw JSON blob — one column per field NAME, never per array index. An array of
+ * objects (e.g. 5 work-experience entries) does NOT explode into experience_1_skills,
+ * experience_2_skills, ...; every entry's "skills" merges into a single "experience_skills" column
+ * (each entry's values appended, "; "-separated), same as an array of plain strings. */
 function flattenForCsv(value: unknown, prefix = ""): Record<string, string> {
   const out: Record<string, string> = {};
-  if (value == null) return out;
+  mergeFlatten(out, value, prefix);
+  return out;
+}
+function appendCsvValue(out: Record<string, string>, key: string, val: string) {
+  out[key] = out[key] ? `${out[key]}; ${val}` : val;
+}
+function mergeFlatten(out: Record<string, string>, value: unknown, prefix: string): void {
+  if (value == null) return;
   if (Array.isArray(value)) {
     const items = value.filter((v) => v != null);
-    if (!items.length) return out;
+    if (!items.length) return;
     if (items.every((v) => typeof v !== "object")) {
-      out[prefix || "value"] = items.map(String).join("; ");
+      appendCsvValue(out, prefix || "value", items.map(String).join("; "));
     } else {
-      items.forEach((item, i) => Object.assign(out, flattenForCsv(item, prefix ? `${prefix}_${i + 1}` : `${i + 1}`)));
+      // Same prefix for every item (no index) — each entry's fields merge into the same columns.
+      items.forEach((item) => mergeFlatten(out, item, prefix));
     }
-    return out;
+    return;
   }
   if (typeof value === "object") {
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
       if (CSV_FLATTEN_SKIP_KEYS.has(k)) continue;
       if (v == null) continue;
       const key = prefix ? `${prefix}_${k}` : k;
-      Object.assign(out, typeof v === "object" ? flattenForCsv(v, key) : { [key]: String(v) });
+      if (typeof v === "object") mergeFlatten(out, v, key);
+      else appendCsvValue(out, key, String(v));
     }
-    return out;
+    return;
   }
-  out[prefix || "value"] = String(value);
-  return out;
+  appendCsvValue(out, prefix || "value", String(value));
 }
 
 /** Downloads an arbitrary array of flat row objects as a CSV — used for
