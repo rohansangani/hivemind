@@ -10,6 +10,7 @@ interface Contact {
   company: string | null;
   jobTitle: string | null;
   lifecycleStage: string | null;
+  leadStatus: string | null;
   lastActivityAt: string | null;
 }
 
@@ -18,10 +19,16 @@ interface StageCount {
   count: number;
 }
 
+interface LeadStatusCount {
+  status: string;
+  count: number;
+}
+
 interface CheckResult {
   email: string;
   inHubspot: boolean;
   lifecycleStage: string | null;
+  leadStatus: string | null;
   company: string | null;
   lastActivityAt: string | null;
 }
@@ -34,8 +41,10 @@ interface CheckResult {
 export default function HubspotContactsPanel() {
   const [q, setQ] = useState("");
   const [stage, setStage] = useState("");
+  const [leadStatus, setLeadStatus] = useState("");
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [stageCounts, setStageCounts] = useState<StageCount[]>([]);
+  const [leadStatusCounts, setLeadStatusCounts] = useState<LeadStatusCount[]>([]);
   const [loading, setLoading] = useState(false);
 
   const [checkInput, setCheckInput] = useState("");
@@ -48,16 +57,18 @@ export default function HubspotContactsPanel() {
       const params = new URLSearchParams();
       if (q.trim()) params.set("q", q.trim());
       if (stage) params.set("stage", stage);
+      if (leadStatus) params.set("leadStatus", leadStatus);
       fetch(`/api/hubspot/contacts?${params}`)
         .then(r => r.json())
         .then(d => {
           setContacts(d.contacts || []);
           setStageCounts(d.stageCounts || []);
+          setLeadStatusCounts(d.leadStatusCounts || []);
         })
         .finally(() => setLoading(false));
     }, 250);
     return () => clearTimeout(t);
-  }, [q, stage]);
+  }, [q, stage, leadStatus]);
 
   async function runCheck() {
     const emails = checkInput.split(/[\s,;\n]+/).map(e => e.trim()).filter(Boolean);
@@ -106,7 +117,7 @@ export default function HubspotContactsPanel() {
                 <span className="font-mono">{r.email}</span>
                 {r.inHubspot ? (
                   <span className="text-[var(--tag-red-fg)] font-medium">
-                    ⚠ In HubSpot — {r.lifecycleStage || "unknown stage"}{r.company ? ` · ${r.company}` : ""}
+                    ⚠ In HubSpot — {r.lifecycleStage || "unknown stage"}{r.leadStatus ? ` (${r.leadStatus})` : ""}{r.company ? ` · ${r.company}` : ""}
                   </span>
                 ) : (
                   <span className="text-[var(--hm-text-tertiary)]">Not in HubSpot</span>
@@ -134,6 +145,14 @@ export default function HubspotContactsPanel() {
               </option>
             ))}
           </select>
+          <select value={leadStatus} onChange={e => setLeadStatus(e.target.value)} className="text-[12px]">
+            <option value="">All lead statuses</option>
+            {leadStatusCounts.map(s => (
+              <option key={s.status} value={s.status === "(none)" ? "" : s.status}>
+                {s.status} ({s.count})
+              </option>
+            ))}
+          </select>
         </div>
         <div className="max-h-[320px] overflow-y-auto space-y-1">
           {loading && <p className="text-[11px] text-[var(--hm-text-tertiary)] py-2">Loading…</p>}
@@ -149,9 +168,16 @@ export default function HubspotContactsPanel() {
                 </p>
                 <p className="text-[10px] text-[var(--hm-text-tertiary)] truncate">{c.email}</p>
               </div>
-              <span className="shrink-0 ml-2 text-[10px] font-medium rounded-full bg-[var(--hm-bg)] border border-[var(--hm-border)] px-2 py-0.5 text-[var(--hm-text-secondary)]">
-                {c.lifecycleStage || "unknown"}
-              </span>
+              <div className="shrink-0 ml-2 flex flex-col items-end gap-1">
+                <span className="text-[10px] font-medium rounded-full bg-[var(--hm-bg)] border border-[var(--hm-border)] px-2 py-0.5 text-[var(--hm-text-secondary)]">
+                  {c.lifecycleStage || "unknown"}
+                </span>
+                {c.leadStatus && (
+                  <span className="text-[10px] font-medium rounded-full bg-[var(--hm-bg)] border border-[var(--hm-border)] px-2 py-0.5 text-[var(--hm-text-tertiary)]">
+                    {c.leadStatus}
+                  </span>
+                )}
+              </div>
             </div>
           ))}
         </div>

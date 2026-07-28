@@ -620,6 +620,7 @@ model HubspotContact {
   company         String?
   jobTitle        String?
   lifecycleStage  String?
+  leadStatus      String?
   leadSource      String?
   lastActivityAt  DateTime?
   hubspotCreatedAt DateTime?
@@ -628,6 +629,7 @@ model HubspotContact {
 
   @@unique([organizationId, email])
   @@index([organizationId, lifecycleStage])
+  @@index([organizationId, leadStatus])
   @@index([organizationId, company])
 }
 

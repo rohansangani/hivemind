@@ -22,11 +22,13 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const q = searchParams.get("q")?.trim();
   const stage = searchParams.get("stage")?.trim();
+  const leadStatus = searchParams.get("leadStatus")?.trim();
   const limit = Math.min(parseInt(searchParams.get("limit") || "50", 10) || 50, 200);
 
   const where = {
     organizationId: orgId,
     ...(stage ? { lifecycleStage: stage } : {}),
+    ...(leadStatus ? { leadStatus } : {}),
     ...(q
       ? {
           OR: [
@@ -39,14 +41,16 @@ export async function GET(req: NextRequest) {
       : {}),
   };
 
-  const [contacts, stageCounts] = await Promise.all([
+  const [contacts, stageCounts, leadStatusCounts] = await Promise.all([
     db.hubspotContact.findMany({ where, orderBy: { lastActivityAt: "desc" }, take: limit }),
     db.hubspotContact.groupBy({ by: ["lifecycleStage"], where: { organizationId: orgId }, _count: true }),
+    db.hubspotContact.groupBy({ by: ["leadStatus"], where: { organizationId: orgId }, _count: true }),
   ]);
 
   return NextResponse.json({
     contacts,
     stageCounts: stageCounts.map(s => ({ stage: s.lifecycleStage || "(none)", count: s._count })),
+    leadStatusCounts: leadStatusCounts.map(s => ({ status: s.leadStatus || "(none)", count: s._count })),
   });
 }
 
@@ -70,6 +74,7 @@ export async function POST(req: NextRequest) {
       email,
       inHubspot: !!match,
       lifecycleStage: match?.lifecycleStage ?? null,
+      leadStatus: match?.leadStatus ?? null,
       company: match?.company ?? null,
       lastActivityAt: match?.lastActivityAt ?? null,
     };

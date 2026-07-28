@@ -134,7 +134,7 @@ const OBJECTS: Record<ObjKey, {
   line: (r: HSRecord) => string; getName: (r: HSRecord) => string; addStats: (acc: Record<string, number>, r: HSRecord[]) => void;
 }> = {
   contacts: {
-    properties: ["firstname", "lastname", "jobtitle", "company", "email", "lifecyclestage", "createdate", "phone", "hs_lead_source", "hs_linkedin_url", "hs_last_activity_date", "associatedcompanyid"],
+    properties: ["firstname", "lastname", "jobtitle", "company", "email", "lifecyclestage", "hs_lead_status", "createdate", "phone", "hs_lead_source", "hs_linkedin_url", "hs_last_activity_date", "associatedcompanyid"],
     category: "personas", label: "Contact", line: contactLine, addStats: addContactStats,
     getName: r => { const n = [r.properties.firstname, r.properties.lastname].filter(Boolean).join(" ") || r.properties.email || r.id; const co = r.properties.company?.trim(); return co ? `${n} at ${co}` : n; },
   },
@@ -210,7 +210,7 @@ async function upsertContactsTable(orgId: string, records: HSRecord[]) {
         organizationId: orgId, hubspotId: r.id, email: p.email.trim().toLowerCase(),
         firstName: p.firstname?.trim() || null, lastName: p.lastname?.trim() || null,
         company: p.company?.trim() || null, jobTitle: p.jobtitle?.trim() || null,
-        lifecycleStage: p.lifecyclestage?.trim() || null, leadSource: p.hs_lead_source?.trim() || null,
+        lifecycleStage: p.lifecyclestage?.trim() || null, leadStatus: p.hs_lead_status?.trim() || null, leadSource: p.hs_lead_source?.trim() || null,
         lastActivityAt: parseHsDate(p.hs_last_activity_date) ? new Date(parseHsDate(p.hs_last_activity_date)!) : null,
         hubspotCreatedAt: parseHsDate(p.createdate) ? new Date(parseHsDate(p.createdate)!) : null,
       },
@@ -218,7 +218,7 @@ async function upsertContactsTable(orgId: string, records: HSRecord[]) {
         hubspotId: r.id,
         firstName: p.firstname?.trim() || null, lastName: p.lastname?.trim() || null,
         company: p.company?.trim() || null, jobTitle: p.jobtitle?.trim() || null,
-        lifecycleStage: p.lifecyclestage?.trim() || null, leadSource: p.hs_lead_source?.trim() || null,
+        lifecycleStage: p.lifecyclestage?.trim() || null, leadStatus: p.hs_lead_status?.trim() || null, leadSource: p.hs_lead_source?.trim() || null,
         lastActivityAt: parseHsDate(p.hs_last_activity_date) ? new Date(parseHsDate(p.hs_last_activity_date)!) : null,
         hubspotCreatedAt: parseHsDate(p.createdate) ? new Date(parseHsDate(p.createdate)!) : null,
       },
