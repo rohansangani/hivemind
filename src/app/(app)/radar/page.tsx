@@ -26,6 +26,7 @@ type SectionId =
   | "enrich"
   | "validate"
   | "export"
+  | "capacity"
   | "logs";
 
 const SECTIONS: Array<{ id: SectionId; label: string; blurb: string }> = [
@@ -37,6 +38,7 @@ const SECTIONS: Array<{ id: SectionId; label: string; blurb: string }> = [
   { id: "enrich",    label: "Enrich",    blurb: "Find new contacts from LinkedIn for a target account." },
   { id: "validate",  label: "Validate",  blurb: "Generate email patterns, test deliverability, save confirmed emails." },
   { id: "export",    label: "Export",    blurb: "Download validated contact lists, or check a list of emails against the database." },
+  { id: "capacity",  label: "Mailbox Capacity", blurb: "MRTeam Instantly mailbox daily send limits — market_research, admin and owner only." },
   { id: "logs",      label: "Logs",      blurb: "Admin-only audit trail of edits, deletes, uploads, exports, and validate/enrich runs." },
 ];
 
@@ -56,16 +58,20 @@ export default function RadarPage() {
   const modulePermissions = (user?.modulePermissions ?? {}) as Record<string, "none" | "view" | "edit">;
   const canAccess = hasModuleAccess(modulePermissions, "radar", "view");
   const isAdmin = user?.role === "owner" || user?.role === "admin";
+  const isMarketResearch = (user?.department || "").toLowerCase().replace(/\s+/g, "_") === "market_research";
+  const canSeeCapacity = isAdmin || isMarketResearch;
   // "view"-level grant is restricted to Dashboard + Export only — no browse/edit
   // of Accounts, Contacts, Validate, Upload, ICP, or Enrich. "edit" sees everything.
   const viewOnly = modulePermissions.radar === "view";
-  const visibleSections = (viewOnly ? SECTIONS.filter((s) => s.id === "dashboard" || s.id === "export") : SECTIONS)
-    .filter((s) => s.id !== "logs" || isAdmin);
+  const visibleSections = (viewOnly ? SECTIONS.filter((s) => s.id === "dashboard" || s.id === "export" || s.id === "capacity") : SECTIONS)
+    .filter((s) => s.id !== "logs" || isAdmin)
+    .filter((s) => s.id !== "capacity" || canSeeCapacity);
 
   useEffect(() => {
-    if (viewOnly && active !== "dashboard" && active !== "export") setActive("dashboard");
+    if (viewOnly && active !== "dashboard" && active !== "export" && active !== "capacity") setActive("dashboard");
     if (active === "logs" && !isAdmin) setActive("dashboard");
-  }, [viewOnly, active, isAdmin]);
+    if (active === "capacity" && !canSeeCapacity) setActive("dashboard");
+  }, [viewOnly, active, isAdmin, canSeeCapacity]);
 
   if (!canAccess) {
     return (
@@ -131,6 +137,7 @@ export default function RadarPage() {
               : s.id === "upload" ? <UploadSection />
               : s.id === "enrich" ? <EnrichSection />
               : s.id === "validate" ? <ValidateSection />
+              : s.id === "capacity" ? <MailboxCapacitySection />
               : s.id === "logs" ? <RadarActivityLogSection />
               : (
                 <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
@@ -321,64 +328,78 @@ const STATUS_META: Array<{ key: string; label: string; color: string }> = [
 
 interface MailboxCapacityRow { email: string; dailyLimit: number; sentToday: number; remaining: number; }
 
-/** Read-only "how much send capacity is left today" for the Instantly "MRTeam" mailbox tag —
- * visible to every radar user on the Dashboard, not gated behind edit access, since this is just
- * visibility rather than an action. Hardcoded to that one tag by design (see the API route). */
-function MailboxCapacityCard() {
+/** Its own Radar tab (not a Dashboard widget) — how much Instantly send capacity is left today
+ * for the MRTeam mailbox tag. Gated to admin/owner + market_research department (see RadarPage's
+ * canSeeCapacity). Never auto-fetches on mount — "sent today" is a live number that goes stale
+ * the moment it's shown, so the user explicitly asks for it fresh via Refresh rather than getting
+ * a number that might already be minutes old with no way to tell. */
+function MailboxCapacitySection() {
   const [rows, setRows] = useState<MailboxCapacityRow[] | null>(null);
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [lastFetchedAt, setLastFetchedAt] = useState<Date | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
+  const load = () => {
+    setLoading(true);
+    setError("");
     fetch("/api/radar/mailbox-capacity")
       .then(async (r) => {
         const d = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(d.error || "Failed to load mailbox capacity");
         return d;
       })
-      .then((d) => { if (!cancelled) setRows(d.mailboxes || []); })
-      .catch((e) => { if (!cancelled) setError(e.message); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, []);
+      .then((d) => { setRows(d.mailboxes || []); setLastFetchedAt(new Date()); })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  };
 
-  if (loading) return null;
-  if (error) return null; // silent — this is a supplementary widget, not core dashboard data
-  if (!rows || !rows.length) return null;
-
-  const totalRemaining = rows.reduce((s, r) => s + r.remaining, 0);
-  const totalLimit = rows.reduce((s, r) => s + r.dailyLimit, 0);
+  const totalRemaining = (rows || []).reduce((s, r) => s + r.remaining, 0);
+  const totalLimit = (rows || []).reduce((s, r) => s + r.dailyLimit, 0);
 
   return (
     <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
-      <div className="px-5 py-3.5 border-b border-[var(--hm-border)] flex items-center justify-between">
-        <h2 className="text-[13px] font-semibold text-[var(--hm-text)]">MRTeam Mailbox Capacity — Today</h2>
-        <span className="text-[11px] text-[var(--hm-text-tertiary)]">{fmt(totalRemaining)} / {fmt(totalLimit)} remaining across {rows.length} mailbox{rows.length !== 1 ? "es" : ""}</span>
+      <div className="px-5 py-4 border-b border-[var(--hm-border)] flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">MRTeam Mailbox Capacity</h2>
+          <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">
+            {rows
+              ? `${fmt(totalRemaining)} / ${fmt(totalLimit)} remaining across ${rows.length} mailbox${rows.length !== 1 ? "es" : ""}${lastFetchedAt ? ` — as of ${lastFetchedAt.toLocaleTimeString()}` : ""}`
+              : "Click Refresh to pull today's send limits from Instantly."}
+          </p>
+        </div>
+        <button onClick={load} disabled={loading} className="hm-btn hm-btn-primary" style={{ height: 32, padding: "0 14px", fontSize: 12 }}>
+          {loading ? "Refreshing…" : "Refresh"}
+        </button>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-[12.5px]">
-          <thead>
-            <tr>
-              {["Mailbox", "Daily Limit", "Sent Today", "Remaining"].map((h) => (
-                <th key={h} className="text-left text-[11px] font-semibold uppercase tracking-wide text-[var(--hm-text-tertiary)] px-5 py-2 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] whitespace-nowrap">{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.email} className="hover:bg-[var(--hm-surface-hover)]">
-                <td className="px-5 py-2 border-b border-[var(--hm-border-light)]">{r.email}</td>
-                <td className="px-5 py-2 border-b border-[var(--hm-border-light)] tabular-nums">{r.dailyLimit}</td>
-                <td className="px-5 py-2 border-b border-[var(--hm-border-light)] tabular-nums">{r.sentToday}</td>
-                <td className="px-5 py-2 border-b border-[var(--hm-border-light)] tabular-nums font-medium" style={{ color: r.remaining === 0 ? "var(--tag-red-fg)" : "var(--tag-green-fg)" }}>
-                  {r.remaining}
-                </td>
+      {error && <p className="px-5 py-3 text-[12.5px] text-[var(--tag-red-fg)]">{error}</p>}
+      {rows && rows.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-[12.5px]">
+            <thead>
+              <tr>
+                {["Mailbox", "Daily Limit", "Sent Today", "Remaining"].map((h) => (
+                  <th key={h} className="text-left text-[11px] font-semibold uppercase tracking-wide text-[var(--hm-text-tertiary)] px-5 py-2 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] whitespace-nowrap">{h}</th>
+                ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.email} className="hover:bg-[var(--hm-surface-hover)]">
+                  <td className="px-5 py-2 border-b border-[var(--hm-border-light)]">{r.email}</td>
+                  <td className="px-5 py-2 border-b border-[var(--hm-border-light)] tabular-nums">{r.dailyLimit}</td>
+                  <td className="px-5 py-2 border-b border-[var(--hm-border-light)] tabular-nums">{r.sentToday}</td>
+                  <td className="px-5 py-2 border-b border-[var(--hm-border-light)] tabular-nums font-medium" style={{ color: r.remaining === 0 ? "var(--tag-red-fg)" : "var(--tag-green-fg)" }}>
+                    {r.remaining}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {rows && rows.length === 0 && !error && (
+        <p className="px-5 py-6 text-center text-[12.5px] text-[var(--hm-text-tertiary)]">No MRTeam-tagged mailboxes found in Instantly.</p>
+      )}
     </div>
   );
 }
@@ -455,8 +476,6 @@ function RadarDashboard() {
           </div>
         </div>
       </div>
-
-      <MailboxCapacityCard />
 
       {/* Vertical breakdowns */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">

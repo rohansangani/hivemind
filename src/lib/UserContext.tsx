@@ -6,6 +6,7 @@ export interface AppUser {
   id: string;
   name: string;
   role: string;
+  department?: string | null;
   organization?: { name: string; website?: string };
   customPermissions?: Record<string, string> | null;
   /** Fully-merged effective module permissions: role default (built-in or
