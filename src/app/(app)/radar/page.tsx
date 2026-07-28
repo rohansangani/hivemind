@@ -319,6 +319,70 @@ const STATUS_META: Array<{ key: string; label: string; color: string }> = [
   { key: "unvalidated", label: "Unvalidated", color: "var(--hm-text-tertiary)" },
 ];
 
+interface MailboxCapacityRow { email: string; dailyLimit: number; sentToday: number; remaining: number; }
+
+/** Read-only "how much send capacity is left today" for the Instantly "MRTeam" mailbox tag —
+ * visible to every radar user on the Dashboard, not gated behind edit access, since this is just
+ * visibility rather than an action. Hardcoded to that one tag by design (see the API route). */
+function MailboxCapacityCard() {
+  const [rows, setRows] = useState<MailboxCapacityRow[] | null>(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/radar/mailbox-capacity")
+      .then(async (r) => {
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d.error || "Failed to load mailbox capacity");
+        return d;
+      })
+      .then((d) => { if (!cancelled) setRows(d.mailboxes || []); })
+      .catch((e) => { if (!cancelled) setError(e.message); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  if (loading) return null;
+  if (error) return null; // silent — this is a supplementary widget, not core dashboard data
+  if (!rows || !rows.length) return null;
+
+  const totalRemaining = rows.reduce((s, r) => s + r.remaining, 0);
+  const totalLimit = rows.reduce((s, r) => s + r.dailyLimit, 0);
+
+  return (
+    <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
+      <div className="px-5 py-3.5 border-b border-[var(--hm-border)] flex items-center justify-between">
+        <h2 className="text-[13px] font-semibold text-[var(--hm-text)]">MRTeam Mailbox Capacity — Today</h2>
+        <span className="text-[11px] text-[var(--hm-text-tertiary)]">{fmt(totalRemaining)} / {fmt(totalLimit)} remaining across {rows.length} mailbox{rows.length !== 1 ? "es" : ""}</span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-[12.5px]">
+          <thead>
+            <tr>
+              {["Mailbox", "Daily Limit", "Sent Today", "Remaining"].map((h) => (
+                <th key={h} className="text-left text-[11px] font-semibold uppercase tracking-wide text-[var(--hm-text-tertiary)] px-5 py-2 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] whitespace-nowrap">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.email} className="hover:bg-[var(--hm-surface-hover)]">
+                <td className="px-5 py-2 border-b border-[var(--hm-border-light)]">{r.email}</td>
+                <td className="px-5 py-2 border-b border-[var(--hm-border-light)] tabular-nums">{r.dailyLimit}</td>
+                <td className="px-5 py-2 border-b border-[var(--hm-border-light)] tabular-nums">{r.sentToday}</td>
+                <td className="px-5 py-2 border-b border-[var(--hm-border-light)] tabular-nums font-medium" style={{ color: r.remaining === 0 ? "var(--tag-red-fg)" : "var(--tag-green-fg)" }}>
+                  {r.remaining}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function RadarDashboard() {
   const [stats, setStats] = useState<RadarStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -391,6 +455,8 @@ function RadarDashboard() {
           </div>
         </div>
       </div>
+
+      <MailboxCapacityCard />
 
       {/* Vertical breakdowns */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
