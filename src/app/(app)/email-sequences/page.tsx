@@ -163,9 +163,14 @@ export default function EmailSequencesPage() {
   // Which Instantly merge tags (from your account's tag list) the generated copy should use
   // literally instead of writing the real value inline — e.g. "{{firstName}}" instead of "Priya".
   // firstName/lastName/companyName/phone/website resolve automatically at send time since those
-  // are already sent as real lead fields; "personalization" has no source field from this app, so
-  // it'll appear literally in Instantly and needs resolving there if you use that tag elsewhere.
+  // are already sent as real lead fields. "personalization" is handled entirely differently (see
+  // personalizationText below) — it's not written inline by the AI at all, just stitched into the
+  // Instantly template between step 1's body and the signature at send time.
   const [personalizationTags, setPersonalizationTags] = useState<string[]>([]);
+  // One free-text block, shared across every lead in the campaign (not per-CSV-row — there was no
+  // way to fill this in for every upload method, e.g. Radar mode has no source field for it at
+  // all), applied uniformly when "Personalization" is checked.
+  const [personalizationText, setPersonalizationText] = useState("");
 
   // Verticals (Markets) from the KB — an org selling into multiple verticals (e.g. ClickPost:
   // India Ecom, India B2B, US) has products scoped to specific markets. Which products/knowledge
@@ -492,7 +497,11 @@ export default function EmailSequencesPage() {
       const res = await fetch("/api/email-sequences/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ results: sendableProspects, mailboxTag, skipDuplicates, campaignName: campaignTitle.trim() || undefined }),
+        body: JSON.stringify({
+          results: sendableProspects, mailboxTag, skipDuplicates,
+          campaignName: campaignTitle.trim() || undefined,
+          personalization: personalizationTags.includes("personalization") ? personalizationText : undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Send failed");
@@ -1234,18 +1243,6 @@ export default function EmailSequencesPage() {
                   <label className={labelCls}>Industry</label>
                   <input className={inputCls} placeholder="E-commerce" value={prospect.industry} onChange={e => setProspect(p => ({ ...p, industry: e.target.value }))} />
                 </div>
-                {personalizationTags.includes("personalization") && (
-                  <div className="col-span-2">
-                    <label className={labelCls}>Personalization line *</label>
-                    <input
-                      className={inputCls}
-                      placeholder="e.g. Saw your team just launched the new warehouse in Austin"
-                      value={prospect.personalization || ""}
-                      onChange={e => setProspect(p => ({ ...p, personalization: e.target.value }))}
-                    />
-                    <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-1">You checked "Personalization" above, so the sequence writes {"{{personalization}}"} instead of a real opening line — this is what fills it in when you send.</p>
-                  </div>
-                )}
               </div>
             </div>
           )}
@@ -1290,16 +1287,8 @@ export default function EmailSequencesPage() {
 
                   {/* Column mapping */}
                   <div className={labelCls + " mb-2"}>Map Columns</div>
-                  {personalizationTags.includes("personalization") && (
-                    <p className="text-[11px] text-[var(--hm-text-tertiary)] -mt-1 mb-2">
-                      You checked "Personalization" above — map a column with each lead&apos;s pre-written opening line below, or {"{{personalization}}"} will go out unresolved.
-                    </p>
-                  )}
                   <div className="grid grid-cols-3 gap-2 mb-3">
-                    {[
-                      "name", "company", "website", "title", "email", "industry",
-                      ...(personalizationTags.includes("personalization") ? ["personalization"] : []),
-                    ].map(field => (
+                    {(["name", "company", "website", "title", "email", "industry"] as const).map(field => (
                       <div key={field}>
                         <label className="text-[10px] text-[var(--hm-text-tertiary)] uppercase">{field}</label>
                         <select
@@ -1575,6 +1564,19 @@ export default function EmailSequencesPage() {
                   );
                 })}
               </div>
+              {personalizationTags.includes("personalization") && (
+                <div className="mt-3">
+                  <label className={labelCls}>Personalization text</label>
+                  <textarea
+                    className={inputCls}
+                    style={{ minHeight: 70 }}
+                    placeholder="e.g. Saw your team just launched the new warehouse in Austin — this line goes into every email in this campaign."
+                    value={personalizationText}
+                    onChange={e => setPersonalizationText(e.target.value)}
+                  />
+                  <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-1">Same text for every lead in this campaign, inserted between the first email&apos;s body and the signature when you send.</p>
+                </div>
+              )}
             </div>
 
             {/* Sender info */}

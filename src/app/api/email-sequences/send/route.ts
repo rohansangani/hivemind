@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const { results, mailboxTag, campaignName, skipDuplicates } = body as {
+    const { results, mailboxTag, campaignName, skipDuplicates, personalization } = body as {
       results?: ProspectResult[];
       mailboxTag?: string;
       campaignName?: string;
@@ -65,6 +65,10 @@ export async function POST(req: NextRequest) {
        * prospect whose email already exists in another campaign/list/anywhere in the workspace
        * instead of adding them again. */
       skipDuplicates?: boolean;
+      /** One free-text block, the SAME for every lead in this send (not per-lead — there was no
+       * way to fill this in for every upload method) — stitched into step 1's body, between the
+       * generated copy and the signature. */
+      personalization?: string;
     };
     const dedupe = skipDuplicates !== false;
 
@@ -100,7 +104,10 @@ export async function POST(req: NextRequest) {
       // block-structured (ProseMirror-style) HTML model, not raw HTML, and a dangling <br> outside
       // any block element is apparently invalid enough to blank the whole field rather than just
       // that tag. Wrapping each tag in its own <p> is real block markup and safe either way.
-      return { type: "email", delay, variants: [{ subject, body: `<p>{{step${i + 1}Body}}</p><p>{{accountSignature}}</p>` }] };
+      // Personalization (when provided) only goes into step 1 — it's a one-time opening line, not
+      // something that belongs in every follow-up email in the sequence.
+      const personalizationBlock = i === 0 && personalization ? "<p>{{personalization}}</p>" : "";
+      return { type: "email", delay, variants: [{ subject, body: `<p>{{step${i + 1}Body}}</p>${personalizationBlock}<p>{{accountSignature}}</p>` }] };
     });
 
     // Default schedule — business hours, weekdays only, Eastern Time — matching the user's own
@@ -143,10 +150,7 @@ export async function POST(req: NextRequest) {
         if (i === 0 || !isSingleSubject) customVariables[`step${i + 1}Subject`] = e.subject;
         customVariables[`step${i + 1}Body`] = e.body;
       });
-      // Only meaningful when the "Personalization" tag was selected at generation time (the
-      // sequence text then contains a literal "{{personalization}}" instead of a real line) — the
-      // per-lead value comes from a CSV column (bulk mode) or the single-prospect form field.
-      if (r.prospect!.personalization) customVariables.personalization = r.prospect!.personalization;
+      if (personalization) customVariables.personalization = personalization;
       const nameParts = (r.prospect!.name || "").trim().split(/\s+/);
       try {
         const lead = await instantly<{ id?: string }>("/leads", {

@@ -307,10 +307,16 @@ ${config.emailCount === 3
 - Formatting: no em-dashes (—), no colons or semicolons, no hashtags, no bullet points in the body. Clean, human-typed sentences only, short paragraphs with a blank line between each (see the paragraph count/length for this email's length tier above) — a scannable, punchy style, not dense blocks. The total word count for the tier above is the hard constraint; paragraph count/length is how you hit it, not a separate target to chase on top of it.
 - No signatures or sign-offs of any kind ("Best,", "Thanks,", a name, etc.) — end the email immediately after the CTA question.
 - No meta-labels or instructional tags in the output ("Hook:", "CTA:", "Subject:", etc.) — output only the finished, ready-to-send text.
-${config.personalizationTags?.length ? `
+${(() => {
+  // "personalization" is deliberately excluded here — it's not something the AI writes inline at
+  // all. It's stitched into the Instantly template as its own line between step 1's body and the
+  // signature at send time (see send/route.ts), independent of the generated copy.
+  const inlineTags = (config.personalizationTags || []).filter((t) => t !== "personalization");
+  return inlineTags.length ? `
 MERGE TAGS (write these EXACT literal placeholders, verbatim, wherever the email would otherwise reference the corresponding detail — do NOT write the real value for these, and do NOT invent your own tag names):
-${config.personalizationTags.map((t) => `- Use the exact text "{{${t}}}" for ${PERSONALIZATION_TAG_LABELS[t] || t}`).join("\n")}
-Everything else not listed above should still use the real value/placeholder directly as normal.` : ""}
+${inlineTags.map((t) => `- Use the exact text "{{${t}}}" for ${PERSONALIZATION_TAG_LABELS[t] || t}`).join("\n")}
+Everything else not listed above should still use the real value/placeholder directly as normal.` : "";
+})()}
 
 Return a JSON response with this structure:
 {
