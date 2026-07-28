@@ -83,11 +83,13 @@ const RADAR_FILTER_PROPERTIES = {
   },
   title: {
     description:
-      "Job title contains this text (case-insensitive), e.g. \"Director\" or \"VP Marketing\". When the user wants " +
-      "several title buckets in ONE combined export (e.g. \"Founder, Co-Founder, Operations, and Support titles\"), " +
-      "pass an array of strings here instead of calling the export tool once per title — that produces ONE CSV " +
-      "covering all of them. Only use separate tool calls (and separate CSVs) if the user explicitly asks for a " +
-      "separate file per category.",
+      "Job title contains this text (case-insensitive), e.g. \"Director\" or \"VP Marketing\". Title is stored " +
+      "inconsistently across rows (\"VP Sales\"/\"VP of Sales\"/\"Vice President, Sales\" may all be separate real " +
+      "values), so when precision matters call list_radar_distinct_values({column: \"title\", search: <short " +
+      "substring>}) first, read the real values back, and pass every matching one as an array here — OR'd together " +
+      "into one query/one CSV. This also covers combining several title buckets in ONE export (e.g. \"Founder, " +
+      "Co-Founder, Operations, and Support titles\") — pass them all as one array instead of calling the export " +
+      "tool once per title, unless the user explicitly asks for a separate file per category.",
     anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }],
   },
   employeeRange: { type: "string", description: "Company employee-count bucket, exact value as stored in Radar." },
@@ -98,22 +100,6 @@ const RADAR_FILTER_PROPERTIES = {
     type: "array",
     items: { type: "string", enum: ["safe to send", "verified", "risky", "invalid", "unknown", "unvalidated"] },
     description: "Which email validation statuses to include. Defaults to safe-to-send + verified if omitted — the same default the manual Export tab uses.",
-  },
-  maxPerGroup: {
-    type: "object",
-    properties: {
-      groupBy: {
-        type: "string",
-        enum: ["account", "domain", "company_name"],
-        description: "What defines a 'group' for this cap — 'account' for Radar's own deduplicated account record (use this for any 'per account' or 'per company' phrasing), 'domain' for the company's website domain, 'company_name' as a fallback when neither of those fits.",
-      },
-      max: { type: "number", description: "Maximum contacts to keep per group value." },
-    },
-    description:
-      "General list-hygiene rule — populate this whenever the user describes a cap/dedup rule in plain language, " +
-      "even if they don't use these exact words: \"no more than 2 people per account\", \"only one contact per company\", " +
-      "\"max 3 per domain\", \"don't over-saturate the same account\", etc. When capping, the highest-quality contacts " +
-      "(by email status: safe to send/verified over risky/unknown/invalid) are kept automatically.",
   },
 } as const;
 
@@ -139,17 +125,21 @@ const RADAR_TOOLS = [
   {
     name: "list_radar_distinct_values",
     description:
-      "List every distinct value actually stored in Radar for one column (industry, vertical, employeeRange, " +
-      "country, accountSize, revenueRange, subIndustry). Industry in particular is stored inconsistently — the " +
-      "same real industry can appear as several different strings (e.g. \"Ecommerce\", \"E-commerce\", " +
-      "\"D2C - Ecommerce\"). ALWAYS call this for the 'industry' column before filtering/exporting by industry, " +
-      "read the real values back, and pass every value that matches what the user means as an array in the " +
-      "industry filter (buildInFilter OR's them together into one query/one CSV) — never guess a single exact " +
-      "industry string from context alone.",
+      "List every distinct value actually stored in Radar for one column (industry, title, vertical, " +
+      "employeeRange, country, accountSize, revenueRange, subIndustry). Industry and title in particular are " +
+      "stored inconsistently — the same real industry/role can appear as several different strings (e.g. " +
+      "\"Ecommerce\"/\"E-commerce\"/\"D2C - Ecommerce\", or \"VP Sales\"/\"VP of Sales\"/\"Vice President, Sales\"). " +
+      "ALWAYS call this for the 'industry' or 'title' column before filtering/exporting by either, read the real " +
+      "values back, and pass every value that matches what the user means as an array in the corresponding filter " +
+      "(OR'd together into one query/one CSV) — never guess a single exact string from context alone. For 'title' " +
+      "specifically, always pass `search` too (a short substring like \"sales\" or \"ops\") — titles have far more " +
+      "distinct values than industry, so an unfiltered list would be too large to be useful; industry's full list " +
+      "is small enough that `search` is optional there.",
     input_schema: {
       type: "object",
       properties: {
-        column: { type: "string", enum: ["industry", "vertical", "employeeRange", "country", "accountSize", "revenueRange", "subIndustry"] },
+        column: { type: "string", enum: ["industry", "title", "vertical", "employeeRange", "country", "accountSize", "revenueRange", "subIndustry"] },
+        search: { type: "string", description: "Substring filter on the column's real values (case-insensitive) — required in practice for 'title', optional for the others." },
       },
       required: ["column"],
     },
@@ -285,20 +275,6 @@ function toRadarFilters(input: Record<string, unknown>): Record<string, unknown>
   return filters;
 }
 
-const GROUP_BY_COLUMN: Record<string, string> = { account: "account_id", domain: "domain", company_name: "company_name" };
-
-/** Translates the tool's friendly `maxPerGroup` input into a real contacts_view column name for
- * applyGroupCap. Returns undefined when the input is missing/malformed — capping is skipped. */
-function toGroupCap(input: Record<string, unknown>): { field: string; max: number } | undefined {
-  const raw = input.maxPerGroup as Record<string, unknown> | undefined;
-  if (!raw || typeof raw !== "object") return undefined;
-  const groupBy = String(raw.groupBy ?? "");
-  const field = GROUP_BY_COLUMN[groupBy];
-  const max = Number(raw.max);
-  if (!field || !max || max < 1) return undefined;
-  return { field, max };
-}
-
 function toAccountFilters(input: Record<string, unknown>): Record<string, unknown> {
   const filters: Record<string, unknown> = {};
   for (const key of ["vertical", "industry", "subIndustry", "accountSize", "employeeRange", "revenueRange", "country", "search"]) {
@@ -311,10 +287,18 @@ function toAccountFilters(input: Record<string, unknown>): Record<string, unknow
 // (the same deduplicated-company table /api/radar/options already reads distinct filter values
 // from — contacts inherit their account's industry/vertical/etc, so this is the right source of
 // truth for "what values actually exist" regardless of which tool is filtering by it).
-const DISTINCT_VALUE_COLUMN: Record<string, string> = {
-  industry: "industry", vertical: "vertical", employeeRange: "employee_range",
-  country: "country", accountSize: "account_size", revenueRange: "revenue_range", subIndustry: "sub_industry",
+// column -> [table, real column name]. Title lives on contacts_view (a per-contact field), every
+// other distinct-value column lives on accounts (contacts inherit industry/vertical/etc from
+// their account) — same source /api/radar/options already reads from for its filter dropdowns.
+const DISTINCT_VALUE_COLUMN: Record<string, [string, string]> = {
+  industry: ["accounts", "industry"], vertical: ["accounts", "vertical"], employeeRange: ["accounts", "employee_range"],
+  country: ["accounts", "country"], accountSize: ["accounts", "account_size"], revenueRange: ["accounts", "revenue_range"],
+  subIndustry: ["accounts", "sub_industry"], title: ["contacts_view", "title"],
 };
+// Titles have far more distinct values than any other column here (free text, not a fixed enum)
+// — an unfiltered full list would be too large to be useful in a tool result. Only applied to
+// title; every other column's real cardinality is small enough to return in full.
+const TITLE_RESULT_LIMIT = 200;
 
 async function executeRadarTool(
   toolName: string,
@@ -322,17 +306,20 @@ async function executeRadarTool(
   actorUserId: string
 ): Promise<{ toolResult: unknown; download?: { filename: string; csv: string } }> {
   if (toolName === "list_radar_distinct_values") {
-    const column = DISTINCT_VALUE_COLUMN[String(input.column ?? "")];
-    if (!column) return { toolResult: { error: "Unknown column" } };
-    const values = await distinctValues("accounts", column);
+    const columnKey = String(input.column ?? "");
+    const mapped = DISTINCT_VALUE_COLUMN[columnKey];
+    if (!mapped) return { toolResult: { error: "Unknown column" } };
+    const [table, column] = mapped;
+    const search = typeof input.search === "string" ? input.search : undefined;
+    const values = await distinctValues(table, column, columnKey === "title" ? { limit: TITLE_RESULT_LIMIT, search } : { search });
     return { toolResult: { column: input.column, values } };
   }
   if (toolName === "search_radar_contacts") {
-    const count = await countContacts(toRadarFilters(input), input.emailStatuses, toGroupCap(input));
+    const count = await countContacts(toRadarFilters(input), input.emailStatuses);
     return { toolResult: { count } };
   }
   if (toolName === "export_radar_contacts_csv") {
-    const { csv, matched, exported, truncated } = await exportContactsCsv(toRadarFilters(input), input.emailStatuses, toGroupCap(input));
+    const { csv, matched, exported, truncated } = await exportContactsCsv(toRadarFilters(input), input.emailStatuses);
     if (exported > 0) await logContactExport(actorUserId, exported);
     return {
       toolResult: { matched, exported, truncated },
@@ -714,14 +701,14 @@ export async function POST(req: NextRequest) {
 
 RADAR CONTACTS & ACCOUNTS (search_radar_contacts/accounts, export_radar_contacts/accounts_csv tools):
 - You have direct access to Radar via five tools: list_radar_distinct_values, plus two each for CONTACTS (individual people) and ACCOUNTS (real, deduplicated companies — one row per company, not per contact).
-- Whenever a request involves industry (or any other inconsistently-worded column), call list_radar_distinct_values first to see the REAL stored values instead of guessing an exact string — industry especially is stored inconsistently (e.g. "Ecommerce"/"E-commerce"/"D2C - Ecommerce" might all be separate real values for what the user means by one industry). Pass every matching value as an array in the industry filter so one call/one result covers all of them.
+- Whenever a request involves industry, title, or any other inconsistently-worded column, call list_radar_distinct_values first to see the REAL stored values instead of guessing an exact string — industry (e.g. "Ecommerce"/"E-commerce"/"D2C - Ecommerce") and title (e.g. "VP Sales"/"VP of Sales"/"Vice President, Sales") especially are stored inconsistently. For title, pass a search substring (e.g. "sales", "ops") since the full title list is too large to be useful unfiltered. Pass every matching value as an array in the corresponding filter so one call/one result covers all of them.
 - If the user asks about companies/accounts specifically — "how many accounts", "which companies", "unique companies", a company/account-level count or export — use the ACCOUNTS tools. Never approximate an account-level answer by counting or deduplicating contacts yourself; Radar's accounts table is already the real deduplicated source, query it directly.
 - If the user asks about people/leads/contacts, use the CONTACTS tools.
 - When the user wants to find, count, or export either, translate their request into filters using the ICP/persona/product/industry knowledge above (e.g. "our ideal customers in D2C haircare" → vertical: D2C, industry: something matching the known ICP) — ask a clarifying question instead of guessing if the request is genuinely ambiguous.
 - ALWAYS call the matching search tool first (search_radar_contacts or search_radar_accounts). Report the exact count back to the user in plain language and explicitly ask them to confirm before exporting anything.
 - ONLY call the matching export tool after the user has clearly confirmed in a later message (e.g. "yes", "export it", "send me the csv") — never export on the same turn as the first search, even if the request sounded like it wanted a file immediately.
 - If the user wants results split by a field (e.g. "export contacts grouped by vertical", "separately for B2B and D2C") — the exported CSV already includes vertical/industry/country as real columns on every row, so ONE export covers this; the user can filter/sort/pivot on that column themselves. Do NOT call the export tool multiple times (once per group value) unless the user explicitly says they need genuinely separate files (e.g. "give me 3 separate CSVs, one per vertical, so I can upload each to a different tool"). If they do ask for separate files, you may call the export tool more than once in the same turn — every file you generate this way is delivered to the user as its own download, so tell them exactly that ("here are your N files") — never tell them you can't merge files or ask them to copy-paste/combine anything themselves, that's never true.
-- If the user describes a list-hygiene / capping rule — "no more than 2 people per account", "only one contact per company", "max 3 per domain", "don't over-saturate the same account" — populate the export/search tools' \`maxPerGroup\` parameter (groupBy: "account"/"domain"/"company_name", max: N) rather than saying this isn't possible. It genuinely is possible; when a group has more contacts than the cap, the highest-quality ones (by email status) are kept automatically. Report the capped count back to the user the same way as any other filter before exporting.
+- Always return every matching row for the filters given — there is no per-account/company/domain capping available, so don't suggest one or invent a limit that wasn't asked for.
 - ALWAYS spell out every filter actually applied, not just the count — vertical, industry, and whichever of title/country/company/employee range/revenue range/account size/email status(es) were used, one per line or a short bullet list. For contacts, if the user didn't specify an email status, say explicitly that you defaulted to "safe to send" + "verified" only (Radar's exportable default) and that risky/invalid/unknown/unvalidated contacts are excluded unless they ask to include those too. This applies to both the count reply and the export confirmation — never report a bare number with no criteria shown.
 - Do not mention these tools by name to the user — just talk about "searching Radar" / "the accounts/contacts database" naturally.`
           : `

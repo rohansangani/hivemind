@@ -194,9 +194,11 @@ export async function logRadarUsage(userEmail: string | null | undefined, action
  * across the whole table (PostgREST caps REST reads at 1000 rows, so a REST
  * scan would silently miss values).
  */
-export async function distinctValues(table: string, column: string): Promise<string[]> {
+export async function distinctValues(table: string, column: string, opts: { limit?: number; search?: string } = {}): Promise<string[]> {
+  const { limit, search } = opts;
+  const searchClause = search ? ` AND ${column} ILIKE '%${search.replace(/'/g, "''").replace(/%/g, "")}%'` : "";
   const rows = await radarSql<Record<string, string>>(
-    `SELECT DISTINCT ${column} AS v FROM ${table} WHERE ${column} IS NOT NULL AND ${column} <> '' ORDER BY 1`,
+    `SELECT DISTINCT ${column} AS v FROM ${table} WHERE ${column} IS NOT NULL AND ${column} <> ''${searchClause} ORDER BY 1${limit ? ` LIMIT ${limit}` : ""}`,
   );
   return rows.map((r) => r.v).filter(Boolean);
 }
