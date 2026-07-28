@@ -913,15 +913,26 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
       LIMIT 15
     `);
 
+    // Fair per-job budget split, same fix already applied to continue_retest_jobs — without it, a
+    // small job placed earlier in ORDER BY (e.g. one only here for 72h delayed-bounce-watching) or
+    // one huge job's own multi-thousand-row SELECT/UPDATE can eat the ENTIRE tick's budget, so a
+    // job further down the list never gets a turn, tick after tick (confirmed live: a 2,730-lead
+    // job sat completely untouched — cursor still null, counts frozen — across several real ticks
+    // while two other eligible jobs consumed the whole budget first every single time).
+    const TOTAL_BUDGET_MS = 26000;
     const startedAt = Date.now();
     const results: Record<string, unknown>[] = [];
-    for (const { job_id: jid } of jobRows) {
-      if (Date.now() - startedAt > 28000) { results.push({ jobId: jid, skipped: "time budget — will run next tick" }); continue; }
+    for (let idx = 0; idx < jobRows.length; idx++) {
+      const jid = jobRows[idx].job_id;
+      const remaining = TOTAL_BUDGET_MS - (Date.now() - startedAt);
+      if (remaining < 3000) { results.push({ jobId: jid, skipped: "time budget — will run next tick" }); continue; }
+      const perJobBudget = Math.floor(remaining / (jobRows.length - idx));
+      const jobStartedAt = Date.now();
       try {
         const j = (await radarSql<{ campaign_id?: string; vertical?: string; check_cursor?: string | null }>(`SELECT campaign_id, vertical, check_cursor FROM email_validation_jobs WHERE id = ${jid}`))[0];
         if (!j?.campaign_id) continue;
 
-        const r = await pageInstantlyLeads(j.campaign_id, j.check_cursor ?? null, Date.now() - startedAt > 25000 ? 0 : 25000 - (Date.now() - startedAt));
+        const r = await pageInstantlyLeads(j.campaign_id, j.check_cursor ?? null, Math.max(2000, perJobBudget - (Date.now() - jobStartedAt) - 3000));
         await radarSql(`UPDATE email_validation_jobs SET check_cursor = ${r.nextCursor ? `'${esc(r.nextCursor)}'` : "NULL"} WHERE id = ${jid}`);
 
         const { updated, feedback, delayedBounceEmails } = await applyLeadStatuses(jid, r.statusByEmail);
