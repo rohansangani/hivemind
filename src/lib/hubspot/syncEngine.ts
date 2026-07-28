@@ -194,6 +194,38 @@ async function fetchPage(objectType: string, properties: string[], token: string
   return { records: page.results || [], nextAfter: page.paging?.next?.after ?? null };
 }
 
+/**
+ * Upsert one page of contacts into the structured HubspotContact table (keyed on
+ * org+email) so "is this lead/customer already in HubSpot, what's their status"
+ * is an exact-match lookup instead of a KnowledgeEntry text scan. Skips records
+ * without an email — nothing to key on.
+ */
+async function upsertContactsTable(orgId: string, records: HSRecord[]) {
+  const withEmail = records.filter(r => r.properties.email?.trim());
+  await Promise.all(withEmail.map(r => {
+    const p = r.properties;
+    return db.hubspotContact.upsert({
+      where: { organizationId_email: { organizationId: orgId, email: p.email.trim().toLowerCase() } },
+      create: {
+        organizationId: orgId, hubspotId: r.id, email: p.email.trim().toLowerCase(),
+        firstName: p.firstname?.trim() || null, lastName: p.lastname?.trim() || null,
+        company: p.company?.trim() || null, jobTitle: p.jobtitle?.trim() || null,
+        lifecycleStage: p.lifecyclestage?.trim() || null, leadSource: p.hs_lead_source?.trim() || null,
+        lastActivityAt: parseHsDate(p.hs_last_activity_date) ? new Date(parseHsDate(p.hs_last_activity_date)!) : null,
+        hubspotCreatedAt: parseHsDate(p.createdate) ? new Date(parseHsDate(p.createdate)!) : null,
+      },
+      update: {
+        hubspotId: r.id,
+        firstName: p.firstname?.trim() || null, lastName: p.lastname?.trim() || null,
+        company: p.company?.trim() || null, jobTitle: p.jobtitle?.trim() || null,
+        lifecycleStage: p.lifecyclestage?.trim() || null, leadSource: p.hs_lead_source?.trim() || null,
+        lastActivityAt: parseHsDate(p.hs_last_activity_date) ? new Date(parseHsDate(p.hs_last_activity_date)!) : null,
+        hubspotCreatedAt: parseHsDate(p.createdate) ? new Date(parseHsDate(p.createdate)!) : null,
+      },
+    });
+  }));
+}
+
 // ─── the tick ───
 export async function runHubspotSyncTick(jobId: string, budgetMs: number): Promise<void> {
   const startedAt = Date.now();
@@ -228,11 +260,13 @@ export async function runHubspotSyncTick(jobId: string, budgetMs: number): Promi
         const prog = state[phase];
         if (!prog.wiped) {
           await db.knowledgeEntry.deleteMany({ where: { organizationId: orgId, source: "hubspot", category: obj.category } });
+          if (phase === "contacts") await db.hubspotContact.deleteMany({ where: { organizationId: orgId } });
           prog.total = await fetchTotal(phase, token);
           prog.wiped = true;
         }
         const { records, nextAfter } = await fetchPage(phase, obj.properties, token, prog.after);
         if (records.length) {
+          if (phase === "contacts") await upsertContactsTable(orgId, records);
           for (const batch of chunks(records, CHUNK_SIZE)) {
             await db.knowledgeEntry.createMany({
               data: batch.map(r => ({ organizationId: orgId, category: obj.category, source: "hubspot", title: `HubSpot ${obj.label}: ${obj.getName(r)}`, content: obj.line(r), isAIGenerated: false, isApproved: true })),

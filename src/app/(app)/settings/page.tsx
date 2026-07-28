@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import ModuleTour from "@/components/ModuleTour";
+import HubspotContactsPanel from "@/components/settings/HubspotContactsPanel";
 import { useUser } from "@/lib/UserContext";
 
 export default function SettingsPage() {
@@ -1735,6 +1736,8 @@ export default function SettingsPage() {
                     })()}
                   </div>
                 )}
+
+                {hsConnected && <HubspotContactsPanel />}
 
                 {!hsConnected && (
                   <div className="px-5 py-4 space-y-3">

@@ -56,6 +56,7 @@ model Organization {
   coachTracks        CoachTrack[]
   coachEnrollments   CoachEnrollment[]
   hubspotSyncJobs    HubspotSyncJob[]
+  hubspotContacts    HubspotContact[]
 }
 
 model User {
@@ -196,7 +197,7 @@ model HubspotSyncJob {
   id             String       @id @default(cuid())
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  userId         String
+  userId         String?
   status         String       @default("running") // running | done | error | cancelled
   phase          String       @default("contacts") // contacts | companies | deals | notes | finalize
   state          Json         @default("{}") // cursors, per-object counts/totals, accumulated stat maps
@@ -601,6 +602,33 @@ model Integration {
   updatedAt      DateTime     @updatedAt
 
   @@unique([organizationId, type])
+}
+
+// Structured, upserted mirror of HubSpot contacts — one row per email, kept in
+// sync by runHubspotSyncTick (contacts phase). Exists alongside the free-text
+// KnowledgeEntry rows (which serve AI search) so "does this email already exist
+// in HubSpot, and what's its status" is an indexed exact-match lookup instead of
+// a text scan — used to check leads/customers before outreach.
+model HubspotContact {
+  id              String    @id @default(cuid())
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  hubspotId       String
+  email           String
+  firstName       String?
+  lastName        String?
+  company         String?
+  jobTitle        String?
+  lifecycleStage  String?
+  leadSource      String?
+  lastActivityAt  DateTime?
+  hubspotCreatedAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([organizationId, email])
+  @@index([organizationId, lifecycleStage])
+  @@index([organizationId, company])
 }
 
 // ═══════════════════════════════════════

@@ -9,9 +9,31 @@ import { runHubspotSyncTick, jobProgress } from "@/lib/hubspot/syncEngine";
 const START_BUDGET_MS = 250_000;
 const CONTINUE_BUDGET_MS = 260_000;
 
+const DAILY_STALE_MS = 23 * 60 * 60 * 1000; // kick off a fresh job once a connected org's last sync is >23h old
+
+/** Start a fresh sync job for any connected org that hasn't synced in ~24h and has no job already running. */
+async function startDueDailyJobs() {
+  const integrations = await db.integration.findMany({
+    where: { type: "hubspot", accessToken: { not: null } },
+    select: { organizationId: true, lastSyncAt: true },
+  });
+  const cutoff = new Date(Date.now() - DAILY_STALE_MS);
+  let started = 0;
+  for (const integ of integrations) {
+    if (integ.lastSyncAt && integ.lastSyncAt > cutoff) continue;
+    const running = await db.hubspotSyncJob.findFirst({ where: { organizationId: integ.organizationId, status: "running" }, select: { id: true } });
+    if (running) continue;
+    await db.hubspotSyncJob.create({ data: { organizationId: integ.organizationId } });
+    await db.integration.update({ where: { organizationId_type: { organizationId: integ.organizationId, type: "hubspot" } }, data: { syncStatus: "syncing" } }).catch(() => {});
+    started++;
+  }
+  return started;
+}
+
 /** Continue every HubSpot sync job still "running", across orgs (cron). Time-budgeted. */
 async function continueAllJobs() {
   const startedAt = Date.now();
+  const startedDaily = await startDueDailyJobs();
   const jobs = await db.hubspotSyncJob.findMany({ where: { status: "running" }, orderBy: { updatedAt: "asc" }, select: { id: true } });
   let continued = 0;
   for (const job of jobs) {
@@ -20,7 +42,7 @@ async function continueAllJobs() {
     await runHubspotSyncTick(job.id, remaining);
     continued++;
   }
-  return { continued, total: jobs.length };
+  return { continued, total: jobs.length, startedDaily };
 }
 
 // Vercel native cron: GET with `Authorization: Bearer $CRON_SECRET`.
