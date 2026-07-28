@@ -6,6 +6,7 @@
     { "path": "/api/radar/sync-exclusions", "schedule": "0 */6 * * *" },
     { "path": "/api/radar/validate?cronAction=check_all", "schedule": "*/15 * * * *" },
     { "path": "/api/radar/validate?cronAction=continue_retest_jobs", "schedule": "2-59/15 * * * *" },
-    { "path": "/api/radar/validate?cronAction=continue_all_sends", "schedule": "4-59/15 * * * *" }
+    { "path": "/api/radar/validate?cronAction=continue_all_sends", "schedule": "4-59/15 * * * *" },
+    { "path": "/api/radar/hubspot-match", "schedule": "6-59/15 * * * *" }
   ]
 }

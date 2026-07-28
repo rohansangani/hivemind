@@ -649,8 +649,11 @@ model HubspotCompany {
   country          String?
   city             String?
   website          String?
+  domain           String?
   description      String?
   companyType      String?
+  lifecycleStage   String?
+  leadStatus       String?
   lastActivityAt   DateTime?
   hubspotCreatedAt DateTime?
   createdAt        DateTime  @default(now())
@@ -658,6 +661,7 @@ model HubspotCompany {
 
   @@unique([organizationId, hubspotId])
   @@index([organizationId, industry])
+  @@index([organizationId, domain])
   @@index([organizationId, name])
 }
 

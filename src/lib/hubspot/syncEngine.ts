@@ -139,7 +139,7 @@ const OBJECTS: Record<ObjKey, {
     getName: r => { const n = [r.properties.firstname, r.properties.lastname].filter(Boolean).join(" ") || r.properties.email || r.id; const co = r.properties.company?.trim(); return co ? `${n} at ${co}` : n; },
   },
   companies: {
-    properties: ["name", "industry", "annualrevenue", "numberofemployees", "country", "city", "createdate", "website", "description", "type", "hs_last_activity_date"],
+    properties: ["name", "industry", "annualrevenue", "numberofemployees", "country", "city", "createdate", "website", "description", "type", "hs_last_activity_date", "lifecyclestage", "hs_lead_status"],
     category: "markets", label: "Company", line: companyLine, addStats: addCompanyStats,
     getName: r => r.properties.name?.trim() || r.id,
   },
@@ -226,6 +226,14 @@ async function upsertContactsTable(orgId: string, records: HSRecord[]) {
   }));
 }
 
+/** Strip protocol/www/path/query so a HubSpot "website" property and Radar's bare `domain`
+ * column compare equal (e.g. "https://www.Bira91.com/" and "bira91.com" both -> "bira91.com"). */
+function normalizeDomain(raw: string | undefined | null): string | null {
+  if (!raw) return null;
+  const cleaned = raw.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").split(/[/?#]/)[0];
+  return cleaned || null;
+}
+
 /** Upsert one page of companies into the structured HubspotCompany table (keyed on org+hubspotId — companies have no email). */
 async function upsertCompaniesTable(orgId: string, records: HSRecord[]) {
   await Promise.all(records.map(r => {
@@ -236,7 +244,9 @@ async function upsertCompaniesTable(orgId: string, records: HSRecord[]) {
       name: p.name?.trim() || null, industry: p.industry?.trim() || null,
       annualRevenue: !isNaN(rev) ? rev : null, numberOfEmployees: !isNaN(emp) ? emp : null,
       country: p.country?.trim() || null, city: p.city?.trim() || null,
-      website: p.website?.trim() || null, description: p.description?.trim() || null, companyType: p.type?.trim() || null,
+      website: p.website?.trim() || null, domain: normalizeDomain(p.website),
+      description: p.description?.trim() || null, companyType: p.type?.trim() || null,
+      lifecycleStage: p.lifecyclestage?.trim() || null, leadStatus: p.hs_lead_status?.trim() || null,
       lastActivityAt: parseHsDate(p.hs_last_activity_date) ? new Date(parseHsDate(p.hs_last_activity_date)!) : null,
       hubspotCreatedAt: parseHsDate(p.createdate) ? new Date(parseHsDate(p.createdate)!) : null,
     };
