@@ -975,6 +975,39 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+// Fields that are pure noise in a spreadsheet — expiring CDN image URLs with no analytical value.
+const CSV_FLATTEN_SKIP_KEYS = new Set(["logo", "logos", "backgroundCovers"]);
+
+/** Turns a nested API response (arrays/objects) into flat, readable CSV columns instead of one
+ * cell containing a raw JSON blob. Objects flatten to "parent_child" keys; arrays of objects get a
+ * 1-based index in the key ("locations_1_city", "locations_2_city", ...); arrays of plain values
+ * (or of objects reduced to a single primitive) join into one "; "-separated cell. */
+function flattenForCsv(value: unknown, prefix = ""): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (value == null) return out;
+  if (Array.isArray(value)) {
+    const items = value.filter((v) => v != null);
+    if (!items.length) return out;
+    if (items.every((v) => typeof v !== "object")) {
+      out[prefix || "value"] = items.map(String).join("; ");
+    } else {
+      items.forEach((item, i) => Object.assign(out, flattenForCsv(item, prefix ? `${prefix}_${i + 1}` : `${i + 1}`)));
+    }
+    return out;
+  }
+  if (typeof value === "object") {
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (CSV_FLATTEN_SKIP_KEYS.has(k)) continue;
+      if (v == null) continue;
+      const key = prefix ? `${prefix}_${k}` : k;
+      Object.assign(out, typeof v === "object" ? flattenForCsv(v, key) : { [key]: String(v) });
+    }
+    return out;
+  }
+  out[prefix || "value"] = String(value);
+  return out;
+}
+
 /** Downloads an arbitrary array of flat row objects as a CSV — used for
  * "export selected" actions where the rows are already loaded client-side.
  * Columns are the UNION of every row's keys (in first-seen order), not just row[0]'s — rows built
@@ -4648,10 +4681,10 @@ function ValidateSection() {
                         <span className="text-[var(--hm-text-tertiary)]">— {linkedinSummary.notFound} profile(s) not found</span>
                         <button
                           onClick={() => downloadCSV(linkedinResults.map((r) => ({
-                            // Full raw Apify response first (every field the scraper returned —
-                            // experience, education, skills, location, etc.), then our own
-                            // DB-match verdict columns appended after.
-                            ...(r.raw || {}),
+                            // Flattened Apify response first (every field the scraper returned —
+                            // experience, education, skills, location, etc. — as readable columns,
+                            // not a raw JSON blob), then our own DB-match verdict columns appended.
+                            ...flattenForCsv(r.raw),
                             db_company: r.dbCompany,
                             db_match_status: r.error ? "not found" : r.uncertain ? "uncertain — needs review" : r.match === true ? "same company" : r.match === false ? "different company (marked moved)" : r.created ? "created" : "no db match",
                           })), `radar_linkedin_check_${today()}.csv`)}
@@ -4674,9 +4707,10 @@ function ValidateSection() {
                         <span className="text-[var(--hm-text-tertiary)]">— {linkedinSummary.notFound} compan(ies) not found</span>
                         <button
                           onClick={() => downloadCSV(linkedinCompanyResults.map((r) => ({
-                            // Full raw Apify response first (locations, industries, specialities,
-                            // fundingData, etc.), then our own DB-match verdict columns after.
-                            ...(r.raw || {}),
+                            // Flattened Apify response first (locations, industries, specialities,
+                            // fundingData, etc. as readable columns, not a raw JSON blob), then our
+                            // own DB-match verdict columns after.
+                            ...flattenForCsv(r.raw),
                             db_domain: r.dbDomain,
                             db_match_status: r.error ? "not found" : r.uncertain ? "uncertain — no website found" : r.match === true ? "same domain" : r.match === false ? "different domain" : r.created ? "created" : "no db match",
                           })), `radar_linkedin_company_check_${today()}.csv`)}
