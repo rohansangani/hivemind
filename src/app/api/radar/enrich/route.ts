@@ -230,8 +230,8 @@ async function handleAction(req: NextRequest, userEmail: string | null): Promise
   // ── list recent Enrich jobs (so a page refresh doesn't lose track of a running/finished search) ──
   if (action === "list_enrich_jobs") {
     await ensureEnrichJobsTable();
-    const rows = await radarSql<{ id: number; status: string; item_count: number; dataset_id: string }>(
-      `SELECT id, label, created_by, run_id, dataset_id, status, item_count, saved_count, saved_accounts_count, saved_at, created_at FROM enrich_jobs ORDER BY id DESC LIMIT 50`
+    const rows = await radarSql<{ id: number; status: string; item_count: number; dataset_id: string; params: Record<string, unknown> }>(
+      `SELECT id, label, created_by, run_id, dataset_id, status, item_count, saved_count, saved_accounts_count, saved_at, params, created_at FROM enrich_jobs ORDER BY id DESC LIMIT 50`
     );
     // item_count only ever got written by enrich_job_sync/stop (i.e. only once a job was actually
     // reopened) — a job whose SUCCEEDED status came from Apify's run-completion response never had
@@ -256,7 +256,34 @@ async function handleAction(req: NextRequest, userEmail: string | null): Promise
         }
       }
     }
-    return { status: 200, body: { jobs: rows } };
+
+    // How many contacts already exist in the DB for each job's searched domains — same "already
+    // in database" figure the search form's live check_existing panel shows, just surfaced in the
+    // list too so it doesn't take reopening a job to see it. Computed fresh each list (not
+    // persisted) since the DB's contents for those domains can change after the job ran.
+    const withDomains = rows
+      .map((j) => ({ id: j.id, domains: (j.params?.company_domain as string[] | undefined) || [] }))
+      .filter((j) => j.domains.length);
+    const existingCounts = new Map<number, number>();
+    if (withDomains.length) {
+      const results = await Promise.all(withDomains.map(async (j) => {
+        const clean = j.domains.map((d) => d.replace(/^https?:\/\//, "").replace(/\/$/, "").toLowerCase());
+        const list = clean.map((d) => `'${d.replace(/'/g, "''")}'`).join(",");
+        try {
+          const r = await radarSql<{ count: string }>(`
+            SELECT COUNT(*) AS count FROM contacts c
+            LEFT JOIN accounts a ON c.account_id = a.id
+            WHERE (a.domain IN (${list}) OR c.domain IN (${list}))
+              AND (c.hubspot_excluded IS NULL OR c.hubspot_excluded = false)
+          `);
+          return { id: j.id, count: Number(r[0]?.count || 0) };
+        } catch { return { id: j.id, count: 0 }; }
+      }));
+      for (const r of results) existingCounts.set(r.id, r.count);
+    }
+    const jobs = rows.map((j) => ({ ...j, existing_count: existingCounts.get(j.id) ?? 0, params: undefined }));
+
+    return { status: 200, body: { jobs } };
   }
 
   // ── sync one job's status/item_count from Apify (called when opening a past job) ──

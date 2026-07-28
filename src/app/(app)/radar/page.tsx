@@ -2752,6 +2752,7 @@ interface EnrichScore { email: string; score: number; reason: string; }
 interface EnrichJobRow {
   id: number; label: string; created_by: string | null; run_id: string; dataset_id: string;
   status: string; item_count: number; saved_count: number; saved_accounts_count: number; saved_at: string | null;
+  existing_count: number;
   created_at: string;
 }
 
@@ -3445,7 +3446,7 @@ function EnrichSection() {
                   <span className="text-[11px] text-[var(--hm-text-tertiary)] whitespace-nowrap">
                     {openingJobId === j.id
                       ? "Opening…"
-                      : `${j.status.toLowerCase()} · ${j.item_count} found${j.saved_count > 0 ? ` · saved (${j.saved_count})` : ""} · ${new Date(j.created_at).toLocaleString()}`}
+                      : `${j.status.toLowerCase()} · ${j.item_count} found · ${j.existing_count} existing${j.saved_count > 0 ? ` · saved (${j.saved_count})` : ""} · ${new Date(j.created_at).toLocaleString()}`}
                   </span>
                 </button>
               ))}
