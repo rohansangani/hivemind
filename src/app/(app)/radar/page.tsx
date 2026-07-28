@@ -339,7 +339,7 @@ function MailboxCapacitySection() {
   const [loading, setLoading] = useState(false);
   const [lastFetchedAt, setLastFetchedAt] = useState<Date | null>(null);
 
-  const load = () => {
+  const load = useCallback(() => {
     setLoading(true);
     setError("");
     fetch("/api/radar/mailbox-capacity")
@@ -351,7 +351,16 @@ function MailboxCapacitySection() {
       .then((d) => { setRows(d.mailboxes || []); setLastFetchedAt(new Date()); })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  };
+  }, []);
+
+  // Auto-refresh every 60s on top of the manual button — "sent today" changes as sends go out
+  // through the day, so a number left on screen for minutes reads as stale without this. Loads
+  // once immediately on mount too, rather than waiting for the first interval tick.
+  useEffect(() => {
+    load();
+    const id = setInterval(load, 60_000);
+    return () => clearInterval(id);
+  }, [load]);
 
   const totalRemaining = (rows || []).reduce((s, r) => s + r.remaining, 0);
   const totalLimit = (rows || []).reduce((s, r) => s + r.dailyLimit, 0);
