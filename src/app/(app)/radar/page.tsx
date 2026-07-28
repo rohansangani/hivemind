@@ -2580,25 +2580,28 @@ function UploadStatusPill({ status }: { status: string }) {
 }
 
 // email_validation_jobs.status is a raw lifecycle value (draft → sent → checked → done) — collapse
-// that into the 3 states a user actually cares about: not started yet, actively running, finished.
-// "sent"/"checked" only count as actively Running if the job is from today — a job sent/checked
-// days ago and never saved isn't running anymore (the check_all cron only re-checks jobs from the
-// last 72h), it's just sitting unsaved, so its bounce results are final either way.
-// Running vs Completed is decided by whether the job actually still has unresolved candidates
-// (pending_count from list_jobs — real signal from the DB), NOT by job age. A big campaign (e.g.
-// 2,550 leads on Instantly's own daily cap) can take many days to finish sending — it must keep
-// showing Running for however long that genuinely takes, not flip to Completed after one day.
+// that into the 4 states a user actually cares about: not started yet, actively running,
+// verifying, finished.
+// "sent"/"checked"/"done" only count as actively Running if the job still has pending candidates.
+// Running vs Verifying/Completed is decided by whether the job actually still has unresolved
+// candidates (pending_count from list_jobs — real signal from the DB), NOT by job age. A big
+// campaign (e.g. 2,550 leads on Instantly's own daily cap) can take many days to finish sending —
+// it must keep showing Running for however long that genuinely takes, not flip early.
 // Verifying: pending_count hit zero (every sent lead has an initial result) but it's been less
 // than 72h since resolved_at — Instantly can still report a delayed bounce in that window, which
 // automatically downgrades the contact to invalid (see check_all's delayed-bounce handling).
+// IMPORTANT: status reaches "done" almost immediately — save_validation_job (the Postgres RPC
+// check()/check_all calls right after resolving candidates) sets status='done' the same moment
+// resolved_at is stamped, not 72h later. So "done" must NOT short-circuit straight to Completed —
+// it needs the exact same resolvedAt-window check "sent"/"checked" get, or Verifying never shows
+// (confirmed live: every real job was already "done" by the time anyone looked at it).
 // Past 72h with no further bounce, it's genuinely final — Completed. Jobs from before this
 // feature existed have no resolved_at at all; those just go straight to Completed (no window to
 // judge), matching their previous behavior.
 function ValidateJobStatusPill({ status, pendingCount, resolvedAt }: { status: string; pendingCount?: number; resolvedAt?: string | null }) {
   const s = (status || "").toLowerCase();
   let label = "Draft", cls = "bg-[var(--hm-bg-tertiary)] text-[var(--hm-text-tertiary)]";
-  if (s === "done") { label = "Completed"; cls = "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]"; }
-  else if (s === "sent" || s === "checked") {
+  if (s === "sent" || s === "checked" || s === "done") {
     if ((pendingCount ?? 0) > 0) { label = "Running"; cls = "bg-[var(--tag-yellow-bg)] text-[var(--tag-yellow-fg)]"; }
     else if (resolvedAt && Date.now() - new Date(resolvedAt).getTime() < 72 * 60 * 60 * 1000) {
       label = "Verifying"; cls = "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]";
