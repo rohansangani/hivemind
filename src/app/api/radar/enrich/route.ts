@@ -230,7 +230,32 @@ async function handleAction(req: NextRequest, userEmail: string | null): Promise
   // ── list recent Enrich jobs (so a page refresh doesn't lose track of a running/finished search) ──
   if (action === "list_enrich_jobs") {
     await ensureEnrichJobsTable();
-    const rows = await radarSql(`SELECT id, label, created_by, run_id, dataset_id, status, item_count, saved_count, saved_accounts_count, saved_at, created_at FROM enrich_jobs ORDER BY id DESC LIMIT 50`);
+    const rows = await radarSql<{ id: number; status: string; item_count: number; dataset_id: string }>(
+      `SELECT id, label, created_by, run_id, dataset_id, status, item_count, saved_count, saved_accounts_count, saved_at, created_at FROM enrich_jobs ORDER BY id DESC LIMIT 50`
+    );
+    // item_count only ever got written by enrich_job_sync/stop (i.e. only once a job was actually
+    // reopened) — a job whose SUCCEEDED status came from Apify's run-completion response never had
+    // its item_count backfilled, so it sat at the column default (0) forever. Apify's dataset
+    // metadata endpoint is a cheap, items-free way to get the real count for any such stale row.
+    if (APIFY_TOKEN) {
+      const stale = rows.filter((j) => j.status === "SUCCEEDED" && !j.item_count);
+      if (stale.length) {
+        const counts = await Promise.all(stale.map(async (j) => {
+          try {
+            const r = await fetch(`https://api.apify.com/v2/datasets/${j.dataset_id}?token=${APIFY_TOKEN}`);
+            const d = await r.json();
+            return { id: j.id, count: d.data?.itemCount ?? 0 };
+          } catch { return { id: j.id, count: 0 }; }
+        }));
+        for (const c of counts) {
+          if (c.count > 0) {
+            await radarSql(`UPDATE enrich_jobs SET item_count = ${c.count} WHERE id = ${c.id}`);
+            const row = rows.find((j) => j.id === c.id);
+            if (row) row.item_count = c.count;
+          }
+        }
+      }
+    }
     return { status: 200, body: { jobs: rows } };
   }
 
