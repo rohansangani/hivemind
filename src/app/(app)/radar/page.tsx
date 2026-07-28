@@ -4145,6 +4145,15 @@ function ValidateSection() {
       return prev.map((c) => ({ ...c, selected: !allSelected }));
     });
   };
+  const [confidenceThreshold, setConfidenceThreshold] = useState("");
+  // Selects every candidate whose confidence is >= the typed threshold, deselecting the rest —
+  // one-shot bulk pick instead of clicking through rows one by one for a large pattern batch.
+  // Unscored candidates (confidence === null) are excluded — there's no score to compare against.
+  const selectByConfidence = () => {
+    const min = Number(confidenceThreshold);
+    if (!confidenceThreshold.trim() || Number.isNaN(min)) return;
+    setCandidates((prev) => prev.map((c) => ({ ...c, selected: c.confidence != null && c.confidence >= min })));
+  };
 
   const loadTags = async () => {
     try {
@@ -5048,6 +5057,28 @@ function ValidateSection() {
                   {candidates.length} pattern(s) · {selectedCount} selected
                 </span>
                 <div className="flex items-center gap-2">
+                  {phase === "candidates" && (
+                    <span className="flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={confidenceThreshold}
+                        onChange={(e) => setConfidenceThreshold(e.target.value)}
+                        placeholder="min %"
+                        style={{ width: 70, height: 32, fontSize: 12 }}
+                        title="Select every pattern with confidence at or above this percentage, in one click"
+                      />
+                      <button
+                        onClick={selectByConfidence}
+                        disabled={!confidenceThreshold.trim()}
+                        className="hm-btn hm-btn-secondary"
+                        style={{ height: 32, padding: "0 12px", fontSize: 12 }}
+                      >
+                        Select ≥ confidence
+                      </button>
+                    </span>
+                  )}
                   <button
                     onClick={() => downloadCSV(
                       candidates.map((c) => ({
