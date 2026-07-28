@@ -902,8 +902,12 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
     await radarSql(`ALTER TABLE email_validation_jobs ADD COLUMN IF NOT EXISTS check_cursor text`);
     await radarSql(`ALTER TABLE email_validation_jobs ADD COLUMN IF NOT EXISTS last_checked_at timestamptz`);
 
-    const jobRows = await radarSql<{ job_id: number }>(`
-      SELECT DISTINCT c.job_id FROM email_validation_candidates c
+    // last_checked_at has to be in the SELECT list — Postgres rejects an ORDER BY expression on a
+    // SELECT DISTINCT that isn't also selected (42P10). Every row for a given job_id shares the
+    // same last_checked_at (it's a per-job column joined in, not per-candidate), so including it
+    // doesn't change which distinct job_ids come back, only makes the ORDER BY legal.
+    const jobRows = await radarSql<{ job_id: number; last_checked_at: string | null }>(`
+      SELECT DISTINCT c.job_id, j.last_checked_at FROM email_validation_candidates c
       JOIN email_validation_jobs j ON j.id = c.job_id
       WHERE c.instantly_lead_id IS NOT NULL
         AND (
