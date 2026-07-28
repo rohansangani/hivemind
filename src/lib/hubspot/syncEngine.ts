@@ -195,22 +195,61 @@ async function fetchPage(objectType: string, properties: string[], token: string
 }
 
 /**
+ * HubSpot's `properties` GET returns each dropdown property's raw internal *value*
+ * (e.g. "Opportunity Created"), not the human label shown in the HubSpot UI (e.g.
+ * "Deal created") — the two only coincide by accident for some options. Resolve
+ * value -> label via the property's own option list so what we store reads the
+ * same as what a rep sees in HubSpot.
+ */
+async function fetchPropertyLabelMap(objectType: string, property: string, token: string): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  try {
+    const res = await fetch(`https://api.hubapi.com/crm/v3/properties/${objectType}/${property}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (res.ok) {
+      const d = await res.json();
+      for (const o of (d.options || [])) map.set(o.value, o.label);
+    }
+  } catch { /* fall back to raw values below */ }
+  return map;
+}
+
+/** dealstage has no static option list (stages are pipeline-scoped) — build the
+ * value->label map from every pipeline's own stages instead. */
+async function fetchDealStageLabelMap(token: string): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  try {
+    const res = await fetch("https://api.hubapi.com/crm/v3/pipelines/deals", { headers: { Authorization: `Bearer ${token}` } });
+    if (res.ok) {
+      const d = await res.json();
+      for (const pipeline of (d.results || [])) {
+        for (const stage of (pipeline.stages || [])) map.set(stage.id, stage.label);
+      }
+    }
+  } catch { /* fall back to raw values below */ }
+  return map;
+}
+
+/**
  * Upsert one page of contacts into the structured HubspotContact table (keyed on
  * org+email) so "is this lead/customer already in HubSpot, what's their status"
  * is an exact-match lookup instead of a KnowledgeEntry text scan. Skips records
  * without an email — nothing to key on.
  */
-async function upsertContactsTable(orgId: string, records: HSRecord[]) {
+async function upsertContactsTable(orgId: string, records: HSRecord[], stageLabels: Map<string, string>, statusLabels: Map<string, string>) {
   const withEmail = records.filter(r => r.properties.email?.trim());
   await Promise.all(withEmail.map(r => {
     const p = r.properties;
+    const stage = p.lifecyclestage?.trim();
+    const status = p.hs_lead_status?.trim();
     return db.hubspotContact.upsert({
       where: { organizationId_email: { organizationId: orgId, email: p.email.trim().toLowerCase() } },
       create: {
         organizationId: orgId, hubspotId: r.id, email: p.email.trim().toLowerCase(),
         firstName: p.firstname?.trim() || null, lastName: p.lastname?.trim() || null,
         company: p.company?.trim() || null, jobTitle: p.jobtitle?.trim() || null,
-        lifecycleStage: p.lifecyclestage?.trim() || null, leadStatus: p.hs_lead_status?.trim() || null, leadSource: p.hs_lead_source?.trim() || null,
+        lifecycleStage: stage ? (stageLabels.get(stage) || stage) : null,
+        leadStatus: status ? (statusLabels.get(status) || status) : null,
+        leadSource: p.hs_lead_source?.trim() || null,
         lastActivityAt: parseHsDate(p.hs_last_activity_date) ? new Date(parseHsDate(p.hs_last_activity_date)!) : null,
         hubspotCreatedAt: parseHsDate(p.createdate) ? new Date(parseHsDate(p.createdate)!) : null,
       },
@@ -218,7 +257,9 @@ async function upsertContactsTable(orgId: string, records: HSRecord[]) {
         hubspotId: r.id,
         firstName: p.firstname?.trim() || null, lastName: p.lastname?.trim() || null,
         company: p.company?.trim() || null, jobTitle: p.jobtitle?.trim() || null,
-        lifecycleStage: p.lifecyclestage?.trim() || null, leadStatus: p.hs_lead_status?.trim() || null, leadSource: p.hs_lead_source?.trim() || null,
+        lifecycleStage: stage ? (stageLabels.get(stage) || stage) : null,
+        leadStatus: status ? (statusLabels.get(status) || status) : null,
+        leadSource: p.hs_lead_source?.trim() || null,
         lastActivityAt: parseHsDate(p.hs_last_activity_date) ? new Date(parseHsDate(p.hs_last_activity_date)!) : null,
         hubspotCreatedAt: parseHsDate(p.createdate) ? new Date(parseHsDate(p.createdate)!) : null,
       },
@@ -235,18 +276,21 @@ function normalizeDomain(raw: string | undefined | null): string | null {
 }
 
 /** Upsert one page of companies into the structured HubspotCompany table (keyed on org+hubspotId — companies have no email). */
-async function upsertCompaniesTable(orgId: string, records: HSRecord[]) {
+async function upsertCompaniesTable(orgId: string, records: HSRecord[], stageLabels: Map<string, string>, statusLabels: Map<string, string>) {
   await Promise.all(records.map(r => {
     const p = r.properties;
     const rev = parseFloat(p.annualrevenue || "");
     const emp = parseInt(p.numberofemployees || "", 10);
+    const stage = p.lifecyclestage?.trim();
+    const status = p.hs_lead_status?.trim();
     const data = {
       name: p.name?.trim() || null, industry: p.industry?.trim() || null,
       annualRevenue: !isNaN(rev) ? rev : null, numberOfEmployees: !isNaN(emp) ? emp : null,
       country: p.country?.trim() || null, city: p.city?.trim() || null,
       website: p.website?.trim() || null, domain: normalizeDomain(p.website),
       description: p.description?.trim() || null, companyType: p.type?.trim() || null,
-      lifecycleStage: p.lifecyclestage?.trim() || null, leadStatus: p.hs_lead_status?.trim() || null,
+      lifecycleStage: stage ? (stageLabels.get(stage) || stage) : null,
+      leadStatus: status ? (statusLabels.get(status) || status) : null,
       lastActivityAt: parseHsDate(p.hs_last_activity_date) ? new Date(parseHsDate(p.hs_last_activity_date)!) : null,
       hubspotCreatedAt: parseHsDate(p.createdate) ? new Date(parseHsDate(p.createdate)!) : null,
     };
@@ -259,14 +303,15 @@ async function upsertCompaniesTable(orgId: string, records: HSRecord[]) {
 }
 
 /** Upsert one page of deals into the structured HubspotDeal table (keyed on org+hubspotId). */
-async function upsertDealsTable(orgId: string, records: HSRecord[]) {
+async function upsertDealsTable(orgId: string, records: HSRecord[], stageLabels: Map<string, string>) {
   await Promise.all(records.map(r => {
     const p = r.properties;
     const amt = parseFloat(p.amount || "");
     const prob = parseFloat(p.hs_deal_stage_probability || "");
     const closeMs = parseHsDate(p.closedate);
+    const stage = p.dealstage?.trim();
     const data = {
-      dealName: p.dealname?.trim() || null, dealStage: p.dealstage?.trim() || null,
+      dealName: p.dealname?.trim() || null, dealStage: stage ? (stageLabels.get(stage) || stage) : null,
       amount: !isNaN(amt) ? amt : null, pipeline: p.pipeline?.trim() || null,
       closeDate: closeMs ? new Date(closeMs) : null, probability: !isNaN(prob) ? prob : null,
       dealType: p.dealtype?.trim() || null, description: p.description?.trim() || null,
@@ -296,6 +341,16 @@ export async function runHubspotSyncTick(jobId: string, budgetMs: number): Promi
   let phase = job.phase as Phase;
   const state = initState(job.state as unknown as JobState);
 
+  // Fetched once per tick (cheap — a handful of requests) so stored stage/status/dealstage
+  // values read the same as HubSpot's own UI labels, not HubSpot's raw internal option values.
+  const [contactStageLabels, contactStatusLabels, companyStageLabels, companyStatusLabels, dealStageLabels] = await Promise.all([
+    fetchPropertyLabelMap("contacts", "lifecyclestage", token),
+    fetchPropertyLabelMap("contacts", "hs_lead_status", token),
+    fetchPropertyLabelMap("companies", "lifecyclestage", token),
+    fetchPropertyLabelMap("companies", "hs_lead_status", token),
+    fetchDealStageLabelMap(token),
+  ]);
+
   // Heartbeat: bump lastSyncAt each tick so the status route's 10-min "stuck in
   // syncing" auto-reset doesn't false-trip on a legitimately long multi-tick sync.
   await db.integration.update({
@@ -322,9 +377,9 @@ export async function runHubspotSyncTick(jobId: string, budgetMs: number): Promi
         }
         const { records, nextAfter } = await fetchPage(phase, obj.properties, token, prog.after);
         if (records.length) {
-          if (phase === "contacts") await upsertContactsTable(orgId, records);
-          if (phase === "companies") await upsertCompaniesTable(orgId, records);
-          if (phase === "deals") await upsertDealsTable(orgId, records);
+          if (phase === "contacts") await upsertContactsTable(orgId, records, contactStageLabels, contactStatusLabels);
+          if (phase === "companies") await upsertCompaniesTable(orgId, records, companyStageLabels, companyStatusLabels);
+          if (phase === "deals") await upsertDealsTable(orgId, records, dealStageLabels);
           for (const batch of chunks(records, CHUNK_SIZE)) {
             await db.knowledgeEntry.createMany({
               data: batch.map(r => ({ organizationId: orgId, category: obj.category, source: "hubspot", title: `HubSpot ${obj.label}: ${obj.getName(r)}`, content: obj.line(r), isAIGenerated: false, isApproved: true })),
