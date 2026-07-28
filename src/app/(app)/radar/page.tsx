@@ -3218,7 +3218,19 @@ function EnrichSection() {
 
             <div>
               <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Max results</label>
-              <input type="number" value={fetchCount} min={1} max={200} onChange={(e) => setFetchCount(Number(e.target.value) || 25)} style={{ width: 120 }} />
+              <input
+                type="number"
+                // Empty string while typing (not 0) — `Number(e.target.value) || 25` used to snap
+                // straight back to 25 the instant the field was cleared, so it was impossible to
+                // actually delete both digits of the default. Let it sit empty until blur, only
+                // defaulting/clamping (1-200) then.
+                value={fetchCount === 0 ? "" : fetchCount}
+                min={1}
+                max={200}
+                onChange={(e) => setFetchCount(e.target.value === "" ? 0 : Number(e.target.value))}
+                onBlur={() => setFetchCount((v) => Math.min(200, Math.max(1, v || 25)))}
+                style={{ width: 120 }}
+              />
             </div>
 
             {error && <div className="rounded-lg p-3 text-[12.5px] bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)] dark:bg-[var(--tag-red-bg)]/20 dark:text-[var(--tag-red-fg)]">{error}</div>}
