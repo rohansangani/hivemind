@@ -148,19 +148,27 @@ function ensureCompanyInSubject(subject: string, companyRef: string): string {
  * swap reads wrong in both cases, so pick by what follows: a lowercase continuation gets a comma,
  * anything else gets a period. */
 function stripEmDashes(text: string): string {
-  if (!/[—–]/.test(text) && !/\s-{1,2}\s/.test(text)) return text;
+  if (!/[—–]/.test(text) && !/[ \t]-{1,2}[ \t]/.test(text)) return text;
+  // Split on paragraph breaks first and clean each paragraph independently — collapsing
+  // whitespace runs (the old bug) ate the blank line between paragraphs along with it, since \s
+  // matches newlines too. Only horizontal whitespace gets touched here.
   return text
-    .replace(/\s*[—–]\s*/g, (_m, offset, str) => {
-      const rest = str.slice(offset + _m.length);
-      return /^[a-z]/.test(rest) ? ", " : ". ";
-    })
-    .replace(/\s-{2}\s/g, (_m, offset, str) => {
-      const rest = str.slice(offset + _m.length);
-      return /^[a-z]/.test(rest) ? ", " : ". ";
-    })
-    .replace(/\s{2,}/g, " ")
-    .replace(/([,.])\s*\./g, "$1")
-    .trim();
+    .split(/\n\n+/)
+    .map((para) =>
+      para
+        .replace(/[ \t]*[—–][ \t]*/g, (_m, offset, str) => {
+          const rest = str.slice(offset + _m.length);
+          return /^[a-z]/.test(rest) ? ", " : ". ";
+        })
+        .replace(/[ \t]-{2}[ \t]/g, (_m, offset, str) => {
+          const rest = str.slice(offset + _m.length);
+          return /^[a-z]/.test(rest) ? ", " : ". ";
+        })
+        .replace(/[ \t]{2,}/g, " ")
+        .replace(/([,.])\s*\./g, "$1")
+        .trim()
+    )
+    .join("\n\n");
 }
 
 export async function generateSequenceForProspect({
