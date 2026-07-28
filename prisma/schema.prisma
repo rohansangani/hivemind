@@ -57,6 +57,8 @@ model Organization {
   coachEnrollments   CoachEnrollment[]
   hubspotSyncJobs    HubspotSyncJob[]
   hubspotContacts    HubspotContact[]
+  hubspotCompanies   HubspotCompany[]
+  hubspotDeals       HubspotDeal[]
 }
 
 model User {
@@ -631,6 +633,55 @@ model HubspotContact {
   @@index([organizationId, lifecycleStage])
   @@index([organizationId, leadStatus])
   @@index([organizationId, company])
+}
+
+// Structured, upserted mirror of HubSpot companies — one row per hubspotId (no
+// email to key on), kept in sync by runHubspotSyncTick (companies phase).
+model HubspotCompany {
+  id               String    @id @default(cuid())
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id])
+  hubspotId        String
+  name             String?
+  industry         String?
+  annualRevenue    Float?
+  numberOfEmployees Int?
+  country          String?
+  city             String?
+  website          String?
+  description      String?
+  companyType      String?
+  lastActivityAt   DateTime?
+  hubspotCreatedAt DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@unique([organizationId, hubspotId])
+  @@index([organizationId, industry])
+  @@index([organizationId, name])
+}
+
+// Structured, upserted mirror of HubSpot deals — one row per hubspotId, kept in
+// sync by runHubspotSyncTick (deals phase).
+model HubspotDeal {
+  id               String    @id @default(cuid())
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id])
+  hubspotId        String
+  dealName         String?
+  dealStage        String?
+  amount           Float?
+  pipeline         String?
+  closeDate        DateTime?
+  probability      Float?
+  dealType         String?
+  description      String?
+  hubspotCreatedAt DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@unique([organizationId, hubspotId])
+  @@index([organizationId, dealStage])
 }
 
 // ═══════════════════════════════════════

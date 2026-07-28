@@ -226,6 +226,50 @@ async function upsertContactsTable(orgId: string, records: HSRecord[]) {
   }));
 }
 
+/** Upsert one page of companies into the structured HubspotCompany table (keyed on org+hubspotId — companies have no email). */
+async function upsertCompaniesTable(orgId: string, records: HSRecord[]) {
+  await Promise.all(records.map(r => {
+    const p = r.properties;
+    const rev = parseFloat(p.annualrevenue || "");
+    const emp = parseInt(p.numberofemployees || "", 10);
+    const data = {
+      name: p.name?.trim() || null, industry: p.industry?.trim() || null,
+      annualRevenue: !isNaN(rev) ? rev : null, numberOfEmployees: !isNaN(emp) ? emp : null,
+      country: p.country?.trim() || null, city: p.city?.trim() || null,
+      website: p.website?.trim() || null, description: p.description?.trim() || null, companyType: p.type?.trim() || null,
+      lastActivityAt: parseHsDate(p.hs_last_activity_date) ? new Date(parseHsDate(p.hs_last_activity_date)!) : null,
+      hubspotCreatedAt: parseHsDate(p.createdate) ? new Date(parseHsDate(p.createdate)!) : null,
+    };
+    return db.hubspotCompany.upsert({
+      where: { organizationId_hubspotId: { organizationId: orgId, hubspotId: r.id } },
+      create: { organizationId: orgId, hubspotId: r.id, ...data },
+      update: data,
+    });
+  }));
+}
+
+/** Upsert one page of deals into the structured HubspotDeal table (keyed on org+hubspotId). */
+async function upsertDealsTable(orgId: string, records: HSRecord[]) {
+  await Promise.all(records.map(r => {
+    const p = r.properties;
+    const amt = parseFloat(p.amount || "");
+    const prob = parseFloat(p.hs_deal_stage_probability || "");
+    const closeMs = parseHsDate(p.closedate);
+    const data = {
+      dealName: p.dealname?.trim() || null, dealStage: p.dealstage?.trim() || null,
+      amount: !isNaN(amt) ? amt : null, pipeline: p.pipeline?.trim() || null,
+      closeDate: closeMs ? new Date(closeMs) : null, probability: !isNaN(prob) ? prob : null,
+      dealType: p.dealtype?.trim() || null, description: p.description?.trim() || null,
+      hubspotCreatedAt: parseHsDate(p.createdate) ? new Date(parseHsDate(p.createdate)!) : null,
+    };
+    return db.hubspotDeal.upsert({
+      where: { organizationId_hubspotId: { organizationId: orgId, hubspotId: r.id } },
+      create: { organizationId: orgId, hubspotId: r.id, ...data },
+      update: data,
+    });
+  }));
+}
+
 // ─── the tick ───
 export async function runHubspotSyncTick(jobId: string, budgetMs: number): Promise<void> {
   const startedAt = Date.now();
@@ -261,12 +305,16 @@ export async function runHubspotSyncTick(jobId: string, budgetMs: number): Promi
         if (!prog.wiped) {
           await db.knowledgeEntry.deleteMany({ where: { organizationId: orgId, source: "hubspot", category: obj.category } });
           if (phase === "contacts") await db.hubspotContact.deleteMany({ where: { organizationId: orgId } });
+          if (phase === "companies") await db.hubspotCompany.deleteMany({ where: { organizationId: orgId } });
+          if (phase === "deals") await db.hubspotDeal.deleteMany({ where: { organizationId: orgId } });
           prog.total = await fetchTotal(phase, token);
           prog.wiped = true;
         }
         const { records, nextAfter } = await fetchPage(phase, obj.properties, token, prog.after);
         if (records.length) {
           if (phase === "contacts") await upsertContactsTable(orgId, records);
+          if (phase === "companies") await upsertCompaniesTable(orgId, records);
+          if (phase === "deals") await upsertDealsTable(orgId, records);
           for (const batch of chunks(records, CHUNK_SIZE)) {
             await db.knowledgeEntry.createMany({
               data: batch.map(r => ({ organizationId: orgId, category: obj.category, source: "hubspot", title: `HubSpot ${obj.label}: ${obj.getName(r)}`, content: obj.line(r), isAIGenerated: false, isApproved: true })),
