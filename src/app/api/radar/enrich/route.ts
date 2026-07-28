@@ -263,8 +263,8 @@ async function handleAction(req: NextRequest, userEmail: string | null): Promise
   if (action === "enrich_job_sync") {
     if (!jobId) return { status: 400, body: { error: "No jobId" } };
     await ensureEnrichJobsTable();
-    const row = (await radarSql<{ run_id: string; dataset_id: string; saved_count: number; saved_accounts_count: number; saved_at: string | null }>(
-      `SELECT run_id, dataset_id, saved_count, saved_accounts_count, saved_at FROM enrich_jobs WHERE id = ${Number(jobId)}`
+    const row = (await radarSql<{ run_id: string; dataset_id: string; saved_count: number; saved_accounts_count: number; saved_at: string | null; params: Record<string, unknown> }>(
+      `SELECT run_id, dataset_id, saved_count, saved_accounts_count, saved_at, params FROM enrich_jobs WHERE id = ${Number(jobId)}`
     ))[0];
     if (!row) return { status: 404, body: { error: "Job not found" } };
     const r = await fetch(`https://api.apify.com/v2/actor-runs/${row.run_id}?token=${APIFY_TOKEN}`);
@@ -274,7 +274,13 @@ async function handleAction(req: NextRequest, userEmail: string | null): Promise
     await radarSql(`UPDATE enrich_jobs SET status = '${status}', item_count = ${itemCount}, updated_at = now() WHERE id = ${Number(jobId)}`);
     return {
       status: 200,
-      body: { runId: row.run_id, datasetId: row.dataset_id, status, itemCount, savedCount: row.saved_count, savedAccountsCount: row.saved_accounts_count, savedAt: row.saved_at },
+      body: {
+        runId: row.run_id, datasetId: row.dataset_id, status, itemCount,
+        savedCount: row.saved_count, savedAccountsCount: row.saved_accounts_count, savedAt: row.saved_at,
+        // The domains this job originally searched — reopening it needs these to re-run
+        // check_existing and show the same "already in DB" panel it showed the first time.
+        companyDomain: (row.params?.company_domain as string[] | undefined) || [],
+      },
     };
   }
 

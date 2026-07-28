@@ -2830,10 +2830,20 @@ function EnrichSection() {
       const s = await call({ action: "enrich_job_sync", jobId: job.id });
       setRunId(s.runId);
       setDatasetId(s.datasetId);
+      const domains: string[] = s.companyDomain || [];
+      if (domains.length) setDomain(domains.join(", "));
       if (s.status === "SUCCEEDED") {
-        const f = await call({ action: "fetch", datasetId: s.datasetId });
+        const [f, chk] = await Promise.all([
+          call({ action: "fetch", datasetId: s.datasetId }),
+          // Same "already in the DB for these domains" panel startSearch shows on a fresh run —
+          // reopening a job only restored the Apify results before, silently dropping this half.
+          domains.length ? call({ action: "check_existing", params: { company_domain: domains } }) : Promise.resolve({ existing: [] }),
+        ]);
         setLeads(f.items || []);
         setSelected(new Set((f.items || []).map((_: unknown, i: number) => i)));
+        const existing = (chk.existing || []) as ExistingContact[];
+        setExistingLeads(existing);
+        setExistingSelected(new Set(existing.map((_, i) => i)));
         // Already saved previously (persisted on the job row) — show that state directly
         // instead of the unsaved "results" screen, so reopening a saved job reads as saved.
         // Still land on the normal results view (with the full lead list to browse) even for an
