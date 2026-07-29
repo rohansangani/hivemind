@@ -4650,16 +4650,20 @@ function ValidateSection() {
       // re-check the box every single time they revisit (autoRefresh is plain component state,
       // so it resets to false on any remount: page reload, tab switch away and back, etc).
       setAutoRefresh(status === "sent");
+      // Switch to the current-job view unconditionally, before the (possibly failing) bounce
+      // check below — the error banner only renders in this view. Previously setView("current")
+      // ran only after a successful runCheck, so a failing check (e.g. a job's linked Instantly
+      // campaign was deleted/renamed) left the view stuck on "history" with the error swallowed
+      // by the catch below: the "Opening…" spinner would clear with zero visible feedback.
+      setView("current");
       // Pull live status from Instantly right away instead of showing whatever bounce_status
       // happened to be in the DB from the last check (could be 15+ minutes stale) and making
       // the user click "Check bounces" themselves just to see where things actually stand. For a
       // big job this pagination can take several seconds — the "Opening…" button state above
-      // covers that wait, so switching views only happens once there's something to show. Runs
-      // for "checked"/"done" too now, not just "sent" — checkResult (which is what actually
-      // renders the valid/bounced/pending numbers) is otherwise left null even once phase shows
-      // the Check-bounces screen, so the stats area would render empty.
+      // covers that wait. Runs for "checked"/"done" too now, not just "sent" — checkResult
+      // (which is what actually renders the valid/bounced/pending numbers) is otherwise left
+      // null even once phase shows the Check-bounces screen, so the stats area would render empty.
       if (wasSentOrLater) await runCheck(jid);
-      setView("current");
     } catch (e) {
       setError((e as Error).message);
     } finally {
