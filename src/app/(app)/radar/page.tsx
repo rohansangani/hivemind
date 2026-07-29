@@ -58,7 +58,9 @@ export default function RadarPage() {
   const modulePermissions = (user?.modulePermissions ?? {}) as Record<string, "none" | "view" | "edit">;
   const canAccess = hasModuleAccess(modulePermissions, "radar", "view");
   const isAdmin = user?.role === "owner" || user?.role === "admin";
-  const isMarketResearch = (user?.department || "").toLowerCase().replace(/\s+/g, "_") === "market_research";
+  const isMarketResearch =
+    (user?.department || "").toLowerCase().replace(/\s+/g, "_") === "market_research" ||
+    (user?.role || "").toLowerCase().replace(/\s+/g, "_") === "market_research";
   const canSeeCapacity = isAdmin || isMarketResearch;
   // "view"-level grant is restricted to Dashboard + Export only — no browse/edit
   // of Accounts, Contacts, Validate, Upload, ICP, or Enrich. "edit" sees everything.
