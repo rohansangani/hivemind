@@ -26,6 +26,78 @@ interface Message {
   /** Set when this message started a Radar Enrich job — persisted server-side (unlike download/
    * downloads above) so reopening the conversation or refreshing still shows a live status card. */
   enrichJob?: { jobId: number; label: string };
+  /** Set when this message fetched (and optionally scored) Enrich leads — rendered as a real
+   * scrollable table instead of Claude prose-listing hundreds of rows. Also persisted server-side. */
+  enrichLeads?: { leads: EnrichLeadRow[]; scores?: Record<string, { score: number; reason: string }> };
+}
+
+interface EnrichLeadRow {
+  first_name?: string | null; last_name?: string | null; full_name?: string | null;
+  email?: string | null; personal_email?: string | null; title?: string | null;
+  company_name?: string | null; linkedin_url?: string | null; phone?: string | null;
+  mobile_number?: string | null; location?: string | null;
+}
+
+function linkedinHref(url: string | null | undefined): string {
+  if (!url) return "#";
+  return /^https?:\/\//i.test(url) ? url : `https://${url.replace(/^\/+/, "")}`;
+}
+
+/** Mirrors the Enrich tab's own results table (radar/page.tsx) — same columns, same LinkedIn
+ * "Profile" hyperlink treatment — but capped to a fixed-height scroll container since a single
+ * Enrich run can return up to 1000 leads and this renders inline in a chat message. */
+function EnrichLeadsTable({ leads, scores }: { leads: EnrichLeadRow[]; scores?: Record<string, { score: number; reason: string }> }) {
+  const hasScores = !!scores && Object.keys(scores).length > 0;
+  return (
+    <div className="mt-2 border border-[var(--hm-border)] rounded-lg overflow-hidden max-w-full">
+      <div className="px-3 py-1.5 text-[11px] font-medium text-[var(--hm-text-tertiary)] bg-[var(--hm-bg-secondary)] border-b border-[var(--hm-border)]">
+        {leads.length} lead{leads.length === 1 ? "" : "s"}
+      </div>
+      <div className="overflow-auto" style={{ maxHeight: 420 }}>
+        <table className="w-full border-collapse text-[12.5px]">
+          <thead>
+            <tr>
+              {["Name", "Title", "Company", "Email", "LinkedIn", ...(hasScores ? ["ICP Fit"] : [])].map((h) => (
+                <th key={h} className="sticky top-0 text-left text-[10.5px] font-semibold uppercase tracking-wide text-[var(--hm-text-tertiary)] px-3 py-2 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] whitespace-nowrap">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {leads.map((l, i) => {
+              const sc = l.email ? scores?.[l.email.toLowerCase()] : undefined;
+              return (
+                <tr key={i} className="hover:bg-[var(--hm-surface-hover)]">
+                  <td className="px-3 py-2 border-b border-[var(--hm-border-light)] font-medium whitespace-nowrap">{l.full_name || [l.first_name, l.last_name].filter(Boolean).join(" ") || "—"}</td>
+                  <td className="px-3 py-2 border-b border-[var(--hm-border-light)] whitespace-nowrap">{l.title || "—"}</td>
+                  <td className="px-3 py-2 border-b border-[var(--hm-border-light)] whitespace-nowrap">{l.company_name || "—"}</td>
+                  <td className="px-3 py-2 border-b border-[var(--hm-border-light)] text-[var(--hm-text-secondary)] whitespace-nowrap">{l.email || "—"}</td>
+                  <td className="px-3 py-2 border-b border-[var(--hm-border-light)] whitespace-nowrap">
+                    {l.linkedin_url ? <a href={linkedinHref(l.linkedin_url)} target="_blank" rel="noreferrer" className="text-[var(--hm-link)]">Profile</a> : "—"}
+                  </td>
+                  {hasScores && (
+                    <td className="px-3 py-2 border-b border-[var(--hm-border-light)] whitespace-nowrap">
+                      {sc ? (
+                        <span
+                          title={sc.reason}
+                          className="text-[11px] px-2 py-0.5 rounded-md font-medium"
+                          style={{
+                            background: sc.score >= 70 ? "var(--tag-green-bg)" : sc.score >= 40 ? "var(--tag-yellow-bg)" : "var(--tag-red-bg)",
+                            color: sc.score >= 70 ? "var(--tag-green-fg)" : sc.score >= 40 ? "var(--tag-yellow-fg)" : "var(--tag-red-fg)",
+                          }}
+                        >
+                          {sc.score}
+                        </span>
+                      ) : "—"}
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 }
 
 function downloadCsvString(csv: string, filename: string) {
@@ -194,7 +266,7 @@ export default function AssistantPage() {
       if (!res.ok) throw new Error(`Server error ${res.status}`);
       const data = await res.json();
       if (data.reply) {
-        setMessages((prev) => [...prev, { role: "assistant", content: data.reply, timestamp: Date.now(), download: data.download || undefined, downloads: data.downloads || undefined, enrichJob: data.enrichJob || undefined }]);
+        setMessages((prev) => [...prev, { role: "assistant", content: data.reply, timestamp: Date.now(), download: data.download || undefined, downloads: data.downloads || undefined, enrichJob: data.enrichJob || undefined, enrichLeads: data.enrichLeads || undefined }]);
         if (data.conversationId) {
           const isNew = !conversationId;
           setConversationId(data.conversationId);
@@ -369,11 +441,12 @@ export default function AssistantPage() {
               if (data.messages) {
                 // Map DB messages (createdAt: string) into the Message interface
                 setMessages(
-                  data.messages.map((m: { role: "user" | "assistant"; content: string; createdAt: string; enrichJob?: { jobId: number; label: string } }) => ({
+                  data.messages.map((m: { role: "user" | "assistant"; content: string; createdAt: string; enrichJob?: { jobId: number; label: string }; enrichLeads?: Message["enrichLeads"] }) => ({
                     role: m.role,
                     content: m.content,
                     createdAt: m.createdAt,
                     enrichJob: m.enrichJob,
+                    enrichLeads: m.enrichLeads,
                   }))
                 );
               }
@@ -659,6 +732,9 @@ export default function AssistantPage() {
                       </button>
                     )}
                     {msg.enrichJob && <EnrichJobStatusCard jobId={msg.enrichJob.jobId} label={msg.enrichJob.label} />}
+                    {msg.enrichLeads && msg.enrichLeads.leads.length > 0 && (
+                      <EnrichLeadsTable leads={msg.enrichLeads.leads} scores={msg.enrichLeads.scores} />
+                    )}
                     {/* Timestamp + copy row */}
                     <div className={"flex items-center gap-2 mt-1 " + (msg.role === "user" ? "justify-end" : "justify-start")}>
                       {(msg.timestamp || msg.createdAt) && (

@@ -381,7 +381,11 @@ async function callEnrichRoute(req: NextRequest, action: string, extra: Record<s
   return data;
 }
 
-async function executeEnrichTool(toolName: string, input: Record<string, unknown>, req: NextRequest): Promise<{ toolResult: unknown; download?: { filename: string; csv: string } }> {
+async function executeEnrichTool(
+  toolName: string,
+  input: Record<string, unknown>,
+  req: NextRequest
+): Promise<{ toolResult: unknown; download?: { filename: string; csv: string }; fullLeads?: unknown[]; scores?: Array<{ email: string; score: number; reason: string }> }> {
   try {
     if (toolName === "parse_enrich_icp") {
       const result = await callEnrichRoute(req, "parse_icp", { description: input.description, vertical: input.vertical });
@@ -417,11 +421,15 @@ async function executeEnrichTool(toolName: string, input: Record<string, unknown
     if (toolName === "get_enrich_leads") {
       const result = await callEnrichRoute(req, "fetch", { datasetId: input.datasetId });
       const items = Array.isArray((result as { items?: unknown[] }).items) ? (result as { items: unknown[] }).items : [];
-      return { toolResult: { total: items.length, leads: items.slice(0, 50) } };
+      // Claude only sees a 50-row preview (keeps its context small) — the full list (capped at
+      // 1000, matching Apify's own fetch limit) is threaded through separately so the chat UI can
+      // render an actual scrollable table instead of Claude prose-listing hundreds of leads.
+      return { toolResult: { total: items.length, leads: items.slice(0, 50) }, fullLeads: items.slice(0, 1000) };
     }
     if (toolName === "score_enrich_leads") {
       const result = await callEnrichRoute(req, "score_contacts", { contacts: input.leads, icp: input.icp });
-      return { toolResult: result };
+      const scores = Array.isArray((result as { scores?: unknown[] }).scores) ? (result as { scores: Array<{ email: string; score: number; reason: string }> }).scores : undefined;
+      return { toolResult: result, scores };
     }
     if (toolName === "save_enrich_leads") {
       const result = await callEnrichRoute(req, "save", { datasetId: input.datasetId, jobId: input.jobId, vertical: input.vertical });
@@ -841,6 +849,9 @@ export async function POST(req: NextRequest) {
     // survives switching conversations or refreshing (it's read back from the DB, not kept in
     // memory only).
     let startedEnrichJob: { jobId: number; label: string } | undefined;
+    // Same reasoning — full lead rows (and any ICP-fit scores computed for them) persisted on the
+    // message so the chat can render a real table, not just what Claude's own reply describes.
+    let enrichLeadsResult: { leads: unknown[]; scores?: Record<string, { score: number; reason: string }> } | undefined;
 
     // ── Radar access gate for the search_radar_contacts / export_radar_contacts_csv tools ──
     // Only offered to users who actually have Radar access themselves (view or edit) — this
@@ -945,6 +956,7 @@ RADAR ENRICH — FINDING NEW LEADS (parse_enrich_icp, start_enrich_job, check_en
 - start_enrich_job spends real Apify credits and takes minutes — ALWAYS confirm the filters with the user before calling it, never on the same turn you first proposed the search.
 - save_enrich_leads writes real contacts/accounts — only call after the user has seen the lead count/preview and explicitly confirmed, same as a Radar CSV export.
 - Never invent job statuses, item counts, or lead data not returned by these tools.
+- After calling get_enrich_leads or score_enrich_leads, do NOT list the individual leads yourself in text — the chat UI already renders them as a full scrollable table (with a clickable LinkedIn link per row) right under your reply. Just summarize count/highlights in a sentence or two and let the table do the rest.
 - Do not mention these tools by name — talk about "running an Enrich search" / "checking that search" naturally.`
           : "";
 
@@ -1002,16 +1014,30 @@ CONVERSATION BEHAVIOR:
           for (const block of toolUseBlocks) {
             const blockName = block.name as string;
             const blockInput = (block.input as Record<string, unknown>) || {};
-            const { toolResult, download: toolDownload } = signalsToolNames.has(blockName)
+            const toolRun = signalsToolNames.has(blockName)
               ? await executeSignalsTool(blockName, blockInput)
               : enrichToolNames.has(blockName)
               ? await executeEnrichTool(blockName, blockInput, req)
               : await executeRadarTool(blockName, blockInput, decoded.userId);
+            const toolResult = toolRun.toolResult;
+            const toolDownload = toolRun.download;
             if (toolDownload) exportDownloads.push(toolDownload);
             if (blockName === "start_enrich_job") {
               const r = toolResult as { jobId?: number; label?: string; error?: string };
               if (r && typeof r.jobId === "number" && !r.error) {
                 startedEnrichJob = { jobId: r.jobId, label: r.label || "Enrich search" };
+              }
+            }
+            if (blockName === "get_enrich_leads") {
+              const leads = "fullLeads" in toolRun ? toolRun.fullLeads : undefined;
+              if (Array.isArray(leads)) enrichLeadsResult = { ...enrichLeadsResult, leads };
+            }
+            if (blockName === "score_enrich_leads") {
+              const scores = "scores" in toolRun ? toolRun.scores : undefined;
+              if (Array.isArray(scores)) {
+                const byEmail: Record<string, { score: number; reason: string }> = {};
+                for (const s of scores) if (s?.email) byEmail[s.email.toLowerCase()] = { score: s.score, reason: s.reason };
+                enrichLeadsResult = { leads: enrichLeadsResult?.leads || [], scores: byEmail };
               }
             }
             toolResultBlocks.push({ type: "tool_result", tool_use_id: block.id as string, content: JSON.stringify(toolResult) });
@@ -1086,7 +1112,7 @@ CONVERSATION BEHAVIOR:
         content: assistantReply,
         conversationId: convo.id,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        citations: { intent, entities, enrichJob: startedEnrichJob } as any,
+        citations: { intent, entities, enrichJob: startedEnrichJob, enrichLeads: enrichLeadsResult } as any,
       },
     });
 
@@ -1111,6 +1137,7 @@ CONVERSATION BEHAVIOR:
       download: exportDownloads[0],
       downloads: exportDownloads.length ? exportDownloads : undefined,
       enrichJob: startedEnrichJob,
+      enrichLeads: enrichLeadsResult,
     });
   } catch (error) {
     console.error("Assistant POST error:", error);

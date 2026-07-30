@@ -30,10 +30,12 @@ export async function GET(req: NextRequest) {
         role: m.role,
         content: m.content,
         createdAt: m.createdAt,
-        // Only enrichJob is surfaced to the client today — carries the jobId/label of an Enrich
-        // search this message started, so the chat can show a live-polling status card that
-        // survives reopening the conversation (intent/entities stay server-side only).
+        // enrichJob/enrichLeads are the only citation fields surfaced to the client — jobId/label
+        // for the live-polling status card, and the full lead rows (+ any ICP-fit scores) for the
+        // results table. Both survive reopening the conversation since they're read from the DB,
+        // not just kept in the current session's memory (intent/entities stay server-side only).
         enrichJob: (m.citations as { enrichJob?: { jobId: number; label: string } } | null)?.enrichJob,
+        enrichLeads: (m.citations as { enrichLeads?: { leads: unknown[]; scores?: Record<string, { score: number; reason: string }> } } | null)?.enrichLeads,
       })),
     });
   } catch (error) {
