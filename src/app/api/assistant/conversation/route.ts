@@ -25,7 +25,16 @@ export async function GET(req: NextRequest) {
       id: conversation.id,
       title: conversation.title,
       updatedAt: conversation.updatedAt,
-      messages: conversation.messages.map((m: { id: string; role: string; content: string; createdAt: Date }) => ({ id: m.id, role: m.role, content: m.content, createdAt: m.createdAt })),
+      messages: conversation.messages.map((m: { id: string; role: string; content: string; createdAt: Date; citations: unknown }) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        createdAt: m.createdAt,
+        // Only enrichJob is surfaced to the client today — carries the jobId/label of an Enrich
+        // search this message started, so the chat can show a live-polling status card that
+        // survives reopening the conversation (intent/entities stay server-side only).
+        enrichJob: (m.citations as { enrichJob?: { jobId: number; label: string } } | null)?.enrichJob,
+      })),
     });
   } catch (error) {
     console.error("Conversation load error:", error);

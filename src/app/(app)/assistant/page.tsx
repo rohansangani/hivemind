@@ -23,6 +23,9 @@ interface Message {
   /** Same as `download` but supports more than one file — e.g. the user asked for genuinely
    * separate CSVs per group (one per vertical) rather than one combined export. */
   downloads?: Array<{ filename: string; csv: string }>;
+  /** Set when this message started a Radar Enrich job — persisted server-side (unlike download/
+   * downloads above) so reopening the conversation or refreshing still shows a live status card. */
+  enrichJob?: { jobId: number; label: string };
 }
 
 function downloadCsvString(csv: string, filename: string) {
@@ -35,6 +38,75 @@ function downloadCsvString(csv: string, filename: string) {
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+/**
+ * Live-polling status card for an Enrich job Halo started. Renders under the message that
+ * started it, both for a fresh reply and for a message reloaded from the DB (via the
+ * `enrichJob` citation) — so it survives switching conversations or refreshing the page instead
+ * of only existing in in-memory chat state for the current session.
+ */
+function EnrichJobStatusCard({ jobId, label }: { jobId: number; label: string }) {
+  const [status, setStatus] = useState<string | null>(null);
+  const [itemCount, setItemCount] = useState(0);
+  const [savedCount, setSavedCount] = useState(0);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const poll = async () => {
+      try {
+        const res = await fetch("/api/radar/enrich", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "enrich_job_sync", jobId }),
+        });
+        const data = await res.json();
+        if (cancelled) return;
+        if (!res.ok) { setError(true); return; }
+        setStatus(data.status || null);
+        setItemCount(data.itemCount || 0);
+        setSavedCount(data.savedCount || 0);
+        // Keep polling while Apify's run is still active — stop once it lands in any terminal state.
+        if (data.status === "RUNNING" || data.status === "READY") {
+          timer = setTimeout(poll, 15000);
+        }
+      } catch {
+        if (!cancelled) setError(true);
+      }
+    };
+    poll();
+    return () => { cancelled = true; if (timer) clearTimeout(timer); };
+  }, [jobId]);
+
+  const isRunning = !error && (status === null || status === "RUNNING" || status === "READY");
+  const isDone = status === "SUCCEEDED";
+  const isFailed = error || status === "FAILED" || status === "ABORTED" || status === "TIMED-OUT";
+
+  return (
+    <div className="mt-2 inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] text-[12px] max-w-full">
+      {isRunning && (
+        <svg aria-hidden="true" width="12" height="12" viewBox="0 0 16 16" fill="none" className="animate-spin flex-shrink-0" style={{ color: "var(--hm-text-tertiary)" }}>
+          <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.8" strokeDasharray="28" strokeDashoffset="10" strokeLinecap="round" />
+        </svg>
+      )}
+      {isDone && (
+        <svg aria-hidden="true" width="12" height="12" viewBox="0 0 16 16" fill="none" className="flex-shrink-0 text-[var(--tag-green-fg)]"><path d="M2 8l4 4 8-8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+      )}
+      {isFailed && (
+        <svg aria-hidden="true" width="12" height="12" viewBox="0 0 16 16" fill="none" className="flex-shrink-0 text-[var(--tag-red-fg)]"><circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.3" /><path d="M8 5v3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /><circle cx="8" cy="11" r="0.75" fill="currentColor" /></svg>
+      )}
+      <span className="font-medium text-[var(--hm-text)] truncate max-w-[220px]">{label}</span>
+      <span className="text-[var(--hm-text-tertiary)] whitespace-nowrap">
+        {error ? "Couldn't check status" :
+          isRunning ? "Running…" :
+          isDone ? `${itemCount} lead${itemCount === 1 ? "" : "s"} found${savedCount ? ` · ${savedCount} saved` : ""}` :
+          status}
+      </span>
+    </div>
+  );
 }
 
 interface Conversation {
@@ -122,7 +194,7 @@ export default function AssistantPage() {
       if (!res.ok) throw new Error(`Server error ${res.status}`);
       const data = await res.json();
       if (data.reply) {
-        setMessages((prev) => [...prev, { role: "assistant", content: data.reply, timestamp: Date.now(), download: data.download || undefined, downloads: data.downloads || undefined }]);
+        setMessages((prev) => [...prev, { role: "assistant", content: data.reply, timestamp: Date.now(), download: data.download || undefined, downloads: data.downloads || undefined, enrichJob: data.enrichJob || undefined }]);
         if (data.conversationId) {
           const isNew = !conversationId;
           setConversationId(data.conversationId);
@@ -297,10 +369,11 @@ export default function AssistantPage() {
               if (data.messages) {
                 // Map DB messages (createdAt: string) into the Message interface
                 setMessages(
-                  data.messages.map((m: { role: "user" | "assistant"; content: string; createdAt: string }) => ({
+                  data.messages.map((m: { role: "user" | "assistant"; content: string; createdAt: string; enrichJob?: { jobId: number; label: string } }) => ({
                     role: m.role,
                     content: m.content,
                     createdAt: m.createdAt,
+                    enrichJob: m.enrichJob,
                   }))
                 );
               }
@@ -585,6 +658,7 @@ export default function AssistantPage() {
                         Download CSV
                       </button>
                     )}
+                    {msg.enrichJob && <EnrichJobStatusCard jobId={msg.enrichJob.jobId} label={msg.enrichJob.label} />}
                     {/* Timestamp + copy row */}
                     <div className={"flex items-center gap-2 mt-1 " + (msg.role === "user" ? "justify-end" : "justify-start")}>
                       {(msg.timestamp || msg.createdAt) && (

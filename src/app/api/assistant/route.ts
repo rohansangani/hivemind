@@ -402,7 +402,9 @@ async function executeEnrichTool(toolName: string, input: Record<string, unknown
         if (Array.isArray(v)) rest[key] = v.map((s) => (typeof s === "string" ? s.toLowerCase().trim() : s));
       }
       const result = await callEnrichRoute(req, "start", { label: jobLabel, params: rest });
-      return { toolResult: result };
+      // Include the label actually used (Claude's input may have omitted it) so the caller can
+      // show it in a status card without re-deriving the same default logic.
+      return { toolResult: { ...result, label: jobLabel } };
     }
     if (toolName === "check_enrich_job") {
       const result = await callEnrichRoute(req, "enrich_job_sync", { jobId: input.jobId });
@@ -834,6 +836,11 @@ export async function POST(req: NextRequest) {
     // Confirmed live: this is what caused the "you'll receive 3 separate CSV files" message to
     // be outright wrong — only 1 ever actually downloaded.
     const exportDownloads: Array<{ filename: string; csv: string }> = [];
+    // Set when start_enrich_job actually succeeds this turn — persisted onto the assistant
+    // message's citations so the chat UI can show a live-polling status card for the job that
+    // survives switching conversations or refreshing (it's read back from the DB, not kept in
+    // memory only).
+    let startedEnrichJob: { jobId: number; label: string } | undefined;
 
     // ── Radar access gate for the search_radar_contacts / export_radar_contacts_csv tools ──
     // Only offered to users who actually have Radar access themselves (view or edit) — this
@@ -1001,6 +1008,12 @@ CONVERSATION BEHAVIOR:
               ? await executeEnrichTool(blockName, blockInput, req)
               : await executeRadarTool(blockName, blockInput, decoded.userId);
             if (toolDownload) exportDownloads.push(toolDownload);
+            if (blockName === "start_enrich_job") {
+              const r = toolResult as { jobId?: number; label?: string; error?: string };
+              if (r && typeof r.jobId === "number" && !r.error) {
+                startedEnrichJob = { jobId: r.jobId, label: r.label || "Enrich search" };
+              }
+            }
             toolResultBlocks.push({ type: "tool_result", tool_use_id: block.id as string, content: JSON.stringify(toolResult) });
           }
           toolLoopMessages.push({ role: "user", content: toolResultBlocks });
@@ -1073,7 +1086,7 @@ CONVERSATION BEHAVIOR:
         content: assistantReply,
         conversationId: convo.id,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        citations: { intent, entities } as any,
+        citations: { intent, entities, enrichJob: startedEnrichJob } as any,
       },
     });
 
@@ -1097,6 +1110,7 @@ CONVERSATION BEHAVIOR:
       // `download` kept (first file) for older clients; `downloads` carries all of them.
       download: exportDownloads[0],
       downloads: exportDownloads.length ? exportDownloads : undefined,
+      enrichJob: startedEnrichJob,
     });
   } catch (error) {
     console.error("Assistant POST error:", error);
