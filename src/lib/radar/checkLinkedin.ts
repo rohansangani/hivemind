@@ -50,6 +50,10 @@ interface ApifyLinkedInItem {
   headline?: string;
   publicIdentifier?: string;
   currentPosition?: { companyName?: string }[];
+  // The full work history — currentPosition confirmed (via prod logs, 2026-07-30) to only ever
+  // hold ONE entry even when a profile has several present roles; a role is "present" here when
+  // endDate.text === "Present" (harvestapi never sets endDate to null/absent for ongoing roles).
+  experience?: { companyName?: string; endDate?: { text?: string } }[];
   emails?: { email?: string }[];
   companyWebsites?: { domain?: string }[];
 }
@@ -129,17 +133,19 @@ export async function runLinkedInCheck(urls: string[], mode: string | undefined,
       });
       continue;
     }
-    // Temporary diagnostic — confirming harvestapi's real field name/shape for a profile's full
-    // experience list (currentPosition may only ever hold one entry regardless of how many
-    // present roles the profile actually has). Remove once confirmed.
-    console.error("[check_linkedin] experience field:", JSON.stringify((item as Record<string, unknown>).experience).slice(0, 6000));
     const linkedinUrl = item.linkedinUrl || null;
     // A profile can have more than one PRESENT position (e.g. still listed at their DB employer
-    // alongside a newer role) — harvestapi returns all of them in currentPosition, not just the
-    // most recent. Keep the first one as the primary/displayed company, but the match check below
-    // considers every current company so a DB employer that's still one of several present roles
-    // counts as a match instead of only comparing against whichever came back first.
-    const currentCompanies = (item.currentPosition || []).map((p) => p.companyName).filter((c): c is string => !!c);
+    // alongside a newer role) — but currentPosition only ever holds ONE entry regardless (confirmed
+    // via prod logs, 2026-07-30). The full set of present roles lives in `experience`, where an
+    // ongoing role has endDate.text === "Present". Keep currentPosition[0] as the primary/displayed
+    // company, but the match check below considers every present role from experience too, so a DB
+    // employer that's still a current-but-not-primary role counts as a match.
+    const primaryCompany = item.currentPosition?.[0]?.companyName || null;
+    const presentFromExperience = (item.experience || [])
+      .filter((e) => (e.endDate?.text || "").trim().toLowerCase() === "present")
+      .map((e) => e.companyName)
+      .filter((c): c is string => !!c);
+    const currentCompanies = Array.from(new Set([primaryCompany, ...presentFromExperience].filter((c): c is string => !!c)));
     const headlineCompany = companyFromHeadline(item.headline);
     const companies = currentCompanies.length ? currentCompanies : headlineCompany ? [headlineCompany] : [];
     const company = companies[0] || null;
