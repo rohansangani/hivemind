@@ -581,6 +581,10 @@ export async function POST(req: NextRequest) {
     if (status >= 200 && status < 300) {
       const logFn = LOGGABLE_ENRICH_ACTIONS[bodyForLog.action as string];
       if (logFn) await logRadarActivity(access.userId, `enrich_${bodyForLog.action}`, logFn(bodyForLog, resBody));
+    } else {
+      // Temporary diagnostic — Halo's start_enrich_job calls have been 400ing with no visibility
+      // into which action/field is rejecting them. Remove once root-caused.
+      console.error("Radar enrich non-2xx:", { action: bodyForLog.action, status, resBody, bodyForLog });
     }
     return NextResponse.json(resBody, { status });
   } catch (err) {
