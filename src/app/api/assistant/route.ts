@@ -231,6 +231,182 @@ const SIGNALS_TOOLS = [
   },
 ];
 
+// Radar Enrich (Apify LinkedIn lead search) — Ask Halo tool-use. Deliberately reuses the existing
+// /api/radar/enrich route via an internal fetch (forwarding the caller's session cookie) rather
+// than re-implementing Apify/Debounce/Claude/DB logic here — same "one source of truth" reasoning
+// as the rest of that route's callers. Gated on "edit"-level Radar access (same tier /api/radar/enrich
+// itself requires) since starting a job spends Apify credits and saving writes real contacts/accounts.
+const ENRICH_TOOLS = [
+  {
+    name: "parse_enrich_icp",
+    description:
+      "Turn a plain-English ICP description into structured Enrich search filters (titles, seniority, function, " +
+      "location, revenue range, industry — picked from Radar's fixed industry enum — company size). Call this " +
+      "first whenever the user describes who they want to find in free text (e.g. \"VPs of marketing at mid-size " +
+      "D2C ecommerce brands in the US\") rather than guessing the start_enrich_job filters yourself.",
+    input_schema: {
+      type: "object",
+      properties: {
+        description: { type: "string", description: "The user's plain-English description of who to find." },
+        vertical: { type: "string", description: "Radar vertical bucket if known (B2B, D2C, US) — optional context, not required." },
+      },
+      required: ["description"],
+    },
+  },
+  {
+    name: "start_enrich_job",
+    description:
+      "Start a new Enrich search (an Apify LinkedIn lead-finder run) for a target ICP. This spends Apify credits " +
+      "and takes minutes to finish — ALWAYS show the user the filters you're about to use and get explicit " +
+      "confirmation (e.g. \"yes\", \"go ahead\", \"start it\") before calling this, the same way you confirm " +
+      "before a Radar CSV export. Never call this on the same turn you first proposed the search. After starting, " +
+      "tell the user the job has been kicked off and that they can ask you to check on it in a bit — do not try to " +
+      "poll repeatedly in the same turn.",
+    input_schema: {
+      type: "object",
+      properties: {
+        label: { type: "string", description: "Short human name for this job, e.g. \"D2C haircare VPs - US\"." },
+        contact_job_title: { type: "string", description: "Comma-separated job titles to include." },
+        contact_not_job_title: { type: "string", description: "Comma-separated job titles to exclude." },
+        seniority_level: { type: "array", items: { type: "string" }, description: "e.g. Founder, Owner, C-Level, Director, VP, Head, Manager, Senior, Entry." },
+        functional_level: { type: "array", items: { type: "string" }, description: "e.g. Sales, Marketing, Operations, Engineering, Finance, HR, IT, Legal, Product, Support." },
+        contact_location: { type: "string" },
+        contact_not_location: { type: "string" },
+        company_domain: { type: "array", items: { type: "string" }, description: "Specific company domains to target, if the user named companies rather than an ICP." },
+        size: { type: "string", description: "Company employee-count range." },
+        company_industry: {
+          type: "array",
+          items: { type: "string" },
+          description: "Must be values from Radar's fixed industry enum — get these from parse_enrich_icp rather than guessing.",
+        },
+        company_not_industry: { type: "array", items: { type: "string" } },
+        min_revenue: { type: "string", description: "One of: 100K, 1M, 10M, 100M, 1B, 10B." },
+        max_revenue: { type: "string" },
+        fetch_count: { type: "number", description: "How many leads to fetch, if the user specified a number." },
+      },
+      required: ["label"],
+    },
+  },
+  {
+    name: "check_enrich_job",
+    description:
+      "Check the live status of a previously-started Enrich job (RUNNING/SUCCEEDED/FAILED/ABORTED) and its result " +
+      "count. Use this when the user asks about a job you started earlier, or references \"that enrich search\"/" +
+      "\"the job I started\". Requires the jobId returned by start_enrich_job.",
+    input_schema: {
+      type: "object",
+      properties: { jobId: { type: "number", description: "The jobId returned by start_enrich_job." } },
+      required: ["jobId"],
+    },
+  },
+  {
+    name: "list_enrich_jobs",
+    description:
+      "List recent Enrich jobs (label, status, item count, saved count) when the user asks something like \"what " +
+      "enrich searches have I run\" or doesn't remember a jobId.",
+    input_schema: { type: "object", properties: {} },
+  },
+  {
+    name: "get_enrich_leads",
+    description:
+      "Fetch the actual lead rows (name, title, company, email, location) from a SUCCEEDED Enrich job, for preview " +
+      "or scoring. Only call this after check_enrich_job shows the job has finished. Returns up to 50 leads plus " +
+      "the true total count — never claim more leads exist than what the tool reports.",
+    input_schema: {
+      type: "object",
+      properties: { datasetId: { type: "string", description: "The datasetId from check_enrich_job/start_enrich_job." } },
+      required: ["datasetId"],
+    },
+  },
+  {
+    name: "score_enrich_leads",
+    description:
+      "Score a list of Enrich leads against a parsed ICP (0-100 fit score with a one-line reason each). Call " +
+      "get_enrich_leads first to get the leads, and parse_enrich_icp first to get the icp object.",
+    input_schema: {
+      type: "object",
+      properties: {
+        leads: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: { email: { type: "string" }, title: { type: "string" }, company_name: { type: "string" }, location: { type: "string" }, country: { type: "string" } },
+            required: ["email"],
+          },
+        },
+        icp: { type: "object", description: "The icp object returned by parse_enrich_icp." },
+      },
+      required: ["leads", "icp"],
+    },
+  },
+  {
+    name: "save_enrich_leads",
+    description:
+      "Save an Enrich job's leads into Radar's contacts/accounts database. This WRITES real data — only call " +
+      "after the user has explicitly confirmed (having seen the lead count/preview first), same confirm-before-" +
+      "write discipline as everything else Halo does with Radar.",
+    input_schema: {
+      type: "object",
+      properties: {
+        datasetId: { type: "string" },
+        jobId: { type: "number" },
+        vertical: { type: "string", enum: ["B2B", "D2C", "US"], description: "Radar vertical bucket to save these leads under." },
+      },
+      required: ["datasetId", "vertical"],
+    },
+  },
+];
+
+async function callEnrichRoute(req: NextRequest, action: string, extra: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
+  const res = await fetch(`${baseUrl}/api/radar/enrich`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", cookie: req.headers.get("cookie") || "" },
+    body: JSON.stringify({ action, ...extra }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) return { error: (data as { error?: string }).error || `Enrich request failed (${res.status})` };
+  return data;
+}
+
+async function executeEnrichTool(toolName: string, input: Record<string, unknown>, req: NextRequest): Promise<{ toolResult: unknown; download?: { filename: string; csv: string } }> {
+  try {
+    if (toolName === "parse_enrich_icp") {
+      const result = await callEnrichRoute(req, "parse_icp", { description: input.description, vertical: input.vertical });
+      return { toolResult: result };
+    }
+    if (toolName === "start_enrich_job") {
+      const { label, ...rest } = input;
+      const result = await callEnrichRoute(req, "start", { label, params: rest });
+      return { toolResult: result };
+    }
+    if (toolName === "check_enrich_job") {
+      const result = await callEnrichRoute(req, "enrich_job_sync", { jobId: input.jobId });
+      return { toolResult: result };
+    }
+    if (toolName === "list_enrich_jobs") {
+      const result = await callEnrichRoute(req, "list_enrich_jobs", {});
+      return { toolResult: result };
+    }
+    if (toolName === "get_enrich_leads") {
+      const result = await callEnrichRoute(req, "fetch", { datasetId: input.datasetId });
+      const items = Array.isArray((result as { items?: unknown[] }).items) ? (result as { items: unknown[] }).items : [];
+      return { toolResult: { total: items.length, leads: items.slice(0, 50) } };
+    }
+    if (toolName === "score_enrich_leads") {
+      const result = await callEnrichRoute(req, "score_contacts", { contacts: input.leads, icp: input.icp });
+      return { toolResult: result };
+    }
+    if (toolName === "save_enrich_leads") {
+      const result = await callEnrichRoute(req, "save", { datasetId: input.datasetId, jobId: input.jobId, vertical: input.vertical });
+      return { toolResult: result };
+    }
+  } catch (e) {
+    return { toolResult: { error: (e as Error).message || "Enrich request failed" } };
+  }
+  return { toolResult: { error: `Unknown tool: ${toolName}` } };
+}
+
 type AnthropicContentBlock = Record<string, unknown> & { type: string };
 
 async function callClaudeWithTools(
@@ -651,6 +827,9 @@ export async function POST(req: NextRequest) {
       : "none";
     const hasSignalsAccess = signalsLevel === "view" || signalsLevel === "edit";
 
+    // ── Enrich tools gate — same "edit" tier /api/radar/enrich itself requires ──
+    const hasEnrichAccess = radarLevel === "edit";
+
     if (apiKey) {
       try {
         // ── Retrieve grounded knowledge ───────────────────
@@ -726,6 +905,18 @@ SIGNALS — EXPANSION INTELLIGENCE (search_signals_accounts, get_signals_account
 - Do not mention these tools by name — talk about "checking Signals" / "the expansion data" naturally.`
           : "";
 
+        const enrichToolInstructions = hasEnrichAccess
+          ? `
+
+RADAR ENRICH — FINDING NEW LEADS (parse_enrich_icp, start_enrich_job, check_enrich_job, list_enrich_jobs, get_enrich_leads, score_enrich_leads, save_enrich_leads tools):
+- This is a DIFFERENT capability from the Radar contacts/accounts search tools above — those search data ALREADY in Radar; Enrich goes OUT to LinkedIn (via Apify) to find NEW leads that aren't in the database yet.
+- Typical flow: parse_enrich_icp (turn the user's plain-English description into filters) → show the filters back and confirm → start_enrich_job → tell the user it's running and to check back → check_enrich_job (when they ask) → once SUCCEEDED, get_enrich_leads to preview → optionally score_enrich_leads against the icp → save_enrich_leads once the user confirms they want these written to Radar.
+- start_enrich_job spends real Apify credits and takes minutes — ALWAYS confirm the filters with the user before calling it, never on the same turn you first proposed the search.
+- save_enrich_leads writes real contacts/accounts — only call after the user has seen the lead count/preview and explicitly confirmed, same as a Radar CSV export.
+- Never invent job statuses, item counts, or lead data not returned by these tools.
+- Do not mention these tools by name — talk about "running an Enrich search" / "checking that search" naturally.`
+          : "";
+
         const systemPrompt = buildGroundedSystemPrompt(
           "HiveMind AI, an intelligent marketing assistant",
           knowledge,
@@ -736,7 +927,7 @@ CONVERSATION BEHAVIOR:
 - Think step-by-step: first identify what knowledge base items are most relevant, then compose your answer from those items only
 - Do not repeat context the user already established in this conversation
 - If this is a follow-up question, build on prior answers without re-introducing facts
-- End with 2–3 *Suggested follow-ups:* in italics that help the user go deeper into what's in the knowledge base${radarToolInstructions}${signalsToolInstructions}`
+- End with 2–3 *Suggested follow-ups:* in italics that help the user go deeper into what's in the knowledge base${radarToolInstructions}${signalsToolInstructions}${enrichToolInstructions}`
         );
 
         // ── Build message history with memory compression ─
@@ -757,7 +948,8 @@ CONVERSATION BEHAVIOR:
         // tools are additive (Claude only invokes them when relevant, tool_choice is left "auto").
         const toolLoopMessages: Array<{ role: string; content: string | AnthropicContentBlock[] }> = claudeMessages;
         const signalsToolNames = new Set(SIGNALS_TOOLS.map((t) => t.name));
-        const offeredTools = [...(hasRadarAccess ? RADAR_TOOLS : []), ...(hasSignalsAccess ? SIGNALS_TOOLS : [])];
+        const enrichToolNames = new Set(ENRICH_TOOLS.map((t) => t.name));
+        const offeredTools = [...(hasRadarAccess ? RADAR_TOOLS : []), ...(hasSignalsAccess ? SIGNALS_TOOLS : []), ...(hasEnrichAccess ? ENRICH_TOOLS : [])];
         let totalInputTokens = 0, totalOutputTokens = 0;
         for (let iteration = 0; iteration < 4; iteration++) {
           const result = await callClaudeWithTools(apiKey, systemPrompt, toolLoopMessages, offeredTools, 2048);
@@ -776,6 +968,8 @@ CONVERSATION BEHAVIOR:
             const blockInput = (block.input as Record<string, unknown>) || {};
             const { toolResult, download: toolDownload } = signalsToolNames.has(blockName)
               ? await executeSignalsTool(blockName, blockInput)
+              : enrichToolNames.has(blockName)
+              ? await executeEnrichTool(blockName, blockInput, req)
               : await executeRadarTool(blockName, blockInput, decoded.userId);
             if (toolDownload) exportDownloads.push(toolDownload);
             toolResultBlocks.push({ type: "tool_result", tool_use_id: block.id as string, content: JSON.stringify(toolResult) });
