@@ -268,10 +268,18 @@ const ENRICH_TOOLS = [
         label: { type: "string", description: "Short human name for this job, e.g. \"D2C haircare VPs - US\"." },
         contact_job_title: { type: "array", items: { type: "string" }, description: "Job titles to include, e.g. [\"Head of Operations\", \"VP Logistics\"]." },
         contact_not_job_title: { type: "array", items: { type: "string" }, description: "Job titles to exclude." },
-        seniority_level: { type: "array", items: { type: "string" }, description: "e.g. Founder, Owner, C-Level, Director, VP, Head, Manager, Senior, Entry." },
-        functional_level: { type: "array", items: { type: "string" }, description: "e.g. Sales, Marketing, Operations, Engineering, Finance, HR, IT, Legal, Product, Support." },
-        contact_location: { type: "array", items: { type: "string" }, description: "Locations to include, e.g. [\"India\"]." },
-        contact_not_location: { type: "array", items: { type: "string" }, description: "Locations to exclude." },
+        seniority_level: {
+          type: "array",
+          items: { type: "string", enum: ["founder", "owner", "c_suite", "partner", "director", "vp", "head", "manager", "senior", "entry", "trainee"] },
+          description: "Must be values from this exact enum — Apify's actor rejects anything else.",
+        },
+        functional_level: {
+          type: "array",
+          items: { type: "string", enum: ["c_suite", "sales", "marketing", "operations", "engineering", "finance", "human_resources", "information_technology", "legal", "product_management", "design", "education", "support"] },
+          description: "Must be values from this exact enum — Apify's actor rejects anything else.",
+        },
+        contact_location: { type: "array", items: { type: "string" }, description: "Lowercase full country names, e.g. [\"india\"], not \"India\" — Apify's actor matches lowercase exactly." },
+        contact_not_location: { type: "array", items: { type: "string" }, description: "Same lowercase full country name format as contact_location." },
         company_domain: { type: "array", items: { type: "string" }, description: "Specific company domains to target, if the user named companies rather than an ICP." },
         size: { type: "array", items: { type: "string" }, description: "Company employee-count range(s), e.g. [\"11-50\", \"51-100\"]." },
         company_industry: {
@@ -385,6 +393,14 @@ async function executeEnrichTool(toolName: string, input: Record<string, unknown
       // Claude doesn't always fill this in even though it's in the tool's required list, so this
       // was causing a repeated-400 loop instead of ever actually starting the job.
       const jobLabel = typeof label === "string" && label.trim() ? label.trim() : `Halo Enrich search ${new Date().toISOString().slice(0, 16).replace("T", " ")}`;
+      // Apify's actor matches contact_location/contact_not_location against a fixed list of
+      // lowercase full country names — defensively lowercase here in case Claude sends "India"
+      // instead of "india" despite the schema instruction, same normalization the manual Enrich
+      // UI's own SearchableMultiSelect values already have baked in.
+      for (const key of ["contact_location", "contact_not_location"]) {
+        const v = rest[key];
+        if (Array.isArray(v)) rest[key] = v.map((s) => (typeof s === "string" ? s.toLowerCase().trim() : s));
+      }
       const result = await callEnrichRoute(req, "start", { label: jobLabel, params: rest });
       return { toolResult: result };
     }
