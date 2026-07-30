@@ -130,7 +130,15 @@ export async function runLinkedInCheck(urls: string[], mode: string | undefined,
       continue;
     }
     const linkedinUrl = item.linkedinUrl || null;
-    const company = item.currentPosition?.[0]?.companyName || companyFromHeadline(item.headline) || null;
+    // A profile can have more than one PRESENT position (e.g. still listed at their DB employer
+    // alongside a newer role) — harvestapi returns all of them in currentPosition, not just the
+    // most recent. Keep the first one as the primary/displayed company, but the match check below
+    // considers every current company so a DB employer that's still one of several present roles
+    // counts as a match instead of only comparing against whichever came back first.
+    const currentCompanies = (item.currentPosition || []).map((p) => p.companyName).filter((c): c is string => !!c);
+    const headlineCompany = companyFromHeadline(item.headline);
+    const companies = currentCompanies.length ? currentCompanies : headlineCompany ? [headlineCompany] : [];
+    const company = companies[0] || null;
     const email = item.emails?.[0]?.email || null;
     const row: LinkedInCheckResult = {
       linkedinUrl, firstName: item.firstName || null, lastName: item.lastName || null,
@@ -157,8 +165,13 @@ export async function runLinkedInCheck(urls: string[], mode: string | undefined,
       if (contact) {
         row.dbContactId = contact.id;
         row.dbCompany = contact.company_name || null;
-        const substringMatch = !!(company && contact.company_name && (norm(company).includes(norm(contact.company_name)) || norm(contact.company_name).includes(norm(company))));
-        const overlap = company && contact.company_name ? companyOverlap(company, contact.company_name) : 0;
+        // Compare EVERY present company against the DB one and take the best (most-matching)
+        // result — so a contact whose DB employer is still one of several current roles reads as
+        // "same" rather than "different" just because it wasn't the first one Apify listed.
+        const substringMatch = !!contact.company_name && companies.some(
+          (c) => norm(c).includes(norm(contact.company_name!)) || norm(contact.company_name!).includes(norm(c))
+        );
+        const overlap = contact.company_name ? Math.max(0, ...companies.map((c) => companyOverlap(c, contact.company_name))) : 0;
 
         // "same" and "different" are the confident calls (clean substring/high word overlap, or
         // zero shared words at all). Anything in between — partial word overlap — is "uncertain"
@@ -171,7 +184,7 @@ export async function runLinkedInCheck(urls: string[], mode: string | undefined,
           // just validated_company) rather than asking a human to pick between "same"/"moved"
           // when there was never anything to have moved from.
           verdict = "same";
-        } else if (!company) {
+        } else if (!companies.length) {
           verdict = "uncertain"; // LinkedIn returned no company at all
         } else if (substringMatch || overlap >= 0.66) verdict = "same";
         else if (overlap === 0) verdict = "different";
