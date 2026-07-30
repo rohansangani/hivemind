@@ -132,7 +132,7 @@ export async function runLinkedInCheck(urls: string[], mode: string | undefined,
     // Temporary diagnostic — confirming harvestapi's real field name/shape for a profile's full
     // experience list (currentPosition may only ever hold one entry regardless of how many
     // present roles the profile actually has). Remove once confirmed.
-    console.error("[check_linkedin] raw item keys:", Object.keys(item), "currentPosition:", JSON.stringify(item.currentPosition), "experience-ish:", JSON.stringify((item as Record<string, unknown>).experience || (item as Record<string, unknown>).positions || (item as Record<string, unknown>).workExperience || null).slice(0, 3000));
+    console.error("[check_linkedin] experience field:", JSON.stringify((item as Record<string, unknown>).experience).slice(0, 6000));
     const linkedinUrl = item.linkedinUrl || null;
     // A profile can have more than one PRESENT position (e.g. still listed at their DB employer
     // alongside a newer role) — harvestapi returns all of them in currentPosition, not just the
