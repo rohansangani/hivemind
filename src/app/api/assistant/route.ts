@@ -381,7 +381,11 @@ async function executeEnrichTool(toolName: string, input: Record<string, unknown
     }
     if (toolName === "start_enrich_job") {
       const { label, ...rest } = input;
-      const result = await callEnrichRoute(req, "start", { label, params: rest });
+      // /api/radar/enrich's "start" action 400s with "Job name is required" if label is missing —
+      // Claude doesn't always fill this in even though it's in the tool's required list, so this
+      // was causing a repeated-400 loop instead of ever actually starting the job.
+      const jobLabel = typeof label === "string" && label.trim() ? label.trim() : `Halo Enrich search ${new Date().toISOString().slice(0, 16).replace("T", " ")}`;
+      const result = await callEnrichRoute(req, "start", { label: jobLabel, params: rest });
       return { toolResult: result };
     }
     if (toolName === "check_enrich_job") {
