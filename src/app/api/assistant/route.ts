@@ -963,8 +963,13 @@ CONVERSATION BEHAVIOR:
           const result = await callClaudeWithTools(apiKey, systemPrompt, toolLoopMessages, offeredTools, 2048);
           if (result.usage) { totalInputTokens += result.usage.inputTokens; totalOutputTokens += result.usage.outputTokens; }
 
+          // Only overwrite assistantReply when this round actually produced text — a tool-use-only
+          // round (very common, e.g. calling start_enrich_job with no accompanying commentary) has
+          // an empty textBlocks, and blindly overwriting wiped out a real reply from an earlier
+          // round whenever the loop hit its iteration cap mid tool-use. That surfaced as the
+          // generic "no API key" fallback even when everything was actually working.
           const textBlocks = result.content.filter((b) => b.type === "text");
-          assistantReply = textBlocks.map((b) => b.text as string).join("\n\n");
+          if (textBlocks.length) assistantReply = textBlocks.map((b) => b.text as string).join("\n\n");
 
           const toolUseBlocks = result.content.filter((b) => b.type === "tool_use");
           if (result.stopReason !== "tool_use" || !toolUseBlocks.length) break;
