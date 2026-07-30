@@ -358,7 +358,11 @@ const ENRICH_TOOLS = [
 ];
 
 async function callEnrichRoute(req: NextRequest, action: string, extra: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
+  // Use the actual incoming request's origin, not VERCEL_URL — that env var is the deployment's
+  // internal preview alias, which sits behind Vercel's Deployment Protection wall and returns an
+  // auth-wall response instead of reaching the route (surfaced to users as a bogus "authorization
+  // error"). req.nextUrl.origin is whatever domain is actually serving this traffic right now.
+  const baseUrl = req.nextUrl.origin;
   const res = await fetch(`${baseUrl}/api/radar/enrich`, {
     method: "POST",
     headers: { "Content-Type": "application/json", cookie: req.headers.get("cookie") || "" },
