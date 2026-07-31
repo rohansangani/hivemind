@@ -13,16 +13,13 @@ import { selectFrom, requireRadarAccess } from "@/lib/radar/supabase";
  */
 export const maxDuration = 30;
 
-// `id` is included so the matched set can be re-fetched with select=* afterwards (see below) —
-// never a meaningful column to a human looking at Check DB's own results.
-//
-// This light column set is deliberately used for the MATCHING query, not select=* — confirmed
-// live that select=* on the matching query (materializing every joined/computed column of
-// contacts_view for every row scanned) turned even a 20-value ILIKE OR into a Postgres statement
-// timeout (57014), when the same query against this narrow column set was fine. Full columns are
-// fetched in a cheap second pass, by id, only for whichever rows actually matched.
-const CONTACT_COLS =
-  "id,first_name,last_name,email,title,company_name,account_name,domain,industry,country,email_status,validated_at,vertical,phone,linkedin_url";
+// `id` is included so the matched set can be re-fetched with select=* afterwards (see below).
+// This is the MATCHING query's column set, run against the base `contacts` table (no join) — so
+// it deliberately excludes `account_name`, which only exists on the joined contacts_view. Full
+// columns (including account_name) are fetched in a cheap second pass, by id, against
+// contacts_view, only for whichever rows actually matched.
+const MATCH_CONTACT_COLS =
+  "id,first_name,last_name,email,title,company_name,domain,industry,country,email_status,validated_at,vertical,phone,linkedin_url";
 const ACCOUNT_COLS =
   "id,name,domain,vertical,industry,sub_industry,employee_range,revenue_range,country,linkedin_url,sdr_owner";
 
@@ -82,8 +79,15 @@ export async function POST(req: NextRequest) {
     const values: string[] = [...new Set(cleaned)];
     if (!values.length) return NextResponse.json({ data: [], checked: 0, found: 0, notFound: [] });
 
+    // contacts_view joins contacts to accounts (for account_name/company_name/etc.) — matching
+    // against it directly turned out to be the real cost, not the column count: even a narrow
+    // select still forces every scanned row through that join before the ILIKE/in filter applies.
+    // Match against the base `contacts` table (linkedin_url/email/domain/phone all live there
+    // natively, no join needed) and only use contacts_view for the full-row re-fetch by id below,
+    // where the join only ever touches the small already-matched set.
+    const matchTable = table === "accounts" ? "accounts" : "contacts";
     const view = table === "accounts" ? "accounts" : "contacts_view";
-    const cols = table === "accounts" ? ACCOUNT_COLS : CONTACT_COLS;
+    const cols = table === "accounts" ? ACCOUNT_COLS : MATCH_CONTACT_COLS;
 
     // Chunks run in parallel, not sequentially — with a real index on `col` this isn't strictly
     // needed anymore, but it keeps large lists (700+ values) comfortably inside maxDuration even
@@ -104,10 +108,10 @@ export async function POST(req: NextRequest) {
           // Exact equality can't work here — see linkedinSlug's comment. Match on each value's
           // slug via ILIKE instead, OR'd together across the chunk.
           const or = chunk.map((v) => `linkedin_url.ilike.*${encodeURIComponent(linkedinSlug(v))}*`).join(",");
-          return selectFrom(view, `select=${cols}&or=(${or})`);
+          return selectFrom(matchTable, `select=${cols}&or=(${or})`);
         }
         const list = chunk.map((v) => encodeURIComponent(v)).join(",");
-        return selectFrom(view, `select=${cols}&${col}=in.(${list})`);
+        return selectFrom(matchTable, `select=${cols}&${col}=in.(${list})`);
       }),
     );
     const matchedRows: Record<string, unknown>[] = chunkResults.flatMap((r) => r.rows as Record<string, unknown>[]);
