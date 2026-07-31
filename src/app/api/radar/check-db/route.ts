@@ -80,13 +80,12 @@ export async function POST(req: NextRequest) {
     if (!values.length) return NextResponse.json({ data: [], checked: 0, found: 0, notFound: [] });
 
     // contacts_view joins contacts to accounts (for account_name/company_name/etc.) — matching
-    // against it directly turned out to be the real cost, not the column count: even a narrow
-    // select still forces every scanned row through that join before the ILIKE/in filter applies.
-    // Match against the base `contacts` table (linkedin_url/email/domain/phone all live there
-    // natively, no join needed) and only use contacts_view for the full-row re-fetch by id below,
-    // where the join only ever touches the small already-matched set.
+    // against it turned out to be the real cost, not the column count or filter shape — confirmed
+    // live that even an indexed id=in.() lookup against contacts_view timed out the same way the
+    // ILIKE matching query did. Both passes now run against the base `contacts`/`accounts` tables
+    // instead — linkedin_url/email/domain/phone/company_name all live there natively — trading
+    // away contacts_view's joined account_name for actually working on large batches.
     const matchTable = table === "accounts" ? "accounts" : "contacts";
-    const view = table === "accounts" ? "accounts" : "contacts_view";
     const cols = table === "accounts" ? ACCOUNT_COLS : MATCH_CONTACT_COLS;
 
     // Chunks run in parallel, not sequentially — with a real index on `col` this isn't strictly
@@ -123,9 +122,13 @@ export async function POST(req: NextRequest) {
       ? values.filter((v) => !found.has(linkedinSlug(v)))
       : values.filter((v) => !found.has(v));
 
-    // Second pass: re-fetch the matched rows' FULL columns by id — id=in.() hits a real index and
-    // stays cheap even at select=*, unlike doing select=* on the ILIKE/in.() matching query above.
-    // Only the actually-matched set (usually much smaller than the input list) gets this treatment.
+    // Second pass: re-fetch the matched rows' full columns by id. Confirmed live that
+    // contacts_view is expensive per row regardless of filter shape — even this indexed id=in.()
+    // lookup timed out against it (57014), the same as the ILIKE matching query did. Re-fetch
+    // against matchTable (the base table) instead — proven fast for the matching query above, and
+    // an id lookup against a real table's primary key is about as cheap as a query gets. Trades
+    // away contacts_view's joined account_name/etc. — every other column contacts stores natively
+    // still comes back in full.
     const matchedIds = [...new Set(matchedRows.map((r) => r.id).filter((v) => v != null))];
     let data = matchedRows;
     if (matchedIds.length) {
@@ -133,7 +136,7 @@ export async function POST(req: NextRequest) {
       const idChunks: unknown[][] = [];
       for (let i = 0; i < matchedIds.length; i += ID_CHUNK) idChunks.push(matchedIds.slice(i, i + ID_CHUNK));
       const fullResults = await Promise.all(
-        idChunks.map((chunk) => selectFrom(view, `select=*&id=in.(${chunk.map((v) => encodeURIComponent(String(v))).join(",")})`))
+        idChunks.map((chunk) => selectFrom(matchTable, `select=*&id=in.(${chunk.map((v) => encodeURIComponent(String(v))).join(",")})`))
       );
       data = fullResults.flatMap((r) => r.rows as Record<string, unknown>[]);
     }
