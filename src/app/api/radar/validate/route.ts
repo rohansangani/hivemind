@@ -678,6 +678,16 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
     const { rows: cands } = await selectFrom("email_validation_candidates", candsQ);
     if (!cands.length) return { status: 400, body: { error: "No candidates selected" } };
 
+    // Freeze exactly this set as "queued for this send" — continue_send/continue_all_sends below
+    // follow THIS flag, not the live `selected` column. Without it, changing the confidence
+    // threshold (or any other selection change) after the initial send — which only has a 40s
+    // budget and often can't finish in one call — would let the background continuation pick up
+    // a DIFFERENT, later selection than what was actually confirmed at send time. Confirmed live:
+    // a ~1013-candidate send ended up with 1514 leads in Instantly because of exactly this.
+    await radarSql(`ALTER TABLE email_validation_candidates ADD COLUMN IF NOT EXISTS queued_for_send boolean NOT NULL DEFAULT false`);
+    const candIds = (cands as { id: number }[]).map((c) => c.id);
+    await radarSql(`UPDATE email_validation_candidates SET queued_for_send = true WHERE id IN (${candIds.join(",")})`);
+
     let senderEmails: string[] = [];
     if (mailboxTag) {
       try {
@@ -734,15 +744,17 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
   if (action === "continue_send") {
     const { jobId } = reqBody as { jobId?: number };
     if (!jobId) return { status: 400, body: { error: "No jobId" } };
+    await radarSql(`ALTER TABLE email_validation_candidates ADD COLUMN IF NOT EXISTS queued_for_send boolean NOT NULL DEFAULT false`);
     const job = (await radarSql<{ campaign_id?: string }>(`SELECT campaign_id FROM email_validation_jobs WHERE id = ${Number(jobId)}`))[0];
     if (!job?.campaign_id) return { status: 400, body: { error: "Job has no campaign yet — run send first" } };
 
-    // MUST match "send"'s own filter — without `selected=eq.true` this sweeps in every OTHER
-    // unselected candidate in the job too (they also have instantly_lead_id IS NULL, just because
-    // they were never sent), silently ballooning the live Instantly campaign far past what the
-    // user actually selected. Confirmed live: a 1449-selected send ended up with thousands more
-    // leads in the campaign because of exactly this.
-    const { rows: cands } = await selectFrom("email_validation_candidates", `select=id,first_name,middle_name,last_name,domain,pattern_email&job_id=eq.${jobId}&instantly_lead_id=is.null&selected=eq.true`);
+    // Follows queued_for_send (frozen at "send" time), not the live `selected` column — the user
+    // can keep changing the confidence threshold/selection after send kicks off (it only has a 40s
+    // budget and often can't finish in one call), and continue_send must only ever finish the exact
+    // set that was actually confirmed at send time, not whatever happens to be selected right now.
+    // Confirmed live: following `selected` let a later threshold change pull additional leads into
+    // an already-sent campaign well past what was originally confirmed.
+    const { rows: cands } = await selectFrom("email_validation_candidates", `select=id,first_name,middle_name,last_name,domain,pattern_email&job_id=eq.${jobId}&instantly_lead_id=is.null&queued_for_send=eq.true`);
     if (!cands.length) return { status: 200, body: { added: 0, remaining: 0, done: true } };
 
     const startedAt = Date.now();
@@ -763,21 +775,20 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
   if (action === "continue_all_sends") {
     const auth = req.headers.get("authorization");
     if (!overrideAction && auth !== `Bearer ${CRON_SECRET}`) return { status: 401, body: { error: "Unauthorized" } };
-    // Both this join's WHERE and the per-job query below MUST require selected=true — without it,
-    // a job's unselected candidates (also instantly_lead_id IS NULL, just never sent) get swept
-    // into the live Instantly campaign on every cron tick, ballooning it far past what was actually
-    // selected. Confirmed live: this is what took one 1449-lead selection to thousands of leads.
+    await radarSql(`ALTER TABLE email_validation_candidates ADD COLUMN IF NOT EXISTS queued_for_send boolean NOT NULL DEFAULT false`);
+    // Both this join's WHERE and the per-job query below follow queued_for_send (frozen at "send"
+    // time), not the live `selected` column — see continue_send's comment above for why.
     const jobRows = await radarSql<{ id: number; campaign_id: string }>(`
       SELECT DISTINCT j.id, j.campaign_id FROM email_validation_jobs j
       JOIN email_validation_candidates c ON c.job_id = j.id
-      WHERE j.status = 'sent' AND j.campaign_id IS NOT NULL AND c.instantly_lead_id IS NULL AND c.selected = true
+      WHERE j.status = 'sent' AND j.campaign_id IS NOT NULL AND c.instantly_lead_id IS NULL AND c.queued_for_send = true
       ORDER BY j.id ASC
     `);
     const startedAt = Date.now();
     const results: Record<string, unknown>[] = [];
     for (const { id: jid, campaign_id: campaignId } of jobRows) {
       if (Date.now() - startedAt > 42000) { results.push({ jobId: jid, skipped: "time budget — will run next tick" }); continue; }
-      const { rows: cands } = await selectFrom("email_validation_candidates", `select=id,first_name,middle_name,last_name,domain,pattern_email&job_id=eq.${jid}&instantly_lead_id=is.null&selected=eq.true`);
+      const { rows: cands } = await selectFrom("email_validation_candidates", `select=id,first_name,middle_name,last_name,domain,pattern_email&job_id=eq.${jid}&instantly_lead_id=is.null&queued_for_send=eq.true`);
       if (!cands.length) continue;
       const added: { id: number; leadId?: string }[] = [];
       for (let i = 0; i < cands.length; i += 8) {
