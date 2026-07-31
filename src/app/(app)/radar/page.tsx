@@ -5593,6 +5593,14 @@ const CHECK_DB_COLUMNS: Record<"contacts" | "accounts", Array<{ id: string; labe
   ],
 };
 
+// The on-page preview table stays a fixed curated subset (readability, no horizontal scroll
+// nightmare) even though the API now returns every column — "Export found" uses whatever full
+// set of keys the API sends back instead of this list, so the CSV gets every column.
+const PREVIEW_COLS: Record<"contacts" | "accounts", string[]> = {
+  contacts: ["first_name", "last_name", "email", "title", "company_name", "account_name", "domain", "industry", "country", "email_status", "validated_at", "vertical", "phone", "linkedin_url"],
+  accounts: ["name", "domain", "vertical", "industry", "sub_industry", "employee_range", "revenue_range", "country", "linkedin_url", "sdr_owner"],
+};
+
 function CheckDbSection() {
   const [table, setTable] = useState<"contacts" | "accounts">("contacts");
   const [column, setColumn] = useState("email");
@@ -5747,9 +5755,9 @@ function CheckDbSection() {
     URL.revokeObjectURL(url);
   };
 
-  // `id` is only carried along for the bulk "mark irrelevant via CSV" flow reusing this same
-  // lookup — never a meaningful column to a human looking at Check DB's own results.
-  const cols = result?.data.length ? Object.keys(result.data[0]).filter((c) => c !== "id") : [];
+  // Preview table only ever shows this curated subset (filtered to columns actually present, in
+  // case the view doesn't have one) — "Export found" below uses every key on the row instead.
+  const cols = result?.data.length ? PREVIEW_COLS[table].filter((c) => c in result.data[0]) : [];
 
   return (
     <div className="space-y-5">

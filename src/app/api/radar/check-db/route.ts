@@ -13,13 +13,13 @@ import { selectFrom, requireRadarAccess } from "@/lib/radar/supabase";
  */
 export const maxDuration = 30;
 
-// `id` is included so callers (e.g. the bulk "mark irrelevant via CSV" flow) can resolve a list of
-// values straight to real row ids without a second lookup — it's just carried through, not shown
-// as a meaningful column in the on-page preview table.
-const CONTACT_COLS =
-  "id,first_name,last_name,email,title,company_name,account_name,domain,industry,country,email_status,validated_at,vertical,phone,linkedin_url";
-const ACCOUNT_COLS =
-  "id,name,domain,vertical,industry,sub_industry,employee_range,revenue_range,country,linkedin_url,sdr_owner";
+// select=* rather than a curated column list — "Export found" downstream (radar/page.tsx) hands
+// back exactly whatever keys are on each row, so callers wanting every contact/account column in
+// the export need the full row here. The on-page preview table renders only a fixed curated
+// subset of these regardless (see PREVIEW_CONTACT_COLS/PREVIEW_ACCOUNT_COLS client-side) so this
+// doesn't make the table itself any wider.
+const CONTACT_COLS = "*";
+const ACCOUNT_COLS = "*";
 
 type CheckTable = "contacts" | "accounts";
 
