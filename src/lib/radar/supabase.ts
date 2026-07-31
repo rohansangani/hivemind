@@ -174,13 +174,26 @@ export async function radarSql<T = Record<string, unknown>>(query: string, attem
     headers: { Authorization: `Bearer ${RADAR_SUPABASE_ACCESS_TOKEN}`, "Content-Type": "application/json" },
     body: JSON.stringify({ query }),
   });
-  const d = await r.json();
-  if (!Array.isArray(d)) {
-    if (d?.message && attempt < 3) {
+  // Confirmed live: this occasionally comes back as an HTML error page (a transient Supabase
+  // Management API blip) instead of JSON — r.json() threw uncaught ("Unexpected token '<'") and
+  // crashed the whole caller (e.g. pattern generation) instead of retrying like the `d?.message`
+  // case below already does. Treat a non-JSON body the same way: retry with backoff.
+  let d: unknown;
+  try {
+    d = await r.json();
+  } catch {
+    if (attempt < 3) {
       await new Promise((res) => setTimeout(res, 500 * (attempt + 1)));
       return radarSql<T>(query, attempt + 1);
     }
-    throw new Error(d?.message || "Radar SQL query failed");
+    throw new Error(`Radar SQL query failed (non-JSON response, status ${r.status})`);
+  }
+  if (!Array.isArray(d)) {
+    if ((d as { message?: string })?.message && attempt < 3) {
+      await new Promise((res) => setTimeout(res, 500 * (attempt + 1)));
+      return radarSql<T>(query, attempt + 1);
+    }
+    throw new Error((d as { message?: string })?.message || "Radar SQL query failed");
   }
   return d as T[];
 }
