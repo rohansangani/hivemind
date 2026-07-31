@@ -62,6 +62,32 @@ function linkedinSlug(v: string): string {
   return normalizeLinkedin(v).split("/").filter(Boolean).pop() || "";
 }
 
+/**
+ * A leading-wildcard ILIKE ('%slug%') can't use an index no matter what — confirmed live it times
+ * out (57014) even against the base table with as few as 20 values OR'd together. Instead of
+ * matching in SQL at all, pull every row's own id+linkedin_url once (a plain, pattern-free scan —
+ * ~59k contacts have one as of 2026-07-30, comfortably under the page cap below) and match slugs
+ * in JS. Paginated in parallel rather than fetchAllPages' sequential loop, since this can be tens
+ * of thousands of rows and still needs to fit inside maxDuration.
+ */
+async function fetchAllLinkedinRows(table: string): Promise<{ id: unknown; linkedin_url: string }[]> {
+  const PAGE = 1000;
+  const MAX_PAGES = 100; // ~100k-row safety backstop
+  const query = "select=id,linkedin_url&linkedin_url=not.is.null";
+  const first = await selectFrom(table, query, { from: 0, to: PAGE - 1 });
+  const rows = first.rows as { id: unknown; linkedin_url: string }[];
+  const pages = Math.min(MAX_PAGES, Math.ceil((first.total || rows.length) / PAGE));
+  if (pages > 1) {
+    const rest = await Promise.all(
+      Array.from({ length: pages - 1 }, (_, i) => i + 1).map((page) =>
+        selectFrom(table, query, { from: page * PAGE, to: page * PAGE + PAGE - 1 })
+      )
+    );
+    for (const r of rest) rows.push(...(r.rows as { id: unknown; linkedin_url: string }[]));
+  }
+  return rows;
+}
+
 export async function POST(req: NextRequest) {
   const access = await requireRadarAccess(req);
   if (access instanceof NextResponse) return access;
@@ -89,39 +115,45 @@ export async function POST(req: NextRequest) {
     const matchTable = table === "accounts" ? "accounts" : "contacts";
     const cols = table === "accounts" ? ACCOUNT_COLS : MATCH_CONTACT_COLS;
 
-    // Chunks run in parallel, not sequentially — with a real index on `col` this isn't strictly
-    // needed anymore, but it keeps large lists (700+ values) comfortably inside maxDuration even
-    // if a chunk is briefly slow, instead of every chunk's latency adding up one after another.
     const isLinkedin = columnKey === "linkedin_url";
-    // linkedin_url matches via a leading-wildcard ILIKE (`%slug%`) per value, OR'd across the whole
-    // chunk — that can't use an index at all, so it's a full-table scan per value. 200 of those
-    // OR'd together on one query reliably hit Postgres's statement_timeout (confirmed live: error
-    // 57014, "canceling statement due to statement timeout", on a 317-value check). Every other
-    // column uses a real `in.()` list against an indexed column, which stays cheap at 200. Keep
-    // linkedin_url chunks small enough that each query finishes well inside the timeout.
-    const CHUNK = isLinkedin ? 20 : 200;
-    const chunks: string[][] = [];
-    for (let i = 0; i < values.length; i += CHUNK) chunks.push(values.slice(i, i + CHUNK));
-    const chunkResults = await Promise.all(
-      chunks.map((chunk) => {
-        if (isLinkedin) {
-          // Exact equality can't work here — see linkedinSlug's comment. Match on each value's
-          // slug via ILIKE instead, OR'd together across the chunk.
-          const or = chunk.map((v) => `linkedin_url.ilike.*${encodeURIComponent(linkedinSlug(v))}*`).join(",");
-          return selectFrom(matchTable, `select=${cols}&or=(${or})`);
-        }
-        const list = chunk.map((v) => encodeURIComponent(v)).join(",");
-        return selectFrom(matchTable, `select=${cols}&${col}=in.(${list})`);
-      }),
-    );
-    const matchedRows: Record<string, unknown>[] = chunkResults.flatMap((r) => r.rows as Record<string, unknown>[]);
+    let matchedRows: Record<string, unknown>[];
+    let notFound: string[];
 
-    const found = isLinkedin
-      ? new Set(matchedRows.map((r) => linkedinSlug(String(r[col] ?? ""))))
-      : new Set(matchedRows.map((r) => normalize(String(r[col] ?? ""))));
-    const notFound = isLinkedin
-      ? values.filter((v) => !found.has(linkedinSlug(v)))
-      : values.filter((v) => !found.has(v));
+    if (isLinkedin) {
+      // No SQL-side pattern matching at all here (see fetchAllLinkedinRows) — pull every row
+      // once, match slugs in JS.
+      const allRows = await fetchAllLinkedinRows(matchTable);
+      const bySlug = new Map<string, unknown[]>();
+      for (const r of allRows) {
+        const slug = linkedinSlug(String(r.linkedin_url || ""));
+        if (!slug) continue;
+        (bySlug.get(slug) ?? bySlug.set(slug, []).get(slug)!).push(r.id);
+      }
+      matchedRows = [];
+      const matchedIdsForSlug = new Set<unknown>();
+      for (const v of values) {
+        const ids = bySlug.get(linkedinSlug(v));
+        if (ids) for (const id of ids) matchedIdsForSlug.add(id);
+      }
+      for (const id of matchedIdsForSlug) matchedRows.push({ id });
+      notFound = values.filter((v) => !bySlug.has(linkedinSlug(v)));
+    } else {
+      // Chunks run in parallel, not sequentially — with a real index on `col` this isn't strictly
+      // needed anymore, but it keeps large lists (700+ values) comfortably inside maxDuration even
+      // if a chunk is briefly slow, instead of every chunk's latency adding up one after another.
+      const CHUNK = 200;
+      const chunks: string[][] = [];
+      for (let i = 0; i < values.length; i += CHUNK) chunks.push(values.slice(i, i + CHUNK));
+      const chunkResults = await Promise.all(
+        chunks.map((chunk) => {
+          const list = chunk.map((v) => encodeURIComponent(v)).join(",");
+          return selectFrom(matchTable, `select=${cols}&${col}=in.(${list})`);
+        }),
+      );
+      matchedRows = chunkResults.flatMap((r) => r.rows as Record<string, unknown>[]);
+      const found = new Set(matchedRows.map((r) => normalize(String(r[col] ?? ""))));
+      notFound = values.filter((v) => !found.has(v));
+    }
 
     // Second pass: re-fetch the matched rows' full columns by id. Confirmed live that
     // contacts_view is expensive per row regardless of filter shape — even this indexed id=in.()
