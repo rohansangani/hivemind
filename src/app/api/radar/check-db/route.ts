@@ -83,11 +83,16 @@ export async function POST(req: NextRequest) {
     // Chunks run in parallel, not sequentially — with a real index on `col` this isn't strictly
     // needed anymore, but it keeps large lists (700+ values) comfortably inside maxDuration even
     // if a chunk is briefly slow, instead of every chunk's latency adding up one after another.
-    const CHUNK = 200;
+    const isLinkedin = columnKey === "linkedin_url";
+    // linkedin_url matches via a leading-wildcard ILIKE (`%slug%`) per value, OR'd across the whole
+    // chunk — that can't use an index at all, so it's a full-table scan per value. 200 of those
+    // OR'd together on one query reliably hit Postgres's statement_timeout (confirmed live: error
+    // 57014, "canceling statement due to statement timeout", on a 317-value check). Every other
+    // column uses a real `in.()` list against an indexed column, which stays cheap at 200. Keep
+    // linkedin_url chunks small enough that each query finishes well inside the timeout.
+    const CHUNK = isLinkedin ? 20 : 200;
     const chunks: string[][] = [];
     for (let i = 0; i < values.length; i += CHUNK) chunks.push(values.slice(i, i + CHUNK));
-
-    const isLinkedin = columnKey === "linkedin_url";
     const chunkResults = await Promise.all(
       chunks.map((chunk) => {
         if (isLinkedin) {
