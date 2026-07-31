@@ -13,13 +13,18 @@ import { selectFrom, requireRadarAccess } from "@/lib/radar/supabase";
  */
 export const maxDuration = 30;
 
-// select=* rather than a curated column list — "Export found" downstream (radar/page.tsx) hands
-// back exactly whatever keys are on each row, so callers wanting every contact/account column in
-// the export need the full row here. The on-page preview table renders only a fixed curated
-// subset of these regardless (see PREVIEW_CONTACT_COLS/PREVIEW_ACCOUNT_COLS client-side) so this
-// doesn't make the table itself any wider.
-const CONTACT_COLS = "*";
-const ACCOUNT_COLS = "*";
+// `id` is included so the matched set can be re-fetched with select=* afterwards (see below) —
+// never a meaningful column to a human looking at Check DB's own results.
+//
+// This light column set is deliberately used for the MATCHING query, not select=* — confirmed
+// live that select=* on the matching query (materializing every joined/computed column of
+// contacts_view for every row scanned) turned even a 20-value ILIKE OR into a Postgres statement
+// timeout (57014), when the same query against this narrow column set was fine. Full columns are
+// fetched in a cheap second pass, by id, only for whichever rows actually matched.
+const CONTACT_COLS =
+  "id,first_name,last_name,email,title,company_name,account_name,domain,industry,country,email_status,validated_at,vertical,phone,linkedin_url";
+const ACCOUNT_COLS =
+  "id,name,domain,vertical,industry,sub_industry,employee_range,revenue_range,country,linkedin_url,sdr_owner";
 
 type CheckTable = "contacts" | "accounts";
 
@@ -105,15 +110,31 @@ export async function POST(req: NextRequest) {
         return selectFrom(view, `select=${cols}&${col}=in.(${list})`);
       }),
     );
-    const rows: Record<string, unknown>[] = chunkResults.flatMap((r) => r.rows as Record<string, unknown>[]);
+    const matchedRows: Record<string, unknown>[] = chunkResults.flatMap((r) => r.rows as Record<string, unknown>[]);
 
     const found = isLinkedin
-      ? new Set(rows.map((r) => linkedinSlug(String(r[col] ?? ""))))
-      : new Set(rows.map((r) => normalize(String(r[col] ?? ""))));
+      ? new Set(matchedRows.map((r) => linkedinSlug(String(r[col] ?? ""))))
+      : new Set(matchedRows.map((r) => normalize(String(r[col] ?? ""))));
     const notFound = isLinkedin
       ? values.filter((v) => !found.has(linkedinSlug(v)))
       : values.filter((v) => !found.has(v));
-    return NextResponse.json({ data: rows, checked: values.length, found: rows.length, notFound, column: columnKey, table });
+
+    // Second pass: re-fetch the matched rows' FULL columns by id — id=in.() hits a real index and
+    // stays cheap even at select=*, unlike doing select=* on the ILIKE/in.() matching query above.
+    // Only the actually-matched set (usually much smaller than the input list) gets this treatment.
+    const matchedIds = [...new Set(matchedRows.map((r) => r.id).filter((v) => v != null))];
+    let data = matchedRows;
+    if (matchedIds.length) {
+      const ID_CHUNK = 200;
+      const idChunks: unknown[][] = [];
+      for (let i = 0; i < matchedIds.length; i += ID_CHUNK) idChunks.push(matchedIds.slice(i, i + ID_CHUNK));
+      const fullResults = await Promise.all(
+        idChunks.map((chunk) => selectFrom(view, `select=*&id=in.(${chunk.map((v) => encodeURIComponent(String(v))).join(",")})`))
+      );
+      data = fullResults.flatMap((r) => r.rows as Record<string, unknown>[]);
+    }
+
+    return NextResponse.json({ data, checked: values.length, found: matchedRows.length, notFound, column: columnKey, table });
   } catch (err) {
     console.error("Radar check-db error:", err);
     return NextResponse.json({ error: "Failed to check values" }, { status: 502 });
