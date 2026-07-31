@@ -144,7 +144,13 @@ export async function selectFrom(
   const extra: Record<string, string> = { Prefer: "count=exact" };
   if (range) extra.Range = `${range.from}-${range.to}`;
   const r = await fetch(`${RADAR_SUPABASE_URL}/rest/v1/${table}?${query}`, { headers: anonHeaders(extra) });
-  if (!r.ok) throw new Error(`Radar Supabase select failed (${r.status}) for ${table}`);
+  if (!r.ok) {
+    // Temporary — surfacing PostgREST's actual error body (was previously swallowed) to diagnose
+    // the check-db 500 on large LinkedIn-URL OR'd-ILIKE queries. Remove once root-caused.
+    const bodyText = await r.text().catch(() => "");
+    console.error(`[selectFrom] ${table} failed (${r.status}): ${bodyText.slice(0, 1000)} | query length=${query.length}`);
+    throw new Error(`Radar Supabase select failed (${r.status}) for ${table}`);
+  }
   const rows = (await r.json()) as unknown[];
   const cr = r.headers.get("content-range") || "";
   const total = parseInt(cr.split("/")[1] || String(rows.length), 10);
