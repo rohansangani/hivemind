@@ -15,11 +15,12 @@ export const maxDuration = 30;
 
 // `id` is included so the matched set can be re-fetched with select=* afterwards (see below).
 // This is the MATCHING query's column set, run against the base `contacts` table (no join) — so
-// it deliberately excludes `account_name`, which only exists on the joined contacts_view. Full
-// columns (including account_name) are fetched in a cheap second pass, by id, against
-// contacts_view, only for whichever rows actually matched.
+// it deliberately excludes `account_name`/`industry`/`country`, which only exist on the joined
+// contacts_view (confirmed live: `column contacts.industry does not exist`, 42703 — those are
+// account-derived fields, not native contact columns). Full columns come back from the same base
+// table in the second pass, by id, for whichever rows actually matched.
 const MATCH_CONTACT_COLS =
-  "id,first_name,last_name,email,title,company_name,domain,industry,country,email_status,validated_at,vertical,phone,linkedin_url";
+  "id,first_name,last_name,email,title,company_name,domain,email_status,validated_at,vertical,phone,linkedin_url";
 const ACCOUNT_COLS =
   "id,name,domain,vertical,industry,sub_industry,employee_range,revenue_range,country,linkedin_url,sdr_owner";
 
