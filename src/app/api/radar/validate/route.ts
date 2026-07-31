@@ -737,7 +737,12 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
     const job = (await radarSql<{ campaign_id?: string }>(`SELECT campaign_id FROM email_validation_jobs WHERE id = ${Number(jobId)}`))[0];
     if (!job?.campaign_id) return { status: 400, body: { error: "Job has no campaign yet — run send first" } };
 
-    const { rows: cands } = await selectFrom("email_validation_candidates", `select=id,first_name,middle_name,last_name,domain,pattern_email&job_id=eq.${jobId}&instantly_lead_id=is.null`);
+    // MUST match "send"'s own filter — without `selected=eq.true` this sweeps in every OTHER
+    // unselected candidate in the job too (they also have instantly_lead_id IS NULL, just because
+    // they were never sent), silently ballooning the live Instantly campaign far past what the
+    // user actually selected. Confirmed live: a 1449-selected send ended up with thousands more
+    // leads in the campaign because of exactly this.
+    const { rows: cands } = await selectFrom("email_validation_candidates", `select=id,first_name,middle_name,last_name,domain,pattern_email&job_id=eq.${jobId}&instantly_lead_id=is.null&selected=eq.true`);
     if (!cands.length) return { status: 200, body: { added: 0, remaining: 0, done: true } };
 
     const startedAt = Date.now();
@@ -758,17 +763,21 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
   if (action === "continue_all_sends") {
     const auth = req.headers.get("authorization");
     if (!overrideAction && auth !== `Bearer ${CRON_SECRET}`) return { status: 401, body: { error: "Unauthorized" } };
+    // Both this join's WHERE and the per-job query below MUST require selected=true — without it,
+    // a job's unselected candidates (also instantly_lead_id IS NULL, just never sent) get swept
+    // into the live Instantly campaign on every cron tick, ballooning it far past what was actually
+    // selected. Confirmed live: this is what took one 1449-lead selection to thousands of leads.
     const jobRows = await radarSql<{ id: number; campaign_id: string }>(`
       SELECT DISTINCT j.id, j.campaign_id FROM email_validation_jobs j
       JOIN email_validation_candidates c ON c.job_id = j.id
-      WHERE j.status = 'sent' AND j.campaign_id IS NOT NULL AND c.instantly_lead_id IS NULL
+      WHERE j.status = 'sent' AND j.campaign_id IS NOT NULL AND c.instantly_lead_id IS NULL AND c.selected = true
       ORDER BY j.id ASC
     `);
     const startedAt = Date.now();
     const results: Record<string, unknown>[] = [];
     for (const { id: jid, campaign_id: campaignId } of jobRows) {
       if (Date.now() - startedAt > 42000) { results.push({ jobId: jid, skipped: "time budget — will run next tick" }); continue; }
-      const { rows: cands } = await selectFrom("email_validation_candidates", `select=id,first_name,middle_name,last_name,domain,pattern_email&job_id=eq.${jid}&instantly_lead_id=is.null`);
+      const { rows: cands } = await selectFrom("email_validation_candidates", `select=id,first_name,middle_name,last_name,domain,pattern_email&job_id=eq.${jid}&instantly_lead_id=is.null&selected=eq.true`);
       if (!cands.length) continue;
       const added: { id: number; leadId?: string }[] = [];
       for (let i = 0; i < cands.length; i += 8) {
