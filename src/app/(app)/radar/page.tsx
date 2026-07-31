@@ -1079,6 +1079,62 @@ const CSV_FLATTEN_SKIP_KEYS = new Set(["logo", "logos", "backgroundCovers"]);
  * objects (e.g. 5 work-experience entries) does NOT explode into experience_1_skills,
  * experience_2_skills, ...; every entry's "skills" merges into a single "experience_skills" column
  * (each entry's values appended, "; "-separated), same as an array of plain strings. */
+/** Check LinkedIn's person-profile CSV used to run flattenForCsv over harvestapi's ENTIRE raw
+ * response — every nested sub-field (company logo URLs/sizes, location parse variants, school
+ * IDs, etc.) became its own column, well over 100 of them, mostly noise. This instead picks the
+ * fields a human actually wants and merges each array field (skills/experience/education) into
+ * ONE readable column instead of one column per sub-field. */
+function curatedLinkedinProfileRow(raw: Record<string, unknown> | undefined): Record<string, string> {
+  const r = (raw || {}) as Record<string, unknown>;
+  const str = (v: unknown): string => (v == null ? "" : String(v));
+  const arr = (v: unknown): Record<string, unknown>[] => (Array.isArray(v) ? (v as Record<string, unknown>[]) : []);
+  const nested = (o: unknown, ...path: string[]): unknown => path.reduce((acc: unknown, k) => (acc && typeof acc === "object" ? (acc as Record<string, unknown>)[k] : undefined), o);
+
+  const name = [str(r.firstName), str(r.lastName)].filter(Boolean).join(" ");
+  const location = str(nested(r.location, "parsed", "text")) || str(nested(r.location, "linkedinText"));
+  const currentPos = arr(r.currentPosition)[0];
+
+  const dateRange = (e: Record<string, unknown>): string =>
+    [str(nested(e.startDate, "text")), str(nested(e.endDate, "text"))].filter(Boolean).join(" – ");
+
+  const experience = arr(r.experience)
+    .map((e) => {
+      const title = [str(e.position), str(e.companyName)].filter(Boolean).join(" at ");
+      const dates = dateRange(e);
+      return title ? (dates ? `${title} (${dates})` : title) : "";
+    })
+    .filter(Boolean)
+    .join(" | ");
+
+  const education = arr(r.education)
+    .map((e) => {
+      const school = str(e.schoolName);
+      const dates = dateRange(e) || str(e.period);
+      return school ? (dates ? `${school} (${dates})` : school) : "";
+    })
+    .filter(Boolean)
+    .join(" | ");
+
+  const skills = arr(r.skills).map((s) => str(s.name)).filter(Boolean).join(", ");
+  const email = str(arr(r.emails)[0]?.email);
+
+  return {
+    name,
+    headline: str(r.headline),
+    location,
+    current_company: str(currentPos?.companyName),
+    current_title: str(currentPos?.position),
+    experience,
+    education,
+    skills,
+    connections: str(r.connectionsCount),
+    followers: str(r.followerCount),
+    about: str(r.about),
+    email,
+    linkedin_url: str(r.linkedinUrl),
+  };
+}
+
 function flattenForCsv(value: unknown, prefix = ""): Record<string, string> {
   const out: Record<string, string> = {};
   mergeFlatten(out, value, prefix);
@@ -4971,10 +5027,11 @@ function ValidateSection() {
                         <span className="text-[var(--hm-text-tertiary)]">— {linkedinSummary.notFound} profile(s) not found</span>
                         <button
                           onClick={() => downloadCSV(linkedinResults.map((r) => ({
-                            // Flattened Apify response first (every field the scraper returned —
-                            // experience, education, skills, location, etc. — as readable columns,
-                            // not a raw JSON blob), then our own DB-match verdict columns appended.
-                            ...flattenForCsv(r.raw),
+                            // Curated columns (name, headline, current company/title, experience,
+                            // education, skills merged one-per-column) instead of a full deep
+                            // flatten of harvestapi's raw response — that produced 100+ mostly-noise
+                            // columns (company logo sizes, school IDs, location-parse variants).
+                            ...curatedLinkedinProfileRow(r.raw),
                             db_company: r.dbCompany,
                             db_match_status: r.error ? "not found" : r.uncertain ? "uncertain — needs review" : r.match === true ? "same company" : r.match === false ? "different company (marked moved)" : r.created ? "created" : "no db match",
                           })), `radar_linkedin_check_${today()}.csv`)}
