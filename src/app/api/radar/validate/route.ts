@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRadarAccess, radarSql, selectFrom, radarFetch, rpc } from "@/lib/radar/supabase";
+import { fetchAllPages } from "@/lib/radar/contactExport";
 import { instantly } from "@/lib/instantly";
 import { logRadarActivity } from "@/lib/radar/activityLog";
 import { db } from "@/lib/db";
@@ -675,7 +676,11 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
     let candsQ = `select=id,first_name,middle_name,last_name,domain,pattern_email&job_id=eq.${jobId}`;
     if (Array.isArray(selectedIds) && selectedIds.length) candsQ += `&id=in.(${selectedIds.map(Number).filter(Boolean).join(",")})`;
     else candsQ += `&selected=eq.true`;
-    const { rows: cands } = await selectFrom("email_validation_candidates", candsQ);
+    // A plain selectFrom call (no Range header) silently caps at PostgREST's default 1000-row
+    // page — confirmed live: a 2058-selected send only ever fetched (and queued_for_send'd) the
+    // first 1000, permanently stranding the other 1058 with no way to ever get sent. fetchAllPages
+    // paginates through the real total instead of truncating.
+    const { rows: cands } = await fetchAllPages("email_validation_candidates", candsQ);
     if (!cands.length) return { status: 400, body: { error: "No candidates selected" } };
 
     // Freeze exactly this set as "queued for this send" — continue_send/continue_all_sends below
@@ -715,7 +720,7 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
     const failures: { id: number; error?: string }[] = [];
     for (let i = 0; i < cands.length; i += CONC) {
       if (Date.now() - startedAt > 40000) break;
-      const batch = (cands as LeadCandidate[]).slice(i, i + CONC);
+      const batch = (cands as unknown as LeadCandidate[]).slice(i, i + CONC);
       const settled = await Promise.all(batch.map((c) => addLeadWithRetry(campaignId, c)));
       for (const r of settled) {
         if (r.leadId) results.push(r);
@@ -754,7 +759,7 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
     // set that was actually confirmed at send time, not whatever happens to be selected right now.
     // Confirmed live: following `selected` let a later threshold change pull additional leads into
     // an already-sent campaign well past what was originally confirmed.
-    const { rows: cands } = await selectFrom("email_validation_candidates", `select=id,first_name,middle_name,last_name,domain,pattern_email&job_id=eq.${jobId}&instantly_lead_id=is.null&queued_for_send=eq.true`);
+    const { rows: cands } = await fetchAllPages("email_validation_candidates", `select=id,first_name,middle_name,last_name,domain,pattern_email&job_id=eq.${jobId}&instantly_lead_id=is.null&queued_for_send=eq.true`);
     if (!cands.length) return { status: 200, body: { added: 0, remaining: 0, done: true } };
 
     const startedAt = Date.now();
@@ -762,7 +767,7 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
     const results: { id: number; leadId?: string }[] = [];
     for (let i = 0; i < cands.length; i += CONC) {
       if (Date.now() - startedAt > 40000) break;
-      const batch = (cands as LeadCandidate[]).slice(i, i + CONC);
+      const batch = (cands as unknown as LeadCandidate[]).slice(i, i + CONC);
       const settled = await Promise.all(batch.map((c) => addLeadWithRetry(job.campaign_id as string, c)));
       for (const r of settled) if (r.leadId) results.push(r);
     }
@@ -788,12 +793,12 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
     const results: Record<string, unknown>[] = [];
     for (const { id: jid, campaign_id: campaignId } of jobRows) {
       if (Date.now() - startedAt > 42000) { results.push({ jobId: jid, skipped: "time budget — will run next tick" }); continue; }
-      const { rows: cands } = await selectFrom("email_validation_candidates", `select=id,first_name,middle_name,last_name,domain,pattern_email&job_id=eq.${jid}&instantly_lead_id=is.null&queued_for_send=eq.true`);
+      const { rows: cands } = await fetchAllPages("email_validation_candidates", `select=id,first_name,middle_name,last_name,domain,pattern_email&job_id=eq.${jid}&instantly_lead_id=is.null&queued_for_send=eq.true`);
       if (!cands.length) continue;
       const added: { id: number; leadId?: string }[] = [];
       for (let i = 0; i < cands.length; i += 8) {
         if (Date.now() - startedAt > 42000) break;
-        const batch = (cands as LeadCandidate[]).slice(i, i + 8);
+        const batch = (cands as unknown as LeadCandidate[]).slice(i, i + 8);
         const settled = await Promise.all(batch.map((c) => addLeadWithRetry(campaignId, c)));
         for (const r of settled) if (r.leadId) added.push(r);
       }
