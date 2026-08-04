@@ -3962,6 +3962,21 @@ function ValidateSection() {
     setLinkedinJobCancelling(false);
   }, [activeLinkedinJobId]);
 
+  // Stops a running job directly from the Recent LinkedIn checks list, without first having to
+  // click into it to make it the "active" job — handles the case of two jobs running at once
+  // (e.g. an accidental duplicate) where the one you want to stop isn't the one currently open.
+  const stopLinkedinJobFromList = async (jobId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm("Stop this LinkedIn check? Profiles already checked stay as results, but no more will run.")) return;
+    try {
+      const d = await linkedinJobCall({ action: "cancel", jobId });
+      setRecentLinkedinJobs((prev) => prev.map((j) => (j.id === jobId ? { ...j, status: d.job.status } : j)));
+      if (jobId === activeLinkedinJobId) setActiveLinkedinJob(d.job);
+    } catch (e2) {
+      setError((e2 as Error).message);
+    }
+  };
+
   const deleteLinkedinJob = async (jobId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!confirm("Delete this LinkedIn check from history?")) return;
@@ -4993,7 +5008,7 @@ function ValidateSection() {
                             <div key={j.id} className="relative group/item">
                               <button
                                 onClick={() => watchLinkedinJob(j.id)}
-                                className={`w-full flex items-center justify-between text-left text-[11.5px] px-2 py-1.5 rounded-md border ${activeLinkedinJobId === j.id ? "border-[var(--hm-primary)]" : "border-[var(--hm-border)]"} bg-[var(--hm-surface)] hover:border-[var(--hm-primary)]/40 pr-7`}
+                                className={`w-full flex items-center justify-between text-left text-[11.5px] px-2 py-1.5 rounded-md border ${activeLinkedinJobId === j.id ? "border-[var(--hm-primary)]" : "border-[var(--hm-border)]"} bg-[var(--hm-surface)] hover:border-[var(--hm-primary)]/40 ${j.status === "running" ? "pr-14" : "pr-7"}`}
                               >
                                 <span className="truncate text-[var(--hm-text-secondary)] flex items-center gap-1.5">
                                   <span className="shrink-0 px-1 py-0.5 rounded text-[9.5px] font-medium bg-[var(--hm-bg-tertiary)] text-[var(--hm-text-tertiary)] uppercase">{j.checkType === "company" ? "Co" : "Pf"}</span>
@@ -5003,6 +5018,15 @@ function ValidateSection() {
                                   {j.status === "done" ? `done — ${j.total}/${j.total}` : j.status === "error" ? "error" : j.status === "cancelled" ? `stopped — ${j.processed}/${j.total}` : `running — ${j.processed}/${j.total}`}
                                 </span>
                               </button>
+                              {j.status === "running" && (
+                                <button
+                                  onClick={(e) => stopLinkedinJobFromList(j.id, e)}
+                                  className="absolute top-1.5 right-7 opacity-0 group-hover/item:opacity-100 transition-opacity w-5 h-5 rounded flex items-center justify-center text-[var(--hm-text-tertiary)] hover:bg-[var(--tag-red-bg)] hover:text-[var(--tag-red-fg)]"
+                                  title="Stop this running check"
+                                >
+                                  ■
+                                </button>
+                              )}
                               <button
                                 onClick={(e) => deleteLinkedinJob(j.id, e)}
                                 className="absolute top-1.5 right-1.5 opacity-0 group-hover/item:opacity-100 transition-opacity w-5 h-5 rounded flex items-center justify-center text-[var(--hm-text-tertiary)] hover:bg-[var(--tag-red-bg)] hover:text-[var(--tag-red-fg)]"
