@@ -91,6 +91,13 @@ async function continueJob(job: JobRow, budgetMs: number, actorEmail: string | n
       failCount++;
     }
     processed += batch.length;
+    // Confirmed live: cancelling a job while a continuation was already mid-run (e.g. an
+    // in-flight "advance"/cron tick, which can run for up to ~260s) had no effect — this loop kept
+    // writing status: "running"/"done" after every chunk regardless, silently reviving a job the
+    // user had just stopped. Re-check the LIVE status before every write; if it's been cancelled
+    // out from under this loop, stop here without overwriting that back to running/done.
+    const live = await db.linkedinCheckJob.findUnique({ where: { id: job.id }, select: { status: true } });
+    if (live?.status === "cancelled") return;
     await db.linkedinCheckJob.update({
       where: { id: job.id },
       data: {
