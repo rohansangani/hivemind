@@ -37,6 +37,26 @@ function extractSection(text: string, label: string): string {
   return (match?.[1] || "").trim();
 }
 
+/** Defense-in-depth, not just a prompt ask: confirmed live, TWICE, that an explicit "only use a
+ * number if a page literally states it" instruction did not stop Claude's web_search summary from
+ * fabricating specific figures (revenue, employee/store counts) — the second time it even invented
+ * fake source attribution ("per MCA filings", "their Instagram bio") to sound more credible. Rather
+ * than trust prompt compliance alone, strip any sentence containing a digit from research text
+ * before it's ever used or cached — this removes the entire category of risk regardless of how
+ * convincing the model's phrasing is. A qualitative detail with no number is always safe to keep. */
+// Digits alone aren't enough — confirmed live the very next fabrication spelled the count out as
+// "five locations" instead of "5 locations", which a digit-only regex let straight through.
+const SPELLED_OUT_NUMBER = /\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|billion|dozen)\b/i;
+
+function stripQuantifiedClaims(text: string): string {
+  if (!text) return text;
+  return text
+    .split(/(?<=[.!?])\s+/)
+    .filter((sentence) => !/\d/.test(sentence) && !SPELLED_OUT_NUMBER.test(sentence))
+    .join(" ")
+    .trim();
+}
+
 async function researchViaClaudeWebSearch(prospect: Prospect, apiKey: string): Promise<ClaudeResearch> {
   const identity = [prospect.company, prospect.website, prospect.title ? `(prospect title: ${prospect.title})` : ""]
     .filter(Boolean).join(" — ");
@@ -74,7 +94,7 @@ PRODUCT_TYPE: <the specific product/service type, or exactly "${NO_PRODUCT_MARKE
   const general = extractSection(text, "GENERAL_INSIGHTS");
   const productType = extractSection(text, "PRODUCT_TYPE");
   return {
-    general: general && general !== NO_GENERAL_MARKER ? general : "",
+    general: general && general !== NO_GENERAL_MARKER ? stripQuantifiedClaims(general) : "",
     productType: productType && productType !== NO_PRODUCT_MARKER ? productType : "",
   };
 }
@@ -137,7 +157,7 @@ export async function deriveWebsiteInsights(
   if (tavilyKey) {
     // Full fallback: Claude found nothing at all.
     if (!general && !productType) {
-      const tavilyResult = await tavilySearch(`${subject} recent news OR product launch OR funding OR hiring`, tavilyKey, { recentOnly: true });
+      const tavilyResult = stripQuantifiedClaims(await tavilySearch(`${subject} recent news OR product launch OR funding OR hiring`, tavilyKey, { recentOnly: true }));
       if (tavilyResult) {
         general = tavilyResult;
         usedTavily = true;
