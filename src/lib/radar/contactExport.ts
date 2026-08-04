@@ -32,6 +32,37 @@ export function buildIlikeOrFilter(column: string, value: unknown): string {
   return `&or=(${clean.map((v) => `${column}.ilike.*${encodeURIComponent(v)}*`).join(",")})`;
 }
 
+// OR'ing too many title.ilike clauses into one query can overflow PostgREST's filter parser or
+// the outbound URL length entirely — confirmed live: a combined-filters Ask Halo request with 10+
+// real stored title variants (industry variants too) 400'd with "failed to parse logic tree" /
+// "unexpected '*'", and every retry hit the exact same failure, looping forever. Chunk any title
+// list bigger than this into several separate queries instead of one giant OR.
+const TITLE_CHUNK_SIZE = 8;
+
+function titleChunks(filters: Record<string, unknown>): Record<string, unknown>[] {
+  const t = filters.title;
+  if (!Array.isArray(t) || t.length <= TITLE_CHUNK_SIZE) return [filters];
+  const chunks: Record<string, unknown>[] = [];
+  for (let i = 0; i < t.length; i += TITLE_CHUNK_SIZE) chunks.push({ ...filters, title: t.slice(i, i + TITLE_CHUNK_SIZE) });
+  return chunks;
+}
+
+/** Fetches every contacts_view row matching `filters`, transparently chunking an oversized title
+ * array across multiple queries (see titleChunks) and deduping the merged result by id — a
+ * contact whose title happens to match more than one chunk's OR clause would otherwise be
+ * double-counted. */
+async function fetchContactRows(filters: Record<string, unknown>): Promise<{ rows: Record<string, unknown>[]; truncated: boolean }> {
+  const chunks = titleChunks(filters);
+  const byId = new Map<string, Record<string, unknown>>();
+  let truncated = false;
+  for (const f of chunks) {
+    const { rows, truncated: t } = await fetchAllPages("contacts_view", buildContactQuery(f));
+    if (t) truncated = true;
+    for (const row of rows) byId.set(String(row.id), row);
+  }
+  return { rows: [...byId.values()], truncated };
+}
+
 export function buildContactQuery(filters: Record<string, unknown>): string {
   let q = "select=*&order=id.asc";
   if (filters.vertical) q += `&vertical=eq.${encodeURIComponent(String(filters.vertical))}`;
@@ -144,8 +175,7 @@ export async function countContacts(
   if (groupCap?.field && groupCap.max > 0) {
     const wantsUnvalidated = rawStatuses.includes("unvalidated");
     const namedStatuses = new Set(rawStatuses.filter((s) => s !== "unvalidated").map((s) => s.toLowerCase().trim()));
-    const query = buildContactQuery(filters);
-    const { rows: all } = await fetchAllPages("contacts_view", query);
+    const { rows: all } = await fetchContactRows(filters);
     const matched = all.filter((c) => {
       const status = String(c.email_status ?? "").toLowerCase().trim();
       const ok = status === "" ? wantsUnvalidated : namedStatuses.has(status);
@@ -153,9 +183,22 @@ export async function countContacts(
     });
     return applyGroupCap(matched, groupCap).length;
   }
-  const query = buildContactQuery(filters) + contactStatusFilter(rawStatuses) + "&hubspot_excluded=not.is.true";
-  const { total } = await selectFrom("contacts_view", query, { from: 0, to: 0 });
-  return total;
+  // Title list small enough for one query — keep the cheap COUNT-only path (no group cap either).
+  if (titleChunks(filters).length === 1) {
+    const query = buildContactQuery(filters) + contactStatusFilter(rawStatuses) + "&hubspot_excluded=not.is.true";
+    const { total } = await selectFrom("contacts_view", query, { from: 0, to: 0 });
+    return total;
+  }
+  // Oversized title list — fetch+dedupe+filter client-side instead of one giant OR query.
+  const wantsUnvalidated = rawStatuses.includes("unvalidated");
+  const namedStatuses = new Set(rawStatuses.filter((s) => s !== "unvalidated").map((s) => s.toLowerCase().trim()));
+  const { rows: all } = await fetchContactRows(filters);
+  const matched = all.filter((c) => {
+    const status = String(c.email_status ?? "").toLowerCase().trim();
+    const ok = status === "" ? wantsUnvalidated : namedStatuses.has(status);
+    return ok && !c.hubspot_excluded;
+  });
+  return matched.length;
 }
 
 /** Builds the actual CSV for a filter + email-status combination (+ optional group cap). */
@@ -168,8 +211,7 @@ export async function exportContactsCsv(
   const wantsUnvalidated = rawStatuses.includes("unvalidated");
   const namedStatuses = new Set(rawStatuses.filter((s) => s !== "unvalidated").map((s) => s.toLowerCase().trim()));
 
-  const query = buildContactQuery(filters);
-  const { rows: all, truncated } = await fetchAllPages("contacts_view", query);
+  const { rows: all, truncated } = await fetchContactRows(filters);
 
   let matched = all.filter((c) => {
     const status = String(c.email_status ?? "").toLowerCase().trim();
