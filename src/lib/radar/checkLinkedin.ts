@@ -73,13 +73,26 @@ const tokenize = (s: string | null | undefined) => (s || "").toLowerCase().repla
 // drift a plain substring check misses (e.g. "Acme Hair" vs "Acme Hair Extensions", where the
 // extra word breaks contiguity) without being loose enough to match two genuinely different
 // companies that just happen to share one common word.
+// Exact-equality word matching missed real matches on a single-letter spelling variant —
+// confirmed live: "Advanced Clinical" (LinkedIn) vs "Advance Clinical" (DB) shared only "clinical"
+// (1/2 words = 0.5 overlap), landing in the "uncertain" band instead of "same" purely because
+// "advanced" !== "advance" as exact strings. Treat two words as the same word if one is a prefix
+// of the other and at least 4 characters overlap — catches this kind of near-miss variant
+// (plurals, -ed/-ing suffixes, minor typos) without being loose enough to conflate two genuinely
+// different short words.
+function wordsMatch(a: string, b: string): boolean {
+  if (a === b) return true;
+  const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a];
+  return shorter.length >= 4 && longer.startsWith(shorter);
+}
+
 function companyOverlap(a: string | null, b: string | null): number {
   const ta = tokenize(a), tb = tokenize(b);
   if (!ta.length || !tb.length) return 0;
-  const setA = new Set(ta), setB = new Set(tb);
+  const setA = new Set(ta), setB = [...new Set(tb)];
   let shared = 0;
-  for (const w of setA) if (setB.has(w)) shared++;
-  return shared / Math.min(setA.size, setB.size);
+  for (const w of setA) if (setB.some((w2) => wordsMatch(w, w2))) shared++;
+  return shared / Math.min(setA.size, setB.length);
 }
 
 // Some profiles return an empty currentPosition array even though the company is right there in
