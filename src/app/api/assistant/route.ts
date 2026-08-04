@@ -986,15 +986,20 @@ CONVERSATION BEHAVIOR:
 
         // ── Tool-use loop (search_radar_contacts / export_radar_contacts_csv) ─
         // Most turns end after one call (stop_reason "end_turn", no tool_use blocks) — this only
-        // loops further when Claude actually asks to run a Radar tool. Capped at 4 round-trips
-        // as a runaway backstop; existing KB-only conversations are completely unaffected since
-        // tools are additive (Claude only invokes them when relevant, tool_choice is left "auto").
+        // loops further when Claude actually asks to run a Radar tool. Capped at 10 round-trips as
+        // a runaway backstop (was 4 — confirmed live that a combined multi-filter request, e.g.
+        // industry distinct-values + title distinct-values across several keyword groups + a
+        // contacts count + the export itself, routinely needs 5-6+ calls and kept hitting the old
+        // cap mid-flow, never reaching the actual export — the user had to keep saying "yes" again,
+        // which just re-ran into the same shortfall every time). Existing KB-only conversations are
+        // completely unaffected since tools are additive (Claude only invokes them when relevant,
+        // tool_choice is left "auto").
         const toolLoopMessages: Array<{ role: string; content: string | AnthropicContentBlock[] }> = claudeMessages;
         const signalsToolNames = new Set(SIGNALS_TOOLS.map((t) => t.name));
         const enrichToolNames = new Set(ENRICH_TOOLS.map((t) => t.name));
         const offeredTools = [...(hasRadarAccess ? RADAR_TOOLS : []), ...(hasSignalsAccess ? SIGNALS_TOOLS : []), ...(hasEnrichAccess ? ENRICH_TOOLS : [])];
         let totalInputTokens = 0, totalOutputTokens = 0;
-        for (let iteration = 0; iteration < 4; iteration++) {
+        for (let iteration = 0; iteration < 10; iteration++) {
           const result = await callClaudeWithTools(apiKey, systemPrompt, toolLoopMessages, offeredTools, 2048);
           if (result.usage) { totalInputTokens += result.usage.inputTokens; totalOutputTokens += result.usage.outputTokens; }
 
