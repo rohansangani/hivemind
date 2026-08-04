@@ -32,30 +32,66 @@ export function buildIlikeOrFilter(column: string, value: unknown): string {
   return `&or=(${clean.map((v) => `${column}.ilike.*${encodeURIComponent(v)}*`).join(",")})`;
 }
 
-// OR'ing too many title.ilike clauses into one query can overflow PostgREST's filter parser or
-// the outbound URL length entirely — confirmed live: a combined-filters Ask Halo request with 10+
-// real stored title variants (industry variants too) 400'd with "failed to parse logic tree" /
-// "unexpected '*'", and every retry hit the exact same failure, looping forever. Chunk any title
-// list bigger than this into several separate queries instead of one giant OR.
-const TITLE_CHUNK_SIZE = 8;
+/** Any filter column's value can be a single string OR an array of any length — this makes an
+ * arbitrarily long array of values on ANY column safe to query, not just title. Every field is
+ * combined with AND as usual; only the VALUES within one field are OR'd/IN'd together.
+ *
+ * OR'ing (or IN'ing) too many values into one query can overflow PostgREST's filter parser or the
+ * outbound URL length entirely — confirmed live: a combined-filters Ask Halo request with 10+ real
+ * stored title variants 400'd with "failed to parse logic tree"/"unexpected '*'", and every retry
+ * hit the exact same failure, looping forever. `kind: "ilike"` fields (free-text, OR'd, one clause
+ * per value — title/company) get a much lower chunk size than `kind: "in"` fields (exact-match,
+ * PostgREST's compact in.() syntax — vertical/industry/employeeRange/country), which stay cheap at
+ * a far higher count. */
+export interface ArrayFieldConfig { key: string; chunkSize: number; }
 
-function titleChunks(filters: Record<string, unknown>): Record<string, unknown>[] {
-  const t = filters.title;
-  if (!Array.isArray(t) || t.length <= TITLE_CHUNK_SIZE) return [filters];
-  const chunks: Record<string, unknown>[] = [];
-  for (let i = 0; i < t.length; i += TITLE_CHUNK_SIZE) chunks.push({ ...filters, title: t.slice(i, i + TITLE_CHUNK_SIZE) });
-  return chunks;
+const CONTACT_ARRAY_FIELDS: ArrayFieldConfig[] = [
+  { key: "vertical", chunkSize: 40 },
+  { key: "industry", chunkSize: 40 },
+  { key: "employeeRange", chunkSize: 40 },
+  { key: "country", chunkSize: 40 },
+  { key: "company", chunkSize: 8 },
+  { key: "title", chunkSize: 8 },
+];
+
+/** Splits `filters` into one or more filter variants such that no single query ever OR's/IN's more
+ * values for one field than `chunkSize` allows — returns the cross product across every currently-
+ * oversized field (each combination gets run as its own query and later merged+deduped by id).
+ * Capped at MAX_COMBOS as a sanity backstop against several fields all being huge at once; a
+ * single field being huge (the realistic case) never comes close to that cap. */
+export function splitFilterCombos(filters: Record<string, unknown>, fields: ArrayFieldConfig[]): Record<string, unknown>[] {
+  const MAX_COMBOS = 60;
+  let combos: Record<string, unknown>[] = [filters];
+  for (const { key, chunkSize } of fields) {
+    const raw = filters[key];
+    const values = (Array.isArray(raw) ? raw : raw != null ? [raw] : []).map((v) => String(v).trim()).filter(Boolean);
+    if (values.length <= chunkSize) continue; // not oversized for this field — leave combos as-is
+    const valueChunks: string[][] = [];
+    for (let i = 0; i < values.length; i += chunkSize) valueChunks.push(values.slice(i, i + chunkSize));
+    const next: Record<string, unknown>[] = [];
+    outer: for (const combo of combos) {
+      for (const chunk of valueChunks) {
+        if (next.length >= MAX_COMBOS) break outer;
+        next.push({ ...combo, [key]: chunk });
+      }
+    }
+    combos = next;
+  }
+  return combos;
 }
 
-/** Fetches every contacts_view row matching `filters`, transparently chunking an oversized title
- * array across multiple queries (see titleChunks) and deduping the merged result by id — a
- * contact whose title happens to match more than one chunk's OR clause would otherwise be
- * double-counted. */
+function contactFilterCombos(filters: Record<string, unknown>): Record<string, unknown>[] {
+  return splitFilterCombos(filters, CONTACT_ARRAY_FIELDS);
+}
+
+/** Fetches every contacts_view row matching `filters`, transparently chunking any oversized filter
+ * array across multiple queries (see splitFilterCombos) and deduping the merged result by id — a
+ * contact matching more than one chunk's clause would otherwise be double-counted. */
 async function fetchContactRows(filters: Record<string, unknown>): Promise<{ rows: Record<string, unknown>[]; truncated: boolean }> {
-  const chunks = titleChunks(filters);
+  const combos = contactFilterCombos(filters);
   const byId = new Map<string, Record<string, unknown>>();
   let truncated = false;
-  for (const f of chunks) {
+  for (const f of combos) {
     const { rows, truncated: t } = await fetchAllPages("contacts_view", buildContactQuery(f));
     if (t) truncated = true;
     for (const row of rows) byId.set(String(row.id), row);
@@ -65,11 +101,13 @@ async function fetchContactRows(filters: Record<string, unknown>): Promise<{ row
 
 export function buildContactQuery(filters: Record<string, unknown>): string {
   let q = "select=*&order=id.asc";
-  if (filters.vertical) q += `&vertical=eq.${encodeURIComponent(String(filters.vertical))}`;
+  // Every column below now accepts a single string OR an array of any length (see
+  // splitFilterCombos above for how a large array stays safe) — not just industry/title.
+  if (filters.vertical) q += buildInFilter("vertical", filters.vertical);
   if (filters.industry) q += buildInFilter("industry", filters.industry);
-  if (filters.employeeRange) q += `&employee_range=eq.${encodeURIComponent(String(filters.employeeRange))}`;
-  if (filters.country) q += `&country=eq.${encodeURIComponent(String(filters.country))}`;
-  if (filters.company) q += `&company_name=ilike.*${encodeURIComponent(String(filters.company))}*`;
+  if (filters.employeeRange) q += buildInFilter("employee_range", filters.employeeRange);
+  if (filters.country) q += buildInFilter("country", filters.country);
+  if (filters.company) q += buildIlikeOrFilter("company_name", filters.company);
   // title may be a single string or an array of strings (multiple job-title buckets in one
   // combined export, e.g. ["Founder", "Co-Founder", "Operations"]) — OR'd together so one query/
   // one CSV covers all of them instead of needing a separate call per title.
@@ -183,13 +221,13 @@ export async function countContacts(
     });
     return applyGroupCap(matched, groupCap).length;
   }
-  // Title list small enough for one query — keep the cheap COUNT-only path (no group cap either).
-  if (titleChunks(filters).length === 1) {
+  // Every filter's value list is small enough for one query — keep the cheap COUNT-only path.
+  if (contactFilterCombos(filters).length === 1) {
     const query = buildContactQuery(filters) + contactStatusFilter(rawStatuses) + "&hubspot_excluded=not.is.true";
     const { total } = await selectFrom("contacts_view", query, { from: 0, to: 0 });
     return total;
   }
-  // Oversized title list — fetch+dedupe+filter client-side instead of one giant OR query.
+  // Some filter's value list is oversized — fetch+dedupe+filter client-side instead of one giant OR/IN query.
   const wantsUnvalidated = rawStatuses.includes("unvalidated");
   const namedStatuses = new Set(rawStatuses.filter((s) => s !== "unvalidated").map((s) => s.toLowerCase().trim()));
   const { rows: all } = await fetchContactRows(filters);

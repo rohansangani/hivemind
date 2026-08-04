@@ -7,7 +7,20 @@
  */
 
 import { selectFrom } from "@/lib/radar/supabase";
-import { fetchAllPages, csvCell, buildInFilter } from "@/lib/radar/contactExport";
+import { fetchAllPages, csvCell, buildInFilter, splitFilterCombos, type ArrayFieldConfig } from "@/lib/radar/contactExport";
+
+// Same reasoning as CONTACT_ARRAY_FIELDS in contactExport.ts — every one of these accepts a single
+// string OR an array of any length; oversized ones get chunked into several queries and merged
+// instead of one filter clause that could overflow PostgREST's parser or the URL length.
+const ACCOUNT_ARRAY_FIELDS: ArrayFieldConfig[] = [
+  { key: "vertical", chunkSize: 40 },
+  { key: "industry", chunkSize: 40 },
+  { key: "subIndustry", chunkSize: 40 },
+  { key: "accountSize", chunkSize: 40 },
+  { key: "employeeRange", chunkSize: 40 },
+  { key: "revenueRange", chunkSize: 40 },
+  { key: "country", chunkSize: 40 },
+];
 
 export const ACCOUNT_EXPORT_COLS = [
   "name", "domain", "vertical", "industry", "sub_industry", "account_size",
@@ -24,13 +37,15 @@ export const ACCOUNT_EXPORT_LABELS = [
 
 export function buildAccountQuery(filters: Record<string, unknown>): string {
   let q = "select=*&order=name.asc";
-  if (filters.vertical) q += `&vertical=eq.${encodeURIComponent(String(filters.vertical))}`;
+  // Every column below accepts a single string OR an array of any length (see ACCOUNT_ARRAY_FIELDS
+  // above for how a large array stays safe).
+  if (filters.vertical) q += buildInFilter("vertical", filters.vertical);
   if (filters.industry) q += buildInFilter("industry", filters.industry);
-  if (filters.subIndustry) q += `&sub_industry=eq.${encodeURIComponent(String(filters.subIndustry))}`;
-  if (filters.accountSize) q += `&account_size=eq.${encodeURIComponent(String(filters.accountSize))}`;
-  if (filters.employeeRange) q += `&employee_range=eq.${encodeURIComponent(String(filters.employeeRange))}`;
-  if (filters.revenueRange) q += `&revenue_range=eq.${encodeURIComponent(String(filters.revenueRange))}`;
-  if (filters.country) q += `&country=eq.${encodeURIComponent(String(filters.country))}`;
+  if (filters.subIndustry) q += buildInFilter("sub_industry", filters.subIndustry);
+  if (filters.accountSize) q += buildInFilter("account_size", filters.accountSize);
+  if (filters.employeeRange) q += buildInFilter("employee_range", filters.employeeRange);
+  if (filters.revenueRange) q += buildInFilter("revenue_range", filters.revenueRange);
+  if (filters.country) q += buildInFilter("country", filters.country);
   if (filters.search) {
     const s = encodeURIComponent(String(filters.search));
     q += `&or=(name.ilike.*${s}*,domain.ilike.*${s}*)`;
@@ -40,18 +55,37 @@ export function buildAccountQuery(filters: Record<string, unknown>): string {
   return q;
 }
 
+/** Fetches every accounts row matching `filters`, transparently chunking any oversized filter
+ * array across multiple queries and deduping the merged result by id — an account matching more
+ * than one chunk's clause would otherwise be double-counted. */
+async function fetchAccountRows(filters: Record<string, unknown>): Promise<{ rows: Record<string, unknown>[]; truncated: boolean }> {
+  const combos = splitFilterCombos(filters, ACCOUNT_ARRAY_FIELDS);
+  const byId = new Map<string, Record<string, unknown>>();
+  let truncated = false;
+  for (const f of combos) {
+    const { rows, truncated: t } = await fetchAllPages("accounts", buildAccountQuery(f));
+    if (t) truncated = true;
+    for (const row of rows) byId.set(String(row.id ?? `${row.domain}::${row.vertical}::${row.name}`), row);
+  }
+  return { rows: [...byId.values()], truncated };
+}
+
 /** Exact count of accounts matching the given filters — no CSV built. */
 export async function countAccounts(filters: Record<string, unknown>): Promise<number> {
-  const { total } = await selectFrom("accounts", buildAccountQuery(filters), { from: 0, to: 0 });
-  return total;
+  // Every filter's value list is small enough for one query — keep the cheap COUNT-only path.
+  if (splitFilterCombos(filters, ACCOUNT_ARRAY_FIELDS).length === 1) {
+    const { total } = await selectFrom("accounts", buildAccountQuery(filters), { from: 0, to: 0 });
+    return total;
+  }
+  const { rows } = await fetchAccountRows(filters);
+  return rows.length;
 }
 
 /** Builds the actual CSV for a filter combination. */
 export async function exportAccountsCsv(
   filters: Record<string, unknown>,
 ): Promise<{ csv: string; matched: number; exported: number; truncated: boolean }> {
-  const query = buildAccountQuery(filters);
-  const { rows: all, truncated } = await fetchAllPages("accounts", query);
+  const { rows: all, truncated } = await fetchAccountRows(filters);
 
   const csvRows = [ACCOUNT_EXPORT_LABELS.join(",")];
   for (const a of all) csvRows.push(ACCOUNT_EXPORT_COLS.map((col) => csvCell(a[col])).join(","));

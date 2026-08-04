@@ -71,14 +71,21 @@ async function callClaude(
 //  product decision), not tied to a user's individual radar:view/edit grant.
 // ─────────────────────────────────────────────────────────
 
+// Every filter property that accepts anyOf(string, array-of-string) can take AS MANY values as
+// needed — arbitrarily long arrays are automatically split into several safe queries and merged
+// server-side (see splitFilterCombos in lib/radar/contactExport.ts), so there's no need to ever
+// limit how many values go in one array or split one export into multiple calls to stay safe.
 const RADAR_FILTER_PROPERTIES = {
-  vertical: { type: "string", enum: ["B2B", "D2C", "US"], description: "Radar's vertical bucket for the account/contact." },
+  vertical: {
+    description: "Radar's vertical bucket(s) for the account/contact — B2B, D2C, and/or US. Pass an array to combine more than one in one query.",
+    anyOf: [{ type: "string", enum: ["B2B", "D2C", "US"] }, { type: "array", items: { type: "string", enum: ["B2B", "D2C", "US"] } }],
+  },
   industry: {
     description:
       "Exact industry value(s) as stored in Radar. Industry is stored inconsistently across rows, so ALWAYS call " +
       "list_radar_distinct_values({column: \"industry\"}) first, then pass every real stored value that matches " +
       "what the user means as an array here (e.g. [\"Ecommerce\", \"E-commerce\", \"D2C - Ecommerce\"]) — never " +
-      "guess a single exact string from context.",
+      "guess a single exact string from context. Pass as many values as needed — there is no limit.",
     anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }],
   },
   title: {
@@ -89,12 +96,22 @@ const RADAR_FILTER_PROPERTIES = {
       "substring>}) first, read the real values back, and pass every matching one as an array here — OR'd together " +
       "into one query/one CSV. This also covers combining several title buckets in ONE export (e.g. \"Founder, " +
       "Co-Founder, Operations, and Support titles\") — pass them all as one array instead of calling the export " +
-      "tool once per title, unless the user explicitly asks for a separate file per category.",
+      "tool once per title, unless the user explicitly asks for a separate file per category. Pass as many values " +
+      "as needed — there is no practical limit, large arrays are handled safely automatically.",
     anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }],
   },
-  employeeRange: { type: "string", description: "Company employee-count bucket, exact value as stored in Radar." },
-  country: { type: "string" },
-  company: { type: "string", description: "Company name contains this text (case-insensitive)." },
+  employeeRange: {
+    description: "Company employee-count bucket(s), exact value(s) as stored in Radar. Pass an array to combine several ranges.",
+    anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }],
+  },
+  country: {
+    description: "Country/countries, exact value(s) as stored in Radar. Pass an array to combine several countries in one query.",
+    anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }],
+  },
+  company: {
+    description: "Company name contains this text (case-insensitive). Pass an array to OR several company-name substrings together.",
+    anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }],
+  },
   search: { type: "string", description: "Free-text search across the contact's email/first name/last name." },
   emailStatuses: {
     type: "array",
@@ -104,20 +121,29 @@ const RADAR_FILTER_PROPERTIES = {
 } as const;
 
 const ACCOUNT_FILTER_PROPERTIES = {
-  vertical: { type: "string", enum: ["B2B", "D2C", "US"], description: "Radar's vertical bucket for the account." },
+  vertical: {
+    description: "Radar's vertical bucket(s) for the account — B2B, D2C, and/or US. Pass an array to combine more than one in one query.",
+    anyOf: [{ type: "string", enum: ["B2B", "D2C", "US"] }, { type: "array", items: { type: "string", enum: ["B2B", "D2C", "US"] } }],
+  },
   industry: {
     description:
       "Exact industry value(s) as stored in Radar. Industry is stored inconsistently across rows, so ALWAYS call " +
       "list_radar_distinct_values({column: \"industry\"}) first, then pass every real stored value that matches " +
       "what the user means as an array here (e.g. [\"Ecommerce\", \"E-commerce\", \"D2C - Ecommerce\"]) — never " +
-      "guess a single exact string from context.",
+      "guess a single exact string from context. Pass as many values as needed — there is no limit.",
     anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }],
   },
-  subIndustry: { type: "string" },
-  accountSize: { type: "string" },
-  employeeRange: { type: "string", description: "Company employee-count bucket, exact value as stored in Radar." },
-  revenueRange: { type: "string" },
-  country: { type: "string" },
+  subIndustry: { anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }], description: "Pass an array to combine several sub-industries." },
+  accountSize: { anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }], description: "Pass an array to combine several account sizes." },
+  employeeRange: {
+    description: "Company employee-count bucket(s), exact value(s) as stored in Radar. Pass an array to combine several ranges.",
+    anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }],
+  },
+  revenueRange: { anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }], description: "Pass an array to combine several revenue ranges." },
+  country: {
+    description: "Country/countries, exact value(s) as stored in Radar. Pass an array to combine several countries in one query.",
+    anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }],
+  },
   search: { type: "string", description: "Free-text search across the company's name and domain." },
 } as const;
 
