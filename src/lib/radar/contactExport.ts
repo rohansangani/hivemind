@@ -8,16 +8,6 @@
 
 import { selectFrom } from "@/lib/radar/supabase";
 
-export const CONTACT_EXPORT_COLS = [
-  "first_name", "last_name", "email", "title", "company_name", "account_name",
-  "domain", "vertical", "industry", "country", "phone", "location", "linkedin_url",
-  "email_status", "validated_at", "hubspot_excluded", "hubspot_lifecycle_stage", "hubspot_lead_status",
-];
-export const CONTACT_EXPORT_LABELS = [
-  "First Name", "Last Name", "Email", "Title", "Company", "Account",
-  "Domain", "Vertical", "Industry", "Country", "Phone", "Location", "LinkedIn",
-  "Email Status", "Email Status Last Updated", "HubSpot Excluded", "HubSpot Lifecycle Stage", "HubSpot Lead Status",
-];
 export const DEFAULT_EMAIL_STATUSES = ["safe to send", "verified"];
 
 /** A field value may arrive as a single string or an array of strings — the array form lets one
@@ -192,9 +182,18 @@ export async function exportContactsCsv(
   // contact only ever got a domain via its linked account — the Contacts table UI already falls
   // back to account_domain for exactly this reason (see ContactsSection's domain cell), but this
   // export was reading the raw column and shipping blanks for every such row.
-  const csvRows = [CONTACT_EXPORT_LABELS.join(",")];
+  //
+  // Every column contacts_view actually has (select=* already fetches them all) rather than the
+  // old curated ~16-column allowlist — the union of keys across every matched row, in first-seen
+  // order, since not every row necessarily has identical keys. Label is just the column name
+  // Title Cased; there's no per-column display-label mapping once this is fully dynamic.
+  const cols: string[] = [];
+  const seen = new Set<string>();
+  for (const c of matched) for (const k of Object.keys(c)) if (!seen.has(k)) { seen.add(k); cols.push(k); }
+  const label = (k: string) => k.split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+  const csvRows = [cols.map(label).join(",")];
   for (const c of matched) {
-    csvRows.push(CONTACT_EXPORT_COLS.map((col) => csvCell(col === "domain" ? (c.domain || c.account_domain) : c[col])).join(","));
+    csvRows.push(cols.map((col) => csvCell(col === "domain" ? (c.domain || c.account_domain) : c[col])).join(","));
   }
 
   return { csv: csvRows.join("\n"), matched: all.length, exported: csvRows.length - 1, truncated };
