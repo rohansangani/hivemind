@@ -3854,6 +3854,10 @@ function ValidateSection() {
   const [linkedinJobCancelling, setLinkedinJobCancelling] = useState(false);
   const [recentLinkedinJobs, setRecentLinkedinJobs] = useState<LinkedinJobRow[]>([]);
   const [recentLinkedinJobsLoading, setRecentLinkedinJobsLoading] = useState(false);
+  // Set while a job's row is being clicked open — a job's results can hold hundreds of full raw
+  // Apify payloads, so fetching it isn't instant; without this the row just sat there with no
+  // feedback while it loaded.
+  const [openingLinkedinJobId, setOpeningLinkedinJobId] = useState<string | null>(null);
   const activeLinkedinJobIdRef = useRef<string | null>(null);
 
   const linkedinJobCall = async (body: Record<string, unknown>) => {
@@ -3905,10 +3909,15 @@ function ValidateSection() {
     }
   }, [loadRecentLinkedinJobs]);
 
-  const watchLinkedinJob = useCallback((jobId: string) => {
+  const watchLinkedinJob = useCallback(async (jobId: string) => {
     activeLinkedinJobIdRef.current = jobId;
     setActiveLinkedinJobId(jobId);
-    fetchLinkedinJobStatus(jobId);
+    setOpeningLinkedinJobId(jobId);
+    try {
+      await fetchLinkedinJobStatus(jobId);
+    } finally {
+      setOpeningLinkedinJobId((prev) => (prev === jobId ? null : prev));
+    }
   }, [fetchLinkedinJobStatus]);
 
   // Kicks off a real continuation tick ("advance", up to ~260s of real Apify calls) and, in
@@ -5008,15 +5017,23 @@ function ValidateSection() {
                             <div key={j.id} className="relative group/item">
                               <button
                                 onClick={() => watchLinkedinJob(j.id)}
-                                className={`w-full flex items-center justify-between text-left text-[11.5px] px-2 py-1.5 rounded-md border ${activeLinkedinJobId === j.id ? "border-[var(--hm-primary)]" : "border-[var(--hm-border)]"} bg-[var(--hm-surface)] hover:border-[var(--hm-primary)]/40 ${j.status === "running" ? "pr-14" : "pr-7"}`}
+                                disabled={openingLinkedinJobId === j.id}
+                                className={`w-full flex items-center justify-between text-left text-[11.5px] px-2 py-1.5 rounded-md border ${activeLinkedinJobId === j.id ? "border-[var(--hm-primary)]" : "border-[var(--hm-border)]"} bg-[var(--hm-surface)] hover:border-[var(--hm-primary)]/40 disabled:opacity-70 disabled:cursor-wait ${j.status === "running" ? "pr-14" : "pr-7"}`}
                               >
                                 <span className="truncate text-[var(--hm-text-secondary)] flex items-center gap-1.5">
                                   <span className="shrink-0 px-1 py-0.5 rounded text-[9.5px] font-medium bg-[var(--hm-bg-tertiary)] text-[var(--hm-text-tertiary)] uppercase">{j.checkType === "company" ? "Co" : "Pf"}</span>
                                   {j.label || "Untitled check"}
                                 </span>
-                                <span className={`shrink-0 ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium ${j.status === "done" ? "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]" : j.status === "error" ? "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)]" : j.status === "cancelled" ? "bg-[var(--hm-border)] text-[var(--hm-text-tertiary)]" : "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]"}`}>
-                                  {j.status === "done" ? `done — ${j.total}/${j.total}` : j.status === "error" ? "error" : j.status === "cancelled" ? `stopped — ${j.processed}/${j.total}` : `running — ${j.processed}/${j.total}`}
-                                </span>
+                                {openingLinkedinJobId === j.id ? (
+                                  <span className="shrink-0 ml-2 flex items-center gap-1.5 text-[10px] text-[var(--hm-text-tertiary)]">
+                                    <span className="w-3 h-3 border-2 border-current/30 border-t-current rounded-full animate-spin" />
+                                    Opening…
+                                  </span>
+                                ) : (
+                                  <span className={`shrink-0 ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium ${j.status === "done" ? "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]" : j.status === "error" ? "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)]" : j.status === "cancelled" ? "bg-[var(--hm-border)] text-[var(--hm-text-tertiary)]" : "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]"}`}>
+                                    {j.status === "done" ? `done — ${j.total}/${j.total}` : j.status === "error" ? "error" : j.status === "cancelled" ? `stopped — ${j.processed}/${j.total}` : `running — ${j.processed}/${j.total}`}
+                                  </span>
+                                )}
                               </button>
                               {j.status === "running" && (
                                 <button
