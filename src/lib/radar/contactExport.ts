@@ -11,12 +11,12 @@ import { selectFrom } from "@/lib/radar/supabase";
 export const CONTACT_EXPORT_COLS = [
   "first_name", "last_name", "email", "title", "company_name", "account_name",
   "domain", "vertical", "industry", "country", "phone", "location", "linkedin_url",
-  "email_status", "validated_at", "hubspot_excluded",
+  "email_status", "validated_at", "hubspot_excluded", "hubspot_lifecycle_stage", "hubspot_lead_status",
 ];
 export const CONTACT_EXPORT_LABELS = [
   "First Name", "Last Name", "Email", "Title", "Company", "Account",
   "Domain", "Vertical", "Industry", "Country", "Phone", "Location", "LinkedIn",
-  "Email Status", "Email Status Last Updated", "HubSpot Excluded",
+  "Email Status", "Email Status Last Updated", "HubSpot Excluded", "HubSpot Lifecycle Stage", "HubSpot Lead Status",
 ];
 export const DEFAULT_EMAIL_STATUSES = ["safe to send", "verified"];
 

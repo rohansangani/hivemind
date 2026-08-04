@@ -13,11 +13,13 @@ export const ACCOUNT_EXPORT_COLS = [
   "name", "domain", "vertical", "industry", "sub_industry", "account_size",
   "employee_range", "revenue_range", "company_location", "country",
   "linkedin_url", "sdr_owner", "parent_company", "created_at", "updated_at",
+  "hubspot_lifecycle_stage", "hubspot_lead_status",
 ];
 export const ACCOUNT_EXPORT_LABELS = [
   "Company", "Domain", "Vertical", "Industry", "Sub-Industry", "Account Size",
   "Employees", "Revenue", "Company Location", "Country",
   "LinkedIn", "SDR Owner", "Parent Company", "Created", "Updated",
+  "HubSpot Lifecycle Stage", "HubSpot Lead Status",
 ];
 
 export function buildAccountQuery(filters: Record<string, unknown>): string {
