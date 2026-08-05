@@ -14,12 +14,22 @@ export const DEFAULT_EMAIL_STATUSES = ["safe to send", "verified"];
  * query cover several DB-side variants of the "same" value (e.g. industry stored inconsistently
  * as "Ecommerce"/"E-commerce"/"D2C - Ecommerce") in a single request/single CSV, via PostgREST's
  * `in.()` for exact-match fields. Returns "" when there's nothing to filter on. */
+// A request to "also include blanks" (e.g. employee_range not set) had no way to express itself
+// through the array-of-values filter shape at all — eq./in. can only ever match a real stored
+// value, never SQL NULL. Confirmed live: Ask Halo stalled indefinitely on a request combining this
+// with several other filters, repeatedly announcing "let me run the search" without ever actually
+// calling the tool — plausibly because there was no way to faithfully honor the "include blanks"
+// part of the request. Reserved sentinel the tool schema tells Claude to use for this.
+export const BLANK_VALUE_SENTINEL = "__BLANK__";
+
 export function buildInFilter(column: string, value: unknown): string {
   const values = Array.isArray(value) ? value : [value];
-  const clean = values.map((v) => String(v).trim()).filter(Boolean);
-  if (!clean.length) return "";
-  if (clean.length === 1) return `&${column}=eq.${encodeURIComponent(clean[0])}`;
-  return `&${column}=in.(${clean.map(encodeURIComponent).join(",")})`;
+  const includeBlanks = values.some((v) => String(v).trim() === BLANK_VALUE_SENTINEL);
+  const clean = values.map((v) => String(v).trim()).filter((v) => v && v !== BLANK_VALUE_SENTINEL);
+  if (!clean.length) return includeBlanks ? `&${column}=is.null` : "";
+  const valueFilter = clean.length === 1 ? `${column}.eq.${encodeURIComponent(clean[0])}` : `${column}.in.(${clean.map(encodeURIComponent).join(",")})`;
+  if (includeBlanks) return `&or=(${column}.is.null,${valueFilter})`;
+  return clean.length === 1 ? `&${column}=eq.${encodeURIComponent(clean[0])}` : `&${column}=in.(${clean.map(encodeURIComponent).join(",")})`;
 }
 
 /** Same idea as buildInFilter but for partial/ilike match columns (title, company) — OR's the

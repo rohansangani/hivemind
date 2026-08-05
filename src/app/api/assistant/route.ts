@@ -101,11 +101,14 @@ const RADAR_FILTER_PROPERTIES = {
     anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }],
   },
   employeeRange: {
-    description: "Company employee-count bucket(s), exact value(s) as stored in Radar. Pass an array to combine several ranges.",
+    description: "Company employee-count bucket(s), exact value(s) as stored in Radar. Pass an array to combine several ranges. " +
+      "To ALSO include rows where this field is blank/not set (e.g. \"more than 50, including blanks\"), add the exact literal " +
+      "string \"__BLANK__\" as one of the array values — this is the only way to match blank rows, an empty string won't work.",
     anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }],
   },
   country: {
-    description: "Country/countries, exact value(s) as stored in Radar. Pass an array to combine several countries in one query.",
+    description: "Country/countries, exact value(s) as stored in Radar. Pass an array to combine several countries in one query. " +
+      "Add the literal string \"__BLANK__\" as an array value to also include rows where country is blank/not set.",
     anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }],
   },
   company: {
@@ -136,12 +139,14 @@ const ACCOUNT_FILTER_PROPERTIES = {
   subIndustry: { anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }], description: "Pass an array to combine several sub-industries." },
   accountSize: { anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }], description: "Pass an array to combine several account sizes." },
   employeeRange: {
-    description: "Company employee-count bucket(s), exact value(s) as stored in Radar. Pass an array to combine several ranges.",
+    description: "Company employee-count bucket(s), exact value(s) as stored in Radar. Pass an array to combine several ranges. " +
+      "To ALSO include rows where this field is blank/not set, add the exact literal string \"__BLANK__\" as one of the array values.",
     anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }],
   },
   revenueRange: { anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }], description: "Pass an array to combine several revenue ranges." },
   country: {
-    description: "Country/countries, exact value(s) as stored in Radar. Pass an array to combine several countries in one query.",
+    description: "Country/countries, exact value(s) as stored in Radar. Pass an array to combine several countries in one query. " +
+      "Add the literal string \"__BLANK__\" as an array value to also include rows where country is blank/not set.",
     anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }],
   },
   search: { type: "string", description: "Free-text search across the company's name and domain." },
@@ -948,6 +953,8 @@ export async function POST(req: NextRequest) {
 
 RADAR CONTACTS & ACCOUNTS (search_radar_contacts/accounts, export_radar_contacts/accounts_csv tools):
 - You have direct access to Radar via five tools: list_radar_distinct_values, plus two each for CONTACTS (individual people) and ACCOUNTS (real, deduplicated companies — one row per company, not per contact).
+- Once you've gathered every distinct value you need for a request (via list_radar_distinct_values), CALL the matching search tool in that SAME reply — never end a turn with only a text description of what you're about to do ("let me run the search now") without an accompanying tool_use call. Confirmed live: a multi-filter request (several title buckets + industry + an employee-range list including blanks) got stuck repeating "let me run it" turn after turn with no tool ever actually called — if you have every value you need, call the tool immediately instead of narrating the plan first.
+- To include blank/not-set rows for employeeRange or country (e.g. "employee size more than 50, including blanks"), add the exact literal string "__BLANK__" as one of the array values for that filter — this is the only way to match a blank row; do not pass an empty string or "N/A" for this and expect it to work, since those are just treated as literal stored values (some rows may or may not genuinely have "N/A" stored — that's different from a true blank).
 - Whenever a request involves industry, title, or any other inconsistently-worded column, call list_radar_distinct_values first to see the REAL stored values instead of guessing an exact string — industry (e.g. "Ecommerce"/"E-commerce"/"D2C - Ecommerce") and title (e.g. "VP Sales"/"VP of Sales"/"Vice President, Sales") especially are stored inconsistently. For title, pass a search substring (e.g. "sales", "ops") since the full title list is too large to be useful unfiltered. Pass every matching value as an array in the corresponding filter so one call/one result covers all of them.
 - If the user asks about companies/accounts specifically — "how many accounts", "which companies", "unique companies", a company/account-level count or export — use the ACCOUNTS tools. Never approximate an account-level answer by counting or deduplicating contacts yourself; Radar's accounts table is already the real deduplicated source, query it directly.
 - If the user asks about people/leads/contacts, use the CONTACTS tools.
