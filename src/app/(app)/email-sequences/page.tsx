@@ -31,7 +31,10 @@ interface SequenceResult {
 
 interface ProspectResult {
   prospect: Prospect | null;
-  sequence: SequenceResult;
+  // A prospect whose generation genuinely failed is stored with sequence: null and an error
+  // message instead — confirmed live, this crashed every unguarded `r.sequence.emails` access.
+  sequence: SequenceResult | null;
+  error?: string;
 }
 
 /* ── Constants ──────────────────────────────────────────────────────────── */
@@ -729,7 +732,9 @@ export default function EmailSequencesPage() {
   const exportCSV = () => {
     if (results.length === 0) return;
     const cell = (v: string) => `"${(v || "").replace(/"/g, '""')}"`;
-    const maxEmails = Math.max(0, ...results.map(r => r.sequence.emails.length));
+    // A prospect whose generation failed is stored with sequence: null — never a bare crash risk
+    // here now, just an empty row of emails for that prospect.
+    const maxEmails = Math.max(0, ...results.map(r => r.sequence?.emails?.length || 0));
     const headers = [
       "First Name", "Last Name", "Email", "Company", "Subject Line",
       ...Array.from({ length: maxEmails }, (_, i) => `Email ${i + 1}`),
@@ -738,7 +743,7 @@ export default function EmailSequencesPage() {
       const nameParts = (r.prospect?.name || "").trim().split(/\s+/).filter(Boolean);
       const firstName = nameParts[0] || "";
       const lastName = nameParts.slice(1).join(" ");
-      const emails = r.sequence.emails;
+      const emails = r.sequence?.emails || [];
       return [
         cell(firstName),
         cell(lastName),
@@ -786,8 +791,10 @@ export default function EmailSequencesPage() {
 
     setResults(prev => {
       const next = [...prev];
-      const seq = { ...next[resultIdx].sequence };
-      const emails = [...seq.emails];
+      const prevSeq = next[resultIdx]?.sequence;
+      if (!prevSeq) return prev; // shouldn't happen — editing UI only ever renders for a real sequence
+      const seq = { ...prevSeq };
+      const emails = [...(seq.emails || [])];
       emails[emailIdx] = { ...emails[emailIdx], subject: editBuffer.subject, body: editBuffer.body };
       seq.emails = emails;
       next[resultIdx] = { ...next[resultIdx], sequence: seq };
@@ -1104,7 +1111,10 @@ export default function EmailSequencesPage() {
                     <div className="p-4 text-center text-[12px] text-[var(--hm-text-tertiary)]">No matches</div>
                   ) : (
                     filtered.map(({ r, i }) => {
-                      const failed = r.sequence.emails.length === 0;
+                      // A prospect whose generation genuinely failed is stored with sequence:
+                      // null (not an empty emails array) — confirmed live this crashed the whole
+                      // list on open since nothing here guarded against it.
+                      const failed = !r.sequence || !Array.isArray(r.sequence.emails) || r.sequence.emails.length === 0;
                       return (
                         <button
                           key={i}
@@ -1133,6 +1143,21 @@ export default function EmailSequencesPage() {
             const r = results[expandedResult];
             if (!r) return null;
             const seq = r.sequence;
+            if (!seq || !Array.isArray(seq.emails)) {
+              return (
+                <div className={cardCls}>
+                  <p className="text-[13px] text-[var(--hm-danger)]">
+                    Generation failed for {r.prospect?.name || "this prospect"}{r.error ? `: ${r.error}` : "."} Try regenerating this row, or skip it in the export.
+                  </p>
+                </div>
+              );
+            }
+            // A malformed entry from a rare bad AI response can end up without a real subject/body
+            // (or nested/wrapped in an unexpected shape) — confirmed live. Skip rendering those in
+            // place rather than filtering the array first — startEdit/saveEdit index directly into
+            // the ORIGINAL seq.emails array, so shifting indices via a filtered array would silently
+            // save an edit to the wrong email whenever a malformed entry preceded it.
+            const validEmailCount = seq.emails.filter((e) => typeof e?.subject === "string" && typeof e?.body === "string").length;
             return (
               <div>
                 {/* Strategy */}
@@ -1153,8 +1178,9 @@ export default function EmailSequencesPage() {
                 {/* Emails */}
                 <div className="space-y-3">
                   {seq.emails.map((email, ei) => {
+                    if (typeof email?.subject !== "string" || typeof email?.body !== "string") return null;
                     const emailKey = `${expandedResult}-${ei}`;
-                    const isExpanded = expandedEmail === emailKey || seq.emails.length <= 3;
+                    const isExpanded = expandedEmail === emailKey || validEmailCount <= 3;
                     const isEditing = editingEmail === emailKey;
                     const copyKey = `${r.prospect?.name || "template"}-${email.emailNumber}`;
 
@@ -1185,7 +1211,7 @@ export default function EmailSequencesPage() {
                             >
                               {isEditing ? "Save" : "Edit"}
                             </button>
-                            {seq.emails.length > 3 && (
+                            {validEmailCount > 3 && (
                               <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className={`transition-transform ${isExpanded ? "rotate-180" : ""}`}>
                                 <path d="M4 6l4 4 4-4" stroke="var(--hm-text-tertiary)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                               </svg>
