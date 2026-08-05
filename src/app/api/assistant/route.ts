@@ -424,6 +424,24 @@ async function executeEnrichTool(
     }
     if (toolName === "start_enrich_job") {
       const { label, ...rest } = input;
+      // Real, hard guard against a wide-open Apify run — the backend "start" action has NO
+      // validation of its own here (only checks label/vertical), so with zero real targeting
+      // criteria it would happily burn Apify credits searching essentially everyone. Requires at
+      // least one field that actually narrows the search before ever calling Apify; otherwise
+      // returns a clear error telling Claude exactly what's missing, so it can ask the user instead
+      // of guessing or running a meaningless (but paid) search.
+      const TARGETING_FIELDS = ["company_domain", "contact_job_title", "seniority_level", "functional_level", "contact_location", "company_industry"];
+      const hasTargeting = TARGETING_FIELDS.some((f) => {
+        const v = rest[f];
+        return Array.isArray(v) ? v.length > 0 : v != null && v !== "";
+      });
+      if (!hasTargeting) {
+        return {
+          toolResult: {
+            error: "No real targeting criteria given — need at least one of: target company domain(s), job titles, seniority level, function, location, or industry before starting a paid Apify search.",
+          },
+        };
+      }
       // /api/radar/enrich's "start" action 400s with "Job name is required" if label is missing —
       // Claude doesn't always fill this in even though it's in the tool's required list, so this
       // was causing a repeated-400 loop instead of ever actually starting the job.
@@ -985,7 +1003,8 @@ SIGNALS — EXPANSION INTELLIGENCE (search_signals_accounts, get_signals_account
 
 RADAR ENRICH — FINDING NEW LEADS (parse_enrich_icp, start_enrich_job, check_enrich_job, list_enrich_jobs, get_enrich_leads, score_enrich_leads, save_enrich_leads tools):
 - This is a DIFFERENT capability from the Radar contacts/accounts search tools above — those search data ALREADY in Radar; Enrich goes OUT to LinkedIn (via Apify) to find NEW leads that aren't in the database yet.
-- Typical flow: parse_enrich_icp (turn the user's plain-English description into filters) → show the filters back and confirm → start_enrich_job → tell the user it's running and to check back → check_enrich_job (when they ask) → once SUCCEEDED, get_enrich_leads to preview → optionally score_enrich_leads against the icp → save_enrich_leads once the user confirms they want these written to Radar.
+- Before doing ANYTHING else, check whether the request actually has enough to search on: at least a target company/domain, OR a real combination of job title(s)/seniority + industry + location. A vague ask ("run enrich for me", "find some leads") has NONE of this — in that case, ASK a clarifying question listing what you need (e.g. "Who are you looking for — what job titles/seniority, what industry, what location, and/or a specific company?") instead of guessing, calling parse_enrich_icp on a blank slate, or starting a search with no real criteria. This is the #1 way to avoid a wasted/looping turn — get the real ask before spending a single tool call. start_enrich_job itself will hard-reject a call with zero targeting fields (returning a clear error) — if you see that error, it means you skipped this step; ask the clarifying question instead of retrying blindly.
+- Typical flow once you have enough: parse_enrich_icp (turn the user's plain-English description into filters) → show the filters back and confirm → start_enrich_job → tell the user it's running and to check back → check_enrich_job (when they ask) → once SUCCEEDED, get_enrich_leads to preview → optionally score_enrich_leads against the icp → save_enrich_leads once the user confirms they want these written to Radar.
 - start_enrich_job spends real Apify credits and takes minutes — ALWAYS confirm the filters with the user before calling it, never on the same turn you first proposed the search.
 - save_enrich_leads writes real contacts/accounts — only call after the user has seen the lead count/preview and explicitly confirmed, same as a Radar CSV export.
 - Never invent job statuses, item counts, or lead data not returned by these tools.
