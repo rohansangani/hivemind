@@ -1,4 +1,9 @@
-export const maxDuration = 60;
+// Raised from 60s — confirmed live a normal multi-filter Radar request (e.g. several title
+// variants + an industry lookup, each needing its own list_radar_distinct_values round-trip before
+// the actual search_radar_contacts call) can chain 3-4+ separate Claude calls in the tool-use loop
+// before ever getting to export/confirmation, and that alone blew past 60s (504) with no CSV export
+// involved at all. Matches the 280s already used by the background csv-export-jobs route.
+export const maxDuration = 280;
 
 import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
