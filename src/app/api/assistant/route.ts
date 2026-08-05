@@ -224,6 +224,17 @@ const RADAR_TOOLS = [
       properties: { ...ACCOUNT_FILTER_PROPERTIES, label: { type: "string", description: "Short label for the status card, e.g. \"140 accounts — D2C fashion\". Optional." } },
     },
   },
+  {
+    name: "get_pending_csv_export",
+    description:
+      "Checks the real status of the most recent CSV export you started earlier in THIS conversation, and — if it " +
+      "has finished — fetches the file and hands it back with a Download button in your reply. Call this whenever " +
+      "the user asks about a CSV/export they're waiting on (\"csv?\", \"is it ready\", \"where's my export\") instead " +
+      "of saying you have no way to check — you do, via this tool. There is a live status card in the chat too, but " +
+      "it can fail to render in some browser sessions, so always fetch the real file here rather than just pointing " +
+      "back at the card.",
+    input_schema: { type: "object", properties: {} },
+  },
 ];
 
 // ClickPost Signal (GTM/expansion-intelligence, built by Sai) — read-only bridge, see
@@ -586,8 +597,25 @@ async function executeRadarTool(
   toolName: string,
   input: Record<string, unknown>,
   actorUserId: string,
-  req: NextRequest
+  req: NextRequest,
+  lastCsvJobId?: string
 ): Promise<{ toolResult: unknown; download?: { filename: string; csv: string } }> {
+  if (toolName === "get_pending_csv_export") {
+    if (!lastCsvJobId) return { toolResult: { error: "No CSV export was started earlier in this conversation." } };
+    const statusRes = await callCsvExportJobRoute(req, "status", { jobId: lastCsvJobId });
+    const s = statusRes as { job?: { status?: string; matched?: number; exported?: number; error?: string }; error?: string };
+    if (s.error) return { toolResult: { error: s.error } };
+    if (s.job?.status !== "done") {
+      return { toolResult: { status: s.job?.status || "running", matched: s.job?.matched, exported: s.job?.exported, error: s.job?.error } };
+    }
+    const dlRes = await callCsvExportJobRoute(req, "download", { jobId: lastCsvJobId });
+    const d = dlRes as { csv?: string; matched?: number; exported?: number; type?: string; label?: string; error?: string };
+    if (d.error || typeof d.csv !== "string") return { toolResult: { error: d.error || "Export finished but the file couldn't be fetched." } };
+    return {
+      toolResult: { status: "done", matched: d.matched, exported: d.exported },
+      download: { filename: `radar_${d.type || "contacts"}_halo_${Date.now()}.csv`, csv: d.csv },
+    };
+  }
   if (toolName === "list_radar_distinct_values") {
     const columnKey = String(input.column ?? "");
     const mapped = DISTINCT_VALUE_COLUMN[columnKey];
@@ -877,6 +905,15 @@ export async function POST(req: NextRequest) {
       content: m.content,
     }));
 
+    // Most recent CSV export job started earlier in this conversation, if any — lets Halo answer
+    // "csv?" / "is it ready?" with a real status check (via get_pending_csv_export) instead of
+    // "I don't have a way to check" even though a status card exists in the chat too.
+    let lastCsvJobId: string | undefined;
+    for (let i = allMessages.length - 1; i >= 0; i--) {
+      const c = allMessages[i].citations as { csvExportJob?: { jobId?: string } } | null;
+      if (c?.csvExportJob?.jobId) { lastCsvJobId = c.csvExportJob.jobId; break; }
+    }
+
     // ── Intent + entity classification ───────────────────
     const { intent } = classifyIntent(message);
 
@@ -1006,6 +1043,7 @@ RADAR CONTACTS & ACCOUNTS (search_radar_contacts/accounts, export_radar_contacts
 - If the user wants results split by a field (e.g. "export contacts grouped by vertical", "separately for B2B and D2C") — the exported CSV already includes vertical/industry/country as real columns on every row, so ONE export covers this; the user can filter/sort/pivot on that column themselves. Do NOT call the export tool multiple times (once per group value) unless the user explicitly says they need genuinely separate files (e.g. "give me 3 separate CSVs, one per vertical, so I can upload each to a different tool"). If they do ask for separate files, you may call the export tool more than once in the same turn — every file you generate this way is delivered to the user as its own download, so tell them exactly that ("here are your N files") — never tell them you can't merge files or ask them to copy-paste/combine anything themselves, that's never true.
 - Always return every matching row for the filters given — there is no per-account/company/domain capping available, so don't suggest one or invent a limit that wasn't asked for.
 - ALWAYS spell out every filter actually applied, not just the count — vertical, industry, and whichever of title/country/company/employee range/revenue range/account size/email status(es) were used, one per line or a short bullet list. For contacts, if the user didn't specify an email status, say explicitly that you defaulted to "safe to send" + "verified" only (Radar's exportable default) and that risky/invalid/unknown/unvalidated contacts are excluded unless they ask to include those too. This applies to both the count reply and the export confirmation — never report a bare number with no criteria shown.
+- If the user asks about a CSV export they're waiting on ("csv?", "is it ready?", "where's my export") — ALWAYS call get_pending_csv_export instead of saying you have no way to check. It looks up the real job status and, if finished, hands you the actual file to attach to your reply. There IS a live status card in the chat too, but it can fail to render in some browser sessions — so treat this tool as the reliable path, not just a fallback: call it and deliver the file directly whenever they ask, rather than just pointing them back at the card.
 - Do not mention these tools by name to the user — just talk about "searching Radar" / "the accounts/contacts database" naturally.`
           : `
 
@@ -1099,7 +1137,7 @@ CONVERSATION BEHAVIOR:
               ? await executeSignalsTool(blockName, blockInput)
               : enrichToolNames.has(blockName)
               ? await executeEnrichTool(blockName, blockInput, req)
-              : await executeRadarTool(blockName, blockInput, decoded.userId, req);
+              : await executeRadarTool(blockName, blockInput, decoded.userId, req, lastCsvJobId);
             const toolResult = toolRun.toolResult;
             const toolDownload = toolRun.download;
             if (toolDownload) exportDownloads.push(toolDownload);
