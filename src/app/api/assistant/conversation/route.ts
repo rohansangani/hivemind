@@ -30,12 +30,14 @@ export async function GET(req: NextRequest) {
         role: m.role,
         content: m.content,
         createdAt: m.createdAt,
-        // enrichJob/enrichLeads are the only citation fields surfaced to the client — jobId/label
-        // for the live-polling status card, and the full lead rows (+ any ICP-fit scores) for the
-        // results table. Both survive reopening the conversation since they're read from the DB,
-        // not just kept in the current session's memory (intent/entities stay server-side only).
+        // enrichJob/enrichLeads/csvExportJob are the only citation fields surfaced to the client —
+        // jobId/label for the live-polling status cards (Enrich and CSV export jobs), and the full
+        // lead rows (+ any ICP-fit scores) for the results table. All survive reopening the
+        // conversation since they're read from the DB, not just kept in the current session's
+        // memory (intent/entities stay server-side only).
         enrichJob: (m.citations as { enrichJob?: { jobId: number; label: string } } | null)?.enrichJob,
         enrichLeads: (m.citations as { enrichLeads?: { leads: unknown[]; scores?: Record<string, { score: number; reason: string }> } } | null)?.enrichLeads,
+        csvExportJob: (m.citations as { csvExportJob?: { jobId: string; type: "contacts" | "accounts"; label?: string } } | null)?.csvExportJob,
       })),
     });
   } catch (error) {

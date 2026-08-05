@@ -29,6 +29,11 @@ interface Message {
   /** Set when this message fetched (and optionally scored) Enrich leads — rendered as a real
    * scrollable table instead of Claude prose-listing hundreds of rows. Also persisted server-side. */
   enrichLeads?: { leads: EnrichLeadRow[]; scores?: Record<string, { score: number; reason: string }> };
+  /** Set when this message started a Radar contacts/accounts CSV export — runs as a background
+   * job (see /api/radar/csv-export-jobs), so this only ever carries a jobId/type, not the CSV
+   * itself. Persisted server-side like enrichJob, for the same reason: survives switching tabs,
+   * conversations, or refreshing entirely — the job keeps running regardless. */
+  csvExportJob?: { jobId: string; type: "contacts" | "accounts"; label?: string };
 }
 
 interface EnrichLeadRow {
@@ -181,6 +186,101 @@ function EnrichJobStatusCard({ jobId, label }: { jobId: number; label: string })
   );
 }
 
+/**
+ * Live-polling status card for a Radar contacts/accounts CSV export Halo started. The export
+ * itself runs as a background job (see /api/radar/csv-export-jobs) instead of blocking Halo's own
+ * turn — a real export (a few hundred+ rows, several chunked filter combos) could take a while,
+ * and everything was lost the moment the tab closed under the old synchronous approach. Polling
+ * from here means the download becomes available even after switching tabs, conversations, or
+ * refreshing the page entirely, since the job keeps running server-side regardless.
+ */
+function CsvExportJobStatusCard({ jobId, type, label }: { jobId: string; type: "contacts" | "accounts"; label?: string }) {
+  const [status, setStatus] = useState<string | null>(null);
+  const [matched, setMatched] = useState(0);
+  const [exported, setExported] = useState(0);
+  const [error, setErrorMsg] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const poll = async () => {
+      try {
+        const res = await fetch("/api/radar/csv-export-jobs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "status", jobId }),
+        });
+        const data = await res.json();
+        if (cancelled) return;
+        if (!res.ok) { setErrorMsg(data.error || "Couldn't check status"); return; }
+        setStatus(data.job?.status || null);
+        setMatched(data.job?.matched || 0);
+        setExported(data.job?.exported || 0);
+        if (data.job?.status === "error") setErrorMsg(data.job.error || "Export failed");
+        if (data.job?.status === "running") timer = setTimeout(poll, 4000);
+      } catch {
+        if (!cancelled) setErrorMsg("Couldn't check status");
+      }
+    };
+    poll();
+    return () => { cancelled = true; if (timer) clearTimeout(timer); };
+  }, [jobId]);
+
+  const download = async () => {
+    setDownloading(true);
+    try {
+      const res = await fetch("/api/radar/csv-export-jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "download", jobId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Download failed");
+      downloadCsvString(data.csv, `radar_${type}_halo_${Date.now()}.csv`);
+    } catch (e) {
+      setErrorMsg((e as Error).message);
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  const isRunning = !error && (status === null || status === "running");
+  const isDone = status === "done";
+  const isFailed = !!error || status === "error";
+
+  return (
+    <div className="mt-2 inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] text-[12px] max-w-full">
+      {isRunning && (
+        <svg aria-hidden="true" width="12" height="12" viewBox="0 0 16 16" fill="none" className="animate-spin flex-shrink-0" style={{ color: "var(--hm-text-tertiary)" }}>
+          <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.8" strokeDasharray="28" strokeDashoffset="10" strokeLinecap="round" />
+        </svg>
+      )}
+      {isDone && (
+        <svg aria-hidden="true" width="12" height="12" viewBox="0 0 16 16" fill="none" className="flex-shrink-0 text-[var(--tag-green-fg)]"><path d="M2 8l4 4 8-8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+      )}
+      {isFailed && (
+        <svg aria-hidden="true" width="12" height="12" viewBox="0 0 16 16" fill="none" className="flex-shrink-0 text-[var(--tag-red-fg)]"><circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.3" /><path d="M8 5v3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /><circle cx="8" cy="11" r="0.75" fill="currentColor" /></svg>
+      )}
+      <span className="font-medium text-[var(--hm-text)] truncate max-w-[220px]">{label || `${type === "accounts" ? "Accounts" : "Contacts"} export`}</span>
+      <span className="text-[var(--hm-text-tertiary)] whitespace-nowrap">
+        {isFailed ? (error || "Export failed") : isRunning ? "Exporting…" : isDone ? `${exported} of ${matched} exported` : status}
+      </span>
+      {isDone && (
+        <button
+          onClick={download}
+          disabled={downloading}
+          className="ml-1 shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-md border border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[var(--hm-primary)] hover:text-[var(--hm-text)] transition-colors disabled:opacity-50"
+        >
+          <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 2v8m0 0l-3-3m3 3l3-3M3 13h10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          {downloading ? "Downloading…" : "Download CSV"}
+        </button>
+      )}
+    </div>
+  );
+}
+
 interface Conversation {
   id: string;
   title: string;
@@ -266,7 +366,7 @@ export default function AssistantPage() {
       if (!res.ok) throw new Error(`Server error ${res.status}`);
       const data = await res.json();
       if (data.reply) {
-        setMessages((prev) => [...prev, { role: "assistant", content: data.reply, timestamp: Date.now(), download: data.download || undefined, downloads: data.downloads || undefined, enrichJob: data.enrichJob || undefined, enrichLeads: data.enrichLeads || undefined }]);
+        setMessages((prev) => [...prev, { role: "assistant", content: data.reply, timestamp: Date.now(), download: data.download || undefined, downloads: data.downloads || undefined, enrichJob: data.enrichJob || undefined, enrichLeads: data.enrichLeads || undefined, csvExportJob: data.csvExportJob || undefined }]);
         if (data.conversationId) {
           const isNew = !conversationId;
           setConversationId(data.conversationId);
@@ -441,12 +541,13 @@ export default function AssistantPage() {
               if (data.messages) {
                 // Map DB messages (createdAt: string) into the Message interface
                 setMessages(
-                  data.messages.map((m: { role: "user" | "assistant"; content: string; createdAt: string; enrichJob?: { jobId: number; label: string }; enrichLeads?: Message["enrichLeads"] }) => ({
+                  data.messages.map((m: { role: "user" | "assistant"; content: string; createdAt: string; enrichJob?: { jobId: number; label: string }; enrichLeads?: Message["enrichLeads"]; csvExportJob?: Message["csvExportJob"] }) => ({
                     role: m.role,
                     content: m.content,
                     createdAt: m.createdAt,
                     enrichJob: m.enrichJob,
                     enrichLeads: m.enrichLeads,
+                    csvExportJob: m.csvExportJob,
                   }))
                 );
               }
@@ -735,6 +836,7 @@ export default function AssistantPage() {
                     {msg.enrichLeads && msg.enrichLeads.leads.length > 0 && (
                       <EnrichLeadsTable leads={msg.enrichLeads.leads} scores={msg.enrichLeads.scores} />
                     )}
+                    {msg.csvExportJob && <CsvExportJobStatusCard jobId={msg.csvExportJob.jobId} type={msg.csvExportJob.type} label={msg.csvExportJob.label} />}
                     {/* Timestamp + copy row */}
                     <div className={"flex items-center gap-2 mt-1 " + (msg.role === "user" ? "justify-end" : "justify-start")}>
                       {(msg.timestamp || msg.createdAt) && (

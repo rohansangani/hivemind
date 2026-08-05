@@ -82,17 +82,18 @@ model User {
   organizationId String?
   organization   Organization? @relation(fields: [organizationId], references: [id])
 
-  contentAssets     ContentAsset[]
-  generatedContent  GeneratedContent[]
-  conversations     Conversation[]
-  designBriefs      DesignBrief[]
-  tourProgress      TourProgress[]
-  radarExportLogs   RadarExportLog[]
-  radarActivityLogs RadarActivityLog[]
-  emailSequenceJobs EmailSequenceJob[]
-  linkedinCheckJobs LinkedinCheckJob[]
-  coachProgress     CoachProgress[]
-  coachEnrollment   CoachEnrollment?
+  contentAssets      ContentAsset[]
+  generatedContent   GeneratedContent[]
+  conversations      Conversation[]
+  designBriefs       DesignBrief[]
+  tourProgress       TourProgress[]
+  radarExportLogs    RadarExportLog[]
+  radarActivityLogs  RadarActivityLog[]
+  emailSequenceJobs  EmailSequenceJob[]
+  linkedinCheckJobs  LinkedinCheckJob[]
+  radarCsvExportJobs RadarCsvExportJob[]
+  coachProgress      CoachProgress[]
+  coachEnrollment    CoachEnrollment?
 }
 
 // Tracks who exported what from Radar (Accounts/Contacts CSV download), and when — the export
@@ -177,6 +178,36 @@ model LinkedinCheckJob {
   created        Int      @default(0)
   uncertain      Int      @default(0)
   failCount      Int      @default(0) // consecutive chunk failures — see MAX_CONSECUTIVE_FAILS
+  error          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status])
+}
+
+// Ask Halo's export_radar_contacts_csv/export_radar_accounts_csv tools used to build the CSV
+// synchronously within Halo's own turn — a large export (many chunked filter combos, or just a
+// few hundred+ rows) could blow past the assistant route's 60s budget entirely, and the whole
+// export was lost the moment the tab was closed since nothing survived past the HTTP response.
+// This runs the actual fetch+CSV-build via Next's after() so it keeps going regardless of the
+// triggering request's own lifetime, checkpointed here so a status card can poll it from any tab
+// (or after reopening the app entirely) until it's done.
+model RadarCsvExportJob {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String
+  label          String? // shown in a status card — e.g. "820 contacts — Fashion/Retail, US"
+  type           String // "contacts" | "accounts"
+  filters        Json // the filter object passed to buildContactQuery/buildAccountQuery
+  emailStatuses  Json? // contacts only
+  groupCap       Json? // contacts only — GroupCapConstraint
+  status         String   @default("running") // running | done | error
+  csv            String? // the finished CSV text, once done
+  matched        Int      @default(0)
+  exported       Int      @default(0)
+  truncated      Boolean  @default(false)
   error          String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -612,22 +643,22 @@ model Integration {
 // in HubSpot, and what's its status" is an indexed exact-match lookup instead of
 // a text scan — used to check leads/customers before outreach.
 model HubspotContact {
-  id              String    @id @default(cuid())
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id])
-  hubspotId       String
-  email           String
-  firstName       String?
-  lastName        String?
-  company         String?
-  jobTitle        String?
-  lifecycleStage  String?
-  leadStatus      String?
-  leadSource      String?
-  lastActivityAt  DateTime?
+  id               String       @id @default(cuid())
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id])
+  hubspotId        String
+  email            String
+  firstName        String?
+  lastName         String?
+  company          String?
+  jobTitle         String?
+  lifecycleStage   String?
+  leadStatus       String?
+  leadSource       String?
+  lastActivityAt   DateTime?
   hubspotCreatedAt DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
 
   @@unique([organizationId, email])
   @@index([organizationId, lifecycleStage])
@@ -638,26 +669,26 @@ model HubspotContact {
 // Structured, upserted mirror of HubSpot companies — one row per hubspotId (no
 // email to key on), kept in sync by runHubspotSyncTick (companies phase).
 model HubspotCompany {
-  id               String    @id @default(cuid())
-  organizationId   String
-  organization     Organization @relation(fields: [organizationId], references: [id])
-  hubspotId        String
-  name             String?
-  industry         String?
-  annualRevenue    Float?
+  id                String       @id @default(cuid())
+  organizationId    String
+  organization      Organization @relation(fields: [organizationId], references: [id])
+  hubspotId         String
+  name              String?
+  industry          String?
+  annualRevenue     Float?
   numberOfEmployees Int?
-  country          String?
-  city             String?
-  website          String?
-  domain           String?
-  description      String?
-  companyType      String?
-  lifecycleStage   String?
-  leadStatus       String?
-  lastActivityAt   DateTime?
-  hubspotCreatedAt DateTime?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  country           String?
+  city              String?
+  website           String?
+  domain            String?
+  description       String?
+  companyType       String?
+  lifecycleStage    String?
+  leadStatus        String?
+  lastActivityAt    DateTime?
+  hubspotCreatedAt  DateTime?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
 
   @@unique([organizationId, hubspotId])
   @@index([organizationId, industry])
@@ -668,7 +699,7 @@ model HubspotCompany {
 // Structured, upserted mirror of HubSpot deals — one row per hubspotId, kept in
 // sync by runHubspotSyncTick (deals phase).
 model HubspotDeal {
-  id               String    @id @default(cuid())
+  id               String       @id @default(cuid())
   organizationId   String
   organization     Organization @relation(fields: [organizationId], references: [id])
   hubspotId        String
@@ -681,8 +712,8 @@ model HubspotDeal {
   dealType         String?
   description      String?
   hubspotCreatedAt DateTime?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
 
   @@unique([organizationId, hubspotId])
   @@index([organizationId, dealStage])
@@ -843,10 +874,10 @@ model OutputFingerprint {
 
 model CoachTrack {
   id             String        @id @default(cuid())
-  key            String        // e.g. "gtm-foundation"
+  key            String // e.g. "gtm-foundation"
   name           String
   description    String?
-  targetRole     String?       // null = everyone
+  targetRole     String? // null = everyone
   order          Int           @default(0)
   isActive       Boolean       @default(true)
   isGenerated    Boolean       @default(true)
@@ -863,7 +894,7 @@ model CoachModule {
   id          String        @id @default(cuid())
   trackId     String
   track       CoachTrack    @relation(fields: [trackId], references: [id], onDelete: Cascade)
-  domain      String        // "company" | "markets" | "products" | "use_cases" | "customers" | "competitors"
+  domain      String // "company" | "markets" | "products" | "use_cases" | "customers" | "competitors"
   name        String
   description String?
   order       Int           @default(0)
@@ -878,9 +909,9 @@ model CoachLesson {
   module       CoachModule     @relation(fields: [moduleId], references: [id], onDelete: Cascade)
   title        String
   whyItMatters String?
-  keyPoints    String          // markdown
-  entityType   String?         // "product" | "persona" | "market" | "competitor" — for live reference-material lookup
-  entityName   String?         // matched against Asset Library tag arrays
+  keyPoints    String // markdown
+  entityType   String? // "product" | "persona" | "market" | "competitor" — for live reference-material lookup
+  entityName   String? // matched against Asset Library tag arrays
   // Stable identity across regenerations (e.g. "product:clickpost returns", "domain:company").
   // Regenerate matches on this so lesson rows — and their CoachProgress — survive a refresh.
   key          String          @default("")
@@ -898,11 +929,11 @@ model CoachQuestion {
   id             String      @id @default(cuid())
   lessonId       String
   lesson         CoachLesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
-  type           String      // "mcq" | "short"
+  type           String // "mcq" | "short"
   prompt         String
   options        Json        @default("[]") // string[] for mcq
-  correctIndex   Int?        // mcq correct option index
-  expectedAnswer String?     // short-answer: grounded expected answer / rubric (never sent to the client)
+  correctIndex   Int? // mcq correct option index
+  expectedAnswer String? // short-answer: grounded expected answer / rubric (never sent to the client)
   explanation    String?
   order          Int         @default(0)
 
@@ -916,9 +947,9 @@ model CoachProgress {
   lessonId       String
   lesson         CoachLesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
   status         String      @default("not_started") // "not_started" | "in_progress" | "completed"
-  score          Int?        // best score 0-100
+  score          Int? // best score 0-100
   attempts       Int         @default(0)
-  lastAnswers    Json?       // last submission, for review
+  lastAnswers    Json? // last submission, for review
   completedAt    DateTime?
   organizationId String
   createdAt      DateTime    @default(now())

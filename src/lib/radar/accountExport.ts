@@ -60,10 +60,13 @@ export function buildAccountQuery(filters: Record<string, unknown>): string {
  * than one chunk's clause would otherwise be double-counted. */
 async function fetchAccountRows(filters: Record<string, unknown>): Promise<{ rows: Record<string, unknown>[]; truncated: boolean }> {
   const combos = splitFilterCombos(filters, ACCOUNT_ARRAY_FIELDS);
+  // Combos run in PARALLEL, not sequentially — same fix as contactExport.ts's fetchContactRows,
+  // same reasoning: several chunked combos waiting on each other one at a time was a real
+  // contributor to Ask Halo's CSV export requests timing out.
+  const results = await Promise.all(combos.map((f) => fetchAllPages("accounts", buildAccountQuery(f))));
   const byId = new Map<string, Record<string, unknown>>();
   let truncated = false;
-  for (const f of combos) {
-    const { rows, truncated: t } = await fetchAllPages("accounts", buildAccountQuery(f));
+  for (const { rows, truncated: t } of results) {
     if (t) truncated = true;
     for (const row of rows) byId.set(String(row.id ?? `${row.domain}::${row.vertical}::${row.name}`), row);
   }

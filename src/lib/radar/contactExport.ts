@@ -128,10 +128,15 @@ function contactFilterCombos(filters: Record<string, unknown>): Record<string, u
  * contact matching more than one chunk's clause would otherwise be double-counted. */
 async function fetchContactRows(filters: Record<string, unknown>): Promise<{ rows: Record<string, unknown>[]; truncated: boolean }> {
   const combos = contactFilterCombos(filters);
+  // Combos run in PARALLEL, not sequentially — confirmed live this was a real contributor to Ask
+  // Halo's CSV export timing out (504) on a combined multi-filter request: several chunked combos
+  // (e.g. 3 industry chunks × 2 title chunks = 6 queries) each waited for the previous one to
+  // finish one at a time instead of concurrently, easily adding 10s+ on top of everything else in
+  // the same turn.
+  const results = await Promise.all(combos.map((f) => fetchAllPages("contacts_view", buildContactQuery(f))));
   const byId = new Map<string, Record<string, unknown>>();
   let truncated = false;
-  for (const f of combos) {
-    const { rows, truncated: t } = await fetchAllPages("contacts_view", buildContactQuery(f));
+  for (const { rows, truncated: t } of results) {
     if (t) truncated = true;
     for (const row of rows) byId.set(String(row.id), row);
   }

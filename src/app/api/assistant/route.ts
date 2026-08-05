@@ -186,13 +186,20 @@ const RADAR_TOOLS = [
   {
     name: "export_radar_contacts_csv",
     description:
-      "Generate a downloadable CSV of contacts matching the given filters. ONLY call this after the user has " +
-      "explicitly confirmed (e.g. said \"yes\", \"export it\", \"download\") having already seen the count from " +
-      "search_radar_contacts for the SAME filters in this conversation. Never call this on the first turn of a request. " +
-      "Default to exactly ONE call per export request, combining every filter (including multiple title buckets, via " +
-      "title's array form) into that single call so the user gets ONE CSV — do not call this tool multiple times to " +
-      "produce several smaller files unless the user explicitly asked for separate files.",
-    input_schema: { type: "object", properties: RADAR_FILTER_PROPERTIES },
+      "Starts a background CSV export job of contacts matching the given filters — returns a jobId immediately, " +
+      "NOT the finished CSV (a real export can take a while, so it keeps running server-side after your reply; a " +
+      "status card in the chat shows progress and a download link once it's ready, even if the user switches tabs " +
+      "or leaves and comes back). ONLY call this after the user has explicitly confirmed (e.g. said \"yes\", " +
+      "\"export it\", \"download\") having already seen the count from search_radar_contacts for the SAME filters " +
+      "in this conversation. Never call this on the first turn of a request. Default to exactly ONE call per export " +
+      "request, combining every filter (including multiple title buckets, via title's array form) into that single " +
+      "call so the user gets ONE CSV — do not call this tool multiple times to produce several smaller files unless " +
+      "the user explicitly asked for separate files. After calling, just tell the user the export has started and " +
+      "the download will appear shortly — do not claim the CSV is ready or describe its contents, you don't have it.",
+    input_schema: {
+      type: "object",
+      properties: { ...RADAR_FILTER_PROPERTIES, label: { type: "string", description: "Short label for the status card, e.g. \"820 contacts — Fashion/Retail, US\". Optional." } },
+    },
   },
   {
     name: "search_radar_accounts",
@@ -207,10 +214,15 @@ const RADAR_TOOLS = [
   {
     name: "export_radar_accounts_csv",
     description:
-      "Generate a downloadable CSV of accounts (companies) matching the given filters. ONLY call this after the " +
-      "user has explicitly confirmed, having already seen the count from search_radar_accounts for the SAME " +
-      "filters in this conversation.",
-    input_schema: { type: "object", properties: ACCOUNT_FILTER_PROPERTIES },
+      "Starts a background CSV export job of accounts (companies) matching the given filters — returns a jobId " +
+      "immediately, NOT the finished CSV (see export_radar_contacts_csv's description for why — same background-job " +
+      "behavior applies here). ONLY call this after the user has explicitly confirmed, having already seen the " +
+      "count from search_radar_accounts for the SAME filters in this conversation. After calling, just tell the " +
+      "user the export has started — do not claim the CSV is ready or describe its contents.",
+    input_schema: {
+      type: "object",
+      properties: { ...ACCOUNT_FILTER_PROPERTIES, label: { type: "string", description: "Short label for the status card, e.g. \"140 accounts — D2C fashion\". Optional." } },
+    },
   },
 ];
 
@@ -559,10 +571,22 @@ const DISTINCT_VALUE_COLUMN: Record<string, [string, string]> = {
 // title; every other column's real cardinality is small enough to return in full.
 const TITLE_RESULT_LIMIT = 200;
 
+async function callCsvExportJobRoute(req: NextRequest, action: string, extra: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const res = await fetch(`${req.nextUrl.origin}/api/radar/csv-export-jobs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", cookie: req.headers.get("cookie") || "" },
+    body: JSON.stringify({ action, ...extra }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) return { error: (data as { error?: string }).error || `Export job request failed (${res.status})` };
+  return data;
+}
+
 async function executeRadarTool(
   toolName: string,
   input: Record<string, unknown>,
-  actorUserId: string
+  actorUserId: string,
+  req: NextRequest
 ): Promise<{ toolResult: unknown; download?: { filename: string; csv: string } }> {
   if (toolName === "list_radar_distinct_values") {
     const columnKey = String(input.column ?? "");
@@ -578,24 +602,20 @@ async function executeRadarTool(
     return { toolResult: { count } };
   }
   if (toolName === "export_radar_contacts_csv") {
-    const { csv, matched, exported, truncated } = await exportContactsCsv(toRadarFilters(input), input.emailStatuses);
-    if (exported > 0) await logContactExport(actorUserId, exported);
-    return {
-      toolResult: { matched, exported, truncated },
-      download: exported > 0 ? { filename: `radar_contacts_halo_${Date.now()}.csv`, csv } : undefined,
-    };
+    // Runs as a background job (see /api/radar/csv-export-jobs) instead of building the CSV
+    // synchronously here — confirmed live a real export (a few hundred+ rows, several chunked
+    // filter combos) could blow past this route's own 60s budget entirely (504), losing all
+    // progress the moment the tab closed. A status card in the chat polls the job until done.
+    const result = await callCsvExportJobRoute(req, "start", { type: "contacts", filters: toRadarFilters(input), emailStatuses: input.emailStatuses, label: typeof input.label === "string" ? input.label : undefined });
+    return { toolResult: result };
   }
   if (toolName === "search_radar_accounts") {
     const count = await countAccounts(toAccountFilters(input));
     return { toolResult: { count } };
   }
   if (toolName === "export_radar_accounts_csv") {
-    const { csv, matched, exported, truncated } = await exportAccountsCsv(toAccountFilters(input));
-    if (exported > 0) await logAccountExport(actorUserId, exported);
-    return {
-      toolResult: { matched, exported, truncated },
-      download: exported > 0 ? { filename: `radar_accounts_halo_${Date.now()}.csv`, csv } : undefined,
-    };
+    const result = await callCsvExportJobRoute(req, "start", { type: "accounts", filters: toAccountFilters(input), label: typeof input.label === "string" ? input.label : undefined });
+    return { toolResult: result };
   }
   return { toolResult: { error: `Unknown tool: ${toolName}` } };
 }
@@ -901,6 +921,9 @@ export async function POST(req: NextRequest) {
     // Same reasoning — full lead rows (and any ICP-fit scores computed for them) persisted on the
     // message so the chat can render a real table, not just what Claude's own reply describes.
     let enrichLeadsResult: { leads: unknown[]; scores?: Record<string, { score: number; reason: string }> } | undefined;
+    // Same pattern again — a Radar contacts/accounts CSV export now runs as a background job (see
+    // /api/radar/csv-export-jobs), so the chat needs a persisted reference to poll/download it.
+    let startedCsvExportJob: { jobId: string; type: "contacts" | "accounts"; label?: string } | undefined;
 
     // ── Radar access gate for the search_radar_contacts / export_radar_contacts_csv tools ──
     // Only offered to users who actually have Radar access themselves (view or edit) — this
@@ -979,6 +1002,7 @@ RADAR CONTACTS & ACCOUNTS (search_radar_contacts/accounts, export_radar_contacts
 - When the user wants to find, count, or export either, translate their request into filters using the ICP/persona/product/industry knowledge above (e.g. "our ideal customers in D2C haircare" → vertical: D2C, industry: something matching the known ICP) — ask a clarifying question instead of guessing if the request is genuinely ambiguous.
 - ALWAYS call the matching search tool first (search_radar_contacts or search_radar_accounts). Report the exact count back to the user in plain language and explicitly ask them to confirm before exporting anything.
 - ONLY call the matching export tool after the user has clearly confirmed in a later message (e.g. "yes", "export it", "send me the csv") — never export on the same turn as the first search, even if the request sounded like it wanted a file immediately.
+- The export tools run as a BACKGROUND JOB, not synchronously — calling one returns a jobId immediately, not the finished CSV. After calling, just tell the user the export has started and a download link will appear shortly (the chat shows a live status card on its own) — never claim the file is ready, never describe how many rows/columns it has, you don't have that yet. Do not call check_enrich_job-style polling for this — there's no separate poll tool for exports, the UI handles it.
 - If the user wants results split by a field (e.g. "export contacts grouped by vertical", "separately for B2B and D2C") — the exported CSV already includes vertical/industry/country as real columns on every row, so ONE export covers this; the user can filter/sort/pivot on that column themselves. Do NOT call the export tool multiple times (once per group value) unless the user explicitly says they need genuinely separate files (e.g. "give me 3 separate CSVs, one per vertical, so I can upload each to a different tool"). If they do ask for separate files, you may call the export tool more than once in the same turn — every file you generate this way is delivered to the user as its own download, so tell them exactly that ("here are your N files") — never tell them you can't merge files or ask them to copy-paste/combine anything themselves, that's never true.
 - Always return every matching row for the filters given — there is no per-account/company/domain capping available, so don't suggest one or invent a limit that wasn't asked for.
 - ALWAYS spell out every filter actually applied, not just the count — vertical, industry, and whichever of title/country/company/employee range/revenue range/account size/email status(es) were used, one per line or a short bullet list. For contacts, if the user didn't specify an email status, say explicitly that you defaulted to "safe to send" + "verified" only (Radar's exportable default) and that risky/invalid/unknown/unvalidated contacts are excluded unless they ask to include those too. This applies to both the count reply and the export confirmation — never report a bare number with no criteria shown.
@@ -1075,7 +1099,7 @@ CONVERSATION BEHAVIOR:
               ? await executeSignalsTool(blockName, blockInput)
               : enrichToolNames.has(blockName)
               ? await executeEnrichTool(blockName, blockInput, req)
-              : await executeRadarTool(blockName, blockInput, decoded.userId);
+              : await executeRadarTool(blockName, blockInput, decoded.userId, req);
             const toolResult = toolRun.toolResult;
             const toolDownload = toolRun.download;
             if (toolDownload) exportDownloads.push(toolDownload);
@@ -1083,6 +1107,12 @@ CONVERSATION BEHAVIOR:
               const r = toolResult as { jobId?: number; label?: string; error?: string };
               if (r && typeof r.jobId === "number" && !r.error) {
                 startedEnrichJob = { jobId: r.jobId, label: r.label || "Enrich search" };
+              }
+            }
+            if (blockName === "export_radar_contacts_csv" || blockName === "export_radar_accounts_csv") {
+              const r = toolResult as { jobId?: string; type?: string; error?: string };
+              if (r && typeof r.jobId === "string" && !r.error) {
+                startedCsvExportJob = { jobId: r.jobId, type: r.type === "accounts" ? "accounts" : "contacts", label: typeof blockInput.label === "string" ? blockInput.label : undefined };
               }
             }
             if (blockName === "get_enrich_leads") {
@@ -1169,7 +1199,7 @@ CONVERSATION BEHAVIOR:
         content: assistantReply,
         conversationId: convo.id,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        citations: { intent, entities, enrichJob: startedEnrichJob, enrichLeads: enrichLeadsResult } as any,
+        citations: { intent, entities, enrichJob: startedEnrichJob, enrichLeads: enrichLeadsResult, csvExportJob: startedCsvExportJob } as any,
       },
     });
 
@@ -1195,6 +1225,7 @@ CONVERSATION BEHAVIOR:
       downloads: exportDownloads.length ? exportDownloads : undefined,
       enrichJob: startedEnrichJob,
       enrichLeads: enrichLeadsResult,
+      csvExportJob: startedCsvExportJob,
     });
   } catch (error) {
     console.error("Assistant POST error:", error);
