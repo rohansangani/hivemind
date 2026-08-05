@@ -7,7 +7,7 @@
  */
 
 import { selectFrom } from "@/lib/radar/supabase";
-import { fetchAllPages, csvCell, buildInFilter, splitFilterCombos, type ArrayFieldConfig } from "@/lib/radar/contactExport";
+import { fetchAllPages, csvCell, buildInFilter, splitFilterCombos, encodeIlikeValue, type ArrayFieldConfig } from "@/lib/radar/contactExport";
 
 // Same reasoning as CONTACT_ARRAY_FIELDS in contactExport.ts — every one of these accepts a single
 // string OR an array of any length; oversized ones get chunked into several queries and merged
@@ -47,8 +47,8 @@ export function buildAccountQuery(filters: Record<string, unknown>): string {
   if (filters.revenueRange) q += buildInFilter("revenue_range", filters.revenueRange);
   if (filters.country) q += buildInFilter("country", filters.country);
   if (filters.search) {
-    const s = encodeURIComponent(String(filters.search));
-    q += `&or=(name.ilike.*${s}*,domain.ilike.*${s}*)`;
+    const s = encodeIlikeValue(String(filters.search));
+    q += `&or=(name.ilike.${s},domain.ilike.${s})`;
   }
   // Records flagged as irrelevant are never included in an export.
   q += `&marked_irrelevant=eq.false`;

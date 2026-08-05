@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { selectFrom, requireRadarAccess } from "@/lib/radar/supabase";
+import { encodeFilterValue } from "@/lib/radar/contactExport";
 
 /**
  * Check DB — look up a list of values (email, domain, company name, phone, or LinkedIn URL)
@@ -146,7 +147,7 @@ export async function POST(req: NextRequest) {
       for (let i = 0; i < values.length; i += CHUNK) chunks.push(values.slice(i, i + CHUNK));
       const chunkResults = await Promise.all(
         chunks.map((chunk) => {
-          const list = chunk.map((v) => encodeURIComponent(v)).join(",");
+          const list = chunk.map((v) => encodeFilterValue(v)).join(",");
           return selectFrom(matchTable, `select=${cols}&${col}=in.(${list})`);
         }),
       );

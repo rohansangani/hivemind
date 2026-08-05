@@ -10,6 +10,35 @@ import { selectFrom } from "@/lib/radar/supabase";
 
 export const DEFAULT_EMAIL_STATUSES = ["safe to send", "verified"];
 
+// Confirmed live: a title value containing a comma ("CEO, Founder") broke the query with "failed
+// to parse logic tree"/"unexpected '*'" even though it WAS correctly percent-encoded (%2C).
+// That's because standard URL decoding happens once, universally, before PostgREST's OWN embedded
+// filter/logic-tree parser (or=(...), and=(...)) ever sees the string — a percent-encoded comma
+// and a literal one are indistinguishable to PostgREST by the time it parses, since both decode to
+// the same "," beforehand. Percent-encoding solves URL-transport ambiguity, not PostgREST's own
+// mini-language ambiguity. The actual fix is PostgREST's own documented convention: a value
+// containing one of its reserved structural characters (, . : ( ) ") must be wrapped in literal
+// double quotes so its parser treats the whole thing as one atomic string instead of splitting on
+// the comma/parens inside it. Applied BEFORE encodeURIComponent, which then just transports the
+// quote characters safely (they round-trip back to literal quotes via normal URL decoding, so
+// PostgREST still sees them as its own quoting syntax on the other end).
+export function encodeFilterValue(v: string): string {
+  const needsQuoting = /[,.:()"]/.test(v);
+  const quoted = needsQuoting ? `"${v.replace(/"/g, '\\"')}"` : v;
+  return encodeURIComponent(quoted);
+}
+
+/** Same idea as encodeFilterValue, but for ilike's `*value*` wildcard shorthand — confirmed live
+ * that quoting only the INNER value (`*"CEO, Founder"*`) still 400s, since PostgREST's quote
+ * detection only recognizes a quote as the very first character of the value token, not one
+ * nested after a leading `*`. Quoting the WHOLE wildcarded string instead (`"*CEO, Founder*"`)
+ * parses correctly — confirmed against the live DB. */
+export function encodeIlikeValue(v: string): string {
+  const wildcarded = `*${v}*`;
+  const needsQuoting = /[,.:()"]/.test(v);
+  return encodeURIComponent(needsQuoting ? `"${wildcarded.replace(/"/g, '\\"')}"` : wildcarded);
+}
+
 /** A field value may arrive as a single string or an array of strings — the array form lets one
  * query cover several DB-side variants of the "same" value (e.g. industry stored inconsistently
  * as "Ecommerce"/"E-commerce"/"D2C - Ecommerce") in a single request/single CSV, via PostgREST's
@@ -27,9 +56,9 @@ export function buildInFilter(column: string, value: unknown): string {
   const includeBlanks = values.some((v) => String(v).trim() === BLANK_VALUE_SENTINEL);
   const clean = values.map((v) => String(v).trim()).filter((v) => v && v !== BLANK_VALUE_SENTINEL);
   if (!clean.length) return includeBlanks ? `&${column}=is.null` : "";
-  const valueFilter = clean.length === 1 ? `${column}.eq.${encodeURIComponent(clean[0])}` : `${column}.in.(${clean.map(encodeURIComponent).join(",")})`;
+  const valueFilter = clean.length === 1 ? `${column}.eq.${encodeFilterValue(clean[0])}` : `${column}.in.(${clean.map(encodeFilterValue).join(",")})`;
   if (includeBlanks) return `&or=(${column}.is.null,${valueFilter})`;
-  return clean.length === 1 ? `&${column}=eq.${encodeURIComponent(clean[0])}` : `&${column}=in.(${clean.map(encodeURIComponent).join(",")})`;
+  return clean.length === 1 ? `&${column}=eq.${encodeFilterValue(clean[0])}` : `&${column}=in.(${clean.map(encodeFilterValue).join(",")})`;
 }
 
 /** Same idea as buildInFilter but for partial/ilike match columns (title, company) — OR's the
@@ -38,8 +67,8 @@ export function buildIlikeOrFilter(column: string, value: unknown): string {
   const values = Array.isArray(value) ? value : [value];
   const clean = values.map((v) => String(v).trim()).filter(Boolean);
   if (!clean.length) return "";
-  if (clean.length === 1) return `&${column}=ilike.*${encodeURIComponent(clean[0])}*`;
-  return `&or=(${clean.map((v) => `${column}.ilike.*${encodeURIComponent(v)}*`).join(",")})`;
+  if (clean.length === 1) return `&${column}=ilike.${encodeIlikeValue(clean[0])}`;
+  return `&or=(${clean.map((v) => `${column}.ilike.${encodeIlikeValue(v)}`).join(",")})`;
 }
 
 /** Any filter column's value can be a single string OR an array of any length — this makes an
@@ -123,8 +152,8 @@ export function buildContactQuery(filters: Record<string, unknown>): string {
   // one CSV covers all of them instead of needing a separate call per title.
   if (filters.title) q += buildIlikeOrFilter("title", filters.title);
   if (filters.search) {
-    const s = encodeURIComponent(String(filters.search));
-    q += `&or=(email.ilike.*${s}*,first_name.ilike.*${s}*,last_name.ilike.*${s}*)`;
+    const s = encodeIlikeValue(String(filters.search));
+    q += `&or=(email.ilike.${s},first_name.ilike.${s},last_name.ilike.${s})`;
   }
   // Only contacts with a non-blank email are exportable.
   q += `&email=not.is.null&email=neq.`;
@@ -137,9 +166,9 @@ export function buildContactQuery(filters: Record<string, unknown>): string {
 export function contactStatusFilter(rawStatuses: string[]): string {
   const wantsUnvalidated = rawStatuses.includes("unvalidated");
   const rest = rawStatuses.filter((s) => s !== "unvalidated").map((s) => s.toLowerCase().trim());
-  if (wantsUnvalidated && rest.length) return `&or=(email_status.is.null,email_status.in.(${rest.map(encodeURIComponent).join(",")}))`;
+  if (wantsUnvalidated && rest.length) return `&or=(email_status.is.null,email_status.in.(${rest.map(encodeFilterValue).join(",")}))`;
   if (wantsUnvalidated) return `&email_status=is.null`;
-  if (rest.length) return `&email_status=in.(${rest.map(encodeURIComponent).join(",")})`;
+  if (rest.length) return `&email_status=in.(${rest.map(encodeFilterValue).join(",")})`;
   return "";
 }
 
