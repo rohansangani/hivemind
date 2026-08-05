@@ -7,7 +7,7 @@
  */
 
 import { selectFrom } from "@/lib/radar/supabase";
-import { fetchAllPages, csvCell, buildInFilter, splitFilterCombos, encodeIlikeValue, type ArrayFieldConfig } from "@/lib/radar/contactExport";
+import { fetchAllPages, csvCell, buildInFilter, splitFilterCombos, encodeIlikeValue, mapWithConcurrency, type ArrayFieldConfig } from "@/lib/radar/contactExport";
 
 // Same reasoning as CONTACT_ARRAY_FIELDS in contactExport.ts — every one of these accepts a single
 // string OR an array of any length; oversized ones get chunked into several queries and merged
@@ -60,10 +60,10 @@ export function buildAccountQuery(filters: Record<string, unknown>): string {
  * than one chunk's clause would otherwise be double-counted. */
 async function fetchAccountRows(filters: Record<string, unknown>): Promise<{ rows: Record<string, unknown>[]; truncated: boolean }> {
   const combos = splitFilterCombos(filters, ACCOUNT_ARRAY_FIELDS);
-  // Combos run in PARALLEL, not sequentially — same fix as contactExport.ts's fetchContactRows,
-  // same reasoning: several chunked combos waiting on each other one at a time was a real
-  // contributor to Ask Halo's CSV export requests timing out.
-  const results = await Promise.all(combos.map((f) => fetchAllPages("accounts", buildAccountQuery(f))));
+  // Combos run with BOUNDED concurrency — same fix as contactExport.ts's fetchContactRows, same
+  // reasoning: fully sequential was a real contributor to Ask Halo's CSV export requests timing
+  // out, but fully parallel overloaded Supabase's connection pooler under enough chunked combos.
+  const results = await mapWithConcurrency(combos, 5, (f) => fetchAllPages("accounts", buildAccountQuery(f)));
   const byId = new Map<string, Record<string, unknown>>();
   let truncated = false;
   for (const { rows, truncated: t } of results) {

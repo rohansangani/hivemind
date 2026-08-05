@@ -128,12 +128,12 @@ function contactFilterCombos(filters: Record<string, unknown>): Record<string, u
  * contact matching more than one chunk's clause would otherwise be double-counted. */
 async function fetchContactRows(filters: Record<string, unknown>): Promise<{ rows: Record<string, unknown>[]; truncated: boolean }> {
   const combos = contactFilterCombos(filters);
-  // Combos run in PARALLEL, not sequentially — confirmed live this was a real contributor to Ask
-  // Halo's CSV export timing out (504) on a combined multi-filter request: several chunked combos
-  // (e.g. 3 industry chunks × 2 title chunks = 6 queries) each waited for the previous one to
-  // finish one at a time instead of concurrently, easily adding 10s+ on top of everything else in
-  // the same turn.
-  const results = await Promise.all(combos.map((f) => fetchAllPages("contacts_view", buildContactQuery(f))));
+  // Combos run with BOUNDED concurrency, not fully sequential or fully parallel — confirmed live
+  // both extremes fail: sequential (one combo waiting on the previous) was a real contributor to
+  // Ask Halo's CSV export 504ing on a combined multi-filter request, but firing every combo at once
+  // (a title filter alone can split into a dozen-plus leading-wildcard ILIKE chunks) overloaded
+  // Supabase's connection pooler and came back as a flat 500 instead. See mapWithConcurrency.
+  const results = await mapWithConcurrency(combos, 5, (f) => fetchAllPages("contacts_view", buildContactQuery(f)));
   const byId = new Map<string, Record<string, unknown>>();
   let truncated = false;
   for (const { rows, truncated: t } of results) {
@@ -188,13 +188,46 @@ export async function fetchAllPages(table: string, query: string): Promise<{ row
   let truncated = false;
   for (let page = 0; page < maxPages; page++) {
     const offset = page * pageSize;
-    const { rows } = await selectFrom(table, query, { from: offset, to: offset + pageSize - 1 });
-    if (!rows.length) break;
-    all.push(...(rows as Record<string, unknown>[]));
-    if (rows.length < pageSize) break;
+    // A single flaky 500 from Supabase's connection pooler (confirmed live under concurrent load —
+    // see mapWithConcurrency below) shouldn't kill an otherwise-fine export. One retry after a short
+    // backoff before actually giving up on this page.
+    let result: { rows: unknown[]; total: number } | undefined;
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        result = await selectFrom(table, query, { from: offset, to: offset + pageSize - 1 });
+        break;
+      } catch (e) {
+        lastErr = e;
+        if (attempt === 0) await new Promise((r) => setTimeout(r, 500 + Math.random() * 500));
+      }
+    }
+    if (!result) throw lastErr;
+    if (!result.rows.length) break;
+    all.push(...(result.rows as Record<string, unknown>[]));
+    if (result.rows.length < pageSize) break;
     if (page === maxPages - 1) truncated = true;
   }
   return { rows: all, truncated };
+}
+
+/** Runs `items` through `fn` with at most `limit` in flight at once — confirmed live that firing
+ * every chunked filter combo at Supabase simultaneously (a title filter alone can split into a
+ * dozen-plus leading-wildcard ILIKE chunks, none of which can use an index) can overload Supabase's
+ * connection pooler and come back as a flat 500, not a timeout — full sequential was too slow
+ * (the original 504 cause) but full-parallel traded one failure mode for another. This keeps
+ * meaningful concurrency without hammering the pooler with 15+ simultaneous heavy scans. */
+export async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
 }
 
 /** Normalizes a possibly-absent, possibly-not-actually-an-array emailStatuses input down to a
