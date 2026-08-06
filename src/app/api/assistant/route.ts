@@ -16,9 +16,9 @@ import { getAnthropicKey, AIKeyNotConfiguredError } from "@/lib/aiProvider";
 import { logTokenUsage, extractAnthropicUsage } from "@/lib/tokenTracking";
 import { ensureFeatureRegistered } from "@/lib/featureBootstrap";
 import { recordSignal } from "@/lib/signalCapture";
-import { countContacts, exportContactsCsv, logContactExport } from "@/lib/radar/contactExport";
-import { countAccounts, exportAccountsCsv, logAccountExport } from "@/lib/radar/accountExport";
-import { getRadarAccessLevel, distinctValues } from "@/lib/radar/supabase";
+import { countContacts, exportContactsCsv, logContactExport, buildContactQuery } from "@/lib/radar/contactExport";
+import { countAccounts, exportAccountsCsv, logAccountExport, buildAccountQuery } from "@/lib/radar/accountExport";
+import { selectFrom, getRadarAccessLevel, distinctValues } from "@/lib/radar/supabase";
 import { getSignalsAccessLevel, getAccounts as getSignalsAccounts, getAccount as getSignalsAccount, searchCalls as searchSignalsCalls } from "@/lib/signals";
 import pg from "pg";
 
@@ -189,6 +189,16 @@ const RADAR_TOOLS = [
     input_schema: { type: "object", properties: RADAR_FILTER_PROPERTIES },
   },
   {
+    name: "preview_radar_contacts",
+    description:
+      "Returns up to 5 SAMPLE contact rows (name, title, company, domain, email status — not the full export) for " +
+      "the given filters, so you can answer things like \"just show me two names\" or \"give me an example\" " +
+      "directly in the chat without exporting a CSV first. Use this whenever the user wants a quick look at a few " +
+      "real rows rather than the whole matching set — it's a different need from search_radar_contacts (count) or " +
+      "export_radar_contacts_csv (every matching row as a file).",
+    input_schema: { type: "object", properties: RADAR_FILTER_PROPERTIES },
+  },
+  {
     name: "export_radar_contacts_csv",
     description:
       "Starts a background CSV export job of contacts matching the given filters — returns a jobId immediately, " +
@@ -214,6 +224,16 @@ const RADAR_TOOLS = [
       "or list (e.g. \"how many accounts\", \"which companies\", \"unique companies\") rather than a per-contact count " +
       "— never approximate an account count from contacts. Always call this before export_radar_accounts_csv and " +
       "report the count back to the user, asking them to confirm before exporting.",
+    input_schema: { type: "object", properties: ACCOUNT_FILTER_PROPERTIES },
+  },
+  {
+    name: "preview_radar_accounts",
+    description:
+      "Returns up to 5 SAMPLE account rows (name, domain, industry, employee range — not the full export) for the " +
+      "given filters, so you can answer things like \"just give me two account names and websites\" directly in " +
+      "the chat without exporting a CSV first. Use this whenever the user wants a quick look at a few real rows " +
+      "rather than the whole matching set — a different need from search_radar_accounts (count) or " +
+      "export_radar_accounts_csv (every matching row as a file).",
     input_schema: { type: "object", properties: ACCOUNT_FILTER_PROPERTIES },
   },
   {
@@ -634,6 +654,20 @@ async function executeRadarTool(
     const count = await countContacts(toRadarFilters(input), input.emailStatuses);
     return { toolResult: { count } };
   }
+  if (toolName === "preview_radar_contacts") {
+    // Confirmed live: users often just want to eyeball a couple of real rows ("give me any two
+    // names") rather than run a full export — there was previously no tool for that at all, only
+    // an exact count or the entire matching set as a CSV, so Halo had no honest way to answer.
+    const { rows } = await selectFrom("contacts_view", buildContactQuery(toRadarFilters(input)), { from: 0, to: 4 });
+    const preview = (rows as Record<string, unknown>[]).map((c) => ({
+      name: [c.first_name, c.last_name].filter(Boolean).join(" ") || null,
+      title: c.title ?? null,
+      company: c.company_name ?? null,
+      domain: c.domain ?? c.account_domain ?? null,
+      email_status: c.email_status ?? null,
+    }));
+    return { toolResult: { preview } };
+  }
   if (toolName === "export_radar_contacts_csv") {
     // Runs as a background job (see /api/radar/csv-export-jobs) instead of building the CSV
     // synchronously here — confirmed live a real export (a few hundred+ rows, several chunked
@@ -645,6 +679,16 @@ async function executeRadarTool(
   if (toolName === "search_radar_accounts") {
     const count = await countAccounts(toAccountFilters(input));
     return { toolResult: { count } };
+  }
+  if (toolName === "preview_radar_accounts") {
+    const { rows } = await selectFrom("accounts", buildAccountQuery(toAccountFilters(input)), { from: 0, to: 4 });
+    const preview = (rows as Record<string, unknown>[]).map((a) => ({
+      name: a.name ?? null,
+      domain: a.domain ?? null,
+      industry: a.industry ?? null,
+      employee_range: a.employee_range ?? null,
+    }));
+    return { toolResult: { preview } };
   }
   if (toolName === "export_radar_accounts_csv") {
     const result = await callCsvExportJobRoute(req, "start", { type: "accounts", filters: toAccountFilters(input), label: typeof input.label === "string" ? input.label : undefined });
@@ -1045,6 +1089,7 @@ RADAR CONTACTS & ACCOUNTS (search_radar_contacts/accounts, export_radar_contacts
 - ALWAYS call the matching search tool first (search_radar_contacts or search_radar_accounts). Report the exact count back to the user in plain language and explicitly ask them to confirm before exporting anything.
 - ONLY call the matching export tool after the user has clearly confirmed in a later message (e.g. "yes", "export it", "send me the csv") — never export on the same turn as the first search, even if the request sounded like it wanted a file immediately.
 - The export tools run as a BACKGROUND JOB, not synchronously — calling one returns a jobId immediately, not the finished CSV. After calling, just tell the user the export has started and a download link will appear shortly (the chat shows a live status card on its own) — never claim the file is ready, never describe how many rows/columns it has, you don't have that yet. Do not call check_enrich_job-style polling for this — there's no separate poll tool for exports, the UI handles it.
+- If the user wants a quick look at a few real rows in chat ("just show me any two names/companies", "give me an example") rather than the whole matching set, call preview_radar_contacts/preview_radar_accounts and answer directly in text — do NOT say you can't show rows without exporting first, that's never true.
 - If the user wants results split by a field (e.g. "export contacts grouped by vertical", "separately for B2B and D2C") — the exported CSV already includes vertical/industry/country as real columns on every row, so ONE export covers this; the user can filter/sort/pivot on that column themselves. Do NOT call the export tool multiple times (once per group value) unless the user explicitly says they need genuinely separate files (e.g. "give me 3 separate CSVs, one per vertical, so I can upload each to a different tool"). If they do ask for separate files, you may call the export tool more than once in the same turn — every file you generate this way is delivered to the user as its own download, so tell them exactly that ("here are your N files") — never tell them you can't merge files or ask them to copy-paste/combine anything themselves, that's never true.
 - Always return every matching row for the filters given — there is no per-account/company/domain capping available, so don't suggest one or invent a limit that wasn't asked for.
 - ALWAYS spell out every filter actually applied, not just the count — vertical, industry, and whichever of title/country/company/employee range/revenue range/account size/email status(es) were used, one per line or a short bullet list. For contacts, if the user didn't specify an email status, say explicitly that you defaulted to "safe to send" + "verified" only (Radar's exportable default) and that risky/invalid/unknown/unvalidated contacts are excluded unless they ask to include those too. This applies to both the count reply and the export confirmation — never report a bare number with no criteria shown.
