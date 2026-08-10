@@ -3484,12 +3484,18 @@ function EnrichSection() {
                 // Empty string while typing (not 0) — `Number(e.target.value) || 25` used to snap
                 // straight back to 25 the instant the field was cleared, so it was impossible to
                 // actually delete both digits of the default. Let it sit empty until blur, only
-                // defaulting/clamping (1-200) then.
+                // defaulting/clamping (1-20000) then.
+                //
+                // Was hard-capped at 200 — that wasn't an Apify or actor limit (its own run options
+                // have no maxItems set), it was just this input's own min/max/clamp. Raised to match
+                // the 20k ceiling the backend's dataset-read pagination now actually supports (see
+                // fetchApifyDatasetItems in api/radar/enrich/route.ts) — confirmed a real request for
+                // more than 200 leads had no way to express itself through this field at all.
                 value={fetchCount === 0 ? "" : fetchCount}
                 min={1}
-                max={200}
+                max={20000}
                 onChange={(e) => setFetchCount(e.target.value === "" ? 0 : Number(e.target.value))}
-                onBlur={() => setFetchCount((v) => Math.min(200, Math.max(1, v || 25)))}
+                onBlur={() => setFetchCount((v) => Math.min(20000, Math.max(1, v || 25)))}
                 style={{ width: 120 }}
               />
             </div>
