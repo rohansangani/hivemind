@@ -369,7 +369,15 @@ const ENRICH_TOOLS = [
         company_not_industry: { type: "array", items: { type: "string" } },
         min_revenue: { type: "string", description: "One of: 100K, 1M, 10M, 100M, 1B, 10B." },
         max_revenue: { type: "string" },
-        fetch_count: { type: "number", description: "How many leads to fetch, if the user specified a number." },
+        fetch_count: {
+          type: "number",
+          description:
+            "How many leads to fetch — REQUIRED, there is no sensible default. Confirmed live: leaving this to " +
+            "guesswork produced a silent, inconsistent default (many jobs landed on exactly 200 regardless of " +
+            "what the user actually wanted) that the user never asked for and had no way to know about. Never " +
+            "invent a number — if the user's request doesn't state one, ask them how many leads they want before " +
+            "calling start_enrich_job at all.",
+        },
       },
       required: ["label"],
     },
@@ -487,6 +495,17 @@ async function executeEnrichTool(
         return {
           toolResult: {
             error: "No real targeting criteria given — need at least one of: target company domain(s), job titles, seniority level, function, location, or industry before starting a paid Apify search.",
+          },
+        };
+      }
+      // Same reasoning as the targeting-fields guard above — confirmed live that leaving fetch_count
+      // to the model's judgment produced a silent, inconsistent default (many real jobs landed on
+      // exactly 200 leads regardless of what the user actually asked for, with no visibility into
+      // that happening). A real count is required before ever calling Apify.
+      if (typeof rest.fetch_count !== "number" || !Number.isFinite(rest.fetch_count) || rest.fetch_count <= 0) {
+        return {
+          toolResult: {
+            error: "fetch_count is required — ask the user how many leads they want before starting this search, never guess or default it.",
           },
         };
       }

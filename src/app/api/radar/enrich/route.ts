@@ -14,6 +14,26 @@ export const maxDuration = 60;
 
 const ACTOR_ID = "code_crafter~leads-finder";
 
+/** Apify's dataset items endpoint caps a single request at 1000 rows — confirmed live several
+ * jobs were started with fetch_count well above 1000 (Halo/the user asking for 2000+ leads), which
+ * silently lost everything past the first 1000 since "fetch"/"save" only ever made one un-paginated
+ * request. Pages through in 1000-row chunks like fetchAllPages does for Radar's own DB reads,
+ * capped at 20 pages (20k rows) as a sane backstop. */
+async function fetchApifyDatasetItems(datasetId: string, token: string): Promise<ApifyLeadItem[]> {
+  const pageSize = 1000;
+  const maxPages = 20;
+  const all: ApifyLeadItem[] = [];
+  for (let page = 0; page < maxPages; page++) {
+    const offset = page * pageSize;
+    const r = await fetch(`https://api.apify.com/v2/datasets/${datasetId}/items?token=${token}&limit=${pageSize}&offset=${offset}`);
+    const items = (await r.json().catch(() => [])) as ApifyLeadItem[];
+    if (!Array.isArray(items) || !items.length) break;
+    all.push(...items);
+    if (items.length < pageSize) break;
+  }
+  return all;
+}
+
 const LOGGABLE_ENRICH_ACTIONS: Record<string, (body: Record<string, unknown>, result: Record<string, unknown>) => string> = {
   start: (body) => `Started an Enrich search${body.label ? `: "${body.label}"` : ""}`,
   stop: () => `Stopped a running Enrich search`,
@@ -322,8 +342,8 @@ async function handleAction(req: NextRequest, userEmail: string | null): Promise
   // ── fetch results from Apify (preview, no save) ─────────────────────
   if (action === "fetch") {
     if (!APIFY_TOKEN) return { status: 503, body: { error: "Apify not configured" } };
-    const r = await fetch(`https://api.apify.com/v2/datasets/${datasetId}/items?token=${APIFY_TOKEN}&limit=1000`);
-    const items = (await r.json()) as ApifyLeadItem[];
+    if (!datasetId) return { status: 400, body: { error: "No datasetId" } };
+    const items = await fetchApifyDatasetItems(datasetId, APIFY_TOKEN);
     if (!Array.isArray(items)) return { status: 200, body: { items: [] } };
     const mapped = items.map((item) => ({
       first_name: item.first_name || item.firstName || null,
@@ -354,8 +374,8 @@ async function handleAction(req: NextRequest, userEmail: string | null): Promise
     if (!APIFY_TOKEN) return { status: 503, body: { error: "Apify not configured" } };
     const vertical = (body as { vertical?: string }).vertical;
     if (!vertical) return { status: 400, body: { error: "Vertical is required" } };
-    const r = await fetch(`https://api.apify.com/v2/datasets/${datasetId}/items?token=${APIFY_TOKEN}&limit=1000`);
-    const items = (await r.json()) as ApifyLeadItem[];
+    if (!datasetId) return { status: 400, body: { error: "No datasetId" } };
+    const items = await fetchApifyDatasetItems(datasetId, APIFY_TOKEN);
     if (!Array.isArray(items) || !items.length) return { status: 200, body: { saved: 0, savedAccounts: 0 } };
     const rows = mapItems(items);
     if (!rows.length) return { status: 200, body: { saved: 0, savedAccounts: 0 } };
@@ -388,9 +408,9 @@ async function handleAction(req: NextRequest, userEmail: string | null): Promise
     if (!DEBOUNCE_KEY) return { status: 503, body: { error: "Debounce not configured" } };
     const { selectedEmails, offset = 0 } = body as { selectedEmails?: string[]; offset?: number };
     const CHUNK = 6;
+    if (!datasetId) return { status: 400, body: { error: "No datasetId" } };
 
-    const r = await fetch(`https://api.apify.com/v2/datasets/${datasetId}/items?token=${APIFY_TOKEN}&limit=1000`);
-    const items = (await r.json()) as ApifyLeadItem[];
+    const items = await fetchApifyDatasetItems(datasetId, APIFY_TOKEN);
     const scoped = Array.isArray(items)
       ? items.filter((it) => it.email && (!Array.isArray(selectedEmails) || !selectedEmails.length || selectedEmails.includes(it.email)))
       : [];
