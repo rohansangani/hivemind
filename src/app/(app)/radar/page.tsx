@@ -3827,6 +3827,12 @@ function ValidateSection() {
   const [retestVertical, setRetestVertical] = useState("");
   const [retestDomain, setRetestDomain] = useState("");
   const [retestLabel, setRetestLabel] = useState("");
+  // Lets the user cap how many of the matched contacts actually get loaded (and sent via
+  // Instantly) instead of always sending the whole matching set — confirmed live a request to
+  // "send that to Instantly" for a subset had no way to express itself: the button always loaded
+  // every matched contact (up to the server's 2000 default), regardless of how many the user
+  // actually wanted to test with. 0/empty = load everything (up to that default), same as before.
+  const [retestLimit, setRetestLimit] = useState<number | "">("");
   const [retestCount, setRetestCount] = useState<number | null>(null);
   const [retestCounting, setRetestCounting] = useState(false);
 
@@ -4431,7 +4437,7 @@ function ValidateSection() {
     if (!retestVertical) { setError("Select a vertical before running it."); return; }
     setBusy(true);
     try {
-      const d = await call({ action: "load_contacts", statuses: retestStatuses, vertical: retestVertical, domain: retestDomain.trim() || undefined, label: retestLabel.trim() });
+      const d = await call({ action: "load_contacts", statuses: retestStatuses, vertical: retestVertical, domain: retestDomain.trim() || undefined, label: retestLabel.trim(), limit: retestLimit || undefined });
       if (!d.count) { setError("No contacts match those filters."); return; }
       setJobId(d.jobId);
       setCandidates((d.candidates || []).map((c: ValidateCandidate) => ({ ...c, selected: true })));
@@ -5354,6 +5360,24 @@ function ValidateSection() {
                       {retestCounting ? "Counting…" : retestCount != null ? `${retestCount.toLocaleString()} contact(s) match` : "—"}
                     </div>
 
+                    {retestCount != null && retestCount > 0 && (
+                      <div>
+                        <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">
+                          How many to load (optional — leave blank for all {retestCount.toLocaleString()})
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={retestCount}
+                          value={retestLimit}
+                          onChange={(e) => setRetestLimit(e.target.value === "" ? "" : Number(e.target.value))}
+                          onBlur={() => setRetestLimit((v) => (v === "" ? "" : Math.min(retestCount, Math.max(1, v))))}
+                          placeholder={`e.g. 500 (of ${retestCount.toLocaleString()})`}
+                          style={{ width: 200 }}
+                        />
+                      </div>
+                    )}
+
                     {(() => {
                       const missing: string[] = [];
                       if (!retestLabel.trim()) missing.push("a job name");
@@ -5365,7 +5389,7 @@ function ValidateSection() {
                     })()}
 
                     <button onClick={loadForRetest} disabled={busy || !retestStatuses.length || !retestCount || !retestLabel.trim() || !retestVertical} className="hm-btn hm-btn-primary w-full" style={{ height: 38, fontSize: 13 }}>
-                      Load contacts (sends real test emails via Instantly)
+                      {retestLimit ? `Load ${Number(retestLimit).toLocaleString()} contact(s) (sends real test emails via Instantly)` : "Load contacts (sends real test emails via Instantly)"}
                     </button>
                     {!retestVertical && (
                       <p className="text-[11.5px] text-[var(--hm-text-tertiary)] -mt-2">Pick a vertical above to send via Instantly — Debounce below works with "All verticals".</p>
