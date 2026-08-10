@@ -137,6 +137,7 @@ export async function selectFrom(
   table: string,
   query: string,
   range?: { from: number; to: number },
+  attempt = 0,
 ): Promise<{ rows: unknown[]; total: number }> {
   if (!RADAR_SUPABASE_URL || !RADAR_SUPABASE_ANON_KEY) {
     throw new Error("Radar Supabase env vars are not configured");
@@ -149,6 +150,15 @@ export async function selectFrom(
     // the check-db 500 on large LinkedIn-URL OR'd-ILIKE queries. Remove once root-caused.
     const bodyText = await r.text().catch(() => "");
     console.error(`[selectFrom] ${table} failed (${r.status}): ${bodyText.slice(0, 1000)} | query length=${query.length}`);
+    // A 5xx is Supabase/PostgREST's own side failing (confirmed live: connection-pooler contention
+    // under concurrent load produces exactly this, same class of issue already fixed for CSV
+    // exports) — retry once with backoff instead of failing every caller (e.g. Validate's
+    // load_contacts, which had no retry of its own) on what's often a one-off blip. A 4xx is a real
+    // request problem (bad filter, bad table) and retrying it would just fail identically.
+    if (r.status >= 500 && attempt < 2) {
+      await new Promise((res) => setTimeout(res, 500 + Math.random() * 500));
+      return selectFrom(table, query, range, attempt + 1);
+    }
     throw new Error(`Radar Supabase select failed (${r.status}) for ${table}`);
   }
   const rows = (await r.json()) as unknown[];

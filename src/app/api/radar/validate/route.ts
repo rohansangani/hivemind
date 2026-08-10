@@ -657,6 +657,15 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
     const insR = await radarFetch("email_validation_candidates?select=id,first_name,last_name,domain,pattern_email,pattern_type,confidence,source,selected,bounce_status", {
       method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify(candidateRows),
     });
+    // Was unconditional — a failed insert (e.g. a transient Supabase 5xx) returns a JSON error
+    // object, not an array, which silently fell through to savedRows=[] and reported "0 candidates
+    // matched" as if the request had genuinely found nothing, instead of surfacing that the insert
+    // itself failed.
+    if (!insR.ok) {
+      const errText = await insR.text().catch(() => "");
+      console.error(`[load_contacts] candidate insert failed (${insR.status}): ${errText.slice(0, 500)}`);
+      throw new Error(`Failed to load candidates (${insR.status}) — try again.`);
+    }
     const saved = await insR.json().catch(() => []);
     const savedRows = Array.isArray(saved) ? saved : [];
     return { status: 200, body: { jobId, candidates: savedRows, count: savedRows.length, mode: "retest" } };
@@ -1293,6 +1302,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(resBody, { status });
   } catch (err) {
     console.error("Radar validate error:", err);
-    return NextResponse.json({ error: "Something went wrong" }, { status: 500 });
+    // Was a bare "Something went wrong" with the real cause only in server logs (which nobody
+    // outside this session can pull) — confirmed live this made a real failure (load_contacts,
+    // Email Validation tab) undiagnosable from the UI alone. Surface the actual message when we
+    // have one; still falls back to the generic string if err has nothing useful to show.
+    const message = err instanceof Error && err.message ? err.message : "Something went wrong";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
