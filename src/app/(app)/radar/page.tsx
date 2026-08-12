@@ -2895,25 +2895,30 @@ function EnrichSection() {
   // different verticals can each be synced correctly without reopening each one's results screen.
   const [syncingJobId, setSyncingJobId] = useState<number | null>(null);
   const [syncVerticals, setSyncVerticals] = useState<Record<number, string>>({});
+  // Separate from `error` (always red/failure styling) — a successful sync needs its own positive
+  // confirmation. Confirmed live: a sync that actually worked left no visible sign it had, since
+  // the only state this action touched on success was silently refreshing the job list.
+  const [syncMsg, setSyncMsg] = useState<{ jobId: number; kind: "ok" | "err"; text: string } | null>(null);
 
   useEffect(() => { setSavedIcps(loadIcps()); }, []);
 
   const quickSyncJob = async (job: EnrichJobRow) => {
     const vertical = syncVerticals[job.id];
-    if (!vertical) { setError(`Pick a vertical for "${job.label}" before syncing.`); return; }
+    if (!vertical) { setSyncMsg({ jobId: job.id, kind: "err", text: "Pick a vertical before syncing." }); return; }
     setSyncingJobId(job.id);
-    setError("");
+    setSyncMsg(null);
     try {
       const d = await call({ action: "save", datasetId: job.dataset_id, vertical, jobId: job.id });
       await loadJobsList();
-      setError("");
       if (!d.saved && !d.savedAccounts) {
         // Not an error — just nothing new to write (e.g. every lead in this job already exists as
         // a contact under a different job/save). Still worth saying so, not a silent no-op.
-        setError(`"${job.label}": nothing new to save — every lead already exists in Radar.`);
+        setSyncMsg({ jobId: job.id, kind: "ok", text: "Nothing new to save — every lead already exists in Radar." });
+      } else {
+        setSyncMsg({ jobId: job.id, kind: "ok", text: `Synced — ${d.saved || 0} contact(s), ${d.savedAccounts || 0} account(s).` });
       }
     } catch (e) {
-      setError(`"${job.label}": ${(e as Error).message}`);
+      setSyncMsg({ jobId: job.id, kind: "err", text: (e as Error).message });
     } finally {
       setSyncingJobId(null);
     }
@@ -3570,7 +3575,8 @@ function EnrichSection() {
               {jobsList.map((j) => {
                 const unsaved = j.status === "SUCCEEDED" && j.item_count > 0 && j.saved_count === 0;
                 return (
-                  <div key={j.id} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md hover:bg-[var(--hm-surface-hover)]">
+                  <div key={j.id} className="rounded-md hover:bg-[var(--hm-surface-hover)]">
+                  <div className="flex items-center gap-1.5 px-2.5 py-1.5">
                     <button
                       onClick={() => openJob(j)}
                       disabled={openingJobId === j.id}
@@ -3609,6 +3615,12 @@ function EnrichSection() {
                         </button>
                       </div>
                     )}
+                  </div>
+                  {syncMsg && syncMsg.jobId === j.id && (
+                    <p className={`px-2.5 pb-1.5 text-[11px] ${syncMsg.kind === "ok" ? "text-[var(--tag-green-fg)]" : "text-[var(--tag-red-fg)]"}`}>
+                      {syncMsg.kind === "ok" ? "✓ " : ""}{syncMsg.text}
+                    </p>
+                  )}
                   </div>
                 );
               })}

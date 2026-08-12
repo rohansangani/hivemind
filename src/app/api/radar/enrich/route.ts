@@ -609,6 +609,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(resBody, { status });
   } catch (err) {
     console.error("Radar enrich error:", err);
-    return NextResponse.json({ error: "Enrich service unavailable" }, { status: 502 });
+    // Was a bare "Enrich service unavailable" with the real cause only in server logs — confirmed
+    // live this made a real failure (Sync to DB on a past job) undiagnosable from the UI, same
+    // issue already fixed for Validate's catch-all. Surface the actual message when we have one.
+    const message = err instanceof Error && err.message ? err.message : "Enrich service unavailable";
+    return NextResponse.json({ error: message }, { status: 502 });
   }
 }
