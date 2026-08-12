@@ -2889,8 +2889,35 @@ function EnrichSection() {
   const [jobsListLoading, setJobsListLoading] = useState(false);
   const [jobsListError, setJobsListError] = useState("");
   const [openingJobId, setOpeningJobId] = useState<number | null>(null);
+  // One-click backfill for a past job whose leads were never saved (Export raw/Validate & export
+  // used to have no dependency on Save at all — confirmed live several real jobs had leads
+  // downloaded and never written to Radar). syncVertical is per-row so several unsaved jobs with
+  // different verticals can each be synced correctly without reopening each one's results screen.
+  const [syncingJobId, setSyncingJobId] = useState<number | null>(null);
+  const [syncVerticals, setSyncVerticals] = useState<Record<number, string>>({});
 
   useEffect(() => { setSavedIcps(loadIcps()); }, []);
+
+  const quickSyncJob = async (job: EnrichJobRow) => {
+    const vertical = syncVerticals[job.id];
+    if (!vertical) { setError(`Pick a vertical for "${job.label}" before syncing.`); return; }
+    setSyncingJobId(job.id);
+    setError("");
+    try {
+      const d = await call({ action: "save", datasetId: job.dataset_id, vertical, jobId: job.id });
+      await loadJobsList();
+      setError("");
+      if (!d.saved && !d.savedAccounts) {
+        // Not an error — just nothing new to write (e.g. every lead in this job already exists as
+        // a contact under a different job/save). Still worth saying so, not a silent no-op.
+        setError(`"${job.label}": nothing new to save — every lead already exists in Radar.`);
+      }
+    } catch (e) {
+      setError(`"${job.label}": ${(e as Error).message}`);
+    } finally {
+      setSyncingJobId(null);
+    }
+  };
 
   const loadJobsList = async () => {
     setJobsListLoading(true);
@@ -3124,9 +3151,9 @@ function EnrichSection() {
     }
   };
 
-  const saveSelected = async () => {
+  const saveSelected = async (): Promise<boolean> => {
     setError("");
-    if (!saveVertical) { setError("Select a vertical before saving."); return; }
+    if (!saveVertical) { setError("Select a vertical before saving."); return false; }
     setSaveBusy(true);
     try {
       const d = await call({ action: "save", datasetId, vertical: saveVertical, jobId: currentJobId });
@@ -3158,11 +3185,28 @@ function EnrichSection() {
       setExistingSelected(new Set(refreshed.map((_, i) => i)));
 
       setPhase("saved");
+      return true;
     } catch (e) {
       setError((e as Error).message);
+      return false;
     } finally {
       setSaveBusy(false);
     }
+  };
+
+  // Confirmed live: several past Enrich jobs had leads exported/downloaded and never saved to
+  // Radar at all (job history showing "found X" with no "saved" count) — Export raw/Validate &
+  // export had no dependency on Save whatsoever. Every export now runs this gate first: already
+  // saved (savedCount > 0) passes straight through; otherwise a vertical must be picked and the
+  // save must actually succeed before the export is allowed to proceed, instead of a lead ever
+  // leaving as a CSV with no corresponding Radar record.
+  const ensureSavedBeforeExport = async (): Promise<boolean> => {
+    if (savedCount > 0) return true;
+    if (!saveVertical) {
+      setError("Select a vertical and save these leads to the database first — exporting without saving to Radar is no longer allowed.");
+      return false;
+    }
+    return await saveSelected();
   };
 
   // Debounce-validates the selected leads (no DB write — these are fresh Apify results, so
@@ -3194,6 +3238,9 @@ function EnrichSection() {
       .filter((e): e is string => !!e && !existingEmailSet.has(e.toLowerCase()));
 
     if (!existingEmails.length && !newEmails.length) { setError("Select at least one lead to export."); return; }
+    // Only the NEW (never-saved) half needs the save gate — existingEmails are, by definition,
+    // contacts already in Radar.
+    if (newEmails.length && !(await ensureSavedBeforeExport())) return;
 
     setExportBusy(true);
     const total = existingEmails.length + newEmails.length;
@@ -3271,10 +3318,11 @@ function EnrichSection() {
     setExistingLeads([]); setExistingSelected(new Set()); setError(""); setSavedCount(0); setSavedAccountsCount(0); setSaveVertical(""); setScores({}); setValidateResult(null); setJobLabel("");
   };
 
-  const exportLeadsCsv = () => {
+  const exportLeadsCsv = async () => {
     if (!leads.length) return;
     const rows = leads.filter((_, i) => selected.has(i));
     if (!rows.length) return;
+    if (!(await ensureSavedBeforeExport())) return;
     // Flattened Apify response first (every field the actor returned — mobile number, personal
     // email, seniority, company financials/tech-stack/address, etc. — as readable columns, not a
     // raw JSON blob), same pattern as Check LinkedIn's export.
@@ -3291,6 +3339,7 @@ function EnrichSection() {
     const rows = leads.filter((_, i) => selected.has(i));
     const emails = rows.map((r) => r.email).filter((e): e is string => !!e);
     if (!emails.length || !datasetId) return;
+    if (!(await ensureSavedBeforeExport())) return;
     setValidateExportBusy(true);
     setValidateExportProgress({ processed: 0, total: emails.length });
     try {
@@ -3517,22 +3566,52 @@ function EnrichSection() {
               </button>
             </div>
             {jobsListError && <p className="text-[12px] text-[var(--tag-red-fg)]">{jobsListError}</p>}
-            <div className="space-y-1 max-h-40 overflow-y-auto">
-              {jobsList.map((j) => (
-                <button
-                  key={j.id}
-                  onClick={() => openJob(j)}
-                  disabled={openingJobId === j.id}
-                  className="w-full flex items-center justify-between gap-2 text-left px-2.5 py-1.5 rounded-md hover:bg-[var(--hm-surface-hover)] text-[12.5px]"
-                >
-                  <span className="font-medium text-[var(--hm-text)] truncate">{j.label}</span>
-                  <span className="text-[11px] text-[var(--hm-text-tertiary)] whitespace-nowrap">
-                    {openingJobId === j.id
-                      ? "Opening…"
-                      : `${j.status.toLowerCase()} · ${j.item_count} found · ${j.existing_count} existing${j.saved_count > 0 ? ` · saved (${j.saved_count})` : ""} · ${new Date(j.created_at).toLocaleString()}`}
-                  </span>
-                </button>
-              ))}
+            <div className="space-y-1 max-h-56 overflow-y-auto">
+              {jobsList.map((j) => {
+                const unsaved = j.status === "SUCCEEDED" && j.item_count > 0 && j.saved_count === 0;
+                return (
+                  <div key={j.id} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md hover:bg-[var(--hm-surface-hover)]">
+                    <button
+                      onClick={() => openJob(j)}
+                      disabled={openingJobId === j.id}
+                      className="flex-1 min-w-0 flex items-center justify-between gap-2 text-left text-[12.5px]"
+                    >
+                      <span className="font-medium text-[var(--hm-text)] truncate">{j.label}</span>
+                      <span className="text-[11px] text-[var(--hm-text-tertiary)] whitespace-nowrap">
+                        {openingJobId === j.id
+                          ? "Opening…"
+                          : `${j.status.toLowerCase()} · ${j.item_count} found · ${j.existing_count} existing${j.saved_count > 0 ? ` · saved (${j.saved_count})` : ""} · ${new Date(j.created_at).toLocaleString()}`}
+                      </span>
+                    </button>
+                    {/* Never-saved job — a real gap confirmed live: Export raw/Validate & export used
+                        to have no dependency on Save, so leads could be downloaded and never written
+                        to Radar at all. Sync writes them now without needing to reopen the job. */}
+                    {unsaved && (
+                      <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                        <select
+                          value={syncVerticals[j.id] || ""}
+                          onChange={(e) => setSyncVerticals((prev) => ({ ...prev, [j.id]: e.target.value }))}
+                          className="text-[11px]"
+                          style={{ height: 24, padding: "0 4px" }}
+                          title="Vertical is required to sync"
+                        >
+                          <option value="">Vertical…</option>
+                          <option value="B2B">B2B</option>
+                          <option value="US">US</option>
+                          <option value="D2C">D2C</option>
+                        </select>
+                        <button
+                          onClick={() => quickSyncJob(j)}
+                          disabled={syncingJobId === j.id || !syncVerticals[j.id]}
+                          className="text-[11px] px-2 py-1 rounded-md border border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[var(--hm-primary)] hover:text-[var(--hm-text)] disabled:opacity-50"
+                        >
+                          {syncingJobId === j.id ? "Syncing…" : "Sync to DB"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -3616,7 +3695,13 @@ function EnrichSection() {
                       {scoring ? "Scoring…" : `✨ Score vs ${icpVertical} ICP`}
                     </button>
                   )}
-                  <button onClick={exportLeadsCsv} disabled={!selected.size} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 12px", fontSize: 12 }} title="Export the raw Apify pull as-is, no email validation">
+                  <button
+                    onClick={exportLeadsCsv}
+                    disabled={!selected.size}
+                    className="hm-btn hm-btn-secondary"
+                    style={{ height: 32, padding: "0 12px", fontSize: 12 }}
+                    title={savedCount > 0 ? "Export the raw Apify pull as-is, no email validation" : "Pick a vertical above first — exporting saves these leads to Radar before downloading"}
+                  >
                     Export raw
                   </button>
                   <button
@@ -3624,7 +3709,7 @@ function EnrichSection() {
                     disabled={!selected.size || validateExportBusy}
                     className="hm-btn hm-btn-secondary"
                     style={{ height: 32, padding: "0 12px", fontSize: 12 }}
-                    title="Runs Debounce email validation on the selected leads first, then exports with an email_status column"
+                    title={savedCount > 0 ? "Runs Debounce email validation on the selected leads first, then exports with an email_status column" : "Pick a vertical above first — exporting saves these leads to Radar before downloading"}
                   >
                     {validateExportBusy
                       ? `Validating… ${validateExportProgress?.processed ?? 0}/${validateExportProgress?.total ?? 0}`
