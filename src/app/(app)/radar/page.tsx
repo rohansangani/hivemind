@@ -2849,7 +2849,10 @@ function EnrichSection() {
   const [notKeywords, setNotKeywords] = useState("");
   const [minRevenue, setMinRevenue] = useState("");
   const [maxRevenue, setMaxRevenue] = useState("");
-  const [fetchCount, setFetchCount] = useState(25);
+  // Defaults to the field's own max (20000) rather than a small number — the user explicitly
+  // wants "as many as possible" to be the default instead of having to manually raise it every
+  // time, now that the field itself isn't capped at 200 anymore (see the max={20000} below).
+  const [fetchCount, setFetchCount] = useState(20000);
   const [icpVertical, setIcpVertical] = useState("");
   const [savedIcps, setSavedIcps] = useState<Record<string, IcpProfile>>({});
 
@@ -3549,7 +3552,7 @@ function EnrichSection() {
                 min={1}
                 max={20000}
                 onChange={(e) => setFetchCount(e.target.value === "" ? 0 : Number(e.target.value))}
-                onBlur={() => setFetchCount((v) => Math.min(20000, Math.max(1, v || 25)))}
+                onBlur={() => setFetchCount((v) => Math.min(20000, Math.max(1, v || 20000)))}
                 style={{ width: 120 }}
               />
             </div>
