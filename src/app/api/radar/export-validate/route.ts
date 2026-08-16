@@ -178,7 +178,16 @@ export async function POST(req: NextRequest) {
         contacts = rows as unknown as ContactRow[];
         doneAfterThisChunk = offset + pageEmails.length >= allEmails.length;
       } else {
-        const { rows } = await selectFrom("contacts_view", buildRetestQuery(filters, CHUNK, offset));
+        // Filter mode ALWAYS queries offset 0, ignoring whatever offset the caller passed in —
+        // confirmed live this was the real cause of a job repeatedly 416ing until it gave up
+        // entirely (job #15): a status-based filter like "unvalidated" (email_status IS NULL)
+        // shrinks its own matching result set every time a chunk successfully validates a contact,
+        // since that contact's email_status changes and it drops out of the filter. Advancing the
+        // offset by contacts.length each call assumes a STATIC result set — true for exact-email-
+        // list mode (paging the list itself, handled above), but false here, where the "next" batch
+        // is always whatever's now at the front of the shrinking set. Once offset outran the
+        // (shrinking) real total, every future request for that Range 416'd, permanently.
+        const { rows } = await selectFrom("contacts_view", buildRetestQuery(filters, CHUNK, 0));
         contacts = rows as unknown as ContactRow[];
       }
       if (!contacts.length && !allEmails) return NextResponse.json({ processed: 0, validated: 0, done: true });
@@ -226,8 +235,11 @@ export async function POST(req: NextRequest) {
       // In emails-mode, "done" and the next offset are driven by how far through the REQUESTED
       // email list we are, not by how many of those emails actually matched an existing contact
       // row (a page can legitimately match fewer than CHUNK rows without the list being finished).
+      // Filter mode always reports offset 0 back (see above) — fewer than CHUNK rows at offset 0
+      // genuinely means the filter's remaining matches are exhausted, so contacts.length < CHUNK is
+      // still a valid "done" signal, it just no longer drives pagination.
       const done = allEmails ? doneAfterThisChunk : contacts.length < CHUNK;
-      const nextOffset = allEmails ? offset + Math.min(CHUNK, allEmails.length - offset) : offset + contacts.length;
+      const nextOffset = allEmails ? offset + Math.min(CHUNK, allEmails.length - offset) : 0;
       return NextResponse.json({
         processed: contacts.length,
         validated,
