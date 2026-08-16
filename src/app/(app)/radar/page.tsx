@@ -4346,7 +4346,7 @@ function ValidateSection() {
   // resume watching it instead of the job effectively vanishing from view.
   interface RetestJobRow {
     id: number; label: string; status: string; processed: number; validated: number;
-    skipped_fresh?: number; gave_up?: number; retrying?: number; created_at: string;
+    skipped_fresh?: number; gave_up?: number; retrying?: number; created_at: string; error?: string | null;
   }
   const [retestJobsList, setRetestJobsList] = useState<RetestJobRow[]>([]);
   const [retestJobsListLoading, setRetestJobsListLoading] = useState(false);
@@ -4506,6 +4506,26 @@ function ValidateSection() {
       setDebounceMsg({ kind: "err", text: (e as Error).message });
     } finally {
       setStatusChecking(false);
+      loadRetestJobsList();
+    }
+  };
+
+  const [retryingRetestJobId, setRetryingRetestJobId] = useState<number | null>(null);
+  const retryRetestJob = async (jobId: number) => {
+    setRetryingRetestJobId(jobId);
+    try {
+      const r = await fetch("/api/radar/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "retest_job_retry", jobId }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || "Couldn't resume job");
+      setDebounceMsg({ kind: "ok", text: `Job #${jobId} resumed — it'll pick back up on the next cron tick from where it left off.` });
+    } catch (e) {
+      setDebounceMsg({ kind: "err", text: (e as Error).message });
+    } finally {
+      setRetryingRetestJobId(null);
       loadRetestJobsList();
     }
   };
@@ -5569,6 +5589,20 @@ function ValidateSection() {
                                     style={{ fontSize: 14, lineHeight: 1, padding: "0 2px" }}
                                   >
                                     {cancellingRetestJobId === j.id ? "…" : "■"}
+                                  </button>
+                                )}
+                                {/* A job that fails 5x in a row flips to 'error' and the cron's
+                                    `status='running'` sweep never picks it back up on its own — this
+                                    is the only way to resume it (continues from job_offset, nothing
+                                    reprocessed). */}
+                                {j.status === "error" && (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); retryRetestJob(j.id); }}
+                                    disabled={retryingRetestJobId === j.id}
+                                    title={j.error ? `Retry — last error: ${j.error}` : "Retry — resume from where it left off"}
+                                    className="shrink-0 text-[11px] px-1.5 py-0.5 rounded-md border border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[var(--hm-primary)] hover:text-[var(--hm-text)] disabled:opacity-50"
+                                  >
+                                    {retryingRetestJobId === j.id ? "Resuming…" : "Retry"}
                                   </button>
                                 )}
                               </div>

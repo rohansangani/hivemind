@@ -901,6 +901,22 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
     return { status: 200, body: { ok: true } };
   }
 
+  // A job that fails MAX_DEBOUNCE_FAILS_RETEST times in a row flips to status='error' — and
+  // continue_retest_jobs' own `WHERE status = 'running'` sweep then never picks it back up, ever.
+  // Confirmed live: job #15 hit this and sat permanently stuck at 324/~630 processed, invisible to
+  // the cron from then on with no way to resume short of a direct DB edit. Lets the UI put a job
+  // back in the running pool — from wherever job_offset left off, nothing is reprocessed or lost.
+  if (action === "retest_job_retry") {
+    const { jobId } = reqBody as { jobId?: number };
+    if (!jobId) return { status: 400, body: { error: "No jobId" } };
+    await ensureRetestJobsTable();
+    const row = (await radarSql<{ status: string }>(`SELECT status FROM retest_jobs WHERE id = ${Number(jobId)}`))[0];
+    if (!row) return { status: 404, body: { error: "Job not found" } };
+    if (row.status !== "error") return { status: 400, body: { error: "Job isn't in an error state" } };
+    await radarSql(`UPDATE retest_jobs SET status = 'running', fail_count = 0, error = NULL, updated_at = now() WHERE id = ${Number(jobId)}`);
+    return { status: 200, body: { ok: true } };
+  }
+
   if (action === "continue_retest_jobs") {
     const auth = req.headers.get("authorization");
     if (!overrideAction && auth !== `Bearer ${CRON_SECRET}`) return { status: 401, body: { error: "Unauthorized" } };

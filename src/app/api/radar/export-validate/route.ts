@@ -244,6 +244,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });
   } catch (err) {
     console.error("Radar export-validate error:", err);
-    return NextResponse.json({ error: "Export validation unavailable" }, { status: 502 });
+    // Was a bare "Export validation unavailable" with the real cause only in server logs —
+    // confirmed live a retest job (#15) hit this 5 times in a row, permanently flipping to
+    // status='error' (continue_retest_jobs's WHERE status='running' sweep never picks an errored
+    // job back up), with zero visibility into what actually failed. Same fix already applied to
+    // Validate's and Enrich's catch-alls.
+    const message = err instanceof Error && err.message ? err.message : "Export validation unavailable";
+    return NextResponse.json({ error: message }, { status: 502 });
   }
 }
