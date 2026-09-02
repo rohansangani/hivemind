@@ -214,7 +214,15 @@ async function handleAction(req: NextRequest, userEmail: string | null): Promise
       const v = params?.[f];
       if (v !== undefined && v !== "" && !(Array.isArray(v) && !v.length)) input[f] = v;
     });
-    const r = await fetch(`https://api.apify.com/v2/acts/${ACTOR_ID}/runs?token=${APIFY_TOKEN}`, {
+    // The actor's own default execution ceiling (timeoutSecs) is 3000s (50 min) — confirmed live a
+    // real 20,000-lead search across many domains (fetch_count's own default was raised from 25 to
+    // 20000 earlier) hit exactly that wall and got killed by Apify mid-run, with no way to resume a
+    // terminated run afterward (unlike the chunked LinkedIn/Debounce jobs — this is a single Apify
+    // run, not our own resumable loop). This route only fires the start request and returns
+    // immediately (status/results are polled separately, unbounded by this route's own maxDuration),
+    // so there's no real reason to inherit the actor's short default — raised to Apify's platform
+    // ceiling so a genuinely large search gets the room it needs instead of being cut off arbitrarily.
+    const r = await fetch(`https://api.apify.com/v2/acts/${ACTOR_ID}/runs?token=${APIFY_TOKEN}&timeout=86400`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
     });
     if (!r.ok) {
