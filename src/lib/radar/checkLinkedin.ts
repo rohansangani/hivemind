@@ -115,18 +115,34 @@ export async function runLinkedInCheck(urls: string[], mode: string | undefined,
 
   const scraperMode = mode === "email" ? "Profile details + email search ($10 per 1k)" : "Profile details no email ($4 per 1k)";
 
-  const runR = await fetch(`https://api.apify.com/v2/acts/harvestapi~linkedin-profile-scraper/run-sync-get-dataset-items?token=${APIFY_TOKEN}&timeout=55`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ profileScraperMode: scraperMode, queries: cleanUrls }),
-  });
-  const items = (await runR.json().catch(() => null)) as ApifyLinkedInItem[] | null;
-  if (!runR.ok || !Array.isArray(items)) {
-    const detail = (items as unknown as { error?: { message?: string } | string })?.error;
-    const detailMsg = typeof detail === "string" ? detail : detail?.message;
-    console.log(`[check_linkedin] Apify call failed: status=${runR.status} body=${detailMsg || JSON.stringify(items)}`);
-    throw new Error(`LinkedIn scrape failed (${runR.status}): ${detailMsg || "no details"}`);
+  // `timeout` here is how long WE wait for the sync endpoint, not the actor's own execution budget
+  // (that's a separate timeoutSecs on the actor itself, confirmed at 5h — nowhere near the real
+  // limit). Was 55s — confirmed live a real job (CHUNK=15 profiles/call) started reporting
+  // "Actor run did not succeed... status: TIMED-OUT" for 22+ consecutive chunks once LinkedIn/
+  // harvestapi got slow, eventually tripping the 5-consecutive-fails circuit breaker and stopping
+  // the whole job. Raised to give a genuinely slow-but-working batch real room to finish, plus one
+  // retry specifically for a TIMED-OUT response (fast-failing errors — bad token, actor not found,
+  // etc. — are NOT retried, only this one). Kept well under the caller's own 280s route ceiling
+  // even at worst case (100s + 100s retry = 200s), since this call runs inside a chunk loop with
+  // no per-chunk cutoff of its own — a single call anywhere near 280s risks a hard Vercel timeout
+  // instead of the clean, catchable error this whole thing exists to produce.
+  async function callApify(attempt = 0): Promise<ApifyLinkedInItem[]> {
+    const runR = await fetch(`https://api.apify.com/v2/acts/harvestapi~linkedin-profile-scraper/run-sync-get-dataset-items?token=${APIFY_TOKEN}&timeout=100`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileScraperMode: scraperMode, queries: cleanUrls }),
+    });
+    const items = (await runR.json().catch(() => null)) as ApifyLinkedInItem[] | null;
+    if (!runR.ok || !Array.isArray(items)) {
+      const detail = (items as unknown as { error?: { message?: string } | string })?.error;
+      const detailMsg = typeof detail === "string" ? detail : detail?.message;
+      console.log(`[check_linkedin] Apify call failed: status=${runR.status} body=${detailMsg || JSON.stringify(items)}`);
+      if (attempt === 0 && /TIMED-OUT/i.test(detailMsg || "")) return callApify(1);
+      throw new Error(`LinkedIn scrape failed (${runR.status}): ${detailMsg || "no details"}`);
+    }
+    return items;
   }
+  const items = await callApify();
 
   const nowIso = new Date().toISOString();
   let matched = 0, mismatched = 0, notFound = 0, created = 0, uncertain = 0;

@@ -4098,6 +4098,23 @@ function ValidateSection() {
     }
   };
 
+  const [retryingLinkedinJobId, setRetryingLinkedinJobId] = useState<string | null>(null);
+  // A job that fails 5x consecutively flips to 'error' and the cron sweep never picks it back up
+  // on its own (see linkedin-jobs/route.ts's "retry" action) — this is the only way to resume it.
+  const retryLinkedinJobFromList = async (jobId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setRetryingLinkedinJobId(jobId);
+    try {
+      const d = await linkedinJobCall({ action: "retry", jobId });
+      setRecentLinkedinJobs((prev) => prev.map((j) => (j.id === jobId ? { ...j, status: d.job.status } : j)));
+      if (jobId === activeLinkedinJobId) setActiveLinkedinJob(d.job);
+    } catch (e2) {
+      setError((e2 as Error).message);
+    } finally {
+      setRetryingLinkedinJobId(null);
+    }
+  };
+
   const deleteLinkedinJob = async (jobId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!confirm("Delete this LinkedIn check from history?")) return;
@@ -5150,7 +5167,7 @@ function ValidateSection() {
                               <button
                                 onClick={() => watchLinkedinJob(j.id)}
                                 disabled={openingLinkedinJobId === j.id}
-                                className={`w-full flex items-center justify-between text-left text-[11.5px] px-2 py-1.5 rounded-md border ${activeLinkedinJobId === j.id ? "border-[var(--hm-primary)]" : "border-[var(--hm-border)]"} bg-[var(--hm-surface)] hover:border-[var(--hm-primary)]/40 disabled:opacity-70 disabled:cursor-wait ${j.status === "running" ? "pr-14" : "pr-7"}`}
+                                className={`w-full flex items-center justify-between text-left text-[11.5px] px-2 py-1.5 rounded-md border ${activeLinkedinJobId === j.id ? "border-[var(--hm-primary)]" : "border-[var(--hm-border)]"} bg-[var(--hm-surface)] hover:border-[var(--hm-primary)]/40 disabled:opacity-70 disabled:cursor-wait ${j.status === "running" || j.status === "error" ? "pr-14" : "pr-7"}`}
                               >
                                 <span className="truncate text-[var(--hm-text-secondary)] flex items-center gap-1.5">
                                   <span className="shrink-0 px-1 py-0.5 rounded text-[9.5px] font-medium bg-[var(--hm-bg-tertiary)] text-[var(--hm-text-tertiary)] uppercase">{j.checkType === "company" ? "Co" : "Pf"}</span>
@@ -5174,6 +5191,16 @@ function ValidateSection() {
                                   title="Stop this running check"
                                 >
                                   ■
+                                </button>
+                              )}
+                              {j.status === "error" && (
+                                <button
+                                  onClick={(e) => retryLinkedinJobFromList(j.id, e)}
+                                  disabled={retryingLinkedinJobId === j.id}
+                                  className="absolute top-1.5 right-7 opacity-0 group-hover/item:opacity-100 transition-opacity px-1.5 h-5 rounded flex items-center justify-center text-[10px] text-[var(--hm-text-secondary)] hover:bg-[var(--hm-bg-tertiary)] hover:text-[var(--hm-text)] disabled:opacity-50"
+                                  title={j.error ? `Retry — last error: ${j.error}` : "Retry — resume from where it left off"}
+                                >
+                                  {retryingLinkedinJobId === j.id ? "…" : "Retry"}
                                 </button>
                               )}
                               <button

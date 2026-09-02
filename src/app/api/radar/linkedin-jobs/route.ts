@@ -219,6 +219,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ job: fresh });
     }
 
+    // A job that fails MAX_CONSECUTIVE_FAILS times in a row flips to status='error', and
+    // continue_all's own `WHERE status='running'` sweep never picks it back up on its own —
+    // confirmed live a real job got stuck at 780/1732 with no way to resume short of a direct DB
+    // edit, same gap already fixed for Validate's retest jobs. Puts it back in the running pool
+    // from wherever `processed` left off — nothing already-checked is redone.
+    if (action === "retry") {
+      const { jobId } = body as { jobId?: string };
+      if (!jobId) return NextResponse.json({ error: "No jobId" }, { status: 400 });
+      const job = await db.linkedinCheckJob.findUnique({ where: { id: jobId }, select: { organizationId: true, status: true } });
+      if (!job || job.organizationId !== orgId) return NextResponse.json({ error: "Job not found" }, { status: 404 });
+      if (job.status !== "error") return NextResponse.json({ error: "Job isn't in an error state" }, { status: 400 });
+      const fresh = await db.linkedinCheckJob.update({ where: { id: jobId }, data: { status: "running", failCount: 0, error: null } });
+      return NextResponse.json({ job: fresh });
+    }
+
     if (action === "status") {
       const { jobId } = body as { jobId?: string };
       if (!jobId) return NextResponse.json({ error: "No jobId" }, { status: 400 });
@@ -265,6 +280,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });
   } catch (error) {
     console.error("LinkedIn check jobs error:", error);
-    return NextResponse.json({ error: "Something went wrong" }, { status: 500 });
+    // Same fix already applied to Validate/Enrich/export-validate's catch-alls this session —
+    // surface the real cause instead of a dead-end generic message.
+    const message = error instanceof Error && error.message ? error.message : "Something went wrong";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
