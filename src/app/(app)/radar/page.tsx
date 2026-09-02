@@ -2905,21 +2905,42 @@ function EnrichSection() {
 
   useEffect(() => { setSavedIcps(loadIcps()); }, []);
 
+  // Save now runs as a background job (see enrich/route.ts's "save" + "save_status" actions) —
+  // confirmed live a real 10,477-lead save could take well over a minute even chunked, with the old
+  // synchronous call giving zero feedback while it ran. Starts the job, then polls save_status every
+  // 2s, showing live "X/Y chunks — N contact(s), M account(s) so far" progress instead of a single
+  // opaque "Syncing…" the whole time.
   const quickSyncJob = async (job: EnrichJobRow) => {
     const vertical = syncVerticals[job.id];
     if (!vertical) { setSyncMsg({ jobId: job.id, kind: "err", text: "Pick a vertical before syncing." }); return; }
     setSyncingJobId(job.id);
-    setSyncMsg(null);
+    setSyncMsg({ jobId: job.id, kind: "ok", text: "Starting…" });
     try {
-      const d = await call({ action: "save", datasetId: job.dataset_id, vertical, jobId: job.id });
-      await loadJobsList();
-      if (!d.saved && !d.savedAccounts) {
-        // Not an error — just nothing new to write (e.g. every lead in this job already exists as
-        // a contact under a different job/save). Still worth saying so, not a silent no-op.
+      const started = await call({ action: "save", datasetId: job.dataset_id, vertical, jobId: job.id });
+      if (!started.started) {
         setSyncMsg({ jobId: job.id, kind: "ok", text: "Nothing new to save — every lead already exists in Radar." });
-      } else {
-        setSyncMsg({ jobId: job.id, kind: "ok", text: `Synced — ${d.saved || 0} contact(s), ${d.savedAccounts || 0} account(s).` });
+        setSyncingJobId(null);
+        loadJobsList();
+        return;
       }
+      for (let guard = 0; guard < 300; guard++) { // ~10 min ceiling at 2s/poll — a real safety backstop, not an expected duration
+        await new Promise((res) => setTimeout(res, 2000));
+        const s = await call({ action: "save_status", jobId: job.id });
+        const totalChunks = s.save_total_chunks || started.totalChunks || 0;
+        const processedChunks = s.save_processed_chunks || 0;
+        const savedCount = s.saved_count || 0;
+        const savedAccounts = s.saved_accounts_count || 0;
+        if (s.save_status === "done") {
+          setSyncMsg({ jobId: job.id, kind: "ok", text: `Synced — ${savedCount} contact(s), ${savedAccounts} account(s).` });
+          break;
+        }
+        if (s.save_status === "error") {
+          setSyncMsg({ jobId: job.id, kind: "err", text: s.save_error || "Save failed" });
+          break;
+        }
+        setSyncMsg({ jobId: job.id, kind: "ok", text: `Syncing… ${processedChunks}/${totalChunks} chunks — ${savedCount} contact(s), ${savedAccounts} account(s) so far.` });
+      }
+      await loadJobsList();
     } catch (e) {
       setSyncMsg({ jobId: job.id, kind: "err", text: (e as Error).message });
     } finally {
@@ -3159,14 +3180,27 @@ function EnrichSection() {
     }
   };
 
+  // Save now runs as a background job (see enrich/route.ts's "save"/"save_status" actions) —
+  // confirmed live a real large save can take well over a minute even chunked. Polls until done/
+  // error, showing live progress via savedCount/savedAccountsCount as it climbs, before chaining
+  // into the Debounce-validate + refresh steps exactly as before.
   const saveSelected = async (): Promise<boolean> => {
     setError("");
     if (!saveVertical) { setError("Select a vertical before saving."); return false; }
+    if (!currentJobId) { setError("No tracked job for this search — can't save."); return false; }
     setSaveBusy(true);
     try {
-      const d = await call({ action: "save", datasetId, vertical: saveVertical, jobId: currentJobId });
-      setSavedCount(d.saved || 0);
-      setSavedAccountsCount(d.savedAccounts || 0);
+      const started = await call({ action: "save", datasetId, vertical: saveVertical, jobId: currentJobId });
+      if (started.started) {
+        for (let guard = 0; guard < 300; guard++) { // ~10 min ceiling at 2s/poll — safety backstop, not an expected duration
+          await new Promise((res) => setTimeout(res, 2000));
+          const s = await call({ action: "save_status", jobId: currentJobId });
+          setSavedCount(s.saved_count || 0);
+          setSavedAccountsCount(s.saved_accounts_count || 0);
+          if (s.save_status === "done") break;
+          if (s.save_status === "error") throw new Error(s.save_error || "Save failed");
+        }
+      }
 
       // Debounce-validate every just-saved lead immediately — no separate manual step. Save
       // itself covers the whole dataset regardless of checkbox state (see the button above), so
@@ -3744,7 +3778,7 @@ function EnrichSection() {
                     style={{ height: 32, padding: "0 14px", fontSize: 12 }}
                     title={savedCount > 0 ? `Already saved — ${savedCount} contact(s), ${savedAccountsCount} account(s)` : "Saves every lead Apify returned for this search, not just the checked ones"}
                   >
-                    {saveBusy ? "Saving…" : savedCount > 0 ? "✓ Saved" : `Save all ${leads.length} to database`}
+                    {saveBusy ? `Saving… ${savedCount || 0} contact(s) so far` : savedCount > 0 ? "✓ Saved" : `Save all ${leads.length} to database`}
                   </button>
                 </div>
               )}

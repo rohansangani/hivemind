@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { after } from "next/server";
 import { requireRadarAccess, radarSql, patchByFilter, rpc, logRadarUsage } from "@/lib/radar/supabase";
 import { logRadarActivity } from "@/lib/radar/activityLog";
 import { runLinkedInCheck } from "@/lib/radar/checkLinkedin";
-import { mapWithConcurrency } from "@/lib/radar/contactExport";
 import { db } from "@/lib/db";
 
 /**
@@ -42,7 +42,9 @@ async function fetchApifyDatasetItems(datasetId: string, token: string): Promise
 const LOGGABLE_ENRICH_ACTIONS: Record<string, (body: Record<string, unknown>, result: Record<string, unknown>) => string> = {
   start: (body) => `Started an Enrich search${body.label ? `: "${body.label}"` : ""}`,
   stop: () => `Stopped a running Enrich search`,
-  save: (body, result) => `Saved Enrich results to contacts — ${result?.saved ?? "?"} lead(s)`,
+  // "save" now starts a background job (see save_status for the actual outcome) rather than
+  // saving synchronously, so there's no real saved-count yet at the moment this logs.
+  save: (body, result) => `Started saving Enrich results to contacts — ${result?.total ?? "?"} lead(s) queued`,
   export_leads: (body, result) => `Ran Debounce validation on Enrich leads — ${result?.validated ?? result?.checked ?? "?"} checked`,
   validate_and_save: (body, result) => `Validated and saved Enrich leads — ${result?.saved ?? "?"} lead(s)`,
   check_linkedin: (body, result) => {
@@ -176,6 +178,14 @@ async function ensureEnrichJobsTable(): Promise<void> {
   await radarSql(`ALTER TABLE enrich_jobs ADD COLUMN IF NOT EXISTS saved_count integer NOT NULL DEFAULT 0`);
   await radarSql(`ALTER TABLE enrich_jobs ADD COLUMN IF NOT EXISTS saved_accounts_count integer NOT NULL DEFAULT 0`);
   await radarSql(`ALTER TABLE enrich_jobs ADD COLUMN IF NOT EXISTS saved_at timestamptz`);
+  // Confirmed live: a real 10,477-lead job's save could take well over a minute even chunked, with
+  // no way to see it was actually still working — "Sync to DB" just sat there with no feedback
+  // until it either finished or the whole HTTP request itself timed out. These track a save's
+  // live progress (checkpointed after every chunk, not just at the end) so the UI can poll it.
+  await radarSql(`ALTER TABLE enrich_jobs ADD COLUMN IF NOT EXISTS save_status text`);
+  await radarSql(`ALTER TABLE enrich_jobs ADD COLUMN IF NOT EXISTS save_total_chunks integer`);
+  await radarSql(`ALTER TABLE enrich_jobs ADD COLUMN IF NOT EXISTS save_processed_chunks integer NOT NULL DEFAULT 0`);
+  await radarSql(`ALTER TABLE enrich_jobs ADD COLUMN IF NOT EXISTS save_error text`);
 }
 
 async function handleAction(req: NextRequest, userEmail: string | null): Promise<{ status: number; body: Record<string, unknown> }> {
@@ -379,62 +389,80 @@ async function handleAction(req: NextRequest, userEmail: string | null): Promise
     return { status: 200, body: { items: mapped } };
   }
 
-  // ── save to DB ─────────────────────────────────────────────────────
-  // Runs as a single Postgres function via PostgREST rather than a per-row upsert + a separate
+  // ── save to DB — runs as a background job with live, pollable progress ──────────────
+  // Runs save_enrich_batch (a single Postgres function, not a per-row upsert + a separate
   // best-effort company_name-match pass — domain is a much more reliable join key than fuzzy
-  // company-name matching, and Apify hands it to us directly.
+  // company-name matching, and Apify hands it to us directly) in chunks. Confirmed live: even
+  // chunked, a real 10,477-lead job's save can take well over a minute, and the OLD synchronous
+  // version gave zero feedback while it ran — "Sync to DB" just sat there until it either finished
+  // or the whole HTTP request itself timed out, indistinguishable from being stuck. This starts the
+  // save via after() and returns immediately; save_status below polls live progress, checkpointed
+  // after every chunk (not just at the end) via enrich_jobs.save_processed_chunks/saved_count/
+  // saved_accounts_count, so a mid-way failure doesn't lose what already succeeded.
   if (action === "save") {
     if (!APIFY_TOKEN) return { status: 503, body: { error: "Apify not configured" } };
     const vertical = (body as { vertical?: string }).vertical;
     if (!vertical) return { status: 400, body: { error: "Vertical is required" } };
     if (!datasetId) return { status: 400, body: { error: "No datasetId" } };
-    const items = await fetchApifyDatasetItems(datasetId, APIFY_TOKEN);
-    if (!Array.isArray(items) || !items.length) return { status: 200, body: { saved: 0, savedAccounts: 0 } };
-    const rows = mapItems(items);
-    if (!rows.length) return { status: 200, body: { saved: 0, savedAccounts: 0 } };
+    if (!jobId) return { status: 400, body: { error: "No jobId — live save progress requires a tracked Enrich job" } };
+    await ensureEnrichJobsTable();
 
-    // Was a single save_enrich_batch call with every row — confirmed live a real 10,477-lead job
-    // ("crossborder") hit Postgres's own statement timeout ("canceling statement due to statement
-    // timeout") trying to run the temp-table build + several bulk upserts over that many rows in
-    // one statement. Chunked the same way Radar's own contact/account exports already are (see
-    // mapWithConcurrency) — several smaller, boundedly-concurrent RPC calls instead of one giant
-    // one. One retry per chunk on a transient failure (matches the retry pattern already used for
-    // Supabase reads elsewhere) since a chunk-level timeout is still possible under load.
+    const items = await fetchApifyDatasetItems(datasetId, APIFY_TOKEN);
+    if (!Array.isArray(items) || !items.length) return { status: 200, body: { saved: 0, savedAccounts: 0, done: true } };
+    const rows = mapItems(items);
+    if (!rows.length) return { status: 200, body: { saved: 0, savedAccounts: 0, done: true } };
+
     const SAVE_CHUNK = 500;
     const chunks: typeof rows[] = [];
     for (let i = 0; i < rows.length; i += SAVE_CHUNK) chunks.push(rows.slice(i, i + SAVE_CHUNK));
 
-    let savedContacts = 0, savedAccounts = 0;
-    try {
-      const chunkResults = await mapWithConcurrency(chunks, 3, async (chunk) => {
-        for (let attempt = 0; attempt < 2; attempt++) {
-          try {
-            const rpcRows = await rpc<{ saved_contacts?: number; saved_accounts?: number }>("save_enrich_batch", { p_items: chunk, p_vertical: vertical || null });
-            return rpcRows[0];
-          } catch (e) {
-            if (attempt === 1) throw e;
-            await new Promise((res) => setTimeout(res, 500 + Math.random() * 500));
+    await radarSql(`UPDATE enrich_jobs SET save_status = 'running', save_total_chunks = ${chunks.length}, save_processed_chunks = 0, saved_count = 0, saved_accounts_count = 0, save_error = NULL WHERE id = ${Number(jobId)}`);
+
+    after(async () => {
+      let savedContacts = 0, savedAccounts = 0, processedChunks = 0;
+      try {
+        // Sequential, not mapWithConcurrency — each chunk's checkpoint UPDATE needs to reflect
+        // real, already-committed progress for polling to be trustworthy; running several chunks
+        // concurrently would make "processed_chunks" jump ahead of what's actually durably saved.
+        for (const chunk of chunks) {
+          let result: { saved_contacts?: number; saved_accounts?: number } | undefined;
+          let lastErr: unknown;
+          for (let attempt = 0; attempt < 2; attempt++) {
+            try {
+              const rpcRows = await rpc<{ saved_contacts?: number; saved_accounts?: number }>("save_enrich_batch", { p_items: chunk, p_vertical: vertical || null });
+              result = rpcRows[0];
+              lastErr = undefined;
+              break;
+            } catch (e) {
+              lastErr = e;
+              if (attempt === 0) await new Promise((res) => setTimeout(res, 500 + Math.random() * 500));
+            }
           }
+          if (lastErr) throw lastErr;
+          savedContacts += Number(result?.saved_contacts ?? 0);
+          savedAccounts += Number(result?.saved_accounts ?? 0);
+          processedChunks++;
+          await radarSql(`UPDATE enrich_jobs SET save_processed_chunks = ${processedChunks}, saved_count = ${savedContacts}, saved_accounts_count = ${savedAccounts} WHERE id = ${Number(jobId)}`);
         }
-        return undefined;
-      });
-      for (const r of chunkResults) {
-        savedContacts += Number(r?.saved_contacts ?? 0);
-        savedAccounts += Number(r?.saved_accounts ?? 0);
+        await radarSql(`UPDATE enrich_jobs SET save_status = 'done', saved_at = now() WHERE id = ${Number(jobId)}`);
+        await logRadarUsage(userEmail, "leads_finder", rows.length);
+        triggerSyncExclusions();
+      } catch (e) {
+        await radarSql(`UPDATE enrich_jobs SET save_status = 'error', save_error = '${((e as Error).message || "Save failed").replace(/'/g, "''")}' WHERE id = ${Number(jobId)}`).catch(() => {});
       }
-    } catch (e) {
-      return { status: 500, body: { error: (e as Error).message || "Save failed" } };
-    }
-    await logRadarUsage(userEmail, "leads_finder", rows.length);
-    triggerSyncExclusions();
-    // Persist the save result on the job row (when this save came from a tracked job, not a
-    // one-off dataset) so reopening it later shows it was already saved instead of looking
-    // untouched every time.
-    if (jobId) {
-      await ensureEnrichJobsTable();
-      await radarSql(`UPDATE enrich_jobs SET saved_count = ${savedContacts}, saved_accounts_count = ${savedAccounts}, saved_at = now() WHERE id = ${Number(jobId)}`);
-    }
-    return { status: 200, body: { saved: savedContacts, savedAccounts, total: items.length } };
+    });
+
+    return { status: 200, body: { started: true, totalChunks: chunks.length, total: items.length } };
+  }
+
+  if (action === "save_status") {
+    if (!jobId) return { status: 400, body: { error: "No jobId" } };
+    await ensureEnrichJobsTable();
+    const row = (await radarSql<{ save_status?: string; save_total_chunks?: number; save_processed_chunks?: number; saved_count?: number; saved_accounts_count?: number; save_error?: string }>(
+      `SELECT save_status, save_total_chunks, save_processed_chunks, saved_count, saved_accounts_count, save_error FROM enrich_jobs WHERE id = ${Number(jobId)}`
+    ))[0];
+    if (!row) return { status: 404, body: { error: "Job not found" } };
+    return { status: 200, body: row };
   }
 
   // ── Debounce-validate selected (not-yet-saved) Apify leads, no DB write ──
