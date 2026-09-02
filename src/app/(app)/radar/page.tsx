@@ -3610,7 +3610,12 @@ function EnrichSection() {
             {jobsListError && <p className="text-[12px] text-[var(--tag-red-fg)]">{jobsListError}</p>}
             <div className="space-y-1 max-h-56 overflow-y-auto">
               {jobsList.map((j) => {
-                const unsaved = j.status === "SUCCEEDED" && j.item_count > 0 && j.saved_count === 0;
+                // Was `saved_count === 0` — but a sync that legitimately finds nothing new (every
+                // lead already exists in Radar) also writes saved_count=0, so that condition kept
+                // showing the vertical picker + Sync button as if the job had never been synced at
+                // all. saved_at is set on ANY completed sync, 0-new or not, so it's the real signal
+                // for "has this job been synced" rather than "did it write new rows".
+                const unsaved = j.status === "SUCCEEDED" && j.item_count > 0 && !j.saved_at;
                 return (
                   <div key={j.id} className="rounded-md hover:bg-[var(--hm-surface-hover)]">
                   <div className="flex items-center gap-1.5 px-2.5 py-1.5">
