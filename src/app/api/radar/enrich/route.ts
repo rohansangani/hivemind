@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRadarAccess, radarSql, patchByFilter, rpc, logRadarUsage } from "@/lib/radar/supabase";
 import { logRadarActivity } from "@/lib/radar/activityLog";
 import { runLinkedInCheck } from "@/lib/radar/checkLinkedin";
+import { mapWithConcurrency } from "@/lib/radar/contactExport";
 import { db } from "@/lib/db";
 
 /**
@@ -10,7 +11,11 @@ import { db } from "@/lib/db";
  * leads-finder), Check LinkedIn (harvestapi profile scraper — see lib/radar/checkLinkedin.ts),
  * DB-existing check, save-to-contacts, Debounce validation, and Claude-based ICP parsing/scoring.
  */
-export const maxDuration = 60;
+// Raised from 60s — confirmed live saving a real 10,477-lead Enrich job ("crossborder") in one
+// save_enrich_batch RPC call hit Postgres's own statement timeout ("canceling statement due to
+// statement timeout"); chunking that save (see the "save" action below) means several sequential/
+// concurrent RPC calls instead of one giant one, which needs real room under this route's ceiling.
+export const maxDuration = 280;
 
 const ACTOR_ID = "code_crafter~leads-finder";
 
@@ -388,10 +393,35 @@ async function handleAction(req: NextRequest, userEmail: string | null): Promise
     const rows = mapItems(items);
     if (!rows.length) return { status: 200, body: { saved: 0, savedAccounts: 0 } };
 
-    let result: { saved_contacts?: number; saved_accounts?: number } | undefined;
+    // Was a single save_enrich_batch call with every row — confirmed live a real 10,477-lead job
+    // ("crossborder") hit Postgres's own statement timeout ("canceling statement due to statement
+    // timeout") trying to run the temp-table build + several bulk upserts over that many rows in
+    // one statement. Chunked the same way Radar's own contact/account exports already are (see
+    // mapWithConcurrency) — several smaller, boundedly-concurrent RPC calls instead of one giant
+    // one. One retry per chunk on a transient failure (matches the retry pattern already used for
+    // Supabase reads elsewhere) since a chunk-level timeout is still possible under load.
+    const SAVE_CHUNK = 500;
+    const chunks: typeof rows[] = [];
+    for (let i = 0; i < rows.length; i += SAVE_CHUNK) chunks.push(rows.slice(i, i + SAVE_CHUNK));
+
+    let savedContacts = 0, savedAccounts = 0;
     try {
-      const rpcRows = await rpc<{ saved_contacts?: number; saved_accounts?: number }>("save_enrich_batch", { p_items: rows, p_vertical: vertical || null });
-      result = rpcRows[0];
+      const chunkResults = await mapWithConcurrency(chunks, 3, async (chunk) => {
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            const rpcRows = await rpc<{ saved_contacts?: number; saved_accounts?: number }>("save_enrich_batch", { p_items: chunk, p_vertical: vertical || null });
+            return rpcRows[0];
+          } catch (e) {
+            if (attempt === 1) throw e;
+            await new Promise((res) => setTimeout(res, 500 + Math.random() * 500));
+          }
+        }
+        return undefined;
+      });
+      for (const r of chunkResults) {
+        savedContacts += Number(r?.saved_contacts ?? 0);
+        savedAccounts += Number(r?.saved_accounts ?? 0);
+      }
     } catch (e) {
       return { status: 500, body: { error: (e as Error).message || "Save failed" } };
     }
@@ -402,9 +432,9 @@ async function handleAction(req: NextRequest, userEmail: string | null): Promise
     // untouched every time.
     if (jobId) {
       await ensureEnrichJobsTable();
-      await radarSql(`UPDATE enrich_jobs SET saved_count = ${Number(result?.saved_contacts ?? 0)}, saved_accounts_count = ${Number(result?.saved_accounts ?? 0)}, saved_at = now() WHERE id = ${Number(jobId)}`);
+      await radarSql(`UPDATE enrich_jobs SET saved_count = ${savedContacts}, saved_accounts_count = ${savedAccounts}, saved_at = now() WHERE id = ${Number(jobId)}`);
     }
-    return { status: 200, body: { saved: result?.saved_contacts ?? 0, savedAccounts: result?.saved_accounts ?? 0, total: items.length } };
+    return { status: 200, body: { saved: savedContacts, savedAccounts, total: items.length } };
   }
 
   // ── Debounce-validate selected (not-yet-saved) Apify leads, no DB write ──
