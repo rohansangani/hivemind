@@ -2916,47 +2916,63 @@ function EnrichSection() {
 
   useEffect(() => { setSavedIcps(loadIcps()); }, []);
 
-  // Save now runs as a background job (see enrich/route.ts's "save" + "save_status" actions) —
-  // confirmed live a real 10,477-lead save could take well over a minute even chunked, with the old
-  // synchronous call giving zero feedback while it ran. Starts the job, then polls save_status every
-  // 2s, showing live "X/Y chunks — N contact(s), M account(s) so far" progress instead of a single
-  // opaque "Syncing…" the whole time.
+  // Save runs as a "sync batch" (see enrich/route.ts's sync_batch_start/sync_batch_status) — one
+  // mechanism for both a single job's "Sync to DB" (batch of 1) and the multi-select bulk action,
+  // driven by a real cron sweep server-side (continue_all_sync_batches) rather than only an
+  // in-request after() call or client-side polling. Confirmed live this matters: a real large save
+  // can take well over a minute, and closing the browser mid-bulk-sync used to silently abandon
+  // every job still queued behind whichever one was in flight — now the whole batch finishes
+  // regardless of whether the tab (or the browser) stays open. Polling here is purely for LIVE
+  // feedback while you're watching; it's not what makes the sync actually complete.
+  const pollSyncBatch = async (batchId: number, jobIds: number[]) => {
+    try {
+      for (let guard = 0; guard < 600; guard++) { // ~20 min ceiling at 2s/poll — a safety backstop, not an expected duration
+        await new Promise((res) => setTimeout(res, 2000));
+        const s = await call({ action: "sync_batch_status", batchId });
+        const jobs = (s.jobs || []) as Array<{
+          id: number; label: string; save_status: string | null; save_total_chunks: number | null;
+          save_processed_chunks: number; saved_count: number; saved_accounts_count: number; save_error: string | null;
+        }>;
+        const currentIndex: number = s.batch?.currentIndex ?? 0;
+        const current = jobs[currentIndex];
+        if (current) {
+          setSyncingJobId(current.id);
+          if (current.save_status === "error") {
+            setSyncMsg({ jobId: current.id, kind: "err", text: current.save_error || "Save failed" });
+          } else if (current.save_status === "done") {
+            const text = (current.saved_count || current.saved_accounts_count)
+              ? `Synced — ${current.saved_count} contact(s), ${current.saved_accounts_count} account(s).`
+              : "Nothing new to save — every lead already exists in Radar.";
+            setSyncMsg({ jobId: current.id, kind: "ok", text });
+          } else {
+            const total = current.save_total_chunks || 0;
+            const proc = current.save_processed_chunks || 0;
+            setSyncMsg({ jobId: current.id, kind: "ok", text: `Syncing… ${proc}/${total} chunks — ${current.saved_count || 0} contact(s), ${current.saved_accounts_count || 0} account(s) so far.` });
+          }
+        }
+        if (jobIds.length > 1) setBulkSyncProgress({ done: currentIndex, total: jobIds.length });
+        if (s.batch?.status !== "running") break;
+      }
+    } catch (e) {
+      setSyncMsg({ jobId: jobIds[0], kind: "err", text: (e as Error).message });
+    } finally {
+      setSyncingJobId(null);
+      loadJobsList();
+    }
+  };
+
   const quickSyncJob = async (job: EnrichJobRow, verticalOverride?: string) => {
     // verticalOverride lets runBulkSync (below) pass bulkVertical directly for a job that has no
-    // per-row pick yet, without racing setSyncVerticals' async state update.
+    // per-row pick yet.
     const vertical = syncVerticals[job.id] || verticalOverride;
     if (!vertical) { setSyncMsg({ jobId: job.id, kind: "err", text: "Pick a vertical before syncing." }); return; }
     setSyncingJobId(job.id);
     setSyncMsg({ jobId: job.id, kind: "ok", text: "Starting…" });
     try {
-      const started = await call({ action: "save", datasetId: job.dataset_id, vertical, jobId: job.id });
-      if (!started.started) {
-        setSyncMsg({ jobId: job.id, kind: "ok", text: "Nothing new to save — every lead already exists in Radar." });
-        setSyncingJobId(null);
-        loadJobsList();
-        return;
-      }
-      for (let guard = 0; guard < 300; guard++) { // ~10 min ceiling at 2s/poll — a real safety backstop, not an expected duration
-        await new Promise((res) => setTimeout(res, 2000));
-        const s = await call({ action: "save_status", jobId: job.id });
-        const totalChunks = s.save_total_chunks || started.totalChunks || 0;
-        const processedChunks = s.save_processed_chunks || 0;
-        const savedCount = s.saved_count || 0;
-        const savedAccounts = s.saved_accounts_count || 0;
-        if (s.save_status === "done") {
-          setSyncMsg({ jobId: job.id, kind: "ok", text: `Synced — ${savedCount} contact(s), ${savedAccounts} account(s).` });
-          break;
-        }
-        if (s.save_status === "error") {
-          setSyncMsg({ jobId: job.id, kind: "err", text: s.save_error || "Save failed" });
-          break;
-        }
-        setSyncMsg({ jobId: job.id, kind: "ok", text: `Syncing… ${processedChunks}/${totalChunks} chunks — ${savedCount} contact(s), ${savedAccounts} account(s) so far.` });
-      }
-      await loadJobsList();
+      const started = await call({ action: "sync_batch_start", jobIds: [job.id], verticals: { [job.id]: vertical } });
+      await pollSyncBatch(started.batchId, [job.id]);
     } catch (e) {
       setSyncMsg({ jobId: job.id, kind: "err", text: (e as Error).message });
-    } finally {
       setSyncingJobId(null);
     }
   };
@@ -2969,14 +2985,19 @@ function EnrichSection() {
       setSyncMsg({ jobId: jobs[0].id, kind: "err", text: `Pick a vertical for "${missing[0].label}" (or set a default above) before syncing.` });
       return;
     }
+    const verticals: Record<number, string> = {};
+    for (const j of jobs) verticals[j.id] = syncVerticals[j.id] || bulkVertical;
     setBulkSyncing(true);
     setBulkSyncProgress({ done: 0, total: jobs.length });
-    for (let i = 0; i < jobs.length; i++) {
-      await quickSyncJob(jobs[i], bulkVertical || undefined);
-      setBulkSyncProgress({ done: i + 1, total: jobs.length });
+    try {
+      const started = await call({ action: "sync_batch_start", jobIds: jobs.map((j) => j.id), verticals });
+      await pollSyncBatch(started.batchId, jobs.map((j) => j.id));
+    } catch (e) {
+      setSyncMsg({ jobId: jobs[0].id, kind: "err", text: (e as Error).message });
+    } finally {
+      setBulkSyncing(false);
+      setSelectedSyncJobIds(new Set());
     }
-    setBulkSyncing(false);
-    setSelectedSyncJobIds(new Set());
   };
 
   const loadJobsList = async () => {

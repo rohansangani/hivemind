@@ -186,6 +186,158 @@ async function ensureEnrichJobsTable(): Promise<void> {
   await radarSql(`ALTER TABLE enrich_jobs ADD COLUMN IF NOT EXISTS save_total_chunks integer`);
   await radarSql(`ALTER TABLE enrich_jobs ADD COLUMN IF NOT EXISTS save_processed_chunks integer NOT NULL DEFAULT 0`);
   await radarSql(`ALTER TABLE enrich_jobs ADD COLUMN IF NOT EXISTS save_error text`);
+  // Persists which vertical a save is running under — needed so the cron sweep (continue_all_sync_
+  // batches, no user session/request body available) knows what to pass save_enrich_batch when it
+  // resumes a job the browser started, same reasoning `params` already gets persisted for jobs
+  // themselves.
+  await radarSql(`ALTER TABLE enrich_jobs ADD COLUMN IF NOT EXISTS save_vertical text`);
+}
+
+// A "sync batch" is one or more Enrich jobs' saves queued up to run in order — covers both a
+// single job's "Sync to DB" (batch of 1) and the multi-select "Sync N selected" bulk action with
+// the SAME mechanism, so there's only one cron sweep to reason about instead of two independently
+// racing on the same enrich_jobs rows. Confirmed live: closing the browser mid-bulk-sync used to
+// silently abandon every job still queued behind whichever one was in flight — this table plus
+// continueAllSyncBatches below make the WHOLE queue survive that, not just the one job that had
+// already started.
+async function ensureSyncBatchesTable(): Promise<void> {
+  await radarSql(`CREATE TABLE IF NOT EXISTS enrich_sync_batches (
+    id bigserial primary key,
+    created_by text,
+    job_ids jsonb NOT NULL,
+    verticals jsonb NOT NULL DEFAULT '{}'::jsonb,
+    current_index integer NOT NULL DEFAULT 0,
+    status text NOT NULL DEFAULT 'running',
+    error text,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+  )`);
+}
+
+const SAVE_CHUNK = 500;
+
+/** Continues (or starts, if untouched) ONE job's save within a time budget, resuming from its own
+ * checkpoint (save_processed_chunks/saved_count/saved_accounts_count on enrich_jobs) rather than
+ * from scratch — safe to call repeatedly across many separate invocations (an after() call, a cron
+ * tick, another cron tick...) for the same job. Returns done:true once the job's status is a
+ * terminal one (done or error) — NOT necessarily success; a job that errors is still "done" from
+ * the sweep's point of view, so it doesn't block the rest of a batch. Returns done:false only when
+ * it genuinely ran out of budget mid-job, meaning the NEXT call should target this same job again. */
+async function continueEnrichSave(
+  jobId: number,
+  vertical: string,
+  datasetId: string,
+  apifyToken: string,
+  budgetMs: number,
+  userEmail: string | null,
+): Promise<{ done: boolean }> {
+  const startedAt = Date.now();
+  const items = await fetchApifyDatasetItems(datasetId, apifyToken);
+  const rows = mapItems(items);
+  if (!rows.length) {
+    await radarSql(`UPDATE enrich_jobs SET save_status = 'done', save_total_chunks = 0, saved_at = now() WHERE id = ${jobId}`);
+    return { done: true };
+  }
+  const chunks: typeof rows[] = [];
+  for (let i = 0; i < rows.length; i += SAVE_CHUNK) chunks.push(rows.slice(i, i + SAVE_CHUNK));
+
+  const row = (await radarSql<{ save_status?: string; save_processed_chunks?: number; saved_count?: number; saved_accounts_count?: number }>(
+    `SELECT save_status, save_processed_chunks, saved_count, saved_accounts_count FROM enrich_jobs WHERE id = ${jobId}`
+  ))[0];
+  // Fresh start (never touched, or a prior run's checkpoint is stale against a re-fetched dataset
+  // with a different chunk count) resets to 0; otherwise resume from exactly where it left off —
+  // this is what makes a job survive a closed browser or an interrupted after() call.
+  const isFresh = !row?.save_status || (row.save_processed_chunks ?? 0) > chunks.length;
+  let processedChunks = isFresh ? 0 : (row?.save_processed_chunks ?? 0);
+  let savedContacts = isFresh ? 0 : (row?.saved_count ?? 0);
+  let savedAccounts = isFresh ? 0 : (row?.saved_accounts_count ?? 0);
+  await radarSql(`UPDATE enrich_jobs SET save_status = 'running', save_total_chunks = ${chunks.length}, save_processed_chunks = ${processedChunks}, saved_count = ${savedContacts}, saved_accounts_count = ${savedAccounts}, save_vertical = '${vertical.replace(/'/g, "''")}', save_error = NULL WHERE id = ${jobId}`);
+
+  try {
+    // Sequential, not concurrent — each chunk's checkpoint UPDATE needs to reflect real,
+    // already-committed progress for both polling AND resumption to be trustworthy.
+    for (let i = processedChunks; i < chunks.length; i++) {
+      if (Date.now() - startedAt > budgetMs) return { done: false }; // out of time this call — next call resumes at save_processed_chunks
+      let result: { saved_contacts?: number; saved_accounts?: number } | undefined;
+      let lastErr: unknown;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const rpcRows = await rpc<{ saved_contacts?: number; saved_accounts?: number }>("save_enrich_batch", { p_items: chunks[i], p_vertical: vertical || null });
+          result = rpcRows[0];
+          lastErr = undefined;
+          break;
+        } catch (e) {
+          lastErr = e;
+          if (attempt === 0) await new Promise((res) => setTimeout(res, 500 + Math.random() * 500));
+        }
+      }
+      if (lastErr) throw lastErr;
+      savedContacts += Number(result?.saved_contacts ?? 0);
+      savedAccounts += Number(result?.saved_accounts ?? 0);
+      processedChunks++;
+      await radarSql(`UPDATE enrich_jobs SET save_processed_chunks = ${processedChunks}, saved_count = ${savedContacts}, saved_accounts_count = ${savedAccounts} WHERE id = ${jobId}`);
+    }
+    await radarSql(`UPDATE enrich_jobs SET save_status = 'done', saved_at = now() WHERE id = ${jobId}`);
+    await logRadarUsage(userEmail, "leads_finder", rows.length);
+    triggerSyncExclusions();
+    return { done: true };
+  } catch (e) {
+    await radarSql(`UPDATE enrich_jobs SET save_status = 'error', save_error = '${((e as Error).message || "Save failed").replace(/'/g, "''")}' WHERE id = ${jobId}`).catch(() => {});
+    return { done: true }; // terminal from the sweep's perspective — won't be retried automatically
+  }
+}
+
+/** Creates a sync batch and kicks off an immediate best-effort continuation via after() — the
+ * cron sweep (continueAllSyncBatches) picks up whatever's left regardless of whether this
+ * request's own after() lifetime was long enough, or whether the browser that started it is even
+ * still open. */
+async function startSyncBatch(jobIds: number[], verticals: Record<number, string>, userEmail: string | null): Promise<{ status: number; body: Record<string, unknown> }> {
+  await ensureSyncBatchesTable();
+  await ensureEnrichJobsTable();
+  const insR = await radarSql<{ id: number }>(
+    `INSERT INTO enrich_sync_batches (created_by, job_ids, verticals) VALUES ('${(userEmail || "").replace(/'/g, "''")}', '${JSON.stringify(jobIds)}'::jsonb, '${JSON.stringify(verticals).replace(/'/g, "''")}'::jsonb) RETURNING id`
+  );
+  const batchId = insR[0]?.id;
+  if (!batchId) return { status: 500, body: { error: "Failed to start sync batch" } };
+  const APIFY_TOKEN = process.env.APIFY_TOKEN;
+  if (APIFY_TOKEN) after(() => continueSyncBatch(batchId, APIFY_TOKEN, 250000).catch(() => {}));
+  return { status: 200, body: { started: true, batchId, total: jobIds.length } };
+}
+
+/** Advances a sync batch: ensures the CURRENT job's save progresses, moves to the next job once
+ * the current one reaches a terminal state (done or error — a bad job doesn't block the rest of
+ * the batch), repeating within budgetMs. Shared by after()'s one-shot attempt and every cron tick —
+ * fully idempotent to call again on the same batch, since it always re-reads current_index fresh. */
+async function continueSyncBatch(batchId: number, apifyToken: string, budgetMs: number): Promise<void> {
+  const startedAt = Date.now();
+  for (;;) {
+    const remaining = budgetMs - (Date.now() - startedAt);
+    if (remaining < 3000) return;
+    const row = (await radarSql<{ job_ids: number[]; verticals: Record<string, string>; current_index: number; status: string }>(
+      `SELECT job_ids, verticals, current_index, status FROM enrich_sync_batches WHERE id = ${batchId}`
+    ))[0];
+    if (!row || row.status !== "running") return;
+    const ids = (row.job_ids || []).map(Number);
+    if (row.current_index >= ids.length) {
+      await radarSql(`UPDATE enrich_sync_batches SET status = 'done', updated_at = now() WHERE id = ${batchId}`);
+      return;
+    }
+    const jobId = ids[row.current_index];
+    const vertical = row.verticals?.[String(jobId)];
+    const jobRow = (await radarSql<{ dataset_id?: string; created_by?: string }>(`SELECT dataset_id, created_by FROM enrich_jobs WHERE id = ${jobId}`))[0];
+    if (!vertical || !jobRow?.dataset_id) {
+      // Nothing sensible to do for this job — record it and move on rather than getting the whole
+      // batch stuck on one malformed entry.
+      await radarSql(`UPDATE enrich_jobs SET save_status = 'error', save_error = 'Missing vertical or dataset for batch sync' WHERE id = ${jobId}`).catch(() => {});
+      await radarSql(`UPDATE enrich_sync_batches SET current_index = current_index + 1, updated_at = now() WHERE id = ${batchId}`);
+      continue;
+    }
+    const result = await continueEnrichSave(jobId, vertical, jobRow.dataset_id, apifyToken, remaining - 2000, jobRow.created_by || null);
+    if (!result.done) return; // ran out of time mid-job — next tick resumes the SAME job via its own checkpoint
+    await radarSql(`UPDATE enrich_sync_batches SET current_index = current_index + 1, updated_at = now() WHERE id = ${batchId}`);
+    // Loop again within the same call if budget remains — moves straight to the next job instead
+    // of waiting for another cron tick when one just finished quickly.
+  }
 }
 
 async function handleAction(req: NextRequest, userEmail: string | null): Promise<{ status: number; body: Record<string, unknown> }> {
@@ -389,70 +541,15 @@ async function handleAction(req: NextRequest, userEmail: string | null): Promise
     return { status: 200, body: { items: mapped } };
   }
 
-  // ── save to DB — runs as a background job with live, pollable progress ──────────────
-  // Runs save_enrich_batch (a single Postgres function, not a per-row upsert + a separate
-  // best-effort company_name-match pass — domain is a much more reliable join key than fuzzy
-  // company-name matching, and Apify hands it to us directly) in chunks. Confirmed live: even
-  // chunked, a real 10,477-lead job's save can take well over a minute, and the OLD synchronous
-  // version gave zero feedback while it ran — "Sync to DB" just sat there until it either finished
-  // or the whole HTTP request itself timed out, indistinguishable from being stuck. This starts the
-  // save via after() and returns immediately; save_status below polls live progress, checkpointed
-  // after every chunk (not just at the end) via enrich_jobs.save_processed_chunks/saved_count/
-  // saved_accounts_count, so a mid-way failure doesn't lose what already succeeded.
+  // ── save to DB — runs as a batch (see sync_batch_start below) ────────────────────────
+  // A single job's "Sync to DB" is now just a batch of one — see sync_batch_start. Kept as a
+  // thin, backward-compatible wrapper (Halo's assistant route still calls this action directly)
+  // rather than migrating every caller at once.
   if (action === "save") {
-    if (!APIFY_TOKEN) return { status: 503, body: { error: "Apify not configured" } };
     const vertical = (body as { vertical?: string }).vertical;
     if (!vertical) return { status: 400, body: { error: "Vertical is required" } };
-    if (!datasetId) return { status: 400, body: { error: "No datasetId" } };
     if (!jobId) return { status: 400, body: { error: "No jobId — live save progress requires a tracked Enrich job" } };
-    await ensureEnrichJobsTable();
-
-    const items = await fetchApifyDatasetItems(datasetId, APIFY_TOKEN);
-    if (!Array.isArray(items) || !items.length) return { status: 200, body: { saved: 0, savedAccounts: 0, done: true } };
-    const rows = mapItems(items);
-    if (!rows.length) return { status: 200, body: { saved: 0, savedAccounts: 0, done: true } };
-
-    const SAVE_CHUNK = 500;
-    const chunks: typeof rows[] = [];
-    for (let i = 0; i < rows.length; i += SAVE_CHUNK) chunks.push(rows.slice(i, i + SAVE_CHUNK));
-
-    await radarSql(`UPDATE enrich_jobs SET save_status = 'running', save_total_chunks = ${chunks.length}, save_processed_chunks = 0, saved_count = 0, saved_accounts_count = 0, save_error = NULL WHERE id = ${Number(jobId)}`);
-
-    after(async () => {
-      let savedContacts = 0, savedAccounts = 0, processedChunks = 0;
-      try {
-        // Sequential, not mapWithConcurrency — each chunk's checkpoint UPDATE needs to reflect
-        // real, already-committed progress for polling to be trustworthy; running several chunks
-        // concurrently would make "processed_chunks" jump ahead of what's actually durably saved.
-        for (const chunk of chunks) {
-          let result: { saved_contacts?: number; saved_accounts?: number } | undefined;
-          let lastErr: unknown;
-          for (let attempt = 0; attempt < 2; attempt++) {
-            try {
-              const rpcRows = await rpc<{ saved_contacts?: number; saved_accounts?: number }>("save_enrich_batch", { p_items: chunk, p_vertical: vertical || null });
-              result = rpcRows[0];
-              lastErr = undefined;
-              break;
-            } catch (e) {
-              lastErr = e;
-              if (attempt === 0) await new Promise((res) => setTimeout(res, 500 + Math.random() * 500));
-            }
-          }
-          if (lastErr) throw lastErr;
-          savedContacts += Number(result?.saved_contacts ?? 0);
-          savedAccounts += Number(result?.saved_accounts ?? 0);
-          processedChunks++;
-          await radarSql(`UPDATE enrich_jobs SET save_processed_chunks = ${processedChunks}, saved_count = ${savedContacts}, saved_accounts_count = ${savedAccounts} WHERE id = ${Number(jobId)}`);
-        }
-        await radarSql(`UPDATE enrich_jobs SET save_status = 'done', saved_at = now() WHERE id = ${Number(jobId)}`);
-        await logRadarUsage(userEmail, "leads_finder", rows.length);
-        triggerSyncExclusions();
-      } catch (e) {
-        await radarSql(`UPDATE enrich_jobs SET save_status = 'error', save_error = '${((e as Error).message || "Save failed").replace(/'/g, "''")}' WHERE id = ${Number(jobId)}`).catch(() => {});
-      }
-    });
-
-    return { status: 200, body: { started: true, totalChunks: chunks.length, total: items.length } };
+    return startSyncBatch([Number(jobId)], { [Number(jobId)]: vertical }, userEmail);
   }
 
   if (action === "save_status") {
@@ -463,6 +560,42 @@ async function handleAction(req: NextRequest, userEmail: string | null): Promise
     ))[0];
     if (!row) return { status: 404, body: { error: "Job not found" } };
     return { status: 200, body: row };
+  }
+
+  // ── sync batch — one or more jobs' saves, queued to run in order, resumable across a closed
+  // browser via the cron sweep (continue_all_sync_batches / GET below), not just via after() ──
+  if (action === "sync_batch_start") {
+    if (!APIFY_TOKEN) return { status: 503, body: { error: "Apify not configured" } };
+    const { jobIds, verticals } = body as { jobIds?: number[]; verticals?: Record<string, string> };
+    if (!Array.isArray(jobIds) || !jobIds.length) return { status: 400, body: { error: "No jobIds" } };
+    const missing = jobIds.filter((id) => !verticals?.[String(id)]);
+    if (missing.length) return { status: 400, body: { error: `Missing vertical for job ${missing[0]}` } };
+    return startSyncBatch(jobIds, verticals as Record<number, string>, userEmail);
+  }
+
+  if (action === "sync_batch_status") {
+    const { batchId } = body as { batchId?: number };
+    if (!batchId) return { status: 400, body: { error: "No batchId" } };
+    await ensureSyncBatchesTable();
+    await ensureEnrichJobsTable();
+    const batch = (await radarSql<{ id: number; job_ids: number[]; current_index: number; status: string; error: string | null }>(
+      `SELECT id, job_ids, current_index, status, error FROM enrich_sync_batches WHERE id = ${Number(batchId)}`
+    ))[0];
+    if (!batch) return { status: 404, body: { error: "Batch not found" } };
+    const ids = (batch.job_ids || []).map(Number);
+    const jobs = ids.length
+      ? await radarSql<{ id: number; label: string; save_status: string | null; save_total_chunks: number | null; save_processed_chunks: number; saved_count: number; saved_accounts_count: number; save_error: string | null }>(
+          `SELECT id, label, save_status, save_total_chunks, save_processed_chunks, saved_count, saved_accounts_count, save_error FROM enrich_jobs WHERE id IN (${ids.join(",")})`
+        )
+      : [];
+    const byId = new Map(jobs.map((j) => [Number(j.id), j]));
+    return {
+      status: 200,
+      body: {
+        batch: { id: batch.id, status: batch.status, currentIndex: batch.current_index, total: ids.length, error: batch.error },
+        jobs: ids.map((id) => byId.get(id) || { id, label: "Unknown job", save_status: null }),
+      },
+    };
   }
 
   // ── Debounce-validate selected (not-yet-saved) Apify leads, no DB write ──
@@ -653,7 +786,60 @@ function triggerSyncExclusions(): void {
   }).catch(() => {});
 }
 
+// Cron-driven continuation for sync batches — same shared-secret + dual-trigger pattern as
+// linkedin-jobs.ts's continue_all (GitHub Actions' POST+literal-secret, and Vercel's native GET
+// cron+CRON_SECRET env var). Confirmed live: closing the browser mid-bulk-sync used to abandon
+// every job still queued behind whichever one was in flight — this sweep is what makes the WHOLE
+// queue actually finish regardless of whether anyone's watching.
+const SYNC_BATCH_CRON_SECRET = "e5b8f1c4a7d29c6e14b8a37f52091d6c4a8b3e7f0159c2d8a5b1e4f70936c9a";
+const SYNC_BATCH_CRON_TOTAL_BUDGET_MS = 250000;
+
+async function continueAllSyncBatches(): Promise<{ continued: number; results: { batchId: number; skipped?: string }[] }> {
+  await ensureSyncBatchesTable();
+  const APIFY_TOKEN = process.env.APIFY_TOKEN;
+  if (!APIFY_TOKEN) return { continued: 0, results: [] };
+  const rows = await radarSql<{ id: number }>(`SELECT id FROM enrich_sync_batches WHERE status = 'running' ORDER BY id ASC`);
+  const startedAt = Date.now();
+  const results: { batchId: number; skipped?: string }[] = [];
+  for (const row of rows) {
+    const elapsed = Date.now() - startedAt;
+    if (elapsed > SYNC_BATCH_CRON_TOTAL_BUDGET_MS) { results.push({ batchId: row.id, skipped: "time budget — will run next tick" }); continue; }
+    const perBatchBudget = Math.floor((SYNC_BATCH_CRON_TOTAL_BUDGET_MS - elapsed) / (rows.length - results.length));
+    await continueSyncBatch(row.id, APIFY_TOKEN, perBatchBudget);
+    results.push({ batchId: row.id });
+  }
+  return { continued: results.length, results };
+}
+
+// Vercel's native Cron always calls via a plain GET with `Authorization: Bearer $CRON_SECRET`
+// auto-attached — see linkedin-jobs.ts's identical GET handler for why this exists alongside the
+// GitHub Actions path below rather than replacing it.
+export async function GET(req: NextRequest) {
+  const auth = req.headers.get("authorization");
+  if (auth !== `Bearer ${process.env.CRON_SECRET}`) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    return NextResponse.json(await continueAllSyncBatches());
+  } catch (error) {
+    console.error("Enrich sync batches continue_all (cron) error:", error);
+    return NextResponse.json({ error: "Something went wrong" }, { status: 500 });
+  }
+}
+
 export async function POST(req: NextRequest) {
+  // Cron-driven sweep — no hivemind user session in this context, so it's gated by the shared
+  // secret instead of requireRadarAccess, and handled BEFORE the auth check below (no orgId here).
+  const bodyForCron = await req.clone().json().catch(() => ({}));
+  if ((bodyForCron as { action?: string }).action === "continue_all_sync_batches") {
+    const auth = req.headers.get("authorization");
+    if (auth !== `Bearer ${SYNC_BATCH_CRON_SECRET}`) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    try {
+      return NextResponse.json(await continueAllSyncBatches());
+    } catch (error) {
+      console.error("Enrich sync batches continue_all (POST) error:", error);
+      return NextResponse.json({ error: "Something went wrong" }, { status: 500 });
+    }
+  }
+
   // Radar's "view" tier is restricted to Dashboard + Export only — Enrich and ICP Base (which
   // also calls this route) require "edit".
   const access = await requireRadarAccess(req, "edit");
