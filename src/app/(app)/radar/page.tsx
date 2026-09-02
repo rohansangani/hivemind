@@ -2902,6 +2902,17 @@ function EnrichSection() {
   // confirmation. Confirmed live: a sync that actually worked left no visible sign it had, since
   // the only state this action touched on success was silently refreshing the job list.
   const [syncMsg, setSyncMsg] = useState<{ jobId: number; kind: "ok" | "err"; text: string } | null>(null);
+  // Bulk sync — select several never-saved jobs and sync them one after another instead of
+  // clicking each one individually. bulkVertical is a convenience default applied to every
+  // selected job that doesn't already have its own per-row vertical picked; per-row overrides
+  // (syncVerticals) still win. Runs SEQUENTIALLY, not concurrently — confirmed live this Supabase
+  // project sits on the NANO compute tier with a small connection pool that's already gotten
+  // exhausted under this session's load; firing several large saves at once would make that worse,
+  // not better.
+  const [selectedSyncJobIds, setSelectedSyncJobIds] = useState<Set<number>>(new Set());
+  const [bulkVertical, setBulkVertical] = useState("");
+  const [bulkSyncing, setBulkSyncing] = useState(false);
+  const [bulkSyncProgress, setBulkSyncProgress] = useState<{ done: number; total: number } | null>(null);
 
   useEffect(() => { setSavedIcps(loadIcps()); }, []);
 
@@ -2910,8 +2921,10 @@ function EnrichSection() {
   // synchronous call giving zero feedback while it ran. Starts the job, then polls save_status every
   // 2s, showing live "X/Y chunks — N contact(s), M account(s) so far" progress instead of a single
   // opaque "Syncing…" the whole time.
-  const quickSyncJob = async (job: EnrichJobRow) => {
-    const vertical = syncVerticals[job.id];
+  const quickSyncJob = async (job: EnrichJobRow, verticalOverride?: string) => {
+    // verticalOverride lets runBulkSync (below) pass bulkVertical directly for a job that has no
+    // per-row pick yet, without racing setSyncVerticals' async state update.
+    const vertical = syncVerticals[job.id] || verticalOverride;
     if (!vertical) { setSyncMsg({ jobId: job.id, kind: "err", text: "Pick a vertical before syncing." }); return; }
     setSyncingJobId(job.id);
     setSyncMsg({ jobId: job.id, kind: "ok", text: "Starting…" });
@@ -2946,6 +2959,24 @@ function EnrichSection() {
     } finally {
       setSyncingJobId(null);
     }
+  };
+
+  const runBulkSync = async () => {
+    const jobs = jobsList.filter((j) => selectedSyncJobIds.has(j.id));
+    if (!jobs.length) return;
+    const missing = jobs.filter((j) => !(syncVerticals[j.id] || bulkVertical));
+    if (missing.length) {
+      setSyncMsg({ jobId: jobs[0].id, kind: "err", text: `Pick a vertical for "${missing[0].label}" (or set a default above) before syncing.` });
+      return;
+    }
+    setBulkSyncing(true);
+    setBulkSyncProgress({ done: 0, total: jobs.length });
+    for (let i = 0; i < jobs.length; i++) {
+      await quickSyncJob(jobs[i], bulkVertical || undefined);
+      setBulkSyncProgress({ done: i + 1, total: jobs.length });
+    }
+    setBulkSyncing(false);
+    setSelectedSyncJobIds(new Set());
   };
 
   const loadJobsList = async () => {
@@ -3608,6 +3639,48 @@ function EnrichSection() {
               </button>
             </div>
             {jobsListError && <p className="text-[12px] text-[var(--tag-red-fg)]">{jobsListError}</p>}
+            {(() => {
+              const unsavedJobs = jobsList.filter((j) => j.status === "SUCCEEDED" && j.item_count > 0 && !j.saved_at);
+              if (!unsavedJobs.length) return null;
+              const allSelected = unsavedJobs.length > 0 && unsavedJobs.every((j) => selectedSyncJobIds.has(j.id));
+              return (
+                <div className="flex items-center gap-2 mb-1.5 px-0.5 flex-wrap">
+                  <label className="flex items-center gap-1.5 text-[11px] text-[var(--hm-text-secondary)] cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      onChange={(e) => setSelectedSyncJobIds(e.target.checked ? new Set(unsavedJobs.map((j) => j.id)) : new Set())}
+                    />
+                    Select all unsaved ({unsavedJobs.length})
+                  </label>
+                  {selectedSyncJobIds.size > 0 && (
+                    <>
+                      <select
+                        value={bulkVertical}
+                        onChange={(e) => setBulkVertical(e.target.value)}
+                        className="text-[11px]"
+                        style={{ height: 24, padding: "0 4px" }}
+                        title="Default vertical for selected jobs that don't already have their own pick"
+                      >
+                        <option value="">Default vertical…</option>
+                        <option value="B2B">B2B</option>
+                        <option value="US">US</option>
+                        <option value="D2C">D2C</option>
+                      </select>
+                      <button
+                        onClick={runBulkSync}
+                        disabled={bulkSyncing}
+                        className="text-[11px] px-2 py-1 rounded-md border border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[var(--hm-primary)] hover:text-[var(--hm-text)] disabled:opacity-50"
+                      >
+                        {bulkSyncing
+                          ? `Syncing ${bulkSyncProgress?.done ?? 0}/${bulkSyncProgress?.total ?? selectedSyncJobIds.size}…`
+                          : `Sync ${selectedSyncJobIds.size} selected`}
+                      </button>
+                    </>
+                  )}
+                </div>
+              );
+            })()}
             <div className="space-y-1 max-h-56 overflow-y-auto">
               {jobsList.map((j) => {
                 // Was `saved_count === 0` — but a sync that legitimately finds nothing new (every
@@ -3619,6 +3692,21 @@ function EnrichSection() {
                 return (
                   <div key={j.id} className="rounded-md hover:bg-[var(--hm-surface-hover)]">
                   <div className="flex items-center gap-1.5 px-2.5 py-1.5">
+                    {unsaved && (
+                      <input
+                        type="checkbox"
+                        checked={selectedSyncJobIds.has(j.id)}
+                        onChange={(e) => {
+                          setSelectedSyncJobIds((prev) => {
+                            const next = new Set(prev);
+                            if (e.target.checked) next.add(j.id); else next.delete(j.id);
+                            return next;
+                          });
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        className="shrink-0"
+                      />
+                    )}
                     <button
                       onClick={() => openJob(j)}
                       disabled={openingJobId === j.id}
