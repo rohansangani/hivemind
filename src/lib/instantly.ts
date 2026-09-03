@@ -45,7 +45,15 @@ export async function instantly<T = Record<string, unknown>>(path: string, opts:
   const d = await r.json().catch(() => ({}));
   if (!r.ok) {
     const msg = (d as { message?: string })?.message || `Instantly ${path} failed (${r.status})`;
-    throw new Error(msg);
+    // Was a plain Error(msg) with no status attached — confirmed live this made validate.ts's
+    // addLeadWithRetry's "retry on 429" check (`(e as {status?:number}).status === 429`) dead code
+    // that could never actually fire, so a genuine transient rate-limit and a permanent rejection
+    // (e.g. "Lead is in blocklist", a real 400) were indistinguishable to every caller — both just
+    // failed once and, worse, both got retried forever by the cron sweep since nothing recorded a
+    // permanent failure as permanent.
+    const err = new Error(msg) as Error & { status?: number };
+    err.status = r.status;
+    throw err;
   }
   return d as T;
 }

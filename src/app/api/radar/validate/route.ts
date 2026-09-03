@@ -264,8 +264,13 @@ async function mapConcurrent<T, R>(items: T[], concurrency: number, fn: (item: T
 interface LeadCandidate { id: number; first_name?: string; middle_name?: string; last_name?: string; domain?: string; pattern_email: string }
 
 // Adding leads one-by-one hits Instantly's own rate limit under sustained volume — retries 429s
-// with backoff instead of giving up on the first rejection.
-async function addLeadWithRetry(campaignId: string, c: LeadCandidate, attempt = 0): Promise<{ id: number; leadId?: string; error?: string }> {
+// with backoff instead of giving up on the first rejection. Any OTHER 4xx (e.g. "Lead is in
+// blocklist", a real 400) is marked `permanent` — confirmed live these were retried on literally
+// every future cron tick forever (nothing distinguished them from a transient failure), each one
+// silently eating a retry slot and permanently blocking that job from ever reaching 0 remaining. A
+// 5xx/network failure is treated as transient (not permanent) so it's still retried by the next
+// send/continue_send/continue_all_sends call, just not marked as a dead end.
+async function addLeadWithRetry(campaignId: string, c: LeadCandidate, attempt = 0): Promise<{ id: number; leadId?: string; error?: string; permanent?: boolean }> {
   try {
     const lead = await instantly<{ id?: string }>("/leads", {
       method: "POST",
@@ -277,12 +282,30 @@ async function addLeadWithRetry(campaignId: string, c: LeadCandidate, attempt = 
     });
     return lead?.id ? { id: c.id, leadId: lead.id } : { id: c.id, error: "No lead id in response" };
   } catch (e) {
-    if ((e as { status?: number }).status === 429 && attempt < 4) {
+    const status = (e as { status?: number }).status;
+    if (status === 429 && attempt < 4) {
       await new Promise((res) => setTimeout(res, 800 * (attempt + 1)));
       return addLeadWithRetry(campaignId, c, attempt + 1);
     }
-    return { id: c.id, error: (e as Error).message };
+    const permanent = typeof status === "number" && status >= 400 && status < 500 && status !== 429;
+    return { id: c.id, error: (e as Error).message, permanent };
   }
+}
+
+/** Marks candidates that got a permanent (non-retryable) failure adding to Instantly — e.g. "Lead
+ * is in blocklist" — so send/continue_send/continue_all_sends' "still needs sending" queries can
+ * exclude them going forward. Confirmed live: without this, a permanently-rejected candidate was
+ * retried on literally every future call forever, each one eating a retry slot and permanently
+ * blocking that job from ever reaching 0 remaining (4 separate jobs were each stuck exactly this
+ * way — one per real blocklisted email). Best-effort — a failure to WRITE the failure marker just
+ * means it gets retried again next time, same as before this fix existed. */
+async function markPermanentSendFailures(failures: { id: number; error?: string; permanent?: boolean }[]): Promise<void> {
+  const permanent = failures.filter((f) => f.permanent);
+  if (!permanent.length) return;
+  await radarSql(`ALTER TABLE email_validation_candidates ADD COLUMN IF NOT EXISTS send_failed boolean NOT NULL DEFAULT false`).catch(() => {});
+  await radarSql(`ALTER TABLE email_validation_candidates ADD COLUMN IF NOT EXISTS send_error text`).catch(() => {});
+  const values = permanent.map((f) => `(${f.id}, '${(f.error || "Failed").replace(/'/g, "''").slice(0, 500)}')`).join(",");
+  await radarSql(`UPDATE email_validation_candidates AS c SET send_failed = true, send_error = v.err FROM (VALUES ${values}) AS v(id, err) WHERE c.id = v.id`).catch(() => {});
 }
 
 const restFilters = (vertical?: string, domain?: string, statuses?: string[]): string => {
@@ -726,7 +749,7 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
     const startedAt = Date.now();
     const CONC = 8;
     const results: { id: number; leadId?: string }[] = [];
-    const failures: { id: number; error?: string }[] = [];
+    const failures: { id: number; error?: string; permanent?: boolean }[] = [];
     for (let i = 0; i < cands.length; i += CONC) {
       if (Date.now() - startedAt > 40000) break;
       const batch = (cands as unknown as LeadCandidate[]).slice(i, i + CONC);
@@ -738,6 +761,7 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
     }
     const added = results.length;
     if (results.length) await rpc("set_instantly_lead_ids", { pairs: results.map((r) => ({ id: r.id, lead_id: r.leadId })) });
+    await markPermanentSendFailures(failures);
 
     await instantly(`/campaigns/${campaignId}/activate`, { method: "POST", body: "{}" });
 
@@ -745,10 +769,11 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
       method: "PATCH", headers: { Prefer: "return=minimal" },
       body: JSON.stringify({ campaign_id: campaignId, mailbox_tag: mailboxTag || null, status: "sent" }),
     });
-    const remaining = cands.length - added;
+    const permanentCount = failures.filter((f) => f.permanent).length;
+    const remaining = cands.length - added - permanentCount;
     return {
       status: 200, body: {
-        campaignId, added, senders: senderEmails.length, remaining,
+        campaignId, added, senders: senderEmails.length, remaining, permanentlyFailed: permanentCount,
         note: remaining > 0 ? `${remaining} lead(s) not yet added — retrying automatically via continue_send` : undefined,
       },
     };
@@ -768,20 +793,26 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
     // set that was actually confirmed at send time, not whatever happens to be selected right now.
     // Confirmed live: following `selected` let a later threshold change pull additional leads into
     // an already-sent campaign well past what was originally confirmed.
-    const { rows: cands } = await fetchAllPages("email_validation_candidates", `select=id,first_name,middle_name,last_name,domain,pattern_email&job_id=eq.${jobId}&instantly_lead_id=is.null&queued_for_send=eq.true`);
+    await radarSql(`ALTER TABLE email_validation_candidates ADD COLUMN IF NOT EXISTS send_failed boolean NOT NULL DEFAULT false`).catch(() => {});
+    // AND send_failed = false excludes candidates already marked permanently rejected by Instantly
+    // (e.g. blocklisted) — without it, one such candidate gets retried on literally every future
+    // call forever, permanently blocking this job from ever reaching 0 remaining.
+    const { rows: cands } = await fetchAllPages("email_validation_candidates", `select=id,first_name,middle_name,last_name,domain,pattern_email&job_id=eq.${jobId}&instantly_lead_id=is.null&queued_for_send=eq.true&send_failed=eq.false`);
     if (!cands.length) return { status: 200, body: { added: 0, remaining: 0, done: true } };
 
     const startedAt = Date.now();
     const CONC = 8;
     const results: { id: number; leadId?: string }[] = [];
+    const failures: { id: number; error?: string; permanent?: boolean }[] = [];
     for (let i = 0; i < cands.length; i += CONC) {
       if (Date.now() - startedAt > 40000) break;
       const batch = (cands as unknown as LeadCandidate[]).slice(i, i + CONC);
       const settled = await Promise.all(batch.map((c) => addLeadWithRetry(job.campaign_id as string, c)));
-      for (const r of settled) if (r.leadId) results.push(r);
+      for (const r of settled) { if (r.leadId) results.push(r); else failures.push(r); }
     }
     if (results.length) await rpc("set_instantly_lead_ids", { pairs: results.map((r) => ({ id: r.id, lead_id: r.leadId })) });
-    const remaining = cands.length - results.length;
+    await markPermanentSendFailures(failures);
+    const remaining = cands.length - results.length - failures.filter((f) => f.permanent).length;
     return { status: 200, body: { added: results.length, remaining, done: remaining === 0 } };
   }
 
@@ -790,29 +821,36 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
     const auth = req.headers.get("authorization");
     if (!overrideAction && auth !== `Bearer ${CRON_SECRET}`) return { status: 401, body: { error: "Unauthorized" } };
     await radarSql(`ALTER TABLE email_validation_candidates ADD COLUMN IF NOT EXISTS queued_for_send boolean NOT NULL DEFAULT false`);
+    await radarSql(`ALTER TABLE email_validation_candidates ADD COLUMN IF NOT EXISTS send_failed boolean NOT NULL DEFAULT false`).catch(() => {});
     // Both this join's WHERE and the per-job query below follow queued_for_send (frozen at "send"
-    // time), not the live `selected` column — see continue_send's comment above for why.
+    // time), not the live `selected` column — see continue_send's comment above for why. Also
+    // excludes send_failed=true (a candidate Instantly permanently rejected, e.g. blocklisted) —
+    // confirmed live 4 separate jobs were each stuck at "remaining: 1" forever, retried on every
+    // single cron tick with zero chance of ever succeeding, because nothing distinguished a
+    // permanent rejection from one that just hadn't been attempted yet.
     const jobRows = await radarSql<{ id: number; campaign_id: string }>(`
       SELECT DISTINCT j.id, j.campaign_id FROM email_validation_jobs j
       JOIN email_validation_candidates c ON c.job_id = j.id
-      WHERE j.status = 'sent' AND j.campaign_id IS NOT NULL AND c.instantly_lead_id IS NULL AND c.queued_for_send = true
+      WHERE j.status = 'sent' AND j.campaign_id IS NOT NULL AND c.instantly_lead_id IS NULL AND c.queued_for_send = true AND c.send_failed = false
       ORDER BY j.id ASC
     `);
     const startedAt = Date.now();
     const results: Record<string, unknown>[] = [];
     for (const { id: jid, campaign_id: campaignId } of jobRows) {
       if (Date.now() - startedAt > 42000) { results.push({ jobId: jid, skipped: "time budget — will run next tick" }); continue; }
-      const { rows: cands } = await fetchAllPages("email_validation_candidates", `select=id,first_name,middle_name,last_name,domain,pattern_email&job_id=eq.${jid}&instantly_lead_id=is.null&queued_for_send=eq.true`);
+      const { rows: cands } = await fetchAllPages("email_validation_candidates", `select=id,first_name,middle_name,last_name,domain,pattern_email&job_id=eq.${jid}&instantly_lead_id=is.null&queued_for_send=eq.true&send_failed=eq.false`);
       if (!cands.length) continue;
       const added: { id: number; leadId?: string }[] = [];
+      const failures: { id: number; error?: string; permanent?: boolean }[] = [];
       for (let i = 0; i < cands.length; i += 8) {
         if (Date.now() - startedAt > 42000) break;
         const batch = (cands as unknown as LeadCandidate[]).slice(i, i + 8);
         const settled = await Promise.all(batch.map((c) => addLeadWithRetry(campaignId, c)));
-        for (const r of settled) if (r.leadId) added.push(r);
+        for (const r of settled) { if (r.leadId) added.push(r); else failures.push(r); }
       }
       if (added.length) await rpc("set_instantly_lead_ids", { pairs: added.map((r) => ({ id: r.id, lead_id: r.leadId })) });
-      results.push({ jobId: jid, added: added.length, remaining: cands.length - added.length });
+      await markPermanentSendFailures(failures);
+      results.push({ jobId: jid, added: added.length, remaining: cands.length - added.length - failures.filter((f) => f.permanent).length });
     }
     return { status: 200, body: { processed: results.length, results } };
   }
