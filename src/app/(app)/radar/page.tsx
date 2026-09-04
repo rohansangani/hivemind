@@ -2842,6 +2842,12 @@ function EnrichSection() {
   const [functionalLevel, setFunctionalLevel] = useState<string[]>([]);
   const [location, setLocation] = useState<string[]>([]);
   const [notLocation, setNotLocation] = useState<string[]>([]);
+  // Separate from Location — the leads-finder actor's own contact_city/contact_not_city fields
+  // (confirmed already passed through server-side in enrich/route.ts's field allowlist), for
+  // targeting a specific city rather than a whole country/region/state. Per the actor's own UI
+  // guidance, Location and City are meant to be used exclusively of each other, not combined.
+  const [city, setCity] = useState("");
+  const [notCity, setNotCity] = useState("");
   const [industry, setIndustry] = useState<string[]>([]);
   const [notIndustry, setNotIndustry] = useState<string[]>([]);
   const [size, setSize] = useState<string[]>([]);
@@ -3139,6 +3145,8 @@ function EnrichSection() {
       if (functionalLevel.length) params.functional_level = functionalLevel;
       if (location.length) params.contact_location = location;
       if (notLocation.length) params.contact_not_location = notLocation;
+      if (city.trim()) params.contact_city = csv(city);
+      if (notCity.trim()) params.contact_not_city = csv(notCity);
       if (industry.length) params.company_industry = industry;
       if (notIndustry.length) params.company_not_industry = notIndustry;
       if (size.length) params.size = size;
@@ -3572,6 +3580,14 @@ function EnrichSection() {
               <div>
                 <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Exclude location</label>
                 <SearchableMultiSelect options={APIFY_LEADS_FINDER_LOCATIONS} selected={notLocation} onChange={setNotLocation} placeholder="Pakistan" />
+              </div>
+              <div>
+                <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block" title="Leave Location empty when targeting a specific city — the actor's own guidance is not to combine region/country/state with a city in the same run.">City</label>
+                <input type="text" value={city} onChange={(e) => setCity(e.target.value)} placeholder="Mumbai, Bengaluru" />
+              </div>
+              <div>
+                <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Exclude city</label>
+                <input type="text" value={notCity} onChange={(e) => setNotCity(e.target.value)} placeholder="Delhi" />
               </div>
               <div>
                 <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Keywords include</label>
