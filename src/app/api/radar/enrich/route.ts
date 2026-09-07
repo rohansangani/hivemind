@@ -445,24 +445,28 @@ async function handleAction(req: NextRequest, userEmail: string | null): Promise
     if (APIFY_TOKEN) {
       const stale = rows.filter((j) => j.status === "SUCCEEDED" && !j.item_count);
       if (stale.length) {
-        // Was Promise.all over ALL stale jobs at once — up to 50 simultaneous Apify calls on
-        // every single list load tripped Apify's own rate limiter ("ThrottlerException: Too Many
-        // Requests"), shared account-wide with the actual Enrich run-start call. Bounded like
-        // every other Apify/DB fan-out fix this session.
-        const counts = await mapWithConcurrency(stale, 5, async (j) => {
+        // Was blocking the WHOLE list response on this backfill every single time the list was
+        // opened — confirmed live "takes a lot of time to open Recent Enrich jobs". Runs in the
+        // background instead (after()) — the list returns with whatever it already knows, the
+        // real counts land on the NEXT load once backfilled. Also batches the per-job UPDATEs into
+        // one statement instead of N sequential round-trips, since this DB's connection pool is
+        // already tight under load (confirmed live: "too many clients already").
+        after(async () => {
           try {
-            const r = await fetch(`https://api.apify.com/v2/datasets/${j.dataset_id}?token=${APIFY_TOKEN}`);
-            const d = await r.json();
-            return { id: j.id, count: d.data?.itemCount ?? 0 };
-          } catch { return { id: j.id, count: 0 }; }
+            const counts = await mapWithConcurrency(stale, 5, async (j) => {
+              try {
+                const r = await fetch(`https://api.apify.com/v2/datasets/${j.dataset_id}?token=${APIFY_TOKEN}`);
+                const d = await r.json();
+                return { id: j.id, count: d.data?.itemCount ?? 0 };
+              } catch { return { id: j.id, count: 0 }; }
+            });
+            const withCounts = counts.filter((c) => c.count > 0);
+            if (withCounts.length) {
+              const values = withCounts.map((c) => `(${c.id}, ${c.count})`).join(",");
+              await radarSql(`UPDATE enrich_jobs AS e SET item_count = v.count FROM (VALUES ${values}) AS v(id, count) WHERE e.id = v.id`);
+            }
+          } catch { /* best-effort — next list load just re-attempts the same stale rows */ }
         });
-        for (const c of counts) {
-          if (c.count > 0) {
-            await radarSql(`UPDATE enrich_jobs SET item_count = ${c.count} WHERE id = ${c.id}`);
-            const row = rows.find((j) => j.id === c.id);
-            if (row) row.item_count = c.count;
-          }
-        }
       }
     }
 
@@ -475,20 +479,28 @@ async function handleAction(req: NextRequest, userEmail: string | null): Promise
       .filter((j) => j.domains.length);
     const existingCounts = new Map<number, number>();
     if (withDomains.length) {
-      const results = await Promise.all(withDomains.map(async (j) => {
-        const clean = j.domains.map((d) => d.replace(/^https?:\/\//, "").replace(/\/$/, "").toLowerCase());
-        const list = clean.map((d) => `'${d.replace(/'/g, "''")}'`).join(",");
-        try {
-          const r = await radarSql<{ count: string }>(`
-            SELECT COUNT(*) AS count FROM contacts c
-            LEFT JOIN accounts a ON c.account_id = a.id
-            WHERE (a.domain IN (${list}) OR c.domain IN (${list}))
-              AND (c.hubspot_excluded IS NULL OR c.hubspot_excluded = false)
+      // Was Promise.all firing up to 50 separate DB round-trips (one full query per job) on every
+      // single list load — confirmed live this both made the list slow to open and contributed to
+      // "too many clients already" (this DB's connection pool is already tight under load).
+      // Collapsed into ONE query: a VALUES list of every (job_id, domain) pair, joined once and
+      // grouped by job_id, instead of N independent queries each re-scanning contacts/accounts.
+      try {
+        const pairs = withDomains.flatMap((j) =>
+          j.domains.map((d) => `(${j.id}, '${d.replace(/^https?:\/\//, "").replace(/\/$/, "").toLowerCase().replace(/'/g, "''")}')`)
+        );
+        if (pairs.length) {
+          const results = await radarSql<{ job_id: number; count: string }>(`
+            WITH job_domains(job_id, domain) AS (VALUES ${pairs.join(",")})
+            SELECT jd.job_id, COUNT(DISTINCT c.id) AS count
+            FROM job_domains jd
+            JOIN contacts c ON (LOWER(c.domain) = jd.domain)
+              OR EXISTS (SELECT 1 FROM accounts a WHERE a.id = c.account_id AND LOWER(a.domain) = jd.domain)
+            WHERE (c.hubspot_excluded IS NULL OR c.hubspot_excluded = false)
+            GROUP BY jd.job_id
           `);
-          return { id: j.id, count: Number(r[0]?.count || 0) };
-        } catch { return { id: j.id, count: 0 }; }
-      }));
-      for (const r of results) existingCounts.set(r.id, r.count);
+          for (const r of results) existingCounts.set(Number(r.job_id), Number(r.count));
+        }
+      } catch { /* leave existing_count at 0 for this load — non-fatal */ }
     }
     const jobs = rows.map((j) => ({ ...j, existing_count: existingCounts.get(j.id) ?? 0, params: undefined }));
 
