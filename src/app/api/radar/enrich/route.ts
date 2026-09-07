@@ -20,6 +20,74 @@ export const maxDuration = 280;
 
 const ACTOR_ID = "code_crafter~leads-finder";
 
+/** Builds the leads-finder actor's input from the same `params` object stored on enrich_jobs at
+ * start time — shared by "start" and the auto-resurrect sweep below, so a re-launched run uses
+ * the EXACT same search criteria as the one that died. */
+function buildApifyLeadsFinderInput(label: string, params: Record<string, unknown>): Record<string, unknown> {
+  const input: Record<string, unknown> = { file_name: label.trim() };
+  const fields = [
+    "fetch_count", "contact_job_title", "contact_not_job_title",
+    "seniority_level", "functional_level", "contact_location", "contact_city",
+    "contact_not_location", "contact_not_city", "email_status", "company_domain",
+    "size", "company_industry", "company_not_industry", "company_keywords",
+    "company_not_keywords", "min_revenue", "max_revenue", "funding",
+  ];
+  fields.forEach((f) => {
+    const v = params?.[f];
+    if (v !== undefined && v !== "" && !(Array.isArray(v) && !v.length)) input[f] = v;
+  });
+  return input;
+}
+
+async function startApifyRun(input: Record<string, unknown>, apifyToken: string): Promise<{ ok: boolean; status: number; runId?: string; datasetId?: string; runStatus?: string; error?: string }> {
+  let r = await fetch(`https://api.apify.com/v2/acts/${ACTOR_ID}/runs?token=${apifyToken}&timeout=86400`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+  });
+  if (!r.ok && r.status === 429) {
+    await new Promise((res) => setTimeout(res, 2000));
+    r = await fetch(`https://api.apify.com/v2/acts/${ACTOR_ID}/runs?token=${apifyToken}&timeout=86400`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    });
+  }
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    return { ok: false, status: r.status, error: err?.error?.message || "Failed to start Apify run" };
+  }
+  const data = await r.json();
+  return { ok: true, status: r.status, runId: data.data.id, datasetId: data.data.defaultDatasetId, runStatus: data.data.status };
+}
+
+const RESURRECT_STATUSES = "('TIMED-OUT','FAILED','ABORTED')";
+const MAX_ENRICH_RETRIES = 2;
+
+/** Auto-relaunches any Enrich run that died (timed out / failed / aborted) with the exact same
+ * search params, no UI action needed — explicit request: "if actor gets timed out automatically
+ * resurrect it, I dont want to go to UI and resurrect it". Reuses the SAME job row (run_id/
+ * dataset_id/status swapped in place) so job history doesn't grow a duplicate per retry. Capped
+ * at MAX_ENRICH_RETRIES so a genuinely broken search doesn't burn Apify credits forever — past the
+ * cap it's left in its dead-end status for a human to look at. */
+async function resurrectDeadEnrichRuns(apifyToken: string): Promise<{ resurrected: number; results: Record<string, unknown>[] }> {
+  await ensureEnrichJobsTable();
+  const dead = await radarSql<{ id: number; label: string; params: Record<string, unknown>; retry_count: number }>(
+    `SELECT id, label, params, retry_count FROM enrich_jobs WHERE status IN ${RESURRECT_STATUSES} AND retry_count < ${MAX_ENRICH_RETRIES} ORDER BY id ASC`
+  );
+  const results: Record<string, unknown>[] = [];
+  for (const job of dead) {
+    const input = buildApifyLeadsFinderInput(job.label, job.params || {});
+    const started = await startApifyRun(input, apifyToken);
+    if (started.ok) {
+      const esc = (s: string) => s.replace(/'/g, "''");
+      await radarSql(`UPDATE enrich_jobs SET run_id = '${esc(started.runId!)}', dataset_id = '${esc(started.datasetId!)}', status = '${esc(started.runStatus!)}', item_count = 0, retry_count = retry_count + 1 WHERE id = ${job.id}`);
+      results.push({ jobId: job.id, resurrected: true, newRunId: started.runId });
+    } else {
+      // Still counts against the cap — an Apify-side outage shouldn't retry indefinitely either.
+      await radarSql(`UPDATE enrich_jobs SET retry_count = retry_count + 1 WHERE id = ${job.id}`).catch(() => {});
+      results.push({ jobId: job.id, resurrected: false, error: started.error });
+    }
+  }
+  return { resurrected: results.filter((r) => r.resurrected).length, results };
+}
+
 /** Apify's dataset items endpoint caps a single request at 1000 rows — confirmed live several
  * jobs were started with fetch_count well above 1000 (Halo/the user asking for 2000+ leads), which
  * silently lost everything past the first 1000 since "fetch"/"save" only ever made one un-paginated
@@ -192,6 +260,9 @@ async function ensureEnrichJobsTable(): Promise<void> {
   // resumes a job the browser started, same reasoning `params` already gets persisted for jobs
   // themselves.
   await radarSql(`ALTER TABLE enrich_jobs ADD COLUMN IF NOT EXISTS save_vertical text`);
+  // Tracks how many times a TIMED-OUT/FAILED/ABORTED run has been auto-resurrected — a hard cap so
+  // a genuinely broken search (bad params, actor-side outage) doesn't burn Apify credits forever.
+  await radarSql(`ALTER TABLE enrich_jobs ADD COLUMN IF NOT EXISTS retry_count integer NOT NULL DEFAULT 0`);
 }
 
 // A "sync batch" is one or more Enrich jobs' saves queued up to run in order — covers both a
@@ -370,18 +441,7 @@ async function handleAction(req: NextRequest, userEmail: string | null): Promise
   if (action === "start") {
     if (!APIFY_TOKEN) return { status: 503, body: { error: "Apify not configured" } };
     if (!label || !label.trim()) return { status: 400, body: { error: "Job name is required" } };
-    const input: Record<string, unknown> = { file_name: label.trim() };
-    const fields = [
-      "fetch_count", "contact_job_title", "contact_not_job_title",
-      "seniority_level", "functional_level", "contact_location", "contact_city",
-      "contact_not_location", "contact_not_city", "email_status", "company_domain",
-      "size", "company_industry", "company_not_industry", "company_keywords",
-      "company_not_keywords", "min_revenue", "max_revenue", "funding",
-    ];
-    fields.forEach((f) => {
-      const v = params?.[f];
-      if (v !== undefined && v !== "" && !(Array.isArray(v) && !v.length)) input[f] = v;
-    });
+    const input: Record<string, unknown> = buildApifyLeadsFinderInput(label, params || {});
     // The actor's own default execution ceiling (timeoutSecs) is 3000s (50 min) — confirmed live a
     // real 20,000-lead search across many domains (fetch_count's own default was raised from 25 to
     // 20000 earlier) hit exactly that wall and got killed by Apify mid-run, with no way to resume a
@@ -393,28 +453,16 @@ async function handleAction(req: NextRequest, userEmail: string | null): Promise
     // One retry on Apify's own account-wide rate limit ("ThrottlerException: Too Many Requests")
     // before giving up — confirmed live this fires under real load (was also being self-inflicted
     // by list_enrich_jobs' unbounded parallel Apify calls, fixed separately above).
-    let r = await fetch(`https://api.apify.com/v2/acts/${ACTOR_ID}/runs?token=${APIFY_TOKEN}&timeout=86400`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
-    });
-    if (!r.ok && r.status === 429) {
-      await new Promise((res) => setTimeout(res, 2000));
-      r = await fetch(`https://api.apify.com/v2/acts/${ACTOR_ID}/runs?token=${APIFY_TOKEN}&timeout=86400`, {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
-      });
-    }
-    if (!r.ok) {
-      const err = await r.json().catch(() => ({}));
-      return { status: r.status, body: { error: err?.error?.message || "Failed to start Apify run" } };
-    }
-    const data = await r.json();
+    const started = await startApifyRun(input, APIFY_TOKEN);
+    if (!started.ok) return { status: started.status, body: { error: started.error } };
     await ensureEnrichJobsTable();
     const esc = (s: string) => s.replace(/'/g, "''");
     const inserted = await radarSql<{ id: number }>(`
       INSERT INTO enrich_jobs (label, created_by, run_id, dataset_id, status, params)
-      VALUES ('${esc(label.trim())}', ${userEmail ? `'${esc(userEmail)}'` : "NULL"}, '${esc(data.data.id)}', '${esc(data.data.defaultDatasetId)}', '${esc(data.data.status)}', '${esc(JSON.stringify(params || {}))}'::jsonb)
+      VALUES ('${esc(label.trim())}', ${userEmail ? `'${esc(userEmail)}'` : "NULL"}, '${esc(started.runId!)}', '${esc(started.datasetId!)}', '${esc(started.runStatus!)}', '${esc(JSON.stringify(params || {}))}'::jsonb)
       RETURNING id
     `);
-    return { status: 200, body: { runId: data.data.id, datasetId: data.data.defaultDatasetId, status: data.data.status, jobId: inserted[0]?.id ?? null } };
+    return { status: 200, body: { runId: started.runId, datasetId: started.datasetId, status: started.runStatus, jobId: inserted[0]?.id ?? null } };
   }
 
   // ── abort a running Apify leads-finder run ────────────────────────────
@@ -870,13 +918,22 @@ async function continueAllSyncBatches(): Promise<{ continued: number; results: {
 // Vercel's native Cron always calls via a plain GET with `Authorization: Bearer $CRON_SECRET`
 // auto-attached — see linkedin-jobs.ts's identical GET handler for why this exists alongside the
 // GitHub Actions path below rather than replacing it.
+// Runs both sweeps every tick — sync-batch continuation AND dead-run resurrection — so ONE cron
+// entry covers both instead of needing a second schedule.
+async function runEnrichCronSweep(): Promise<Record<string, unknown>> {
+  const batches = await continueAllSyncBatches();
+  const APIFY_TOKEN = process.env.APIFY_TOKEN;
+  const resurrect = APIFY_TOKEN ? await resurrectDeadEnrichRuns(APIFY_TOKEN) : { resurrected: 0, results: [] };
+  return { batches, resurrect };
+}
+
 export async function GET(req: NextRequest) {
   const auth = req.headers.get("authorization");
   if (auth !== `Bearer ${process.env.CRON_SECRET}`) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
-    return NextResponse.json(await continueAllSyncBatches());
+    return NextResponse.json(await runEnrichCronSweep());
   } catch (error) {
-    console.error("Enrich sync batches continue_all (cron) error:", error);
+    console.error("Enrich cron sweep (GET) error:", error);
     return NextResponse.json({ error: "Something went wrong" }, { status: 500 });
   }
 }
@@ -889,9 +946,9 @@ export async function POST(req: NextRequest) {
     const auth = req.headers.get("authorization");
     if (auth !== `Bearer ${SYNC_BATCH_CRON_SECRET}`) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     try {
-      return NextResponse.json(await continueAllSyncBatches());
+      return NextResponse.json(await runEnrichCronSweep());
     } catch (error) {
-      console.error("Enrich sync batches continue_all (POST) error:", error);
+      console.error("Enrich cron sweep (POST) error:", error);
       return NextResponse.json({ error: "Something went wrong" }, { status: 500 });
     }
   }
