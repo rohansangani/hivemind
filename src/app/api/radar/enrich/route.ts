@@ -4,6 +4,7 @@ import { requireRadarAccess, radarSql, patchByFilter, rpc, logRadarUsage } from 
 import { logRadarActivity } from "@/lib/radar/activityLog";
 import { runLinkedInCheck } from "@/lib/radar/checkLinkedin";
 import { db } from "@/lib/db";
+import { mapWithConcurrency } from "@/lib/radar/contactExport";
 
 /**
  * Radar Enrich — ported natively off radar-clickpost's uploader/api/enrich.js (fifth migration
@@ -389,9 +390,18 @@ async function handleAction(req: NextRequest, userEmail: string | null): Promise
     // immediately (status/results are polled separately, unbounded by this route's own maxDuration),
     // so there's no real reason to inherit the actor's short default — raised to Apify's platform
     // ceiling so a genuinely large search gets the room it needs instead of being cut off arbitrarily.
-    const r = await fetch(`https://api.apify.com/v2/acts/${ACTOR_ID}/runs?token=${APIFY_TOKEN}&timeout=86400`, {
+    // One retry on Apify's own account-wide rate limit ("ThrottlerException: Too Many Requests")
+    // before giving up — confirmed live this fires under real load (was also being self-inflicted
+    // by list_enrich_jobs' unbounded parallel Apify calls, fixed separately above).
+    let r = await fetch(`https://api.apify.com/v2/acts/${ACTOR_ID}/runs?token=${APIFY_TOKEN}&timeout=86400`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
     });
+    if (!r.ok && r.status === 429) {
+      await new Promise((res) => setTimeout(res, 2000));
+      r = await fetch(`https://api.apify.com/v2/acts/${ACTOR_ID}/runs?token=${APIFY_TOKEN}&timeout=86400`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+      });
+    }
     if (!r.ok) {
       const err = await r.json().catch(() => ({}));
       return { status: r.status, body: { error: err?.error?.message || "Failed to start Apify run" } };
@@ -435,13 +445,17 @@ async function handleAction(req: NextRequest, userEmail: string | null): Promise
     if (APIFY_TOKEN) {
       const stale = rows.filter((j) => j.status === "SUCCEEDED" && !j.item_count);
       if (stale.length) {
-        const counts = await Promise.all(stale.map(async (j) => {
+        // Was Promise.all over ALL stale jobs at once — up to 50 simultaneous Apify calls on
+        // every single list load tripped Apify's own rate limiter ("ThrottlerException: Too Many
+        // Requests"), shared account-wide with the actual Enrich run-start call. Bounded like
+        // every other Apify/DB fan-out fix this session.
+        const counts = await mapWithConcurrency(stale, 5, async (j) => {
           try {
             const r = await fetch(`https://api.apify.com/v2/datasets/${j.dataset_id}?token=${APIFY_TOKEN}`);
             const d = await r.json();
             return { id: j.id, count: d.data?.itemCount ?? 0 };
           } catch { return { id: j.id, count: 0 }; }
-        }));
+        });
         for (const c of counts) {
           if (c.count > 0) {
             await radarSql(`UPDATE enrich_jobs SET item_count = ${c.count} WHERE id = ${c.id}`);
