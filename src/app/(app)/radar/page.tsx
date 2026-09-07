@@ -2877,6 +2877,10 @@ function EnrichSection() {
   // onto that row — without this, reopening an already-saved job had no way to know it was saved.
   const [currentJobId, setCurrentJobId] = useState<number | null>(null);
   const [leads, setLeads] = useState<EnrichLead[]>([]);
+  // Live progress while a run is still going — poll already returned itemCount, it just never got
+  // shown. Confirmed live: "Enriching via Apify…" gave zero visibility into how much had actually
+  // been found so far.
+  const [liveItemCount, setLiveItemCount] = useState(0);
   // Confirmed live: a 354-row Apify run showed "228 new profile(s)" with zero indication that 126
   // rows (Apify found the profile but no email) got silently dropped by fetch's own filter(email)
   // and were otherwise unreachable through the UI at all.
@@ -3061,6 +3065,7 @@ function EnrichSection() {
       } else if (s.status === "FAILED" || s.status === "ABORTED" || s.status === "TIMED-OUT") {
         setError(`This job ${s.status.toLowerCase()}.`);
       } else {
+        setLiveItemCount(0);
         setPhase("running");
         setPollTick((t) => t + 1);
       }
@@ -3164,6 +3169,7 @@ function EnrichSection() {
       setRunId(started.runId);
       setDatasetId(started.datasetId);
       setCurrentJobId(started.jobId ?? null);
+      setLiveItemCount(0);
       setPhase("running");
       loadJobsList();
     } catch (e) {
@@ -3207,6 +3213,7 @@ function EnrichSection() {
           setError(`Search ${s.status.toLowerCase()}.`);
           setPhase("form");
         } else {
+          setLiveItemCount(s.itemCount || 0);
           setTimeout(() => { if (!cancelled) setPollTick((t) => t + 1); }, 2500);
         }
       } catch (e) {
@@ -3911,7 +3918,8 @@ function EnrichSection() {
         {phase === "running" && (
           <div className="px-5 py-14 flex flex-col items-center justify-center text-center gap-3">
             <LogoLoader size={34} />
-            <p className="text-[13px] text-[var(--hm-text)]">Enriching via Apify…</p>
+            <p className="text-[13px] text-[var(--hm-text)]">Enriching via Apify… {liveItemCount > 0 ? `${liveItemCount} profile(s) found so far` : ""}</p>
+            <p className="text-[11.5px] text-[var(--hm-text-tertiary)]">Refreshes every ~2.5s — safe to leave this tab, it keeps running.</p>
             <button onClick={stopSearch} disabled={stopBusy || !runId} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 14px", fontSize: 12.5 }}>
               {stopBusy ? "Stopping…" : "■ Stop"}
             </button>
