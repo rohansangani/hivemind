@@ -551,7 +551,37 @@ async function handleAction(req: NextRequest, userEmail: string | null): Promise
       // every Apify field into readable columns — same pattern as Check LinkedIn's export — without
       // needing a second round-trip to the dataset just to get the fields the table doesn't show.
       raw: item,
-    })).filter((r) => r.email);
+    }));
+    const withEmail = mapped.filter((r) => r.email);
+    // Was silently filter(email)-only with no count surfaced — confirmed live a 354-row Apify run
+    // showed "228 new profile(s)" with zero indication that 126 rows (no email found) got dropped
+    // and were otherwise unreachable through the UI at all. totalFromApify lets the frontend say so.
+    return { status: 200, body: { items: withEmail, totalFromApify: mapped.length, noEmailCount: mapped.length - withEmail.length } };
+  }
+
+  // ── raw fetch, NO email filter — every row Apify returned, for a true "export everything as
+  // raw" including the no-email rows "fetch" above drops (used by the combined raw export only,
+  // never for the main table/Save — those still require an email) ──
+  if (action === "fetch_raw_all") {
+    if (!APIFY_TOKEN) return { status: 503, body: { error: "Apify not configured" } };
+    if (!datasetId) return { status: 400, body: { error: "No datasetId" } };
+    const items = await fetchApifyDatasetItems(datasetId, APIFY_TOKEN);
+    if (!Array.isArray(items)) return { status: 200, body: { items: [] } };
+    const mapped = items.map((item) => ({
+      first_name: item.first_name || item.firstName || null,
+      last_name: item.last_name || item.lastName || null,
+      full_name: item.full_name || item.name || null,
+      email: item.email || null,
+      personal_email: item.personal_email || null,
+      title: item.job_title || item.title || null,
+      company_name: item.company_name || item.company || null,
+      linkedin_url: item.linkedin || item.linkedin_url || null,
+      phone: item.mobile_number || item.phone || null,
+      mobile_number: item.mobile_number || null,
+      country: item.country || null,
+      location: item.city || item.location || null,
+      raw: item,
+    }));
     return { status: 200, body: { items: mapped } };
   }
 

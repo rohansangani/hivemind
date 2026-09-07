@@ -2877,6 +2877,10 @@ function EnrichSection() {
   // onto that row — without this, reopening an already-saved job had no way to know it was saved.
   const [currentJobId, setCurrentJobId] = useState<number | null>(null);
   const [leads, setLeads] = useState<EnrichLead[]>([]);
+  // Confirmed live: a 354-row Apify run showed "228 new profile(s)" with zero indication that 126
+  // rows (Apify found the profile but no email) got silently dropped by fetch's own filter(email)
+  // and were otherwise unreachable through the UI at all.
+  const [noEmailCount, setNoEmailCount] = useState(0);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [error, setError] = useState("");
   const [savedCount, setSavedCount] = useState(0);
@@ -3042,6 +3046,7 @@ function EnrichSection() {
         ]);
         setLeads(f.items || []);
         setSelected(new Set((f.items || []).map((_: unknown, i: number) => i)));
+        setNoEmailCount(f.noEmailCount || 0);
         const existing = (chk.existing || []) as ExistingContact[];
         setExistingLeads(existing);
         setExistingSelected(new Set(existing.map((_, i) => i)));
@@ -3196,6 +3201,7 @@ function EnrichSection() {
           if (cancelled) return;
           setLeads(f.items || []);
           setSelected(new Set((f.items || []).map((_: unknown, i: number) => i)));
+          setNoEmailCount(f.noEmailCount || 0);
           setPhase("results");
         } else if (s.status === "FAILED" || s.status === "ABORTED" || s.status === "TIMED-OUT") {
           setError(`Search ${s.status.toLowerCase()}.`);
@@ -3415,9 +3421,51 @@ function EnrichSection() {
     }
   };
 
+  const [exportRawAllBusy, setExportRawAllBusy] = useState(false);
+  // Combined raw export, NO Debounce anywhere, and NOT gated to what's checked in either table —
+  // literally everything: every existing DB contact for these domains AS-IS, plus every Apify row
+  // fetch_raw_all returns (including the no-email rows the main table can never show or check).
+  // Distinct from exportAll (which re-validates existing contacts via Debounce and only exports
+  // checked rows) — asked for explicitly after confirming live that 126 of 354 Apify rows had no
+  // way to ever be exported through the UI at all.
+  const exportAllRawNoDebounce = async () => {
+    if (!datasetId) { setError("No dataset to export from."); return; }
+    setExportRawAllBusy(true);
+    setError("");
+    try {
+      const d = await call({ action: "fetch_raw_all", datasetId });
+      const newRows = (d.items || []) as Record<string, unknown>[];
+      const merged = new Map<string, Record<string, unknown>>();
+      for (const c of existingLeads) {
+        const key = c.email ? c.email.toLowerCase() : `existing-${merged.size}`;
+        merged.set(key, {
+          first_name: c.first_name, last_name: c.last_name, email: c.email, email_status: c.email_status,
+          title: c.title, company_name: c.company_name || c.account_name, domain: c.domain,
+          linkedin_url: c.linkedin_url, phone: null, location: null, country: null,
+          validated_at: c.validated_at, source: "existing",
+        });
+      }
+      let noEmailIdx = 0;
+      for (const r of newRows) {
+        const email = String(r.email || "").toLowerCase();
+        const key = email || `new-no-email-${noEmailIdx++}`;
+        if (merged.has(key)) continue;
+        const { raw, ...rest } = r as { raw?: unknown };
+        merged.set(key, { ...rest, ...(raw ? flattenForCsv(raw) : {}), validated_at: null, source: "new" });
+      }
+      const toExport = [...merged.values()];
+      if (!toExport.length) { setError("Nothing to export."); return; }
+      downloadCSV(toExport, `radar_enrich_raw_all_${today()}.csv`);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setExportRawAllBusy(false);
+    }
+  };
+
   const reset = () => {
     setPhase("form"); setRunId(null); setDatasetId(null); setCurrentJobId(null); setLeads([]); setSelected(new Set());
-    setExistingLeads([]); setExistingSelected(new Set()); setError(""); setSavedCount(0); setSavedAccountsCount(0); setSaveVertical(""); setScores({}); setValidateResult(null); setJobLabel("");
+    setExistingLeads([]); setExistingSelected(new Set()); setError(""); setSavedCount(0); setSavedAccountsCount(0); setSaveVertical(""); setScores({}); setValidateResult(null); setJobLabel(""); setNoEmailCount(0);
   };
 
   const exportLeadsCsv = async () => {
@@ -3803,17 +3851,28 @@ function EnrichSection() {
                   ? `${existingLeads.length} contact(s) for these domains — existing + newly saved, deduped by email`
                   : `${existingLeads.length} contact(s) already in the database for these domains`}
               </span>
-              <button
-                onClick={exportAll}
-                disabled={!combinedExportCount || exportBusy}
-                className="hm-btn hm-btn-secondary"
-                style={{ height: 30, padding: "0 12px", fontSize: 12 }}
-                title="Exports selected existing contacts + selected new Apify leads, deduped by email"
-              >
-                {exportBusy
-                  ? `Validating… ${exportProgress?.processed ?? 0}/${exportProgress?.total ?? 0}`
-                  : `Export ${combinedExportCount}`}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={exportAllRawNoDebounce}
+                  disabled={exportRawAllBusy}
+                  className="hm-btn hm-btn-secondary"
+                  style={{ height: 30, padding: "0 12px", fontSize: 12 }}
+                  title={`Everything, no Debounce, not limited to checked rows — every existing contact for these domains + every Apify row found (including the ${noEmailCount} with no email, which the table above can't show or check)`}
+                >
+                  {exportRawAllBusy ? "Exporting…" : "Export raw (all)"}
+                </button>
+                <button
+                  onClick={exportAll}
+                  disabled={!combinedExportCount || exportBusy}
+                  className="hm-btn hm-btn-secondary"
+                  style={{ height: 30, padding: "0 12px", fontSize: 12 }}
+                  title="Exports selected existing contacts + selected new Apify leads, deduped by email"
+                >
+                  {exportBusy
+                    ? `Validating… ${exportProgress?.processed ?? 0}/${exportProgress?.total ?? 0}`
+                    : `Export ${combinedExportCount}`}
+                </button>
+              </div>
             </div>
             <div className="overflow-x-auto max-h-56 overflow-y-auto">
               <table className="w-full border-collapse text-[12.5px]">
@@ -3865,7 +3924,7 @@ function EnrichSection() {
               <span className="text-[12.5px] text-[var(--hm-text-secondary)]">
                 {phase === "saved"
                   ? `${savedCount} contact(s) saved, ${savedAccountsCount} account(s) created/updated${validateResult ? ` — Debounce: ${formatStatusBreakdown(validateResult.byStatus)}` : ""}`
-                  : `${leads.length} new profile(s) found from Apify`}
+                  : `${leads.length} new profile(s) found from Apify${noEmailCount ? ` (+${noEmailCount} more found but no email — excluded, use "Export raw (all)" to get them anyway)` : ""}`}
               </span>
               {phase === "results" && (
                 <div className="flex items-center gap-2 flex-wrap">
