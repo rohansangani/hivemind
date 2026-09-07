@@ -527,26 +527,39 @@ async function handleAction(req: NextRequest, userEmail: string | null): Promise
       .filter((j) => j.domains.length);
     const existingCounts = new Map<number, number>();
     if (withDomains.length) {
-      // Was Promise.all firing up to 50 separate DB round-trips (one full query per job) on every
-      // single list load — confirmed live this both made the list slow to open and contributed to
-      // "too many clients already" (this DB's connection pool is already tight under load).
-      // Collapsed into ONE query: a VALUES list of every (job_id, domain) pair, joined once and
-      // grouped by job_id, instead of N independent queries each re-scanning contacts/accounts.
+      // Was Promise.all firing up to 50 separate DB round-trips — fixed once into ONE query, but
+      // confirmed live that backfired at real scale: 50 jobs' domain lists totaled 11,482 pairs,
+      // and the single OR + correlated-EXISTS join had no clean index path for either side of the
+      // OR, taking 122s and hitting the statement timeout outright — worse than the N-query version
+      // it replaced. Fixed properly: split the OR into two plain equi-joins (UNION'd), each usable
+      // with an existing index (idx_contacts_domain_lower / idx_accounts_domain_lower_trim +
+      // idx_contacts_account) instead of one unindexable combined condition, AND chunk the pairs
+      // (2000 at a time, 3 concurrent) so no single query re-scans everything at once regardless.
       try {
         const pairs = withDomains.flatMap((j) =>
-          j.domains.map((d) => `(${j.id}, '${d.replace(/^https?:\/\//, "").replace(/\/$/, "").toLowerCase().replace(/'/g, "''")}')`)
+          j.domains.map((d) => ({ jobId: j.id, domain: d.replace(/^https?:\/\//, "").replace(/\/$/, "").toLowerCase() }))
         );
-        if (pairs.length) {
-          const results = await radarSql<{ job_id: number; count: string }>(`
-            WITH job_domains(job_id, domain) AS (VALUES ${pairs.join(",")})
-            SELECT jd.job_id, COUNT(DISTINCT c.id) AS count
-            FROM job_domains jd
-            JOIN contacts c ON (LOWER(c.domain) = jd.domain)
-              OR EXISTS (SELECT 1 FROM accounts a WHERE a.id = c.account_id AND LOWER(a.domain) = jd.domain)
-            WHERE (c.hubspot_excluded IS NULL OR c.hubspot_excluded = false)
-            GROUP BY jd.job_id
+        const PAIR_CHUNK = 2000;
+        const pairChunks: typeof pairs[] = [];
+        for (let i = 0; i < pairs.length; i += PAIR_CHUNK) pairChunks.push(pairs.slice(i, i + PAIR_CHUNK));
+        const chunkResults = await mapWithConcurrency(pairChunks, 3, async (chunk) => {
+          const values = chunk.map((p) => `(${p.jobId}, '${p.domain.replace(/'/g, "''")}')`).join(",");
+          return radarSql<{ job_id: number; count: string }>(`
+            WITH job_domains(job_id, domain) AS (VALUES ${values})
+            SELECT job_id, COUNT(DISTINCT id) AS count FROM (
+              SELECT jd.job_id, c.id FROM job_domains jd JOIN contacts c ON LOWER(c.domain) = jd.domain
+                WHERE (c.hubspot_excluded IS NULL OR c.hubspot_excluded = false)
+              UNION
+              SELECT jd.job_id, c.id FROM job_domains jd
+                JOIN accounts a ON LOWER(a.domain) = jd.domain
+                JOIN contacts c ON c.account_id = a.id
+                WHERE (c.hubspot_excluded IS NULL OR c.hubspot_excluded = false)
+            ) matched
+            GROUP BY job_id
           `);
-          for (const r of results) existingCounts.set(Number(r.job_id), Number(r.count));
+        });
+        for (const results of chunkResults) {
+          for (const r of results) existingCounts.set(Number(r.job_id), (existingCounts.get(Number(r.job_id)) || 0) + Number(r.count));
         }
       } catch { /* leave existing_count at 0 for this load — non-fatal */ }
     }
