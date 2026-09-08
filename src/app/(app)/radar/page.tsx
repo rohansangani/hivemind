@@ -4937,6 +4937,12 @@ function ValidateSection() {
     } catch { /* non-critical */ }
   };
 
+  // Was: fire "send" once, show a static "Campaign live — X leads sending" label, done — even
+  // though the backend only ever does ONE ~40s budget's worth per call (send/continue_send both
+  // cap themselves the same way) and leaves the rest to a 15-min cron shared fairly across every
+  // other running send too. Confirmed live: a 1501/5354-candidate send sat at ~100 done for a long
+  // stretch with zero visibility, reading as "stuck" even though it wasn't. Now drives continue_send
+  // itself, live, right after the initial call, instead of waiting on the cron or a manual nudge.
   const send = async () => {
     const selectedCount = candidates.filter((c) => c.selected).length;
     if (!selectedCount || !jobId) return;
@@ -4954,7 +4960,20 @@ function ValidateSection() {
         selectedIds: candidates.filter((c) => c.selected).map((c) => c.id),
       });
       setPhase("sent");
-      setProgressLabel(`Campaign live — ${d.added ?? selectedCount} leads sending via ${d.senders ?? "?"} mailboxes.`);
+      let sentSoFar = d.added ?? 0;
+      let remaining = d.remaining ?? 0;
+      setProgressLabel(`Campaign live — ${sentSoFar}/${selectedCount} sent so far (via ${d.senders ?? "?"} mailboxes)…`);
+      for (let guard = 0; guard < 500 && remaining > 0; guard++) {
+        const c = await call({ action: "continue_send", jobId });
+        sentSoFar += c.added || 0;
+        remaining = c.remaining ?? 0;
+        setProgressLabel(
+          remaining > 0
+            ? `Campaign live — ${sentSoFar}/${selectedCount} sent so far…`
+            : `Campaign live — ${sentSoFar}/${selectedCount} sent.`
+        );
+        if (remaining === 0 || c.done) break;
+      }
     } catch (e) {
       setError((e as Error).message);
     } finally {
