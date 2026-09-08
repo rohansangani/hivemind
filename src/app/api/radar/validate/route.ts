@@ -705,14 +705,19 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
     const job = jobRows[0] as { label?: string } | undefined;
     if (!job) return { status: 404, body: { error: "Job not found" } };
 
-    let candsQ = `select=id,first_name,middle_name,last_name,domain,pattern_email&job_id=eq.${jobId}`;
-    if (Array.isArray(selectedIds) && selectedIds.length) candsQ += `&id=in.(${selectedIds.map(Number).filter(Boolean).join(",")})`;
-    else candsQ += `&selected=eq.true`;
+    // Was `&id=in.(...)` with the FULL selectedIds list embedded in the query string — confirmed
+    // live a 5354-selected send built a ~40KB URL and got a flat 400 back from PostgREST (a real
+    // URL-length ceiling, not a row-count one). Fetch by job_id only (a compact, always-safe
+    // filter) and, when a specific selection was given, narrow to it in JS afterward instead of
+    // ever putting a huge id list on the wire.
+    const selectedIdSet = Array.isArray(selectedIds) && selectedIds.length ? new Set(selectedIds.map(Number)) : null;
+    const candsQ = `select=id,first_name,middle_name,last_name,domain,pattern_email&job_id=eq.${jobId}${selectedIdSet ? "" : "&selected=eq.true"}`;
     // A plain selectFrom call (no Range header) silently caps at PostgREST's default 1000-row
     // page — confirmed live: a 2058-selected send only ever fetched (and queued_for_send'd) the
     // first 1000, permanently stranding the other 1058 with no way to ever get sent. fetchAllPages
     // paginates through the real total instead of truncating.
-    const { rows: cands } = await fetchAllPages("email_validation_candidates", candsQ);
+    const { rows: allCands } = await fetchAllPages("email_validation_candidates", candsQ);
+    const cands = selectedIdSet ? allCands.filter((c) => selectedIdSet.has(Number((c as { id: number }).id))) : allCands;
     if (!cands.length) return { status: 400, body: { error: "No candidates selected" } };
 
     // Freeze exactly this set as "queued for this send" — continue_send/continue_all_sends below
