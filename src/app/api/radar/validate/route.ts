@@ -323,7 +323,10 @@ async function continueSendCore(jobId: number, campaignId: string, budgetMs: num
   if (!cands.length) return { added: 0, remaining: 0, done: true };
 
   const startedAt = Date.now();
-  const CONC = 8;
+  // Raised from 8 — this is network/Instantly-API-latency bound, not CPU bound, and the 429-retry
+  // in addLeadWithRetry already absorbs the occasional rate-limit hit. Real throughput was the
+  // actual bottleneck behind the recurring "stuck" reports, not just budget size.
+  const CONC = 15;
   let addedTotal = 0;
   for (let i = 0; i < cands.length; i += CONC) {
     if (Date.now() - startedAt > budgetMs) break;
@@ -803,7 +806,7 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
     // server-side regardless of the browser, within the same request's extended lifetime (up to
     // this route's 280s ceiling) — no tab, no manual nudge needed. The 15-min cron sweep remains as
     // the fallback for anything still left after that (a genuinely huge list).
-    if (!first.done) after(() => continueSendCore(Number(jobId), campaignId, 220000).catch(() => {}));
+    if (!first.done) after(() => continueSendCore(Number(jobId), campaignId, 240000).catch(() => {}));
 
     return {
       status: 200, body: {
@@ -841,23 +844,23 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
       WHERE j.status = 'sent' AND j.campaign_id IS NOT NULL AND c.instantly_lead_id IS NULL AND c.queued_for_send = true AND c.send_failed = false
       ORDER BY j.id ASC
     `);
+    // Was a bare 42s TOTAL shared across every running send, on a 15-min cron — confirmed live
+    // this was nowhere near enough for a real backlog (Instantly's own per-lead-add latency is the
+    // real bottleneck, not something a bigger budget alone fixes) — a big send could sit needing a
+    // MANUAL nudge every time. Raised toward this route's own 280s ceiling, split FAIRLY across
+    // whatever's running (see the Hivemind fair-job-budget pattern used elsewhere), and the cron
+    // itself now runs every ~2 min instead of 15 (see vercel.json) so leftover drains fast on its
+    // own regardless of the tab or a manual trigger.
+    const TOTAL_BUDGET_MS = 250000;
     const startedAt = Date.now();
     const results: Record<string, unknown>[] = [];
-    for (const { id: jid, campaign_id: campaignId } of jobRows) {
-      if (Date.now() - startedAt > 42000) { results.push({ jobId: jid, skipped: "time budget — will run next tick" }); continue; }
-      const { rows: cands } = await fetchAllPages("email_validation_candidates", `select=id,first_name,middle_name,last_name,domain,pattern_email&job_id=eq.${jid}&instantly_lead_id=is.null&queued_for_send=eq.true&send_failed=eq.false`);
-      if (!cands.length) continue;
-      const added: { id: number; leadId?: string }[] = [];
-      const failures: { id: number; error?: string; permanent?: boolean }[] = [];
-      for (let i = 0; i < cands.length; i += 8) {
-        if (Date.now() - startedAt > 42000) break;
-        const batch = (cands as unknown as LeadCandidate[]).slice(i, i + 8);
-        const settled = await Promise.all(batch.map((c) => addLeadWithRetry(campaignId, c)));
-        for (const r of settled) { if (r.leadId) added.push(r); else failures.push(r); }
-      }
-      if (added.length) await rpc("set_instantly_lead_ids", { pairs: added.map((r) => ({ id: r.id, lead_id: r.leadId })) });
-      await markPermanentSendFailures(failures);
-      results.push({ jobId: jid, added: added.length, remaining: cands.length - added.length - failures.filter((f) => f.permanent).length });
+    for (let idx = 0; idx < jobRows.length; idx++) {
+      const { id: jid, campaign_id: campaignId } = jobRows[idx];
+      const elapsed = Date.now() - startedAt;
+      if (elapsed > TOTAL_BUDGET_MS - 3000) { results.push({ jobId: jid, skipped: "time budget — will run next tick" }); continue; }
+      const perJobBudget = Math.floor((TOTAL_BUDGET_MS - elapsed) / (jobRows.length - idx));
+      const r = await continueSendCore(jid, campaignId, perJobBudget);
+      results.push({ jobId: jid, added: r.added, remaining: r.remaining });
     }
     return { status: 200, body: { processed: results.length, results } };
   }
