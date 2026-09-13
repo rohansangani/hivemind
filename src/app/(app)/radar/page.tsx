@@ -5853,8 +5853,11 @@ function ValidateSection() {
                               >
                                 <button onClick={() => checkRetestJobStatus(j.id)} disabled={statusChecking} className="flex-1 min-w-0 flex items-center justify-between text-left">
                                   <span className="truncate text-[var(--hm-text-secondary)]">#{j.id} {j.label || "Untitled"}</span>
-                                  <span className={`shrink-0 ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium ${j.status === "done" ? "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]" : j.status === "error" ? "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)]" : "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]"}`}>
-                                    {j.status === "done" ? `done — ${j.validated}/${j.processed}` : j.status === "error" ? "error" : `running — ${j.processed} checked`}
+                                  <span className={`shrink-0 ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium ${j.status === "done" ? "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]" : j.status === "error" ? "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)]" : j.status === "cancelled" ? "bg-[var(--hm-border)] text-[var(--hm-text-tertiary)]" : "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]"}`}>
+                                    {/* Was falling through to "running" for ANY non-done/non-error
+                                        status, including cancelled — confirmed live: a job stopped
+                                        6 days ago still showed "running" indefinitely. */}
+                                    {j.status === "done" ? `done — ${j.validated}/${j.processed}` : j.status === "error" ? "error" : j.status === "cancelled" ? `stopped — ${j.processed} checked` : `running — ${j.processed} checked`}
                                   </span>
                                 </button>
                                 {j.status === "running" && (
