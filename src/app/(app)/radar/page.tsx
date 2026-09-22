@@ -878,6 +878,7 @@ function DataTable<T extends { id: string }>({
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <FilterSelect label="Vertical" value={filters.vertical || ""} onChange={(v) => setFilter("vertical", v)} options={["B2B", "US", "D2C"]} />
+          <FilterSelect label="Account Type" value={filters.accountType || ""} onChange={(v) => setFilter("accountType", v)} options={ACCOUNT_TYPE_OPTIONS} />
           <FilterSelect label="Industry" value={filters.industry || ""} onChange={(v) => setFilter("industry", v)} options={options?.industries || []} />
           <FilterSelect label="Employees" value={filters.employeeRange || ""} onChange={(v) => setFilter("employeeRange", v)} options={options?.employeeRanges || []} />
           <FilterSelect label="Country" value={filters.country || ""} onChange={(v) => setFilter("country", v)} options={options?.countries || []} />
@@ -1017,6 +1018,7 @@ interface AccountRow {
   hubspot_lifecycle_stage: string | null;
   hubspot_lead_status: string | null;
   vertical: string | null;
+  account_type: string | null;
   industry: string | null;
   sub_industry: string | null;
   account_size: string | null;
@@ -1230,13 +1232,16 @@ const EMAIL_STATUS_OPTIONS: Array<{ key: string; label: string }> = [
 interface EditField {
   key: string;
   label: string;
-  type?: "text" | "boolean" | "list" | "vertical" | "email_status";
+  type?: "text" | "boolean" | "list" | "vertical" | "email_status" | "account_type";
 }
+
+const ACCOUNT_TYPE_OPTIONS = ["B2B", "B2C", "B2C+B2B", "Services"];
 
 const ACCOUNT_EDIT_FIELDS: EditField[] = [
   { key: "name", label: "Company name" },
   { key: "domain", label: "Domain" },
   { key: "vertical", label: "Vertical", type: "vertical" },
+  { key: "account_type", label: "Account Type", type: "account_type" },
   { key: "industry", label: "Industry" },
   { key: "sub_industry", label: "Sub-Industry" },
   { key: "account_size", label: "Account Size" },
@@ -1370,6 +1375,11 @@ function EditRecordPanel<T extends { id: string }>({
                 <select value={values[f.key] as string} onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}>
                   {EMAIL_STATUS_OPTIONS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
                 </select>
+              ) : f.type === "account_type" ? (
+                <select value={values[f.key] as string} onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}>
+                  <option value="">—</option>
+                  {ACCOUNT_TYPE_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+                </select>
               ) : (
                 <input type="text" value={values[f.key] as string} onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))} />
               )}
@@ -1452,6 +1462,7 @@ function AccountsSection() {
       ),
     },
     { key: "vertical", header: "Vertical", render: (r) => <VerticalBadge v={r.vertical} /> },
+    { key: "account_type", header: "Account Type", render: (r) => <Cell value={r.account_type} /> },
     {
       key: "company",
       header: "Company",
@@ -1664,6 +1675,7 @@ interface ContactRow {
   hubspot_lifecycle_stage: string | null;
   hubspot_lead_status: string | null;
   vertical: string | null;
+  account_type: string | null;
   industry: string | null;
   sub_industry: string | null;
   employee_range: string | null;
@@ -1736,6 +1748,7 @@ function ContactsSection() {
       ),
     },
     { key: "vertical", header: "Vertical", render: (r) => <VerticalBadge v={r.vertical} /> },
+    { key: "account_type", header: "Account Type", render: (r) => <Cell value={r.account_type} /> },
     {
       key: "first_name",
       header: "First Name",
@@ -2223,7 +2236,7 @@ const DB_COLS: Record<UploadTable, Record<string, string>> = {
     industry: "Industry", sub_industry: "Sub-Industry",
     company_location: "Company Location", country: "Country",
     revenue_range: "Annual Revenue", employee_range: "Employee Size",
-    account_size: "Account Size", vertical: "Vertical",
+    account_size: "Account Size", vertical: "Vertical", account_type: "Account Type",
     track_order_page: "Track Order Page", edd: "EDD", no_of_stores: "No. of Stores",
     ebo: "EBO", mbo: "MBO", shopify: "Shopify",
     parent_company: "Parent Company", sdr_owner: "SDR Owner", source: "Source",
@@ -2243,7 +2256,7 @@ const DB_COLS: Record<UploadTable, Record<string, string>> = {
     "a:sub_industry": "Sub-Industry", "a:company_location": "Company Location",
     "a:country": "Company Country", "a:revenue_range": "Annual Revenue",
     "a:employee_range": "Employee Size", "a:account_size": "Account Size",
-    "a:vertical": "Vertical", "a:track_order_page": "Track Order Page",
+    "a:vertical": "Vertical", "a:account_type": "Account Type", "a:track_order_page": "Track Order Page",
     "a:edd": "EDD", "a:no_of_stores": "No. of Stores",
     "a:ebo": "EBO", "a:mbo": "MBO", "a:shopify": "Shopify",
     "a:parent_company": "Parent Company", "a:sdr_owner": "SDR Owner", "a:source": "Company Source",
@@ -2272,6 +2285,7 @@ const AUTO_MAP: Record<UploadTable, Record<string, string>> = {
     "employee size": "employee_range", employees: "employee_range", "number of employees": "employee_range", "employee count": "employee_range",
     "account size": "account_size",
     vertical: "vertical",
+    "account type": "account_type", "account-type": "account_type",
     "track order page": "track_order_page", "track order": "track_order_page",
     edd: "edd",
     "no of stores": "no_of_stores", "number of stores": "no_of_stores", "no. of stores": "no_of_stores",
@@ -2308,6 +2322,7 @@ const AUTO_MAP: Record<UploadTable, Record<string, string>> = {
     "employee size": "a:employee_range", employees: "a:employee_range", "employee count": "a:employee_range", "number of employees": "a:employee_range",
     "account size": "a:account_size",
     vertical: "a:vertical",
+    "account type": "a:account_type", "account-type": "a:account_type",
     "track order page": "a:track_order_page", "track order": "a:track_order_page",
     edd: "a:edd",
     "no of stores": "a:no_of_stores", "no. of stores": "a:no_of_stores", "number of stores": "a:no_of_stores",

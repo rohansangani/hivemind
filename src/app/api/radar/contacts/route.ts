@@ -10,10 +10,11 @@ const RADAR_ADMIN_ROLES = ["owner", "admin"];
  * exist on the base `contacts` table), so mark/delete resolve ids via the view, then mutate the
  * base table with those ids — never write straight through this filter. */
 function buildContactsFilter(body: Record<string, unknown>, role: string): string {
-  const { vertical, industry, subIndustry, employeeRange, revenueRange, company, title, emailStatus, country, search, hasEmail, accountId, includeIrrelevant } = body as Record<string, string | boolean | undefined>;
+  const { vertical, industry, subIndustry, employeeRange, revenueRange, company, title, emailStatus, country, search, hasEmail, accountId, includeIrrelevant, accountType } = body as Record<string, string | boolean | undefined>;
   let query = "";
   if (accountId) query += `&account_id=eq.${encodeURIComponent(String(accountId))}`;
   if (vertical) query += `&vertical=eq.${encodeURIComponent(String(vertical))}`;
+  if (accountType) query += `&account_type=eq.${encodeURIComponent(String(accountType))}`;
   if (industry) query += `&industry=eq.${encodeURIComponent(String(industry))}`;
   if (subIndustry) query += `&sub_industry=eq.${encodeURIComponent(String(subIndustry))}`;
   if (employeeRange) query += `&employee_range=eq.${encodeURIComponent(String(employeeRange))}`;
