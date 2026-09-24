@@ -2419,6 +2419,24 @@ function UploadSection() {
 
   const mappedCount = Object.values(mapping).filter(Boolean).length;
 
+  // Guards the "263 accounts got vertical=an-industry-name" incident (2026-09) from happening
+  // again silently — a DB CHECK constraint now rejects it outright at insert time too, but
+  // catching it here means the user sees exactly which CSV values are bad before importing,
+  // instead of a bulk 400 partway through. Any column mapped straight to vertical/a:vertical/
+  // c:vertical whose values aren't B2B/D2C/US (case-insensitive) gets flagged.
+  const verticalMapWarning = (() => {
+    if (!parsed) return null;
+    const badCols: { col: string; bad: string[] }[] = [];
+    for (const [csvCol, dbKey] of Object.entries(mapping)) {
+      if (dbKey !== "vertical" && dbKey !== "a:vertical" && dbKey !== "c:vertical") continue;
+      const bad = [...new Set(
+        parsed.rows.map((r) => (r[csvCol] || "").trim()).filter((v) => v && !["B2B", "D2C", "US"].includes(v.toUpperCase()))
+      )].slice(0, 5);
+      if (bad.length) badCols.push({ col: csvCol, bad });
+    }
+    return badCols.length ? badCols : null;
+  })();
+
   const stop = async () => {
     if (!jobId) return;
     setStopping(true);
@@ -2460,6 +2478,7 @@ function UploadSection() {
     if (!parsed || !parsed.rows.length) return;
     if (!mappedCount) { setMsg({ kind: "err", text: "Map at least one column first." }); return; }
     if (!uploadVertical) { setMsg({ kind: "err", text: "Select a vertical for this upload first." }); return; }
+    if (verticalMapWarning) { setMsg({ kind: "err", text: "Fix the Vertical column mapping — some values aren't B2B/D2C/US." }); return; }
 
     setBusy(true);
     setMsg(null);
@@ -2644,6 +2663,17 @@ function UploadSection() {
             </div>
           )}
 
+          {verticalMapWarning && (
+            <div className="rounded-lg p-3 text-[12.5px] bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)] dark:bg-[var(--tag-red-bg)]/20 dark:text-[var(--tag-red-fg)]">
+              <strong>Vertical column has values other than B2B/D2C/US</strong> — fix the mapping or the source data before importing:
+              <ul className="mt-1 space-y-0.5 list-disc list-inside">
+                {verticalMapWarning.map(({ col, bad }) => (
+                  <li key={col}>&quot;{col}&quot;: {bad.join(", ")}{bad.length === 5 ? "…" : ""}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {/* Progress */}
           {progress && (
             <div>
@@ -2674,7 +2704,7 @@ function UploadSection() {
             <div className="flex items-center gap-3">
               <button
                 onClick={doUpload}
-                disabled={busy || !parsed.rows.length || !mappedCount || !uploadVertical}
+                disabled={busy || !parsed.rows.length || !mappedCount || !uploadVertical || !!verticalMapWarning}
                 className="hm-btn hm-btn-primary"
                 style={{ height: 38, padding: "0 18px", fontSize: 13 }}
               >
