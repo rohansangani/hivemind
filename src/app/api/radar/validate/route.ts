@@ -692,15 +692,24 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
         };
       });
     } else {
-      // A `&limit=` query param alone is NOT enough — Supabase's PostgREST caps every response at
-      // its configured db-max-rows (1000 by default) regardless of a bigger `limit=`, unless a
-      // `Range` header explicitly overrides it (confirmed live: "load all 2,848" silently returned
-      // only 1000). Pass the real cap as a Range too so a big "leave blank for all N" load actually
-      // comes back in full.
+      // Supabase's PostgREST caps every single response at its configured db-max-rows (1000 here)
+      // NO MATTER WHAT — not just when `limit=` alone is used; a bigger `Range` header doesn't
+      // override that ceiling either, it only requests a sub-range within it (confirmed live: even
+      // with an explicit Range of 0-2847, "load all 2,848" still silently came back as 1000). The
+      // only way past a real server-side cap is genuine pagination — same pattern as
+      // fetchAllIds/fetchAllPages elsewhere in this file — paging in PAGE_SIZE-row requests and
+      // concatenating until either the limit or the real result set is exhausted.
       const effLimit = Number(limit) || 2000;
-      const q = `select=first_name,last_name,email,domain&email=not.is.null&email=like.*@*.*${restFilters(vertical, domain, statuses)}&order=id.asc&limit=${effLimit}`;
-      const { rows: raw } = await selectFrom("contacts", q, { from: 0, to: effLimit - 1 });
-      contacts = (raw as { email?: string }[]).filter((c) => (c.email || "").trim().includes("@")) as typeof contacts;
+      const PAGE_SIZE = 1000;
+      const q = `select=first_name,last_name,email,domain&email=not.is.null&email=like.*@*.*${restFilters(vertical, domain, statuses)}&order=id.asc`;
+      const raw: { email?: string }[] = [];
+      for (let offset = 0; offset < effLimit; offset += PAGE_SIZE) {
+        const to = Math.min(offset + PAGE_SIZE, effLimit) - 1;
+        const { rows: page } = await selectFrom("contacts", q, { from: offset, to });
+        raw.push(...(page as { email?: string }[]));
+        if (page.length < to - offset + 1) break; // fewer than requested = real end of results
+      }
+      contacts = raw.filter((c) => (c.email || "").trim().includes("@")) as typeof contacts;
     }
     if (!contacts.length) return { status: 200, body: { jobId: existingJobId || null, count: 0, candidates: [] } };
 
