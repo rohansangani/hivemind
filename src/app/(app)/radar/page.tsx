@@ -4850,7 +4850,9 @@ function ValidateSection() {
     if (!retestVertical) { setError("Select a vertical before running it."); return; }
     setBusy(true);
     try {
-      const d = await call({ action: "load_contacts", statuses: retestStatuses, vertical: retestVertical, domain: retestDomain.trim() || undefined, label: retestLabel.trim(), limit: retestLimit || undefined });
+      // "leave blank for all {retestCount}" is the promise made right above this button — blank
+      // must mean the actual matched count, not the backend's own smaller fallback default.
+      const d = await call({ action: "load_contacts", statuses: retestStatuses, vertical: retestVertical, domain: retestDomain.trim() || undefined, label: retestLabel.trim(), limit: retestLimit || retestCount || undefined });
       if (!d.count) { setError("No contacts match those filters."); return; }
       setJobId(d.jobId);
       setCandidates((d.candidates || []).map((c: ValidateCandidate) => ({ ...c, selected: true })));

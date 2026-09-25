@@ -692,8 +692,14 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
         };
       });
     } else {
-      const q = `select=first_name,last_name,email,domain&email=not.is.null&email=like.*@*.*${restFilters(vertical, domain, statuses)}&order=id.asc&limit=${Number(limit) || 2000}`;
-      const { rows: raw } = await selectFrom("contacts", q);
+      // A `&limit=` query param alone is NOT enough — Supabase's PostgREST caps every response at
+      // its configured db-max-rows (1000 by default) regardless of a bigger `limit=`, unless a
+      // `Range` header explicitly overrides it (confirmed live: "load all 2,848" silently returned
+      // only 1000). Pass the real cap as a Range too so a big "leave blank for all N" load actually
+      // comes back in full.
+      const effLimit = Number(limit) || 2000;
+      const q = `select=first_name,last_name,email,domain&email=not.is.null&email=like.*@*.*${restFilters(vertical, domain, statuses)}&order=id.asc&limit=${effLimit}`;
+      const { rows: raw } = await selectFrom("contacts", q, { from: 0, to: effLimit - 1 });
       contacts = (raw as { email?: string }[]).filter((c) => (c.email || "").trim().includes("@")) as typeof contacts;
     }
     if (!contacts.length) return { status: 200, body: { jobId: existingJobId || null, count: 0, candidates: [] } };
