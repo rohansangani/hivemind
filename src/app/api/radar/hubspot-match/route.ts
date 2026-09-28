@@ -7,15 +7,24 @@ import { currentUserHasPermission } from "@/lib/authz";
 import jwt from "jsonwebtoken";
 
 /**
- * Maps every Radar contact/account onto the HubSpot lifecycle stage + lead status of its
- * matching HubSpot contact/company (by email / normalized domain), so a rep can see "is this
- * lead already a customer or in-progress deal in HubSpot" directly on the Radar record — not
- * just via the separate Google-Sheet-based hubspot_excluded flag.
+ * Maps every Radar contact/account onto a HubSpot lifecycle stage + lead status — derived
+ * ENTIRELY from the HubSpot CONTACT object, aggregated by email domain, never the company
+ * object. Rationale (explicit ask, 2026-09): a company's own HubSpot lifecycle stage can lag or
+ * disagree with its people — e.g. sushant.mohan@clickpost.ai is a real "customer" contact in
+ * HubSpot even if the ClickPost company record itself sits at some other stage. The domain's
+ * derived stage/status is the SAME value applied to the account AND to every Radar contact that
+ * shares that domain (by their own `contacts.domain`, not just ones with their own direct
+ * HubSpot email match) — so a brand-new contact at an already-"customer" domain inherits
+ * "customer" immediately on the very next run, with no HubSpot record of their own required.
+ *
+ * `customer` is a separate, one-way boolean: this only ever sets it to true (whenever the
+ * derived stage is "customer"), never back to false — a manual/CSV-set customer=true (e.g. a
+ * known customer list) must never be clobbered by a HubSpot company-side disagreement.
  *
  * Runs a full reset + rematch every tick rather than tracking a cursor: Radar's contacts
  * (~63k) and accounts (~26k) are small enough that a full sweep is cheap, and resetting first
- * means a contact that HubSpot no longer matches (or whose HubSpot data changed) doesn't keep
- * a stale stage/status — this also covers any new Radar row automatically on the next run.
+ * means a contact/account HubSpot no longer supports (or whose data changed) doesn't keep a
+ * stale stage/status — this also covers any new Radar row automatically on the next run.
  */
 
 const CHUNK = 500;
@@ -33,24 +42,37 @@ function normalizeDomain(raw: string | null | undefined): string | null {
   return cleaned || null;
 }
 
+// HubSpot's own default lifecycle-stage ordering (least to most advanced) — "customer" outranks
+// every pre-sale stage, so one customer contact at a domain is enough to mark the whole domain.
+// An unrecognized/custom stage value sorts below every known stage but still beats having none.
+const STAGE_PRIORITY = ["subscriber", "lead", "marketingqualifiedlead", "salesqualifiedlead", "opportunity", "customer", "evangelist", "other"];
+function stageRank(stage: string | null): number {
+  if (!stage) return -2;
+  const i = STAGE_PRIORITY.indexOf(stage.toLowerCase());
+  return i >= 0 ? i : -1;
+}
+
 async function runMatch() {
   const integ = await db.integration.findFirst({ where: { type: "hubspot", accessToken: { not: null } } });
   if (!integ) return { error: "No HubSpot integration connected" };
   const orgId = integ.organizationId;
 
-  const [hsContacts, hsCompanies] = await Promise.all([
-    db.hubspotContact.findMany({ where: { organizationId: orgId }, select: { email: true, lifecycleStage: true, leadStatus: true } }),
-    db.hubspotCompany.findMany({ where: { organizationId: orgId, domain: { not: null } }, select: { domain: true, lifecycleStage: true, leadStatus: true } }),
-  ]);
-  const contactMap = new Map(hsContacts.map(c => [c.email, { stage: c.lifecycleStage, status: c.leadStatus }]));
-  const companyMap = new Map<string, { stage: string | null; status: string | null }>();
-  for (const c of hsCompanies) {
-    const d = normalizeDomain(c.domain);
-    if (d && !companyMap.has(d)) companyMap.set(d, { stage: c.lifecycleStage, status: c.leadStatus });
+  const hsContacts = await db.hubspotContact.findMany({ where: { organizationId: orgId }, select: { email: true, lifecycleStage: true, leadStatus: true } });
+
+  // Aggregate by domain (from the contact's own email) — the winning stage/status per domain is
+  // whichever contact there ranks highest on STAGE_PRIORITY, ties broken by first-seen.
+  const domainMap = new Map<string, { stage: string | null; status: string | null }>();
+  for (const c of hsContacts) {
+    const domain = normalizeDomain((c.email || "").split("@")[1]);
+    if (!domain) continue;
+    const existing = domainMap.get(domain);
+    if (!existing || stageRank(c.lifecycleStage) > stageRank(existing.stage)) {
+      domainMap.set(domain, { stage: c.lifecycleStage, status: c.leadStatus });
+    }
   }
 
   const [radarContacts, radarAccounts] = await Promise.all([
-    radarSql<{ id: string; email: string }>("SELECT id, email FROM contacts WHERE email IS NOT NULL AND email <> ''"),
+    radarSql<{ id: string; domain: string }>("SELECT id, domain FROM contacts WHERE domain IS NOT NULL AND domain <> ''"),
     radarSql<{ id: string; domain: string }>("SELECT id, domain FROM accounts WHERE domain IS NOT NULL AND domain <> ''"),
   ]);
 
@@ -58,7 +80,7 @@ async function runMatch() {
   await radarSql("UPDATE accounts SET hubspot_lifecycle_stage = NULL, hubspot_lead_status = NULL, hubspot_matched_at = NULL WHERE hubspot_matched_at IS NOT NULL");
 
   const contactRows = radarContacts
-    .map(rc => ({ id: rc.id, match: contactMap.get(rc.email.trim().toLowerCase()) }))
+    .map(rc => ({ id: rc.id, match: domainMap.get(normalizeDomain(rc.domain) || "") }))
     .filter((r): r is { id: string; match: { stage: string | null; status: string | null } } => !!r.match);
 
   let contactsMatched = 0;
@@ -67,7 +89,8 @@ async function runMatch() {
       .map(r => `('${r.id}'::uuid, ${r.match.stage ? `'${esc(r.match.stage)}'` : "NULL"}, ${r.match.status ? `'${esc(r.match.status)}'` : "NULL"})`)
       .join(",");
     await radarSql(`
-      UPDATE contacts AS c SET hubspot_lifecycle_stage = v.stage, hubspot_lead_status = v.status, hubspot_matched_at = now()
+      UPDATE contacts AS c SET hubspot_lifecycle_stage = v.stage, hubspot_lead_status = v.status, hubspot_matched_at = now(),
+        customer = c.customer OR (v.stage ILIKE 'customer')
       FROM (VALUES ${values}) AS v(id, stage, status)
       WHERE c.id = v.id
     `);
@@ -75,7 +98,7 @@ async function runMatch() {
   }
 
   const accountRows = radarAccounts
-    .map(ra => ({ id: ra.id, match: companyMap.get(normalizeDomain(ra.domain) || "") }))
+    .map(ra => ({ id: ra.id, match: domainMap.get(normalizeDomain(ra.domain) || "") }))
     .filter((r): r is { id: string; match: { stage: string | null; status: string | null } } => !!r.match);
 
   let accountsMatched = 0;
@@ -84,7 +107,8 @@ async function runMatch() {
       .map(r => `('${r.id}'::uuid, ${r.match.stage ? `'${esc(r.match.stage)}'` : "NULL"}, ${r.match.status ? `'${esc(r.match.status)}'` : "NULL"})`)
       .join(",");
     await radarSql(`
-      UPDATE accounts AS a SET hubspot_lifecycle_stage = v.stage, hubspot_lead_status = v.status, hubspot_matched_at = now()
+      UPDATE accounts AS a SET hubspot_lifecycle_stage = v.stage, hubspot_lead_status = v.status, hubspot_matched_at = now(),
+        customer = a.customer OR (v.stage ILIKE 'customer')
       FROM (VALUES ${values}) AS v(id, stage, status)
       WHERE a.id = v.id
     `);
