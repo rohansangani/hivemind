@@ -692,12 +692,13 @@ interface RadarOptions {
 
 /** A compact labelled filter dropdown; hidden when it has no options. */
 function FilterSelect({
-  label, value, onChange, options,
+  label, value, onChange, options, labels,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   options: string[];
+  labels?: Record<string, string>;
 }) {
   if (!options.length) return null;
   return (
@@ -709,9 +710,10 @@ function FilterSelect({
       aria-label={label}
     >
       <option value="">{label}: All</option>
-      {options.map((o) => (
-        <option key={o} value={o}>{o.length > 40 ? o.slice(0, 40) + "…" : o}</option>
-      ))}
+      {options.map((o) => {
+        const t = labels?.[o] || o;
+        return <option key={o} value={o}>{t.length > 40 ? t.slice(0, 40) + "…" : t}</option>;
+      })}
     </select>
   );
 }
@@ -879,6 +881,7 @@ function DataTable<T extends { id: string }>({
         <div className="flex items-center gap-2 flex-wrap">
           <FilterSelect label="Vertical" value={filters.vertical || ""} onChange={(v) => setFilter("vertical", v)} options={["B2B", "US", "D2C"]} />
           <FilterSelect label="Account Type" value={filters.accountType || ""} onChange={(v) => setFilter("accountType", v)} options={ACCOUNT_TYPE_OPTIONS} />
+          <FilterSelect label="Customer" value={filters.customer || ""} onChange={(v) => setFilter("customer", v)} options={["true", "false"]} labels={{ true: "Yes", false: "No" }} />
           <FilterSelect label="Industry" value={filters.industry || ""} onChange={(v) => setFilter("industry", v)} options={options?.industries || []} />
           <FilterSelect label="Employees" value={filters.employeeRange || ""} onChange={(v) => setFilter("employeeRange", v)} options={options?.employeeRanges || []} />
           <FilterSelect label="Country" value={filters.country || ""} onChange={(v) => setFilter("country", v)} options={options?.countries || []} />
@@ -1019,6 +1022,7 @@ interface AccountRow {
   hubspot_lead_status: string | null;
   vertical: string | null;
   account_type: string | null;
+  customer: boolean | null;
   industry: string | null;
   sub_industry: string | null;
   account_size: string | null;
@@ -1248,6 +1252,7 @@ const ACCOUNT_EDIT_FIELDS: EditField[] = [
   { key: "domain", label: "Domain" },
   { key: "vertical", label: "Vertical", type: "vertical" },
   { key: "account_type", label: "Account Type", type: "account_type" },
+  { key: "customer", label: "Customer", type: "boolean" },
   { key: "industry", label: "Industry" },
   { key: "sub_industry", label: "Sub-Industry" },
   { key: "account_size", label: "Account Size" },
@@ -1291,6 +1296,7 @@ const CONTACT_EDIT_FIELDS: EditField[] = [
   { key: "personal_email", label: "Personal Email" },
   { key: "headline", label: "Headline" },
   { key: "hubspot_excluded", label: "HubSpot Excluded", type: "boolean" },
+  { key: "customer", label: "Customer", type: "boolean" },
   { key: "source", label: "Source" },
 ];
 
@@ -1469,6 +1475,7 @@ function AccountsSection() {
     },
     { key: "vertical", header: "Vertical", render: (r) => <VerticalBadge v={r.vertical} /> },
     { key: "account_type", header: "Account Type", render: (r) => <Cell value={r.account_type} /> },
+    { key: "customer", header: "Customer", render: (r) => r.customer ? <span className="text-[11px] px-2 py-0.5 rounded-md font-medium bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]">Yes</span> : <span className="text-[var(--hm-text-tertiary)]">—</span> },
     {
       key: "company",
       header: "Company",
@@ -1682,6 +1689,7 @@ interface ContactRow {
   hubspot_lead_status: string | null;
   vertical: string | null;
   account_type: string | null;
+  customer: boolean | null;
   industry: string | null;
   sub_industry: string | null;
   employee_range: string | null;
@@ -1755,6 +1763,7 @@ function ContactsSection() {
     },
     { key: "vertical", header: "Vertical", render: (r) => <VerticalBadge v={r.vertical} /> },
     { key: "account_type", header: "Account Type", render: (r) => <Cell value={r.account_type} /> },
+    { key: "customer", header: "Customer", render: (r) => r.customer ? <span className="text-[11px] px-2 py-0.5 rounded-md font-medium bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]">Yes</span> : <span className="text-[var(--hm-text-tertiary)]">—</span> },
     {
       key: "first_name",
       header: "First Name",
@@ -2242,7 +2251,7 @@ const DB_COLS: Record<UploadTable, Record<string, string>> = {
     industry: "Industry", sub_industry: "Sub-Industry",
     company_location: "Company Location", country: "Country",
     revenue_range: "Annual Revenue", employee_range: "Employee Size",
-    account_size: "Account Size", vertical: "Vertical", account_type: "Account Type",
+    account_size: "Account Size", vertical: "Vertical", account_type: "Account Type", customer: "Customer",
     track_order_page: "Track Order Page", edd: "EDD", no_of_stores: "No. of Stores",
     ebo: "EBO", mbo: "MBO", shopify: "Shopify",
     parent_company: "Parent Company", sdr_owner: "SDR Owner", source: "Source",
@@ -2262,7 +2271,7 @@ const DB_COLS: Record<UploadTable, Record<string, string>> = {
     "a:sub_industry": "Sub-Industry", "a:company_location": "Company Location",
     "a:country": "Company Country", "a:revenue_range": "Annual Revenue",
     "a:employee_range": "Employee Size", "a:account_size": "Account Size",
-    "a:vertical": "Vertical", "a:account_type": "Account Type", "a:track_order_page": "Track Order Page",
+    "a:vertical": "Vertical", "a:account_type": "Account Type", "a:customer": "Customer", "a:track_order_page": "Track Order Page",
     "a:edd": "EDD", "a:no_of_stores": "No. of Stores",
     "a:ebo": "EBO", "a:mbo": "MBO", "a:shopify": "Shopify",
     "a:parent_company": "Parent Company", "a:sdr_owner": "SDR Owner", "a:source": "Company Source",
@@ -2292,6 +2301,7 @@ const AUTO_MAP: Record<UploadTable, Record<string, string>> = {
     "account size": "account_size",
     vertical: "vertical",
     "account type": "account_type", "account-type": "account_type",
+    customer: "customer", "is customer": "customer",
     "track order page": "track_order_page", "track order": "track_order_page",
     edd: "edd",
     "no of stores": "no_of_stores", "number of stores": "no_of_stores", "no. of stores": "no_of_stores",
@@ -2329,6 +2339,7 @@ const AUTO_MAP: Record<UploadTable, Record<string, string>> = {
     "account size": "a:account_size",
     vertical: "a:vertical",
     "account type": "a:account_type", "account-type": "a:account_type",
+    customer: "a:customer", "is customer": "a:customer",
     "track order page": "a:track_order_page", "track order": "a:track_order_page",
     edd: "a:edd",
     "no of stores": "a:no_of_stores", "no. of stores": "a:no_of_stores", "number of stores": "a:no_of_stores",

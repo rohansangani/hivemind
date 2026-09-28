@@ -8,10 +8,12 @@ const RADAR_ADMIN_ROLES = ["owner", "admin"];
  * the "act on everything matching my filters" bulk actions below — so "select all N matching"
  * acts on exactly the same set the user was looking at. */
 function buildAccountsFilter(body: Record<string, unknown>, role: string): string {
-  const { vertical, industry, subIndustry, accountSize, employeeRange, revenueRange, country, search, includeIrrelevant, accountType } = body as Record<string, string | boolean | undefined>;
+  const { vertical, industry, subIndustry, accountSize, employeeRange, revenueRange, country, search, includeIrrelevant, accountType, customer } = body as Record<string, string | boolean | undefined>;
   let query = "";
   if (vertical) query += `&vertical=eq.${encodeURIComponent(String(vertical))}`;
   if (accountType) query += `&account_type=eq.${encodeURIComponent(String(accountType))}`;
+  if (customer === "true") query += `&customer=eq.true`;
+  else if (customer === "false") query += `&customer=eq.false`;
   if (industry) query += `&industry=eq.${encodeURIComponent(String(industry))}`;
   if (subIndustry) query += `&sub_industry=eq.${encodeURIComponent(String(subIndustry))}`;
   if (accountSize) query += `&account_size=eq.${encodeURIComponent(String(accountSize))}`;
