@@ -1182,7 +1182,13 @@ function downloadCSV<T extends object>(rows: T[], filename: string) {
   const seen = new Set<string>();
   for (const r of rows) for (const k of Object.keys(r)) if (!seen.has(k)) { seen.add(k); cols.push(k); }
   const esc = (v: unknown) => {
-    const s = v == null ? "" : typeof v === "object" ? JSON.stringify(v) : String(v);
+    let s = v == null ? "" : typeof v === "object" ? JSON.stringify(v) : String(v);
+    // Raw Apify/scraped text can legitimately start with =, +, -, @, tab, or CR — Excel (and
+    // Sheets) treat a leading one of those as a formula regardless of CSV quoting, and a raw
+    // scraped fragment often can't be evaluated as one, showing "#ERROR!" instead of the real
+    // text (confirmed live on a raw enrich export). Prefixing a single quote keeps it literal text
+    // without changing what's actually in the cell.
+    if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
     return `"${s.replace(/"/g, '""')}"`;
   };
   const lines = [cols.join(",")];
