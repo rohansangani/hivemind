@@ -352,6 +352,7 @@ async function continueEnrichSave(
     await radarSql(`UPDATE enrich_jobs SET save_status = 'done', saved_at = now() WHERE id = ${jobId}`);
     await logRadarUsage(userEmail, "leads_finder", rows.length);
     triggerSyncExclusions();
+    triggerHubspotMatch();
     return { done: true };
   } catch (e) {
     await radarSql(`UPDATE enrich_jobs SET save_status = 'error', save_error = '${((e as Error).message || "Save failed").replace(/'/g, "''")}' WHERE id = ${jobId}`).catch(() => {});
@@ -900,6 +901,20 @@ function triggerSyncExclusions(): void {
   fetch("https://hivemind.clickpost.io/api/radar/sync-exclusions", {
     method: "POST",
     headers: { Authorization: "Bearer 64c3c1935f8f60b65d7fe15da2c8822fdee664b136df0b7c4cb1d404df842b0f" },
+  }).catch(() => {});
+}
+
+// Fire-and-forget HubSpot lifecycle-stage/lead-status rematch — was previously only ever run by
+// its own 15-min cron, so a freshly-enriched (or freshly-uploaded, see upload/route.ts) batch of
+// accounts/contacts sat with a blank hubspot_lifecycle_stage until the next tick. Same
+// shared-secret dispatch pattern as triggerSyncExclusions; hubspot-match's own GET handler is
+// idempotent (full reset + rematch every run) so an extra call here never conflicts with the cron.
+function triggerHubspotMatch(): void {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) return;
+  fetch("https://hivemind.clickpost.io/api/radar/hubspot-match", {
+    method: "GET",
+    headers: { Authorization: `Bearer ${secret}` },
   }).catch(() => {});
 }
 

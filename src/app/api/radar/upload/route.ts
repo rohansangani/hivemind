@@ -600,6 +600,17 @@ async function handleUpload(body: UploadBody): Promise<{ status: number; body: R
         method: "POST",
         headers: { Authorization: "Bearer 64c3c1935f8f60b65d7fe15da2c8822fdee664b136df0b7c4cb1d404df842b0f" },
       }).catch(() => {});
+
+      // Same idea as sync-exclusions above — was previously only ever run by its own 15-min cron,
+      // so a freshly-uploaded batch of accounts/contacts sat with a blank hubspot_lifecycle_stage
+      // until the next tick. hubspot-match's own GET handler is idempotent (full reset + rematch
+      // every run), so this never conflicts with the cron firing around the same time.
+      if (process.env.CRON_SECRET) {
+        fetch("https://hivemind.clickpost.io/api/radar/hubspot-match", {
+          method: "GET",
+          headers: { Authorization: `Bearer ${process.env.CRON_SECRET}` },
+        }).catch(() => {});
+      }
     }
   }
 
