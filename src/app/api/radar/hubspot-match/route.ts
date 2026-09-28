@@ -90,7 +90,7 @@ async function runMatch() {
       .join(",");
     await radarSql(`
       UPDATE contacts AS c SET hubspot_lifecycle_stage = v.stage, hubspot_lead_status = v.status, hubspot_matched_at = now(),
-        customer = c.customer OR (v.stage ILIKE 'customer')
+        customer = c.customer OR COALESCE(v.stage ILIKE 'customer', false)
       FROM (VALUES ${values}) AS v(id, stage, status)
       WHERE c.id = v.id
     `);
@@ -108,7 +108,7 @@ async function runMatch() {
       .join(",");
     await radarSql(`
       UPDATE accounts AS a SET hubspot_lifecycle_stage = v.stage, hubspot_lead_status = v.status, hubspot_matched_at = now(),
-        customer = a.customer OR (v.stage ILIKE 'customer')
+        customer = a.customer OR COALESCE(v.stage ILIKE 'customer', false)
       FROM (VALUES ${values}) AS v(id, stage, status)
       WHERE a.id = v.id
     `);
