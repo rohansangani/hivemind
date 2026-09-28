@@ -3509,7 +3509,13 @@ function EnrichSection() {
         const key = email || `new-no-email-${noEmailIdx++}`;
         if (merged.has(key)) continue;
         const { raw, ...rest } = r as { raw?: unknown };
-        merged.set(key, { ...rest, ...(raw ? flattenForCsv(raw) : {}), validated_at: null, source: "new" });
+        // raw fills in EXTRA columns (tech stack, financials, description, ...) the clean `rest`
+        // fields don't already cover — it must never come after `rest` in the spread. Apify's raw
+        // item can carry its own same-named "email"/"first_name"/"phone"/etc. key that's blank,
+        // differently shaped, or just plain wrong for that row (confirmed live: emails that were
+        // correctly resolved in `rest` came back blank, and other columns showed inconsistent
+        // values row to row) — spreading raw last silently overwrote the already-resolved value.
+        merged.set(key, { ...(raw ? flattenForCsv(raw) : {}), ...rest, validated_at: null, source: "new" });
       }
       const toExport = [...merged.values()];
       if (!toExport.length) { setError("Nothing to export."); return; }
