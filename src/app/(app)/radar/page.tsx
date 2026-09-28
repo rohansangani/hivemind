@@ -4977,13 +4977,17 @@ function ValidateSection() {
     });
   };
   const [confidenceThreshold, setConfidenceThreshold] = useState("");
-  // Selects every candidate whose confidence is >= the typed threshold, deselecting the rest —
-  // one-shot bulk pick instead of clicking through rows one by one for a large pattern batch.
-  // Unscored candidates (confidence === null) are excluded — there's no score to compare against.
+  const [confidenceMax, setConfidenceMax] = useState("");
+  // Selects every candidate within [min, max] confidence, deselecting the rest — one-shot bulk
+  // pick instead of clicking through rows one by one for a large pattern batch. Max is optional
+  // (blank = no upper bound, same as before this became a range). Unscored candidates
+  // (confidence === null) are excluded — there's no score to compare against.
   const selectByConfidence = () => {
     const min = Number(confidenceThreshold);
     if (!confidenceThreshold.trim() || Number.isNaN(min)) return;
-    setCandidates((prev) => prev.map((c) => ({ ...c, selected: c.confidence != null && c.confidence >= min })));
+    const max = confidenceMax.trim() ? Number(confidenceMax) : null;
+    if (max != null && Number.isNaN(max)) return;
+    setCandidates((prev) => prev.map((c) => ({ ...c, selected: c.confidence != null && c.confidence >= min && (max == null || c.confidence <= max) })));
   };
 
   const loadTags = async () => {
@@ -5994,7 +5998,18 @@ function ValidateSection() {
                         onChange={(e) => setConfidenceThreshold(e.target.value)}
                         placeholder="min %"
                         style={{ width: 70, height: 32, fontSize: 12 }}
-                        title="Select every pattern with confidence at or above this percentage, in one click"
+                        title="Select every pattern with confidence in this range, in one click"
+                      />
+                      <span className="text-[12px] text-[var(--hm-text-tertiary)]">–</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={confidenceMax}
+                        onChange={(e) => setConfidenceMax(e.target.value)}
+                        placeholder="max % (optional)"
+                        style={{ width: 90, height: 32, fontSize: 12 }}
+                        title="Upper bound — leave blank for no max"
                       />
                       <button
                         onClick={selectByConfidence}
@@ -6002,7 +6017,7 @@ function ValidateSection() {
                         className="hm-btn hm-btn-secondary"
                         style={{ height: 32, padding: "0 12px", fontSize: 12 }}
                       >
-                        Select ≥ confidence
+                        Select in range
                       </button>
                     </span>
                   )}
