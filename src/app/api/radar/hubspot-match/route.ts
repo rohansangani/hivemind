@@ -3,6 +3,7 @@ export const maxDuration = 280;
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { radarSql } from "@/lib/radar/supabase";
+import { mapWithConcurrency } from "@/lib/radar/contactExport";
 import { currentUserHasPermission } from "@/lib/authz";
 import jwt from "jsonwebtoken";
 
@@ -27,7 +28,7 @@ import jwt from "jsonwebtoken";
  * stale stage/status — this also covers any new Radar row automatically on the next run.
  */
 
-const CHUNK = 500;
+const CHUNK = 4000;
 const esc = (s: string) => s.replace(/'/g, "''");
 
 function chunks<T>(arr: T[], size: number): T[][] {
@@ -76,44 +77,55 @@ async function runMatch() {
     radarSql<{ id: string; domain: string }>("SELECT id, domain FROM accounts WHERE domain IS NOT NULL AND domain <> ''"),
   ]);
 
-  await radarSql("UPDATE contacts SET hubspot_lifecycle_stage = NULL, hubspot_lead_status = NULL, hubspot_matched_at = NULL WHERE hubspot_matched_at IS NOT NULL");
-  await radarSql("UPDATE accounts SET hubspot_lifecycle_stage = NULL, hubspot_lead_status = NULL, hubspot_matched_at = NULL WHERE hubspot_matched_at IS NOT NULL");
+  // The two resets and the two rematch loops below are all independent (different tables, or
+  // — for the resets — genuinely unrelated to the rematch data already computed above), so they
+  // run concurrently instead of one after another. Confirmed live: fully sequential blew the
+  // function's 280s ceiling well before accounts even started (contacts alone, 500 rows/chunk,
+  // ate the entire budget on ~79k rows) — this and the much bigger CHUNK below are what make a
+  // full sweep of the whole DB (~108k rows total) actually fit in one run.
+  await Promise.all([
+    radarSql("UPDATE contacts SET hubspot_lifecycle_stage = NULL, hubspot_lead_status = NULL, hubspot_matched_at = NULL WHERE hubspot_matched_at IS NOT NULL"),
+    radarSql("UPDATE accounts SET hubspot_lifecycle_stage = NULL, hubspot_lead_status = NULL, hubspot_matched_at = NULL WHERE hubspot_matched_at IS NOT NULL"),
+  ]);
 
   const contactRows = radarContacts
     .map(rc => ({ id: rc.id, match: domainMap.get(normalizeDomain(rc.domain) || "") }))
     .filter((r): r is { id: string; match: { stage: string | null; status: string | null } } => !!r.match);
 
-  let contactsMatched = 0;
-  for (const batch of chunks(contactRows, CHUNK)) {
-    const values = batch
-      .map(r => `('${r.id}'::uuid, ${r.match.stage ? `'${esc(r.match.stage)}'` : "NULL"}, ${r.match.status ? `'${esc(r.match.status)}'` : "NULL"})`)
-      .join(",");
-    await radarSql(`
-      UPDATE contacts AS c SET hubspot_lifecycle_stage = v.stage, hubspot_lead_status = v.status, hubspot_matched_at = now(),
-        customer = c.customer OR COALESCE(v.stage ILIKE 'customer', false)
-      FROM (VALUES ${values}) AS v(id, stage, status)
-      WHERE c.id = v.id
-    `);
-    contactsMatched += batch.length;
-  }
-
   const accountRows = radarAccounts
     .map(ra => ({ id: ra.id, match: domainMap.get(normalizeDomain(ra.domain) || "") }))
     .filter((r): r is { id: string; match: { stage: string | null; status: string | null } } => !!r.match);
 
-  let accountsMatched = 0;
-  for (const batch of chunks(accountRows, CHUNK)) {
-    const values = batch
-      .map(r => `('${r.id}'::uuid, ${r.match.stage ? `'${esc(r.match.stage)}'` : "NULL"}, ${r.match.status ? `'${esc(r.match.status)}'` : "NULL"})`)
-      .join(",");
-    await radarSql(`
-      UPDATE accounts AS a SET hubspot_lifecycle_stage = v.stage, hubspot_lead_status = v.status, hubspot_matched_at = now(),
-        customer = a.customer OR COALESCE(v.stage ILIKE 'customer', false)
-      FROM (VALUES ${values}) AS v(id, stage, status)
-      WHERE a.id = v.id
-    `);
-    accountsMatched += batch.length;
-  }
+  // CONC bounds how many chunk-UPDATEs are in flight at once per table — same
+  // fewer-round-trips-but-not-all-at-once pattern as mapWithConcurrency's own doc comment
+  // (full-parallel risks overloading Supabase's connection pooler into a flat 500).
+  const CONC = 4;
+  const [contactsMatched, accountsMatched] = await Promise.all([
+    mapWithConcurrency(chunks(contactRows, CHUNK), CONC, async (batch) => {
+      const values = batch
+        .map(r => `('${r.id}'::uuid, ${r.match.stage ? `'${esc(r.match.stage)}'` : "NULL"}, ${r.match.status ? `'${esc(r.match.status)}'` : "NULL"})`)
+        .join(",");
+      await radarSql(`
+        UPDATE contacts AS c SET hubspot_lifecycle_stage = v.stage, hubspot_lead_status = v.status, hubspot_matched_at = now(),
+          customer = c.customer OR COALESCE(v.stage ILIKE 'customer', false)
+        FROM (VALUES ${values}) AS v(id, stage, status)
+        WHERE c.id = v.id
+      `);
+      return batch.length;
+    }).then(counts => counts.reduce((a, b) => a + b, 0)),
+    mapWithConcurrency(chunks(accountRows, CHUNK), CONC, async (batch) => {
+      const values = batch
+        .map(r => `('${r.id}'::uuid, ${r.match.stage ? `'${esc(r.match.stage)}'` : "NULL"}, ${r.match.status ? `'${esc(r.match.status)}'` : "NULL"})`)
+        .join(",");
+      await radarSql(`
+        UPDATE accounts AS a SET hubspot_lifecycle_stage = v.stage, hubspot_lead_status = v.status, hubspot_matched_at = now(),
+          customer = a.customer OR COALESCE(v.stage ILIKE 'customer', false)
+        FROM (VALUES ${values}) AS v(id, stage, status)
+        WHERE a.id = v.id
+      `);
+      return batch.length;
+    }).then(counts => counts.reduce((a, b) => a + b, 0)),
+  ]);
 
   return {
     contactsMatched, accountsMatched,
