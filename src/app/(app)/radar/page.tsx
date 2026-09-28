@@ -2882,6 +2882,7 @@ interface ExistingContact {
   email_status: string | null;
   validated_at: string | null;
   linkedin_url: string | null;
+  customer: boolean | null;
 }
 
 type EnrichPhase = "form" | "running" | "results" | "saved";
@@ -3467,7 +3468,7 @@ function EnrichSection() {
           first_name: c.first_name, last_name: c.last_name, email: c.email, email_status: c.email_status,
           title: c.title, company_name: c.company_name || c.account_name, domain: c.domain,
           linkedin_url: c.linkedin_url, phone: null, location: null, country: null,
-          validated_at: c.validated_at, source: "existing",
+          validated_at: c.validated_at, customer: c.customer ?? false, source: "existing",
         });
       }
       for (const r of newRows) {
@@ -3476,7 +3477,9 @@ function EnrichSection() {
         const { raw, ...rest } = r as Record<string, unknown>;
         // Flatten the raw Apify item into readable columns instead of leaving it as a nested
         // object that downloadCSV would otherwise JSON-stringify into a single unreadable cell.
-        merged.set(email, { ...rest, ...(raw ? flattenForCsv(raw) : {}), validated_at: null, source: "new" });
+        // raw spreads FIRST — same reasoning as exportAllRawNoDebounce below: it must never
+        // overwrite an already-resolved clean field with its own blank/differently-shaped value.
+        merged.set(email, { ...(raw ? flattenForCsv(raw) : {}), ...rest, validated_at: null, customer: false, source: "new" });
       }
 
       const toExport = [...merged.values()];
@@ -3511,7 +3514,7 @@ function EnrichSection() {
           first_name: c.first_name, last_name: c.last_name, email: c.email, email_status: c.email_status,
           title: c.title, company_name: c.company_name || c.account_name, domain: c.domain,
           linkedin_url: c.linkedin_url, phone: null, location: null, country: null,
-          validated_at: c.validated_at, source: "existing",
+          validated_at: c.validated_at, customer: c.customer ?? false, source: "existing",
         });
       }
       let noEmailIdx = 0;
@@ -3526,7 +3529,7 @@ function EnrichSection() {
         // differently shaped, or just plain wrong for that row (confirmed live: emails that were
         // correctly resolved in `rest` came back blank, and other columns showed inconsistent
         // values row to row) — spreading raw last silently overwrote the already-resolved value.
-        merged.set(key, { ...(raw ? flattenForCsv(raw) : {}), ...rest, validated_at: null, source: "new" });
+        merged.set(key, { ...(raw ? flattenForCsv(raw) : {}), ...rest, validated_at: null, customer: false, source: "new" });
       }
       const toExport = [...merged.values()];
       if (!toExport.length) { setError("Nothing to export."); return; }

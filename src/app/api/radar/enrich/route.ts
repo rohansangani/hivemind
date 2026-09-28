@@ -428,7 +428,8 @@ async function handleAction(req: NextRequest, userEmail: string | null): Promise
       SELECT c.first_name, c.last_name, c.email, c.title, c.company_name,
              c.location, c.country, c.linkedin_url, c.email_status, c.validated_at,
              c.validated_company, c.linkedin_checked_at,
-             a.name AS account_name, COALESCE(a.domain, c.domain) AS domain
+             a.name AS account_name, COALESCE(a.domain, c.domain) AS domain,
+             (COALESCE(c.customer, false) OR COALESCE(a.customer, false)) AS customer
       FROM contacts c
       LEFT JOIN accounts a ON c.account_id = a.id
       WHERE (a.domain IN (${list}) OR c.domain IN (${list}))
