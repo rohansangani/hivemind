@@ -2380,13 +2380,18 @@ function parseCSV(text: string): { headers: string[]; rows: Record<string, strin
   if (cell.length || row.length) { row.push(cell); out.push(row); }
   const nonEmpty = out.filter((r) => r.some((v) => v.trim() !== ""));
   if (!nonEmpty.length) return { headers: [], rows: [] };
-  const headers = nonEmpty[0].map((h) => h.trim());
   // Strip invisible Unicode formatting marks (zero-width space/joiner, LTR/RTL marks, BOM) —
   // confirmed live: a CSV with a stray ‎ before an email address made it through parsing
   // untouched, silently failed every Instantly lead-add call as an "invalid" address, and (since
   // that failure was swallowed) never surfaced until 1,551 leads out of 2,550 mysteriously never
   // got added to a campaign.
   const stripInvisible = (s: string) => s.replace(/[​-‏﻿]/g, "").trim();
+  // Header row needs the SAME stripping, not just cell values — confirmed live: a Google Sheets
+  // CSV export's UTF-8 BOM lands on the very first header ("domain" -> "﻿domain"), which
+  // .trim() alone does NOT strip (BOM isn't Unicode whitespace), so a column-name lookup against
+  // "domain" silently never matches and "Add people" rejects a CSV that visibly has a domain
+  // column, with a misleading "needs first name and domain" error.
+  const headers = nonEmpty[0].map((h) => stripInvisible(h));
   const rows = nonEmpty.slice(1).map((r) => {
     const o: Record<string, string> = {};
     headers.forEach((h, i) => { o[h] = stripInvisible(r[i] ?? ""); });
