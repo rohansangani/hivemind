@@ -3146,11 +3146,32 @@ function EnrichSection() {
   };
 
   const call = async (body: Record<string, unknown>) => {
-    const r = await fetch("/api/radar/enrich", {
+    // A browser-level "Failed to fetch" means the request never got ANY response (dropped
+    // connection, VPN/proxy/adblock, flaky wifi) — the server logs show nothing because no
+    // request completed, so it's invisible from our side. Retry once for read-only/idempotent
+    // actions; NEVER for ones that spend money or create records (start = paid Apify run, save,
+    // sync_batch_start) since the first attempt may actually have landed before the connection
+    // dropped, and a blind retry would double it.
+    const NON_IDEMPOTENT = new Set(["start", "save", "sync_batch_start"]);
+    const attempt = () => fetch("/api/radar/enrich", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
+    let r: Response;
+    try {
+      r = await attempt();
+    } catch {
+      if (NON_IDEMPOTENT.has(String(body.action))) {
+        throw new Error("Couldn't reach the server (network dropped before a response). Check the Recent Enrich Jobs list below before retrying — the run may have actually started.");
+      }
+      await new Promise((res) => setTimeout(res, 800));
+      try {
+        r = await attempt();
+      } catch {
+        throw new Error("Couldn't reach the server — check your connection (VPN / ad-blocker / wifi) and try again.");
+      }
+    }
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(d.error || "Request failed");
     return d;
