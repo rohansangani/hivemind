@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 /**
  * Radar Supabase access (server-side only).
  *
@@ -203,7 +204,16 @@ export async function radarSql<T = Record<string, unknown>>(query: string, attem
       await new Promise((res) => setTimeout(res, 500 * (attempt + 1)));
       return radarSql<T>(query, attempt + 1);
     }
-    throw new Error((d as { message?: string })?.message || "Radar SQL query failed");
+    // Diagnostic for the intermittent "FGA Authentication Error. Unauthorized" seen from Vercel
+    // (2026-10-06) while the same token works from a laptop 30/30: log a one-way fingerprint of
+    // the token (never the token itself) + status so prod's value can be compared to a known-good
+    // one. Remove once root-caused.
+    const msg = (d as { message?: string })?.message || "";
+    if (/FGA|Unauthorized|JWT/i.test(msg)) {
+      const fp = createHash("sha256").update(RADAR_SUPABASE_ACCESS_TOKEN || "").digest("hex").slice(0, 10);
+      console.error(`[radarSql] auth failure status=${r.status} msg="${msg.slice(0, 80)}" tokenFp=${fp} tokenLen=${(RADAR_SUPABASE_ACCESS_TOKEN || "").length} refLen=${(RADAR_SUPABASE_REF || "").length} attempt=${attempt}`);
+    }
+    throw new Error(msg || "Radar SQL query failed");
   }
   return d as T[];
 }
