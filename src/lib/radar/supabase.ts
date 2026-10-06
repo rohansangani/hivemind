@@ -200,8 +200,17 @@ export async function radarSql<T = Record<string, unknown>>(query: string, attem
     throw new Error(`Radar SQL query failed (non-JSON response, status ${r.status})`);
   }
   if (!Array.isArray(d)) {
-    if ((d as { message?: string })?.message && attempt < 3) {
-      await new Promise((res) => setTimeout(res, 500 * (attempt + 1)));
+    // Confirmed live (2026-10-06): the Management API intermittently answers 500 "FGA Authentication
+    // Error. Unauthorized" for minutes at a time even though the token is valid (prod's token
+    // fingerprint matched a known-good one, same token worked 30/30 from a laptop, Supabase status
+    // clean). Their own auth backend flapping — 3 quick retries (~3s total) weren't enough to ride
+    // it out, so this specific transient gets a longer exponential window (~15s over 6 retries).
+    const m = (d as { message?: string })?.message || "";
+    const isAuthFlap = /FGA Authentication/i.test(m);
+    const maxAttempts = isAuthFlap ? 6 : 3;
+    if (m && attempt < maxAttempts) {
+      const wait = isAuthFlap ? Math.min(500 * 2 ** attempt, 4000) : 500 * (attempt + 1);
+      await new Promise((res) => setTimeout(res, wait));
       return radarSql<T>(query, attempt + 1);
     }
     // Diagnostic for the intermittent "FGA Authentication Error. Unauthorized" seen from Vercel
