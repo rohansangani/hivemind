@@ -4477,11 +4477,32 @@ function ValidateSection() {
   const [openingJobId, setOpeningJobId] = useState<number | null>(null);
 
   const call = async (body: Record<string, unknown>) => {
-    const r = await fetch("/api/radar/validate", {
+    // Browser-level "Failed to fetch" = no response ever came back (dropped connection, VPN,
+    // flaky wifi) — invisible in server logs. Confirmed live: job 260 had all 410 leads in
+    // Instantly with 0 failures while the UI showed "Failed to fetch" + a stale "210/410", because
+    // one progress poll dropped and aborted the whole send loop. Retry once for idempotent/resumable
+    // actions (continue_send, check, status…); NEVER for ones that create records or send real
+    // email, where the first attempt may have landed before the connection dropped.
+    const NON_IDEMPOTENT = new Set(["send", "generate", "load_contacts", "retest_job_start", "save"]);
+    const attempt = () => fetch("/api/radar/validate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
+    let r: Response;
+    try {
+      r = await attempt();
+    } catch {
+      if (NON_IDEMPOTENT.has(String(body.action))) {
+        throw new Error("Couldn't reach the server (network dropped before a response). Check Job History before retrying — the action may have actually gone through.");
+      }
+      await new Promise((res) => setTimeout(res, 800));
+      try {
+        r = await attempt();
+      } catch {
+        throw new Error("Couldn't reach the server — check your connection (VPN / ad-blocker / wifi). Sending continues in the background; reopen the job to see progress.");
+      }
+    }
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(d.error || "Request failed");
     return d;
