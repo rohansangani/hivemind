@@ -123,6 +123,10 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ data: updated });
   } catch (err) {
     console.error("Radar contact update error:", err);
-    return NextResponse.json({ error: (err as Error).message || "Failed to update contact" }, { status: 400 });
+    const msg = (err as Error).message || "Failed to update contact";
+    if (/contacts_linkedin_vertical_key/.test(msg)) {
+      return NextResponse.json({ error: "Another contact in this vertical already has that LinkedIn URL — LinkedIn is the duplicate key. Edit or merge that record instead." }, { status: 409 });
+    }
+    return NextResponse.json({ error: msg }, { status: 400 });
   }
 }

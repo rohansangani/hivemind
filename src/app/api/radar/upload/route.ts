@@ -15,6 +15,22 @@ export const maxDuration = 60;
 
 const esc = (s: unknown) => (s == null ? "" : String(s).replace(/'/g, "''"));
 
+// Canonical LinkedIn URL — MUST stay identical to the Postgres norm_li() function (and its
+// triggers on contacts/accounts, which re-normalize on every write regardless). Lower-case, drop
+// http(s)://, www. and country subdomains (in./uk./…), drop ?query / #fragment and trailing "/":
+// "https://www.linkedin.com/in/Jane/?utm=1" -> "linkedin.com/in/jane". LinkedIn is the dedupe /
+// reference key for contacts (not every contact has an email, but every one has a profile).
+function normLinkedin(v: unknown): string | null {
+  if (v == null) return null;
+  const out = String(v).trim().toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .replace(/^[a-z]{2,3}\.(linkedin\.com)/, "$1")
+    .replace(/[?#].*$/, "")
+    .replace(/\/+$/, "");
+  return out || null;
+}
+
 // Normalize a raw website/domain value down to a bare hostname (strip protocol, www, trailing
 // slash, any path). Source CSVs are inconsistent — "acme.com", "acme.com/", "https://acme.com",
 // "acme.com/shop" all mean the same account — and without this each variant was treated as a
@@ -137,10 +153,11 @@ async function handleUpload(body: UploadBody): Promise<{ status: number; body: R
           out.email_status = String(r.email_status).toLowerCase().trim();
           out.validated_at = new Date().toISOString();
         }
+        if ("linkedin_url" in out) out.linkedin_url = normLinkedin(out.linkedin_url);
         return out;
       // Rows with no email are kept (enrichable later via Validate -> Generate patterns) as long
-      // as they carry SOME identifying info.
-      }).filter((r) => r.email || r.first_name || r.last_name || r.company_name)
+      // as they carry SOME identifying info — a LinkedIn URL counts (it's the reference key).
+      }).filter((r) => r.email || r.first_name || r.last_name || r.company_name || r.linkedin_url)
     : rows.map((r) => {
         const domain = r.domain ? toDomain(String(r.domain)) : r.domain;
         return stripDropped({ ...r, domain, name: r.name || domain || null, country: normalizeCountry(r.country ? String(r.country) : null), source: (r.source ? String(r.source).trim() : "") || "CSV Upload", vertical: (r.vertical ? String(r.vertical).trim() : "") || fallbackVertical });
@@ -154,6 +171,76 @@ async function handleUpload(body: UploadBody): Promise<{ status: number; body: R
     // vertical is a deliberately distinct row, not a duplicate to merge. Rows without an email
     // have no natural key, so they dedupe within this file by name+domain and get a
     // duplicate-guard against the DB.
+    // ── Step L: LinkedIn as the reference key (same person = same LinkedIn + vertical) ──────────
+    // Not every contact has an email, but every one has a LinkedIn profile — so a LinkedIn URL that
+    // already exists in the DB for this vertical means "update THAT row", never "insert another".
+    // Incoming non-blank values overwrite the existing row (same as the email-based upsert); an
+    // email is only filled in if the existing row has none and nobody else already owns it. The
+    // DB also enforces uniqueness (contacts_linkedin_vertical_key), so this must run BEFORE inserts.
+    let linkedinMerged = 0;
+    {
+      const vKey = (r: Row) => (r.vertical ? String(r.vertical) : "").trim().toUpperCase();
+      // (a) rows in THIS file sharing a LinkedIn+vertical are one person — keep the first, let later
+      // rows only fill its blanks.
+      const firstByKey = new Map<string, Row>();
+      const kept: Row[] = [];
+      for (const r of cleanRows) {
+        const li = r.linkedin_url ? String(r.linkedin_url) : "";
+        if (!li) { kept.push(r); continue; }
+        const k = `${li}::${vKey(r)}`;
+        const first = firstByKey.get(k);
+        if (!first) { firstByKey.set(k, r); kept.push(r); continue; }
+        for (const [col, val] of Object.entries(r)) {
+          const blank = first[col] === null || first[col] === undefined || first[col] === "";
+          if (blank && val !== null && val !== undefined && val !== "") first[col] = val;
+        }
+      }
+      cleanRows.length = 0;
+      cleanRows.push(...kept);
+
+      // (b) rows whose LinkedIn+vertical already exists in the DB -> update the existing row.
+      const withLi = cleanRows.filter((r) => r.linkedin_url);
+      if (withLi.length) {
+        try {
+          const existingByKey = new Map<string, { id: string; email: string | null }>();
+          const liList = [...new Set(withLi.map((r) => String(r.linkedin_url)))];
+          for (let i = 0; i < liList.length; i += 500) {
+            const part = liList.slice(i, i + 500).map((l) => `'${esc(l)}'`).join(",");
+            const found = await radarSql<{ id: string; email: string | null; vertical: string | null; linkedin_url: string }>(
+              `SELECT id, email, vertical, linkedin_url FROM contacts WHERE linkedin_url IN (${part})`
+            );
+            for (const f of found) existingByKey.set(`${f.linkedin_url}::${(f.vertical || "").toUpperCase()}`, { id: f.id, email: f.email });
+          }
+          const UPDATABLE = ["first_name", "last_name", "full_name", "title", "company_name", "phone", "phone2", "country", "location", "domain", "personal_email", "seniority_level", "functional_level", "headline", "parent_company", "sdr_owner"];
+          const matched = new Set<Row>();
+          const stmts: string[] = [];
+          for (const r of withLi) {
+            const ex = existingByKey.get(`${r.linkedin_url}::${vKey(r)}`);
+            if (!ex) continue;
+            matched.add(r);
+            const sets = UPDATABLE
+              .filter((c) => r[c] !== undefined && r[c] !== null && String(r[c]).trim() !== "")
+              .map((c) => `${c} = '${esc(String(r[c]).trim())}'`);
+            const inEmail = r.email ? String(r.email).toLowerCase().trim() : "";
+            if (inEmail && r.email_status && (!ex.email || ex.email.toLowerCase() === inEmail)) {
+              sets.push(`email_status = '${esc(String(r.email_status).toLowerCase().trim())}'`, `validated_at = now()`);
+            }
+            if (sets.length) stmts.push(`UPDATE contacts SET ${sets.join(", ")} WHERE id = '${esc(ex.id)}';`);
+            if (inEmail && !ex.email) {
+              stmts.push(`UPDATE contacts SET email = '${esc(inEmail)}' WHERE id = '${esc(ex.id)}' AND email IS NULL AND NOT EXISTS (SELECT 1 FROM contacts o WHERE LOWER(o.email) = '${esc(inEmail)}' AND COALESCE(o.vertical,'') = COALESCE((SELECT vertical FROM contacts WHERE id = '${esc(ex.id)}'),''));`);
+            }
+          }
+          for (let i = 0; i < stmts.length; i += 100) await radarSql(stmts.slice(i, i + 100).join("\n"));
+          if (matched.size) {
+            const rest = cleanRows.filter((r) => !matched.has(r));
+            cleanRows.length = 0;
+            cleanRows.push(...rest);
+            linkedinMerged = matched.size;
+          }
+        } catch { /* fall through — worst case these hit the normal insert path below */ }
+      }
+    }
+
     const dedupMap = new Map<string, Row>();
     const noEmailMap = new Map<string, Row>();
     cleanRows.forEach((r) => {
@@ -168,7 +255,9 @@ async function handleUpload(body: UploadBody): Promise<{ status: number; body: R
         dedupMap.set(`${r.email}::${r.vertical}`, r);
         return;
       }
-      const k = `${(r.first_name ? String(r.first_name) : "").toLowerCase()}|${(r.last_name ? String(r.last_name) : "").toLowerCase()}|${(r.domain || r.company_name ? String(r.domain || r.company_name) : "").toLowerCase()}`;
+      const k = r.linkedin_url
+        ? `li:${r.linkedin_url}::${String(r.vertical || "").toUpperCase()}`
+        : `${(r.first_name ? String(r.first_name) : "").toLowerCase()}|${(r.last_name ? String(r.last_name) : "").toLowerCase()}|${(r.domain || r.company_name ? String(r.domain || r.company_name) : "").toLowerCase()}`;
       noEmailMap.set(k, r);
     });
     let withEmailRows = [...dedupMap.values()];
@@ -252,7 +341,7 @@ async function handleUpload(body: UploadBody): Promise<{ status: number; body: R
         return { status: 500, body: { error: (e as Error).message } };
       }
     }
-    inserted = withEmailRows.length + filledEmails.size;
+    inserted = withEmailRows.length + filledEmails.size + linkedinMerged;
     if (newPairsForJob.length) {
       const conds = newPairsForJob.map((k) => {
         const [email, vertical] = k.split("::");
@@ -263,17 +352,22 @@ async function handleUpload(body: UploadBody): Promise<{ status: number; body: R
 
     if (noEmailRows.length) {
       try {
+        // Rows WITH a LinkedIn URL are keyed on that (Step L above already merged any that exist in
+        // the DB), so the name+domain guard only applies to rows without one — otherwise a
+        // LinkedIn-only row (blank name/domain) would match every blank no-email contact.
+        const nameKeyed = noEmailRows.filter((r) => !r.linkedin_url);
+        const nameKey = (r: Row) => `${String(r.first_name || "").toLowerCase()}|${String(r.last_name || "").toLowerCase()}|${String(r.domain || r.company_name || "").toLowerCase()}`;
         // Skip rows that already exist as a no-email contact with the same name+domain (avoids
         // piling up duplicates if the same list gets re-uploaded).
-        const conds = noEmailRows.map((r) =>
-          `(LOWER(COALESCE(first_name,'')) = '${esc(String(r.first_name || "").toLowerCase())}' AND LOWER(COALESCE(last_name,'')) = '${esc(String(r.last_name || "").toLowerCase())}' AND LOWER(COALESCE(domain,COALESCE(company_name,''))) = '${esc(String(r.domain || r.company_name || "").toLowerCase())}')`
-        ).join(" OR ");
-        const existingRows = await radarSql<{ fn: string; ln: string; dm: string }>(`SELECT LOWER(COALESCE(first_name,'')) AS fn, LOWER(COALESCE(last_name,'')) AS ln, LOWER(COALESCE(domain,COALESCE(company_name,''))) AS dm FROM contacts WHERE email IS NULL AND (${conds})`);
-        const existingKeys = new Set(existingRows.map((r) => `${r.fn}|${r.ln}|${r.dm}`));
-        const newNoEmailRows = noEmailRows.filter((r) => {
-          const k = `${String(r.first_name || "").toLowerCase()}|${String(r.last_name || "").toLowerCase()}|${String(r.domain || r.company_name || "").toLowerCase()}`;
-          return !existingKeys.has(k);
-        });
+        let existingKeys = new Set<string>();
+        if (nameKeyed.length) {
+          const conds = nameKeyed.map((r) =>
+            `(LOWER(COALESCE(first_name,'')) = '${esc(String(r.first_name || "").toLowerCase())}' AND LOWER(COALESCE(last_name,'')) = '${esc(String(r.last_name || "").toLowerCase())}' AND LOWER(COALESCE(domain,COALESCE(company_name,''))) = '${esc(String(r.domain || r.company_name || "").toLowerCase())}')`
+          ).join(" OR ");
+          const existingRows = await radarSql<{ fn: string; ln: string; dm: string }>(`SELECT LOWER(COALESCE(first_name,'')) AS fn, LOWER(COALESCE(last_name,'')) AS ln, LOWER(COALESCE(domain,COALESCE(company_name,''))) AS dm FROM contacts WHERE email IS NULL AND (${conds})`);
+          existingKeys = new Set(existingRows.map((r) => `${r.fn}|${r.ln}|${r.dm}`));
+        }
+        const newNoEmailRows = noEmailRows.filter((r) => r.linkedin_url || !existingKeys.has(nameKey(r)));
         for (let i = 0; i < newNoEmailRows.length; i += CHUNK) {
           const chunk = newNoEmailRows.slice(i, i + CHUNK);
           const chunkKeys = [...new Set(chunk.flatMap((r) => Object.keys(r)))];
@@ -286,8 +380,9 @@ async function handleUpload(body: UploadBody): Promise<{ status: number; body: R
         }
         inserted += newNoEmailRows.length;
         if (jobId && newNoEmailRows.length) {
-          jobTagConds.contacts.push(...newNoEmailRows.map((r) =>
-            `(email IS NULL AND LOWER(COALESCE(first_name,'')) = '${esc(String(r.first_name || "").toLowerCase())}' AND LOWER(COALESCE(last_name,'')) = '${esc(String(r.last_name || "").toLowerCase())}' AND LOWER(COALESCE(domain,COALESCE(company_name,''))) = '${esc(String(r.domain || r.company_name || "").toLowerCase())}')`
+          jobTagConds.contacts.push(...newNoEmailRows.map((r) => r.linkedin_url
+            ? `(linkedin_url = '${esc(String(r.linkedin_url))}' AND COALESCE(vertical,'') = '${esc(String(r.vertical || "").toUpperCase())}')`
+            : `(email IS NULL AND LOWER(COALESCE(first_name,'')) = '${esc(String(r.first_name || "").toLowerCase())}' AND LOWER(COALESCE(last_name,'')) = '${esc(String(r.last_name || "").toLowerCase())}' AND LOWER(COALESCE(domain,COALESCE(company_name,''))) = '${esc(String(r.domain || r.company_name || "").toLowerCase())}')`
           ));
         }
       } catch { /* don't fail the whole upload over the no-email guard */ }
