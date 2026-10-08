@@ -544,6 +544,16 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
     });
     const allCandidates = perRowResults.flat();
 
+    // Idempotent per batch: clear any patterns already saved for THESE people in this job before
+    // inserting, so a retried batch (client retry after a dropped/failed response, or a resumed
+    // run) replaces its rows instead of duplicating them.
+    if (slice.length) {
+      const keys = slice
+        .map((r) => `('${esc((r.first_name || r.first || "").toLowerCase())}','${esc((r.last_name || r.last || "").toLowerCase())}','${esc(String(r.domain || r.company_domain || "").toLowerCase())}')`)
+        .join(",");
+      await radarSql(`DELETE FROM email_validation_candidates WHERE job_id = ${Number(jobId)} AND (lower(coalesce(first_name,'')), lower(coalesce(last_name,'')), lower(coalesce(domain,''))) IN (${keys})`);
+    }
+
     if (allCandidates.length) {
       const values = allCandidates.map((c) => {
         const sel = c.confidence == null || (c.confidence as number) > 50 ? "true" : "false";

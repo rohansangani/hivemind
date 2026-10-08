@@ -4566,15 +4566,27 @@ function ValidateSection() {
     try {
       let jid: number | null = null;
       let offset = 0;
-      // Mirrors validate.js's own per-request CHUNK (15/person in AI mode, 300 in mechanical-only) —
-      // sized off the actual row count instead of a fixed guard, so a big list doesn't silently stop
-      // partway through (previously capped at 20 chunks = 300 people in AI mode, with no error surfaced).
-      const chunkSize = useAI ? 15 : 300;
-      const maxIterations = Math.ceil(people.length / chunkSize) + 2;
+      // No fixed iteration cap — loops until the backend says done, as long as every call makes
+      // progress. A failed/dropped call (once the job exists) or a response that doesn't advance
+      // is retried from the SAME offset with backoff; the backend clears a batch's prior rows
+      // before inserting, so retries never duplicate patterns. Confirmed live (job 268): a run
+      // stopped at 30/105 with no visible cause and no way to continue.
       let finished = false;
-      for (let guard = 0; guard < maxIterations; guard++) {
-        const d = await call({ action: "generate", rows: people, useAI, jobId: jid, offset, label: patternsLabel.trim(), vertical: patternsVertical });
-        jid = d.jobId;
+      let fails = 0;
+      let lastIssue = "";
+      while (fails <= 3) {
+        let d: { jobId?: number; done?: boolean; nextOffset?: number; totalPeople?: number; candidates?: ValidateCandidate[] };
+        try {
+          d = await call({ action: "generate", rows: people, useAI, jobId: jid, offset, label: patternsLabel.trim(), vertical: patternsVertical });
+        } catch (e) {
+          // Before the job exists, a blind retry could create a second job — surface instead.
+          if (jid == null) throw e;
+          fails++; lastIssue = (e as Error).message;
+          setProgressLabel(`Generating… ${offset}/${people.length} people — retrying batch (${fails}/3)…`);
+          await new Promise((r) => setTimeout(r, 2000 * fails));
+          continue;
+        }
+        if (d.jobId) jid = d.jobId;
         if (d.done) {
           setJobId(jid);
           // Respect the backend's confidence-based auto-select (>50, or unscored in mechanical-only
@@ -4584,11 +4596,18 @@ function ValidateSection() {
           finished = true;
           break;
         }
-        offset = d.nextOffset;
-        setProgressLabel(`Generating… ${offset}/${d.totalPeople} people`);
+        const next = Number(d.nextOffset);
+        if (!Number.isFinite(next) || next <= offset) {
+          fails++; lastIssue = `batch at ${offset} didn't advance (response: ${JSON.stringify(d).slice(0, 160)})`;
+          await new Promise((r) => setTimeout(r, 2000 * fails));
+          continue;
+        }
+        fails = 0;
+        offset = next;
+        setProgressLabel(`Generating… ${offset}/${d.totalPeople ?? people.length} people`);
       }
       if (!finished) {
-        setError(`Only got through ${offset}/${people.length} people before stopping unexpectedly (jobId ${jid}) — this shouldn't normally happen; try again with a smaller batch or report it.`);
+        setError(`Stopped at ${offset}/${people.length} people after 3 retries (job #${jid}). Last problem: ${lastIssue || "unknown"}. Patterns generated so far are saved on that job — open it from Job History, or run again.`);
       }
     } catch (e) {
       setError((e as Error).message);
