@@ -2,10 +2,9 @@ export const maxDuration = 280;
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { radarSql } from "@/lib/radar/supabase";
+import { radarSql, resolveRadarActor } from "@/lib/radar/supabase";
 import { mapWithConcurrency } from "@/lib/radar/contactExport";
 import { currentUserHasPermission } from "@/lib/authz";
-import jwt from "jsonwebtoken";
 
 /**
  * Maps every Radar contact/account onto a HubSpot lifecycle stage + lead status — derived
@@ -144,15 +143,10 @@ export async function GET(req: NextRequest) {
 
 // Manual trigger from the UI.
 export async function POST(req: NextRequest) {
-  const token = req.cookies.get("hm-token")?.value;
-  if (!token) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-  let decoded: { userId: string };
-  try {
-    decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as { userId: string };
-  } catch {
-    return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
-  }
-  if (!(await currentUserHasPermission(decoded.userId, "manage_settings"))) {
+  // Session cookie OR a Radar API key (rk_…) — see resolveRadarActor.
+  const who = await resolveRadarActor(req);
+  if (who instanceof NextResponse) return who;
+  if (!(await currentUserHasPermission(who.userId, "manage_settings"))) {
     return NextResponse.json({ error: "Only admins can run the HubSpot match" }, { status: 403 });
   }
   return NextResponse.json(await runMatch());

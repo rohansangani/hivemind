@@ -1,4 +1,4 @@
-import { createHash } from "crypto";
+import { createHash, randomBytes } from "crypto";
 /**
  * Radar Supabase access (server-side only).
  *
@@ -312,36 +312,106 @@ export async function getRadarAccessLevel(userId: string, role: string, organiza
  * routes behind Accounts/Contacts/Validate/Upload/Enrich/ICP pass "edit"
  * explicitly to keep those out of reach of a view-only grant.
  */
+// ── Radar API keys ────────────────────────────────────────────────────────────────────────────
+// A key ("rk_…") lets a script/integration call every Radar endpoint WITHOUT a browser login. It
+// acts as the HiveMind user who created it — same role, same Radar permission level, re-checked
+// live on every request — so it can never do more than that user can, and demoting/removing the
+// user instantly limits/kills the key too. Only a SHA-256 hash is stored; the plaintext is shown
+// once at creation. Sent as `Authorization: Bearer rk_…` (or `x-radar-api-key: rk_…`).
+export const RADAR_API_KEY_PREFIX = "rk_";
+export const hashRadarApiKey = (key: string) => createHash("sha256").update(key).digest("hex");
+export function generateRadarApiKey(): string {
+  return RADAR_API_KEY_PREFIX + randomBytes(32).toString("base64url");
+}
+
+let apiKeysTableReady = false;
+export async function ensureRadarApiKeysTable(): Promise<void> {
+  if (apiKeysTableReady) return;
+  await radarSql(`CREATE TABLE IF NOT EXISTS radar_api_keys (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    name text NOT NULL,
+    key_hash text NOT NULL UNIQUE,
+    key_prefix text NOT NULL,
+    user_id text NOT NULL,
+    created_by text,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    expires_at timestamptz,
+    last_used_at timestamptz,
+    revoked_at timestamptz
+  )`);
+  apiKeysTableReady = true;
+}
+
+/** Extracts an rk_ key from the request headers, if any. A plain `Bearer <CRON_SECRET>` is NOT a
+ * Radar key (wrong prefix) so cron-authenticated paths are unaffected. */
+function readRadarApiKey(req: NextRequest): string | null {
+  const auth = req.headers.get("authorization") || "";
+  const bearer = auth.toLowerCase().startsWith("bearer ") ? auth.slice(7).trim() : "";
+  const k = bearer || (req.headers.get("x-radar-api-key") || "").trim();
+  return k.startsWith(RADAR_API_KEY_PREFIX) ? k : null;
+}
+
+// Short per-instance cache so every API call doesn't pay a Management-API round trip. Revocation
+// therefore takes effect within API_KEY_CACHE_MS on warm instances.
+const API_KEY_CACHE_MS = 60_000;
+const apiKeyCache = new Map<string, { userId: string | null; at: number }>();
+
+async function userIdForRadarApiKey(key: string): Promise<string | null> {
+  const h = hashRadarApiKey(key);
+  const hit = apiKeyCache.get(h);
+  if (hit && Date.now() - hit.at < API_KEY_CACHE_MS) return hit.userId;
+  await ensureRadarApiKeysTable();
+  const rows = await radarSql<{ user_id: string }>(
+    `UPDATE radar_api_keys SET last_used_at = now()
+     WHERE key_hash = '${h}' AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())
+     RETURNING user_id`
+  );
+  const userId = rows[0]?.user_id ?? null;
+  apiKeyCache.set(h, { userId, at: Date.now() });
+  return userId;
+}
+
+/** Resolves the acting HiveMind user from EITHER the browser session cookie or a Radar API key. */
+export async function resolveRadarActor(req: NextRequest): Promise<{ userId: string; orgIdHint?: string; via: "session" | "api_key" } | NextResponse> {
+  const token = req.cookies.get("hm-token")?.value;
+  if (token) {
+    try {
+      const decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as { userId: string; orgId: string };
+      return { userId: decoded.userId, orgIdHint: decoded.orgId, via: "session" };
+    } catch {
+      // fall through to an API key if one was also sent; otherwise report the bad session below
+      if (!readRadarApiKey(req)) return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
+    }
+  }
+  const key = readRadarApiKey(req);
+  if (key) {
+    const userId = await userIdForRadarApiKey(key);
+    if (!userId) return NextResponse.json({ error: "Invalid, expired or revoked API key" }, { status: 401 });
+    return { userId, via: "api_key" };
+  }
+  return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+}
+
 export async function requireRadarAccess(
   req: NextRequest,
   minLevel: "view" | "edit" = "view",
-): Promise<{ userId: string; orgId: string; role: string } | NextResponse> {
-  const token = req.cookies.get("hm-token")?.value;
-  if (!token) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-
-  let decoded: { userId: string; orgId: string };
-  try {
-    decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as {
-      userId: string;
-      orgId: string;
-    };
-  } catch {
-    return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
-  }
+): Promise<{ userId: string; orgId: string; role: string; via: "session" | "api_key" } | NextResponse> {
+  const who = await resolveRadarActor(req);
+  if (who instanceof NextResponse) return who;
 
   const actor = await db.user.findUnique({
-    where: { id: decoded.userId },
+    where: { id: who.userId },
     select: { role: true, organizationId: true },
   });
   if (!actor) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
-  const orgId = actor.organizationId ?? decoded.orgId;
-  const level = await getRadarAccessLevel(decoded.userId, actor.role, orgId);
+  const orgId = actor.organizationId ?? who.orgIdHint ?? "";
+  const level = await getRadarAccessLevel(who.userId, actor.role, orgId);
   if (!hasModuleAccess({ radar: level }, "radar", minLevel)) {
     return NextResponse.json({ error: "You don't have access to Radar" }, { status: 403 });
   }
 
-  return { userId: decoded.userId, orgId, role: actor.role };
+  return { userId: who.userId, orgId, role: actor.role, via: who.via };
 }
 
 /**

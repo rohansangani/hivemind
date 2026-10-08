@@ -27,7 +27,8 @@ type SectionId =
   | "validate"
   | "export"
   | "capacity"
-  | "logs";
+  | "logs"
+  | "apikeys";
 
 const SECTIONS: Array<{ id: SectionId; label: string; blurb: string }> = [
   { id: "dashboard", label: "Dashboard", blurb: "TAM overview, validation health and enrichment activity." },
@@ -40,6 +41,7 @@ const SECTIONS: Array<{ id: SectionId; label: string; blurb: string }> = [
   { id: "export",    label: "Export",    blurb: "Download validated contact lists, or check a list of emails against the database." },
   { id: "capacity",  label: "Mailbox Capacity", blurb: "MRTeam Instantly mailbox daily send limits — market_research, admin and owner only." },
   { id: "logs",      label: "Logs",      blurb: "Admin-only audit trail of edits, deletes, uploads, exports, and validate/enrich runs." },
+  { id: "apikeys",   label: "API Keys",  blurb: "Admin-only: create/revoke keys that let a script or integration use every Radar feature." },
 ];
 
 export default function RadarPage() {
@@ -66,12 +68,12 @@ export default function RadarPage() {
   // of Accounts, Contacts, Validate, Upload, ICP, or Enrich. "edit" sees everything.
   const viewOnly = modulePermissions.radar === "view";
   const visibleSections = (viewOnly ? SECTIONS.filter((s) => s.id === "dashboard" || s.id === "export" || s.id === "capacity") : SECTIONS)
-    .filter((s) => s.id !== "logs" || isAdmin)
+    .filter((s) => (s.id !== "logs" && s.id !== "apikeys") || isAdmin)
     .filter((s) => s.id !== "capacity" || canSeeCapacity);
 
   useEffect(() => {
     if (viewOnly && active !== "dashboard" && active !== "export" && active !== "capacity") setActive("dashboard");
-    if (active === "logs" && !isAdmin) setActive("dashboard");
+    if ((active === "logs" || active === "apikeys") && !isAdmin) setActive("dashboard");
     if (active === "capacity" && !canSeeCapacity) setActive("dashboard");
   }, [viewOnly, active, isAdmin, canSeeCapacity]);
 
@@ -141,6 +143,7 @@ export default function RadarPage() {
               : s.id === "validate" ? <ValidateSection />
               : s.id === "capacity" ? <MailboxCapacitySection />
               : s.id === "logs" ? <RadarActivityLogSection />
+              : s.id === "apikeys" ? <RadarApiKeysSection />
               : (
                 <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
                   <div className="px-5 py-4 border-b border-[var(--hm-border)]">
@@ -6979,4 +6982,164 @@ function mapLocation(raw: string): string[] {
   // as industry, so run it through the same lowercase + exact-enum filter before it ever reaches
   // the actor.
   return csvToList(raw || "", APIFY_LEADS_FINDER_LOCATIONS);
+}
+
+
+/* ── API Keys (admin only) ─────────────────────────────────────────────── */
+
+interface RadarApiKeyRow {
+  id: string; name: string; key_prefix: string; acts_as: string; created_at: string;
+  expires_at: string | null; last_used_at: string | null; revoked_at: string | null;
+}
+
+function RadarApiKeysSection() {
+  const [keys, setKeys] = useState<RadarApiKeyRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [name, setName] = useState("");
+  const [days, setDays] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [created, setCreated] = useState<{ name: string; key: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const r = await fetch("/api/radar/api-keys");
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || "Couldn't load keys");
+      setKeys(d.keys || []);
+      setError("");
+    } catch (e) { setError((e as Error).message); } finally { setLoading(false); }
+  };
+  useEffect(() => { load(); }, []);
+
+  const create = async () => {
+    if (!name.trim()) { setError("Give the key a name (who or what will use it)."); return; }
+    setBusy(true); setError(""); setCopied(false);
+    try {
+      const r = await fetch("/api/radar/api-keys", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim(), expiresInDays: days ? Number(days) : undefined }) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || "Couldn't create key");
+      setCreated({ name: d.name, key: d.key });
+      setName(""); setDays("");
+      load();
+    } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+  };
+
+  const revoke = async (k: RadarApiKeyRow) => {
+    if (!confirm(`Revoke "${k.name}"? Anything using it stops working within about a minute.`)) return;
+    const r = await fetch("/api/radar/api-keys", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: k.id }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) setError(d.error || "Couldn't revoke key"); else load();
+  };
+
+  const fmt = (v: string | null) => (v ? new Date(v).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }) : "—");
+  const origin = typeof window !== "undefined" ? window.location.origin : "https://hivemind.clickpost.io";
+
+  return (
+    <div className="space-y-5">
+      <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)]">
+        <div className="px-5 py-4 border-b border-[var(--hm-border)]">
+          <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Radar API keys</h2>
+          <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">
+            A key lets a script or integration use every Radar feature without logging in. It acts as <strong>you</strong> — same role and
+            permissions — so treat it like your password. Only share it with someone you trust; revoke it any time.
+          </p>
+        </div>
+        <div className="px-5 py-4 space-y-3">
+          {error && <div className="rounded-lg p-3 text-[12.5px] bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)]">{error}</div>}
+          {created && (
+            <div className="rounded-lg p-3 text-[12.5px] bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)] space-y-2">
+              <div><strong>Key &quot;{created.name}&quot; created.</strong> Copy it now — it won&apos;t be shown again.</div>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 min-w-0 truncate px-2 py-1.5 rounded-md bg-[var(--hm-surface)] text-[var(--hm-text)] border border-[var(--hm-border)] text-[12px]">{created.key}</code>
+                <button
+                  className="hm-btn hm-btn-secondary" style={{ height: 30, padding: "0 12px", fontSize: 12 }}
+                  onClick={() => { navigator.clipboard?.writeText(created.key).then(() => setCopied(true)).catch(() => {}); }}
+                >{copied ? "Copied" : "Copy"}</button>
+                <button className="hm-btn hm-btn-secondary" style={{ height: 30, padding: "0 12px", fontSize: 12 }} onClick={() => setCreated(null)}>Done</button>
+              </div>
+            </div>
+          )}
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="flex-1 min-w-[220px]">
+              <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Key name</label>
+              <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Rahul — enrichment script" />
+            </div>
+            <div style={{ width: 170 }}>
+              <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Expires in (days, optional)</label>
+              <input type="number" min={1} value={days} onChange={(e) => setDays(e.target.value)} placeholder="never" />
+            </div>
+            <button onClick={create} disabled={busy} className="hm-btn hm-btn-primary" style={{ height: 36, padding: "0 16px", fontSize: 12.5 }}>
+              {busy ? "Creating…" : "Create key"}
+            </button>
+          </div>
+        </div>
+        <div className="border-t border-[var(--hm-border)] overflow-x-auto">
+          <table className="w-full border-collapse text-[12.5px]">
+            <thead>
+              <tr>
+                {["Name", "Key", "Acts as", "Created", "Last used", "Expires", "Status", ""].map((h) => (
+                  <th key={h} className="text-left text-[10.5px] font-semibold uppercase tracking-wide text-[var(--hm-text-tertiary)] px-3 py-2 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)]">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={8} className="px-3 py-6 text-center text-[var(--hm-text-tertiary)]">Loading…</td></tr>
+              ) : !keys.length ? (
+                <tr><td colSpan={8} className="px-3 py-6 text-center text-[var(--hm-text-tertiary)]">No keys yet.</td></tr>
+              ) : keys.map((k) => {
+                const expired = !!k.expires_at && new Date(k.expires_at) < new Date();
+                const status = k.revoked_at ? "revoked" : expired ? "expired" : "active";
+                const tone = status === "active" ? "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]" : "bg-[var(--tag-gray-bg)] text-[var(--tag-gray-fg)]";
+                return (
+                  <tr key={k.id}>
+                    <td className="px-3 py-2 border-b border-[var(--hm-border-light)] font-medium text-[var(--hm-text)]">{k.name}</td>
+                    <td className="px-3 py-2 border-b border-[var(--hm-border-light)] font-mono text-[11.5px] text-[var(--hm-text-secondary)]">{k.key_prefix}…</td>
+                    <td className="px-3 py-2 border-b border-[var(--hm-border-light)] text-[var(--hm-text-secondary)]">{k.acts_as}</td>
+                    <td className="px-3 py-2 border-b border-[var(--hm-border-light)] whitespace-nowrap text-[var(--hm-text-secondary)]">{fmt(k.created_at)}</td>
+                    <td className="px-3 py-2 border-b border-[var(--hm-border-light)] whitespace-nowrap text-[var(--hm-text-secondary)]">{fmt(k.last_used_at)}</td>
+                    <td className="px-3 py-2 border-b border-[var(--hm-border-light)] whitespace-nowrap text-[var(--hm-text-secondary)]">{k.expires_at ? fmt(k.expires_at) : "never"}</td>
+                    <td className="px-3 py-2 border-b border-[var(--hm-border-light)]"><span className={`text-[11px] px-2 py-0.5 rounded-md font-medium ${tone}`}>{status}</span></td>
+                    <td className="px-3 py-2 border-b border-[var(--hm-border-light)] text-right">
+                      {status === "active" && (
+                        <button onClick={() => revoke(k)} className="hm-btn hm-btn-secondary" style={{ height: 26, padding: "0 10px", fontSize: 11.5 }}>Revoke</button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)]">
+        <div className="px-5 py-4 border-b border-[var(--hm-border)]">
+          <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">How to use a key</h2>
+          <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">
+            Send it as a header on any Radar endpoint. Every endpoint takes a JSON POST with an <code>action</code> (same calls the Radar UI makes).
+          </p>
+        </div>
+        <pre className="px-5 py-4 text-[11.5px] leading-relaxed overflow-x-auto text-[var(--hm-text)] whitespace-pre">{`# List contacts (filters: vertical, emailStatus, accountType, customer, search, page, limit…)
+curl -X POST ${origin}/api/radar/contacts \\
+  -H "Authorization: Bearer rk_YOUR_KEY" -H "Content-Type: application/json" \\
+  -d '{"vertical":"US","emailStatus":"verified","page":0,"limit":50}'
+
+# List accounts
+curl -X POST ${origin}/api/radar/accounts -H "Authorization: Bearer rk_YOUR_KEY" \\
+  -H "Content-Type: application/json" -d '{"customer":"true","page":0,"limit":50}'
+
+Endpoints (all under ${origin}/api/radar/):
+  accounts, contacts      browse / filter / edit (PATCH {id, fields})
+  upload                  bulk import accounts / contacts / smart
+  enrich                  Apify enrichment: start, status, fetch, save …
+  validate                patterns, Instantly test-send, bounces, Debounce
+  export, export-validate CSV exports and validated exports
+  check-db, linkedin-jobs, stats, options, usage, activity-log`}</pre>
+      </div>
+    </div>
+  );
 }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import jwt from "jsonwebtoken";
+import { resolveRadarActor } from "@/lib/radar/supabase";
+import { db } from "@/lib/db";
 import { instantly } from "@/lib/instantly";
 
 /**
@@ -13,14 +14,11 @@ export const maxDuration = 20;
 const MRTEAM_TAG_LABEL = "mrteam";
 
 export async function GET(req: NextRequest) {
-  const token = req.cookies.get("hm-token")?.value;
-  if (!token) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-  let decoded: { orgId: string };
-  try {
-    decoded = jwt.verify(token, process.env.NEXTAUTH_SECRET || "fallback-secret") as { orgId: string };
-  } catch {
-    return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
-  }
+  // Session cookie OR a Radar API key (rk_…) — see resolveRadarActor.
+  const who = await resolveRadarActor(req);
+  if (who instanceof NextResponse) return who;
+  const u = await db.user.findUnique({ where: { id: who.userId }, select: { organizationId: true } });
+  const decoded = { orgId: u?.organizationId ?? who.orgIdHint ?? "" };
 
   try {
     const tags = await instantly<{ items?: Array<{ id: string; label?: string }> }>("/custom-tags?limit=100", {}, decoded.orgId);
