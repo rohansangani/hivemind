@@ -273,8 +273,14 @@ interface LeadCandidate { id: number; first_name?: string; middle_name?: string;
 // send/continue_send/continue_all_sends call, just not marked as a dead end.
 async function addLeadWithRetry(campaignId: string, c: LeadCandidate, attempt = 0): Promise<{ id: number; leadId?: string; error?: string; permanent?: boolean }> {
   try {
+    // 20s cap per add — confirmed live (job 274) Instantly's lead creation was taking ~15s+ each
+    // and some calls hung outright; with no timeout one hung call froze its whole batch until
+    // Vercel killed the function, so leads that DID land were never recorded (30 in Instantly vs 6
+    // in our DB). A timeout is transient (retried next tick), never a permanent failure — and
+    // reconcileCampaignLeads() picks up any that actually landed before the timeout.
     const lead = await instantly<{ id?: string }>("/leads", {
       method: "POST",
+      signal: AbortSignal.timeout(20000),
       body: JSON.stringify({
         campaign: campaignId, email: c.pattern_email,
         first_name: c.first_name || undefined, last_name: c.last_name || undefined,
@@ -291,6 +297,29 @@ async function addLeadWithRetry(campaignId: string, c: LeadCandidate, attempt = 
     const permanent = typeof status === "number" && status >= 400 && status < 500 && status !== 429;
     return { id: c.id, error: (e as Error).message, permanent };
   }
+}
+
+/** Records Instantly lead ids for candidates that are ALREADY in the campaign but not yet marked
+ * in our DB (an add that succeeded after a timeout, or a function killed mid-batch before it could
+ * write back). Runs before each send round so those leads are never added — and emailed — twice. */
+async function reconcileCampaignLeads(jobId: number, campaignId: string): Promise<number> {
+  const byEmail = new Map<string, string>();
+  let cursor: string | null = null;
+  for (let page = 0; page < 200; page++) {
+    const body: Record<string, unknown> = { campaign: campaignId, limit: 100 };
+    if (cursor) body.starting_after = cursor;
+    const d = await instantly<{ items?: { id?: string; email?: string }[]; next_starting_after?: string }>("/leads/list", { method: "POST", body: JSON.stringify(body), signal: AbortSignal.timeout(20000) });
+    for (const it of d.items || []) if (it.id && it.email) byEmail.set(it.email.toLowerCase(), it.id);
+    if (!d.next_starting_after || !(d.items || []).length) break;
+    cursor = d.next_starting_after;
+  }
+  if (!byEmail.size) return 0;
+  const { rows } = await fetchAllPages("email_validation_candidates", `select=id,pattern_email&job_id=eq.${jobId}&instantly_lead_id=is.null`);
+  const pairs = (rows as { id: number; pattern_email: string }[])
+    .map((r) => ({ id: r.id, lead_id: byEmail.get((r.pattern_email || "").toLowerCase()) }))
+    .filter((p): p is { id: number; lead_id: string } => !!p.lead_id);
+  if (pairs.length) await rpc("set_instantly_lead_ids", { pairs });
+  return pairs.length;
 }
 
 /** Marks candidates that got a permanent (non-retryable) failure adding to Instantly — e.g. "Lead
@@ -319,15 +348,19 @@ async function continueSendCore(jobId: number, campaignId: string, budgetMs: num
   await radarSql(`ALTER TABLE email_validation_candidates ADD COLUMN IF NOT EXISTS send_failed boolean NOT NULL DEFAULT false`).catch(() => {});
   // Follows queued_for_send (frozen at "send" time) + send_failed=false (already-permanently-
   // rejected candidates never retried again) — see the original comments on this query for why.
+  // Sync first: anything already in the Instantly campaign gets its lead id recorded, so it isn't
+  // re-added below. Best-effort — if Instantly's list call fails, sending still proceeds.
+  let reconciled = 0;
+  try { reconciled = await reconcileCampaignLeads(jobId, campaignId); } catch { /* non-fatal */ }
   const { rows: cands } = await fetchAllPages("email_validation_candidates", `select=id,first_name,middle_name,last_name,domain,pattern_email&job_id=eq.${jobId}&instantly_lead_id=is.null&queued_for_send=eq.true&send_failed=eq.false`);
-  if (!cands.length) return { added: 0, remaining: 0, done: true };
+  if (!cands.length) return { added: reconciled, remaining: 0, done: true };
 
   const startedAt = Date.now();
   // Raised from 8 — this is network/Instantly-API-latency bound, not CPU bound, and the 429-retry
   // in addLeadWithRetry already absorbs the occasional rate-limit hit. Real throughput was the
   // actual bottleneck behind the recurring "stuck" reports, not just budget size.
   const CONC = 15;
-  let addedTotal = 0;
+  let addedTotal = reconciled;
   for (let i = 0; i < cands.length; i += CONC) {
     if (Date.now() - startedAt > budgetMs) break;
     const batch = (cands as unknown as LeadCandidate[]).slice(i, i + CONC);
@@ -866,7 +899,7 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
     const jobRows = await radarSql<{ id: number; campaign_id: string }>(`
       SELECT DISTINCT j.id, j.campaign_id FROM email_validation_jobs j
       JOIN email_validation_candidates c ON c.job_id = j.id
-      WHERE j.status = 'sent' AND j.campaign_id IS NOT NULL AND c.instantly_lead_id IS NULL AND c.queued_for_send = true AND c.send_failed = false
+      WHERE j.status IN ('sent', 'checked') AND j.campaign_id IS NOT NULL AND c.instantly_lead_id IS NULL AND c.queued_for_send = true AND c.send_failed = false
       ORDER BY j.id ASC
     `);
     // Was a bare 42s TOTAL shared across every running send, on a 15-min cron — confirmed live
@@ -1113,7 +1146,10 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
         // pass) — otherwise a large campaign could look done just because this tick's partial scan
         // happened to touch only already-resolved leads.
         const allResolved = pending === 0 && !r.nextCursor;
-        if (allResolved) await radarSql(`UPDATE email_validation_jobs SET status = 'checked', resolved_at = COALESCE(resolved_at, now()) WHERE id = ${jid}`);
+        // ALSO require the send itself to be finished — confirmed live (job 274): only 3/691 leads
+        // had reached Instantly, those 3 resolved, so the job flipped to 'checked' and the
+        // continue_all_sends sweep (status='sent' only) stopped pushing the other 688 forever.
+        if (allResolved) await radarSql(`UPDATE email_validation_jobs SET status = 'checked', resolved_at = COALESCE(resolved_at, now()) WHERE id = ${jid} AND (SELECT count(*) FROM email_validation_candidates WHERE job_id = ${jid} AND queued_for_send = true AND instantly_lead_id IS NULL AND send_failed = false) = 0`);
 
         let saved = 0, savedInvalid = 0;
         if (j.vertical && (valid > 0 || bounced > 0) && Date.now() - startedAt < 45000) {
@@ -1170,7 +1206,8 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
     // Same "full pass" requirement as check_all — pending===0 alone isn't enough for a large
     // campaign this single call didn't fully paginate through yet.
     const allResolved = pending === 0 && !r.nextCursor;
-    if (allResolved) await radarSql(`UPDATE email_validation_jobs SET status = 'checked', resolved_at = COALESCE(resolved_at, now()) WHERE id = ${jobId}`);
+    // Same guard as check_all: never mark checked while queued leads still haven't been sent.
+    if (allResolved) await radarSql(`UPDATE email_validation_jobs SET status = 'checked', resolved_at = COALESCE(resolved_at, now()) WHERE id = ${jobId} AND (SELECT count(*) FROM email_validation_candidates WHERE job_id = ${jobId} AND queued_for_send = true AND instantly_lead_id IS NULL AND send_failed = false) = 0`);
 
     let saved = 0, savedInvalid = 0;
     if (job.vertical && (valid > 0 || bounced > 0)) {
