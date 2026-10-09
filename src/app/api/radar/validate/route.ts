@@ -899,7 +899,8 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
     const jobRows = await radarSql<{ id: number; campaign_id: string }>(`
       SELECT DISTINCT j.id, j.campaign_id FROM email_validation_jobs j
       JOIN email_validation_candidates c ON c.job_id = j.id
-      WHERE j.status IN ('sent', 'checked') AND j.campaign_id IS NOT NULL AND c.instantly_lead_id IS NULL AND c.queued_for_send = true AND c.send_failed = false
+      WHERE (j.status = 'sent' OR (j.status = 'checked' AND j.created_at > now() - interval '7 days'))
+        AND j.campaign_id IS NOT NULL AND c.instantly_lead_id IS NULL AND c.queued_for_send = true AND c.send_failed = false
       ORDER BY j.id ASC
     `);
     // Was a bare 42s TOTAL shared across every running send, on a 15-min cron — confirmed live
