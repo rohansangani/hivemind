@@ -1029,7 +1029,13 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
     if (!overrideAction && auth !== `Bearer ${CRON_SECRET}`) return { status: 401, body: { error: "Unauthorized" } };
     await ensureRetestJobsTable();
     const rows = await radarSql<RetestJobRow & { fail_count?: number }>(`SELECT * FROM retest_jobs WHERE status = 'running' ORDER BY id ASC`);
-    const TOTAL_BUDGET_MS = 42000;
+    // Was 42s per 15-min tick (~28 contacts per tick, ~110/hr — confirmed live: job #19 took 9h for
+    // 1,073 contacts; a 6,235-contact job would have taken ~2 days). Now ~235s per 5-min tick:
+    // the budget stays safely under this route's 280s ceiling AND under the tick interval, so two
+    // ticks never overlap on the same job (overlap would make both grab the same "front 6" rows and
+    // pay Debounce twice). Progress is checkpointed after every chunk, so a late-killed tick loses
+    // nothing.
+    const TOTAL_BUDGET_MS = 235000;
     const startedAt = Date.now();
     const results: Record<string, unknown>[] = [];
     for (let i = 0; i < rows.length; i++) {
