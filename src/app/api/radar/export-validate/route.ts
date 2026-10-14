@@ -187,7 +187,16 @@ export async function POST(req: NextRequest) {
         // list mode (paging the list itself, handled above), but false here, where the "next" batch
         // is always whatever's now at the front of the shrinking set. Once offset outran the
         // (shrinking) real total, every future request for that Range 416'd, permanently.
-        const { rows } = await selectFrom("contacts_view", buildRetestQuery(filters, CHUNK, 0));
+        // Only ask for contacts that are actually DUE for a check (same rule as isStale: never
+        // validated, or older than the 14-day cooldown — 30 for 'verified'). Without this, a job that
+        // includes a status like "Unknown" kept re-selecting the SAME front-of-list contacts that
+        // were checked recently: they get skipped as "fresh" but their status never changes, so they
+        // never leave the filter and the job spins forever on them (confirmed live: job #21 showed
+        // 36,972 processed / 66 saved while thousands of unvalidated contacts sat untouched).
+        const d14 = new Date(Date.now() - STALE_MS).toISOString();
+        const d30 = new Date(Date.now() - VERIFIED_COOLDOWN_MS).toISOString();
+        const dueClause = `&and=(or(validated_at.is.null,validated_at.lt.${d30},and(email_status.neq.verified,validated_at.lt.${d14})))`;
+        const { rows } = await selectFrom("contacts_view", buildRetestQuery(filters, CHUNK, 0) + dueClause);
         contacts = rows as unknown as ContactRow[];
       }
       if (!contacts.length && !allEmails) return NextResponse.json({ processed: 0, validated: 0, done: true });
