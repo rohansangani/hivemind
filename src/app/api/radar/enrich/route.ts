@@ -72,7 +72,27 @@ async function resurrectDeadEnrichRuns(apifyToken: string): Promise<{ resurrecte
     `SELECT id, label, params, retry_count FROM enrich_jobs WHERE status IN ${RESURRECT_STATUSES} AND retry_count < ${MAX_ENRICH_RETRIES} ORDER BY id ASC`
   );
   const results: Record<string, unknown>[] = [];
+  const esc0 = (x: string) => x.replace(/'/g, "''");
   for (const job of dead) {
+    // NEVER relaunch a run that stopped because it hit Apify's max-cost-per-run cap: it already
+    // scraped (and paid for) nearly everything, and a relaunch re-scrapes the same domains from
+    // scratch for another full charge — confirmed live (job 83): a run stopped at $38.97 with
+    // 19,474 leads was relaunched twice, replacing the job's link to the real dataset each time and
+    // spending again. Its results are in the original dataset; leave it for a human to save.
+    try {
+      const rr = await fetch(`https://api.apify.com/v2/actor-runs/${(await radarSql<{ run_id: string }>(`SELECT run_id FROM enrich_jobs WHERE id = ${job.id}`))[0]?.run_id}?token=${apifyToken}`);
+      if (rr.ok) {
+        const run = (await rr.json()).data || {};
+        const cap = Number(run.options?.maxTotalChargeUsd) || 0;
+        const spent = Number(run.usageTotalUsd) || 0;
+        const msg = String(run.statusMessage || "");
+        if (/maximum cost|max(imum)? total charge|cost per run limit/i.test(msg) || (cap > 0 && spent >= cap * 0.97)) {
+          await radarSql(`UPDATE enrich_jobs SET retry_count = ${MAX_ENRICH_RETRIES} WHERE id = ${job.id}`).catch(() => {});
+          results.push({ jobId: job.id, resurrected: false, skipped: "stopped at max-cost cap — results are in its dataset, not relaunching" });
+          continue;
+        }
+      }
+    } catch { /* if we can't tell, fall through to the normal (capped) retry */ }
     const input = buildApifyLeadsFinderInput(job.label, job.params || {});
     const started = await startApifyRun(input, apifyToken);
     if (started.ok) {
@@ -478,7 +498,8 @@ async function handleAction(req: NextRequest, userEmail: string | null): Promise
     }
     const data = await r.json();
     await ensureEnrichJobsTable();
-    await radarSql(`UPDATE enrich_jobs SET status = '${data.data?.status || "ABORTED"}', updated_at = now() WHERE run_id = '${runId.replace(/'/g, "''")}'`);
+    // retry_count at the cap: a run a PERSON stopped must not be auto-resurrected by the sweep.
+    await radarSql(`UPDATE enrich_jobs SET status = '${data.data?.status || "ABORTED"}', retry_count = ${MAX_ENRICH_RETRIES}, updated_at = now() WHERE run_id = '${runId.replace(/'/g, "''")}'`);
     return { status: 200, body: { status: data.data?.status || "ABORTED" } };
   }
 
