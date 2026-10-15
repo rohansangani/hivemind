@@ -3112,7 +3112,10 @@ function EnrichSection() {
       setDatasetId(s.datasetId);
       const domains: string[] = s.companyDomain || [];
       if (domains.length) setDomain(domains.join(", "));
-      if (s.status === "SUCCEEDED") {
+      // A run that stopped early (cost cap / timeout / abort) but left usable leads in its dataset is
+      // still openable — same results view, so the leads can be browsed, exported and saved.
+      const stoppedWithResults = (s.status === "FAILED" || s.status === "ABORTED" || s.status === "TIMED-OUT") && (s.itemCount || 0) > 0;
+      if (s.status === "SUCCEEDED" || stoppedWithResults) {
         const [f, chk] = await Promise.all([
           call({ action: "fetch", datasetId: s.datasetId }),
           // Same "already in the DB for these domains" panel startSearch shows on a fresh run —

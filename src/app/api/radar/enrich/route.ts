@@ -602,7 +602,17 @@ async function handleAction(req: NextRequest, userEmail: string | null): Promise
     const r = await fetch(`https://api.apify.com/v2/actor-runs/${row.run_id}?token=${APIFY_TOKEN}`);
     const data = await r.json();
     const status = data.data?.status || "UNKNOWN";
-    const itemCount = data.data?.stats?.itemCount || 0;
+    let itemCount = data.data?.stats?.itemCount || 0;
+    // A run that stopped early (cost cap / timeout / abort) reports status FAILED|ABORTED|TIMED-OUT
+    // and often itemCount 0 in its stats, yet its dataset can hold thousands of usable leads
+    // (job 83: FAILED at the cost cap with 19,474 leads). Ask the dataset itself so the UI can still
+    // open and save those results instead of just saying "This job failed."
+    if (status !== "SUCCEEDED" && status !== "RUNNING" && status !== "READY" && row.dataset_id) {
+      try {
+        const dr = await fetch(`https://api.apify.com/v2/datasets/${row.dataset_id}?token=${APIFY_TOKEN}`);
+        if (dr.ok) itemCount = Math.max(itemCount, Number((await dr.json()).data?.itemCount) || 0);
+      } catch { /* keep stats-based count */ }
+    }
     await radarSql(`UPDATE enrich_jobs SET status = '${status}', item_count = ${itemCount}, updated_at = now() WHERE id = ${Number(jobId)}`);
     return {
       status: 200,
