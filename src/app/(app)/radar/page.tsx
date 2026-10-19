@@ -3532,13 +3532,26 @@ function EnrichSection() {
   // Distinct from exportAll (which re-validates existing contacts via Debounce and only exports
   // checked rows) — asked for explicitly after confirming live that 126 of 354 Apify rows had no
   // way to ever be exported through the UI at all.
+  // Pages through fetch_raw_all (each lead carries its full raw Apify record — too big to send a
+  // whole job in one response), returning every item incl. raw.
+  const fetchRawPaged = async (): Promise<Record<string, unknown>[]> => {
+    const all: Record<string, unknown>[] = [];
+    const PAGE = 300;
+    for (let off = 0; off < 100000; off += PAGE) {
+      const d = await call({ action: "fetch_raw_all", datasetId, offset: off, limit: PAGE });
+      const items = (d.items || []) as Record<string, unknown>[];
+      all.push(...items);
+      if (items.length < PAGE) break;
+    }
+    return all;
+  };
+
   const exportAllRawNoDebounce = async () => {
     if (!datasetId) { setError("No dataset to export from."); return; }
     setExportRawAllBusy(true);
     setError("");
     try {
-      const d = await call({ action: "fetch_raw_all", datasetId });
-      const newRows = (d.items || []) as Record<string, unknown>[];
+      const newRows = await fetchRawPaged();
       const merged = new Map<string, Record<string, unknown>>();
       for (const c of existingLeads) {
         const key = c.email ? c.email.toLowerCase() : `existing-${merged.size}`;
@@ -3585,9 +3598,18 @@ function EnrichSection() {
     if (!(await ensureSavedBeforeExport())) return;
     // Flattened Apify response first (every field the actor returned — mobile number, personal
     // email, seniority, company financials/tech-stack/address, etc. — as readable columns, not a
-    // raw JSON blob), same pattern as Check LinkedIn's export.
+    // raw JSON blob), same pattern as Check LinkedIn's export. The page no longer holds each lead's
+    // raw record (it made job loads too big), so pull it on demand, matched by email.
+    let rawByEmail = new Map<string, Record<string, unknown>>();
+    try {
+      setExportBusy(true);
+      for (const it of await fetchRawPaged()) {
+        const e = String((it as { email?: string }).email || "").toLowerCase();
+        if (e && (it as { raw?: unknown }).raw) rawByEmail.set(e, (it as { raw: Record<string, unknown> }).raw);
+      }
+    } catch (e) { setError((e as Error).message); return; } finally { setExportBusy(false); }
     downloadCSV(
-      rows.map((r) => flattenForCsv(r.raw || r)),
+      rows.map((r) => flattenForCsv(rawByEmail.get(String(r.email || "").toLowerCase()) || r.raw || r)),
       `enrich-${(jobLabel || "leads").toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${new Date().toISOString().slice(0, 10)}.csv`
     );
   };

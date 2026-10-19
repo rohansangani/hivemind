@@ -653,10 +653,10 @@ async function handleAction(req: NextRequest, userEmail: string | null): Promise
       mobile_number: item.mobile_number || null,
       country: item.country || null,
       location: item.city || item.location || null,
-      // Kept alongside the trimmed fields above (not a replacement) so the CSV export can flatten
-      // every Apify field into readable columns — same pattern as Check LinkedIn's export — without
-      // needing a second round-trip to the dataset just to get the fields the table doesn't show.
-      raw: item,
+      // NO `raw` here any more. It used to ride along (every Apify field per lead) so the CSV export
+      // could flatten it, but that made this response ~3KB/lead — a 1,325-lead job was ~4MB, right at
+      // Vercel's 4.5MB response cap, so big jobs wouldn't open at all ("Opening..." forever; a
+      // 19k-lead job could never load). The raw exports now page through fetch_raw_all instead.
     }));
     const withEmail = mapped.filter((r) => r.email);
     // Was silently filter(email)-only with no count surfaced — confirmed live a 354-row Apify run
@@ -671,7 +671,19 @@ async function handleAction(req: NextRequest, userEmail: string | null): Promise
   if (action === "fetch_raw_all") {
     if (!APIFY_TOKEN) return { status: 503, body: { error: "Apify not configured" } };
     if (!datasetId) return { status: 400, body: { error: "No datasetId" } };
-    const items = await fetchApifyDatasetItems(datasetId, APIFY_TOKEN);
+    // Optional paging (body.offset / body.limit): each lead carries its full raw Apify record, so the
+    // whole dataset in one response blows past Vercel's 4.5MB cap on bigger jobs. With a limit this
+    // returns just that slice (items.length < limit => the end); without one it's the old all-at-once.
+    const pgLimit = Math.min(Math.max(Number((body as { limit?: number }).limit) || 0, 0), 500);
+    const pgOffset = Math.max(Number((body as { offset?: number }).offset) || 0, 0);
+    let items: ApifyLeadItem[];
+    if (pgLimit) {
+      const pr = await fetch(`https://api.apify.com/v2/datasets/${datasetId}/items?token=${APIFY_TOKEN}&limit=${pgLimit}&offset=${pgOffset}`);
+      const pj = await pr.json().catch(() => []);
+      items = Array.isArray(pj) ? (pj as ApifyLeadItem[]) : [];
+    } else {
+      items = await fetchApifyDatasetItems(datasetId, APIFY_TOKEN);
+    }
     if (!Array.isArray(items)) return { status: 200, body: { items: [] } };
     const mapped = items.map((item) => ({
       first_name: item.first_name || item.firstName || null,
