@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRadarAccess } from "@/lib/radar/supabase";
-import { countContacts, exportContactsCsv, logContactExport } from "@/lib/radar/contactExport";
+import { countContacts, exportContactsCsv, logContactExport, canStreamContacts, streamContactsCsv } from "@/lib/radar/contactExport";
 import { countAccounts, exportAccountsCsv, logAccountExport } from "@/lib/radar/accountExport";
 import { logRadarActivity } from "@/lib/radar/activityLog";
 
@@ -14,7 +14,8 @@ import { logRadarActivity } from "@/lib/radar/activityLog";
  * lives in src/lib/radar/contactExport.ts and accountExport.ts, shared with
  * Ask Halo's search_radar_contacts/accounts and export_radar_*_csv tools.
  */
-export const maxDuration = 60;
+// Raised from 60: building the full file for a big vertical (49k contacts) timed out at 60s.
+export const maxDuration = 280;
 
 export async function POST(req: NextRequest) {
   const access = await requireRadarAccess(req);
@@ -65,6 +66,16 @@ export async function POST(req: NextRequest) {
     // Contacts — email statuses to include default to safe-to-send/verified
     // (radar's original behaviour) but the caller can pick any combination,
     // including "unvalidated" for contacts with no status yet.
+    // Big exports stream the CSV straight back as a file (no 60s build / 4.5MB JSON limits).
+    if (body.stream === true && canStreamContacts(filters)) {
+      const stream = streamContactsCsv(filters, body.emailStatuses, async (n) => {
+        await logContactExport(access.userId, n);
+        await logRadarActivity(access.userId, "export_contacts", `Exported ${n} contact(s) to CSV`);
+      });
+      return new NextResponse(stream, {
+        headers: { "Content-Type": "text/csv; charset=utf-8", "Cache-Control": "no-store" },
+      });
+    }
     const { csv, matched, exported, truncated } = await exportContactsCsv(filters, body.emailStatuses);
     await logContactExport(access.userId, exported);
     await logRadarActivity(access.userId, "export_contacts", `Exported ${exported} contact(s) to CSV`);

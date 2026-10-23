@@ -2028,11 +2028,23 @@ function ExportSection() {
         body: JSON.stringify({
           type: exportType,
           filters: exportFilters(),
-          ...(exportType === "contacts" ? { emailStatuses } : {}),
+          ...(exportType === "contacts" ? { emailStatuses, stream: true } : {}),
         }),
       });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Export failed");
-      const data = (await res.json()) as { csv: string; matched: number; exported: number; truncated: boolean };
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Export failed (server returned ${res.status})`);
+      // Contacts stream back as a CSV file (big exports can't go through a JSON reply); the
+      // server falls back to the old JSON shape when the filters can't be streamed.
+      const isCsvStream = (res.headers.get("content-type") || "").includes("text/csv");
+      let data: { csv: string; matched: number; exported: number; truncated: boolean };
+      if (isCsvStream) {
+        const csv = await res.text();
+        // data rows = newline-terminated lines minus the header (cheap and close enough for the
+        // message; the exact count is logged server-side)
+        const exportedRows = Math.max(0, (csv.match(/\n/g) || []).length - 1);
+        data = { csv, matched: exportedRows, exported: exportedRows, truncated: false };
+      } else {
+        data = (await res.json()) as { csv: string; matched: number; exported: number; truncated: boolean };
+      }
       if (data.exported === 0) {
         setMsg({ kind: "err", text: `No ${exportType} matched — nothing to export.` });
         return;

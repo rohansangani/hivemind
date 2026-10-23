@@ -6,7 +6,7 @@
  * Export route is a thin wrapper around these same functions.
  */
 
-import { selectFrom } from "@/lib/radar/supabase";
+import { selectFrom, radarFetch } from "@/lib/radar/supabase";
 
 export const DEFAULT_EMAIL_STATUSES = ["safe to send", "verified"];
 
@@ -402,4 +402,84 @@ export async function logContactExport(userId: string, rowCount: number): Promis
   } catch (e) {
     console.error("Radar export log error:", e);
   }
+}
+
+
+/** True when the filters fit one query (no oversized value lists to split) — the only case the
+ * streaming exporter below handles; anything else uses the buffered exportContactsCsv. */
+export function canStreamContacts(filters: Record<string, unknown>, groupCap?: GroupCapConstraint): boolean {
+  return contactFilterCombos(filters).length === 1 && !(groupCap?.field && groupCap.max > 0);
+}
+
+/** Streams the contacts CSV page by page instead of building it all in memory and returning it as
+ * one JSON blob. Confirmed live (2026-10-23): "Include everything" for US (49k rows x ~45 columns)
+ * timed out at the route's 60s limit, and even finished it'd be far past the 4.5MB response cap — a
+ * streamed body has neither problem, and the first bytes go out immediately. Keyset paging
+ * (id > last) keeps every page fast (OFFSET gets slower the deeper it goes) and skips the per-page
+ * COUNT. Same row rules as exportContactsCsv: status filter + HubSpot-excluded dropped unless
+ * filters.includeNoEmail ("everything"); domain falls back to the linked account's. */
+export function streamContactsCsv(
+  filters: Record<string, unknown>,
+  emailStatuses: unknown,
+  onFinish: (exported: number) => Promise<void>,
+): ReadableStream<Uint8Array> {
+  const everything = filters.includeNoEmail === true;
+  const rawStatuses = normalizeEmailStatuses(emailStatuses);
+  const wantsUnvalidated = rawStatuses.includes("unvalidated");
+  const namedStatuses = new Set(rawStatuses.filter((s) => s !== "unvalidated").map((s) => s.toLowerCase().trim()));
+  const baseQuery = buildContactQuery(filters);
+  const label = (k: string) => k.split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+  const enc = new TextEncoder();
+  const PAGE = 1000;
+  let lastId: string | null = null;
+  let cols: string[] | null = null;
+  let exported = 0;
+  let finished = false;
+
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      if (finished) return;
+      try {
+        const q: string = `${baseQuery}&limit=${PAGE}${lastId ? `&id=gt.${lastId}` : ""}`;
+        let rows: Record<string, unknown>[] | null = null;
+        let lastErr: unknown;
+        for (let attempt = 0; attempt < 3 && !rows; attempt++) {
+          try {
+            const r = await radarFetch(`contacts_view?${q}`);
+            if (!r.ok) throw new Error(`Radar Supabase select failed (${r.status}) for contacts_view`);
+            rows = (await r.json()) as Record<string, unknown>[];
+          } catch (e) {
+            lastErr = e;
+            await new Promise((res) => setTimeout(res, 600 * (attempt + 1)));
+          }
+        }
+        if (!rows) throw lastErr;
+        let chunk = "";
+        if (!cols && rows.length) {
+          cols = Object.keys(rows[0]);
+          chunk += cols.map(label).join(",") + "\n";
+        }
+        for (const c of rows) {
+          if (!everything) {
+            const status = String(c.email_status ?? "").toLowerCase().trim();
+            const ok = status === "" ? wantsUnvalidated : namedStatuses.has(status);
+            if (!ok || c.hubspot_excluded) continue;
+          }
+          chunk += cols!.map((col) => csvCell(col === "domain" ? (c.domain || c.account_domain) : c[col])).join(",") + "\n";
+          exported++;
+        }
+        if (chunk) controller.enqueue(enc.encode(chunk));
+        if (rows.length < PAGE) {
+          finished = true;
+          await onFinish(exported).catch(() => {});
+          controller.close();
+        } else {
+          lastId = String(rows[rows.length - 1].id);
+        }
+      } catch (e) {
+        finished = true;
+        controller.error(e);
+      }
+    },
+  });
 }
