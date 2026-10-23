@@ -160,8 +160,10 @@ export function buildContactQuery(filters: Record<string, unknown>): string {
     const s = encodeIlikeValue(String(filters.search));
     q += `&or=(email.ilike.${s},first_name.ilike.${s},last_name.ilike.${s})`;
   }
-  // Only contacts with a non-blank email are exportable.
-  q += `&email=not.is.null&email=neq.`;
+  // Only contacts with a non-blank email are exportable — unless the caller explicitly asked for
+  // EVERYTHING (filters.includeNoEmail, the Export tab's "Include everything" option), in which
+  // case rows with no email come through too.
+  if (filters.includeNoEmail !== true) q += `&email=not.is.null&email=neq.`;
   // Records flagged as irrelevant are never included in an export.
   q += `&marked_irrelevant=eq.false`;
   return q;
@@ -284,6 +286,7 @@ export async function countContacts(
   groupCap?: GroupCapConstraint,
 ): Promise<number> {
   const rawStatuses = normalizeEmailStatuses(emailStatuses);
+  const everything = filters.includeNoEmail === true; // all email statuses, no-email rows, HubSpot-excluded rows too
   // A group cap can't be expressed as a PostgREST filter (it depends on which OTHER rows exist in
   // the result), so counting with one active means pulling real rows and capping client-side
   // instead of a cheap COUNT-only query.
@@ -300,7 +303,9 @@ export async function countContacts(
   }
   // Every filter's value list is small enough for one query — keep the cheap COUNT-only path.
   if (contactFilterCombos(filters).length === 1) {
-    const query = buildContactQuery(filters) + contactStatusFilter(rawStatuses) + "&hubspot_excluded=not.is.true";
+    const query = everything
+      ? buildContactQuery(filters)
+      : buildContactQuery(filters) + contactStatusFilter(rawStatuses) + "&hubspot_excluded=not.is.true";
     const { total } = await selectFrom("contacts_view", query, { from: 0, to: 0 });
     return total;
   }
@@ -308,6 +313,7 @@ export async function countContacts(
   const wantsUnvalidated = rawStatuses.includes("unvalidated");
   const namedStatuses = new Set(rawStatuses.filter((s) => s !== "unvalidated").map((s) => s.toLowerCase().trim()));
   const { rows: all } = await fetchContactRows(filters);
+  if (everything) return all.length;
   const matched = all.filter((c) => {
     const status = String(c.email_status ?? "").toLowerCase().trim();
     const ok = status === "" ? wantsUnvalidated : namedStatuses.has(status);
@@ -327,8 +333,9 @@ export async function exportContactsCsv(
   const namedStatuses = new Set(rawStatuses.filter((s) => s !== "unvalidated").map((s) => s.toLowerCase().trim()));
 
   const { rows: all, truncated } = await fetchContactRows(filters);
+  const everything = filters.includeNoEmail === true;
 
-  let matched = all.filter((c) => {
+  let matched = everything ? all : all.filter((c) => {
     const status = String(c.email_status ?? "").toLowerCase().trim();
     const ok = status === "" ? wantsUnvalidated : namedStatuses.has(status);
     return ok && !c.hubspot_excluded;

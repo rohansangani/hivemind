@@ -1901,6 +1901,9 @@ function ExportSection() {
   const [country, setCountry] = useState("");
   const [search, setSearch] = useState("");
   const [emailStatuses, setEmailStatuses] = useState<string[]>(["safe to send", "verified"]);
+  // "Include everything": every email status, contacts with NO email, and HubSpot-excluded rows —
+  // the full filtered set, i.e. the same number the dashboard shows for that vertical.
+  const [includeAll, setIncludeAll] = useState(false);
   const [options, setOptions] = useState<RadarOptions | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
@@ -1928,6 +1931,9 @@ function ExportSection() {
     country: country || undefined,
     search: search || undefined,
   });
+  // Filters for the export + live count only (not the Debounce re-validate calls, which must keep
+  // working off emails): adds the "everything" flag.
+  const exportFilters = () => ({ ...filters(), ...(exportType === "contacts" && includeAll ? { includeNoEmail: true } : {}) });
 
   const toggleStatus = (key: string) => {
     setEmailStatuses((prev) => (prev.includes(key) ? prev.filter((s) => s !== key) : [...prev, key]));
@@ -1945,7 +1951,7 @@ function ExportSection() {
           body: JSON.stringify({
             mode: "count",
             type: exportType,
-            filters: filters(),
+            filters: exportFilters(),
             ...(exportType === "contacts" ? { emailStatuses } : {}),
           }),
         });
@@ -1959,7 +1965,7 @@ function ExportSection() {
     }, 300);
     return () => { cancelled = true; clearTimeout(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [exportType, vertical, industry, employeeRange, country, search, emailStatuses]);
+  }, [exportType, vertical, industry, employeeRange, country, search, emailStatuses, includeAll]);
 
   const callExportValidate = async (body: Record<string, unknown>) => {
     const r = await fetch("/api/radar/export-validate", {
@@ -2009,7 +2015,7 @@ function ExportSection() {
   };
 
   const download = async () => {
-    if (exportType === "contacts" && !emailStatuses.length) {
+    if (exportType === "contacts" && !includeAll && !emailStatuses.length) {
       setMsg({ kind: "err", text: "Pick at least one email status to export." });
       return;
     }
@@ -2021,7 +2027,7 @@ function ExportSection() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           type: exportType,
-          filters: filters(),
+          filters: exportFilters(),
           ...(exportType === "contacts" ? { emailStatuses } : {}),
         }),
       });
@@ -2102,7 +2108,11 @@ function ExportSection() {
         {exportType === "contacts" && (
           <div>
             <p className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5">Email status to include</p>
-            <div className="flex flex-wrap gap-1.5">
+            <label className="flex items-center gap-2 text-[12.5px] text-[var(--hm-text)] mb-2 cursor-pointer select-none">
+              <input type="checkbox" checked={includeAll} onChange={(e) => setIncludeAll(e.target.checked)} />
+              <span><strong>Include everything</strong> — all email statuses, contacts with <strong>no email</strong>, and HubSpot-excluded contacts</span>
+            </label>
+            <div className={`flex flex-wrap gap-1.5 ${includeAll ? "opacity-40 pointer-events-none" : ""}`}>
               {EMAIL_STATUS_OPTIONS.map((s) => {
                 const active = emailStatuses.includes(s.key);
                 return (
