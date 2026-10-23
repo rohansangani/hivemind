@@ -2485,13 +2485,26 @@ function UploadSection() {
     for (let i = 0; i < rows.length; i += CHUNK) {
       const chunk = rows.slice(i, i + CHUNK);
       const isLast = isLastGroup && i + CHUNK >= rows.length;
-      const res = await fetch("/api/radar/upload", {
+      // A chunk can time out or drop mid-flight (no JSON body comes back). Uploads are idempotent
+      // (rows upsert on email/LinkedIn/domain), so retry the SAME chunk once after a short wait
+      // instead of failing the whole file at that row.
+      const send = () => fetch("/api/radar/upload", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ table: uploadTable, rows: chunk, jobId: jid, filename: fileName, isLast, vertical: uploadVertical }),
       });
-      const d = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(d.error || `Upload failed at row ${i}`);
+      let res: Response | null = null;
+      let d: { error?: string; stopped?: boolean; inserted?: number } = {};
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          res = await send();
+          d = await res.json().catch(() => ({}));
+          if (res.ok || (res.status >= 400 && res.status < 500)) break; // success, or a real validation error — don't retry
+        } catch { res = null; }
+        if (attempt === 0) await new Promise((r) => setTimeout(r, 3000));
+      }
+      if (!res) throw new Error(`Upload failed at row ${i} — couldn't reach the server (network). Rows before ${i} are saved; re-upload the same file to continue — existing rows just update.`);
+      if (!res.ok) throw new Error(d.error || `Upload failed at row ${i} (server returned ${res.status}${res.status === 504 || res.status === 500 ? ", likely a timeout" : ""}). Rows before ${i} are saved; re-upload the same file to continue — existing rows just update.`);
       if (d.stopped) return { inserted, stopped: true };
       inserted += d.inserted ?? chunk.length;
       setProgress({ done: Math.min(offsetDone + i + CHUNK, totalAll), total: totalAll });

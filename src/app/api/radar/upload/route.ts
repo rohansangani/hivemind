@@ -11,7 +11,11 @@ import { db } from "@/lib/db";
  * calls them (duplicate-contact merges, the email/vertical constraint migration, etc.) — ported
  * faithfully rather than dropped, per explicit instruction.
  */
-export const maxDuration = 60;
+// Was 60s: confirmed live (2026-10-23) multiple uploads died with "Task timed out after 60 seconds" —
+// a 500-row chunk does a dozen-plus DB round trips (LinkedIn/email matching, domain linking,
+// account creation) and the last chunk also runs the full-table linking pass. Same ceiling as the
+// other long-running Radar routes (validate/enrich/hubspot-match).
+export const maxDuration = 280;
 
 const esc = (s: unknown) => (s == null ? "" : String(s).replace(/'/g, "''"));
 
