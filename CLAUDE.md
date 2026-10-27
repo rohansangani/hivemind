@@ -136,3 +136,12 @@ Optional:
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` — OAuth
 - `HUBSPOT_ACCESS_TOKEN` — HubSpot integration
 - `AI_KEY_ENCRYPTION_SECRET` — Overrides NEXTAUTH_SECRET for key encryption
+
+## Radar (prospecting workspace) — read `docs/RADAR.md` first
+
+Radar (`src/app/api/radar/*`, `src/lib/radar/*`, `src/app/(app)/radar/page.tsx`) is fully native in this repo but its
+data lives in a **separate Supabase project** (accessed via `radarSql` Management API / PostgREST), not Neon/Prisma.
+`docs/RADAR.md` covers the tables, constraints (LinkedIn+vertical dedupe, vertical CHECK), every pipeline
+(upload, Enrich/Apify, Instantly sends, Debounce jobs, HubSpot match, streamed export, API keys), crons, platform
+limits that have bitten us (PostgREST 1000-row cap, Vercel 4.5MB responses, Management-API FGA flaps) and a debug
+playbook. Deploy = commit on `sushantprod` → ff-merge to `main` → push both (no confirmation needed).
