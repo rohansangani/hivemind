@@ -626,7 +626,7 @@ async function handleUpload(body: UploadBody): Promise<{ status: number; body: R
     // upload, not once per chunk. Skip for every chunk except the last.
     if (isLast !== false) {
       try {
-        await radarSql(`
+        const step2Sql = `
           -- 2a: domain match. A domain can belong to more than one account (one per vertical) —
           -- match on vertical too whenever the contact has one; only fall back to plain domain
           -- matching when the domain is unambiguous or the contact has no vertical.
@@ -691,7 +691,13 @@ async function handleUpload(body: UploadBody): Promise<{ status: number; body: R
             AND LOWER(TRIM(COALESCE(c.company_name, ''))) IS DISTINCT FROM LOWER(TRIM(a.name))
             AND NOT (a.name ~ '\\.[a-z]{2,}' OR a.name ILIKE '%http%' OR a.name ILIKE 'www.%')
             AND NOT EXISTS (SELECT 1 FROM unnest(a.alt_names) alt WHERE LOWER(TRIM(alt)) = LOWER(TRIM(c.company_name)));
-        `);
+        `;
+        // One statement per call (each its own transaction). As a single multi-statement request all
+        // of 2a-2c held their row locks until the very end — a minute-plus — and other uploads'
+        // inserts timed out on them (55P03). Separate calls release locks between steps.
+        for (const stmt of step2Sql.split(/;\s*\n\s*\n/).map((x) => x.trim()).filter(Boolean)) {
+          try { await radarSql(stmt.endsWith(";") ? stmt : stmt + ";"); } catch { /* non-fatal — next step still runs */ }
+        }
       } catch { /* non-fatal */ }
 
       // Fire-and-forget — same shared-secret pattern used elsewhere in this migration.

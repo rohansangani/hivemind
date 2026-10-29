@@ -99,14 +99,26 @@ export async function insertRows<T = Record<string, unknown>>(
   const resolution = opts.ignoreDuplicates ? "resolution=ignore-duplicates" : opts.merge ? "resolution=merge-duplicates" : "";
   const ret = opts.returnMinimal ? "return=minimal" : "return=representation";
   const prefer = resolution ? `${resolution},${ret}` : ret;
-  const r = await fetch(`${RADAR_SUPABASE_URL}/rest/v1/${table}${qs}`, {
-    method: "POST",
-    headers: serviceHeaders({ Prefer: prefer }),
-    body: JSON.stringify(rows),
-  });
-  if (!r.ok) {
-    const body = await r.text().catch(() => "");
-    throw new Error(`Radar Supabase insert failed (${r.status}): ${body || "no details"}`);
+  // Lock contention is transient: another upload's linking pass (or the HubSpot match) briefly
+  // holds row locks and this insert gets "canceling statement due to lock timeout" (55P03, HTTP
+  // 500) — confirmed live when two uploads overlapped. Wait and retry (~15s total) instead of
+  // failing the chunk; deadlocks (40P01) get the same treatment.
+  let r: Response | undefined;
+  let body = "";
+  for (let attempt = 0; attempt < 5; attempt++) {
+    r = await fetch(`${RADAR_SUPABASE_URL}/rest/v1/${table}${qs}`, {
+      method: "POST",
+      headers: serviceHeaders({ Prefer: prefer }),
+      body: JSON.stringify(rows),
+    });
+    if (r.ok) break;
+    body = await r.text().catch(() => "");
+    const lockIssue = /55P03|40P01|lock timeout|deadlock detected|could not obtain lock/i.test(body);
+    if (!lockIssue || attempt === 4) break;
+    await new Promise((res) => setTimeout(res, 1500 * (attempt + 1)));
+  }
+  if (!r || !r.ok) {
+    throw new Error(`Radar Supabase insert failed (${r?.status}): ${body || "no details"}`);
   }
   if (opts.returnMinimal) return [];
   const d = (await r.json().catch(() => [])) as T[];
