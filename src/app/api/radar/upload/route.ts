@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { requireRadarAccess, radarSql, selectFrom, insertRows } from "@/lib/radar/supabase";
 import { logRadarActivity } from "@/lib/radar/activityLog";
 import { db } from "@/lib/db";
@@ -625,6 +625,11 @@ async function handleUpload(body: UploadBody): Promise<{ status: number; body: R
     // canonical name. These scan the FULL accounts/contacts tables — only worth paying once per
     // upload, not once per chunk. Skip for every chunk except the last.
     if (isLast !== false) {
+    // Run the full-table linking pass AFTER the response. Inline it outlasted maxDuration (280s) once
+    // the contacts table got big, so the last chunk 504'd, the job never reached "done", and
+    // hubspot-match never fired. after() keeps it running past the response (same pattern as
+    // csv-export-jobs / validate); the chunk's bookkeeping below now closes the job immediately.
+    after(async () => {
       try {
         const step2Sql = `
           -- 2a: domain match. A domain can belong to more than one account (one per vertical) —
@@ -716,6 +721,7 @@ async function handleUpload(body: UploadBody): Promise<{ status: number; body: R
           headers: { Authorization: `Bearer ${process.env.CRON_SECRET}` },
         }).catch(() => {});
       }
+    });
     }
   }
 
