@@ -5488,7 +5488,7 @@ function ValidateSection() {
                     inputMode === "retest" ? "text-[var(--hm-link)] bg-[var(--hm-bg-tertiary)]" : "text-[var(--hm-text-tertiary)]"
                   }`}
                 >
-                  Email Validation
+                  Risky Email Validation
                 </button>
                 <button
                   onClick={() => setInputMode("linkedin")}
@@ -7163,7 +7163,7 @@ function EmailValidationPanel() {
   return (
     <>
       <div className="px-5 py-4 border-b border-[var(--hm-border)]">
-        <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Email Validation</h2>
+        <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Risky Email Validation</h2>
         <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">
           Upload a CSV of emails — each one is checked with <strong>Anymail Finder</strong> (nothing is sent to anyone). Results are saved to Radar
           automatically: existing contacts get their email status updated, and emails not in Radar yet are added to the vertical you pick.
