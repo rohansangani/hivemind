@@ -5923,232 +5923,7 @@ function ValidateSection() {
                   </div>
                 </>
               ) : (
-                <>
-                  <div className="px-5 py-4 border-b border-[var(--hm-border)]">
-                    <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Email Validation</h2>
-                    <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">
-                      Verifies each email with <strong>Anymail Finder</strong> and saves the result straight to the contact — <strong>nothing is sent</strong>. (Instantly test-sending is still available below as an advanced option.)
-                    </p>
-                  </div>
-                  <div className="px-5 py-5 space-y-4">
-                    <div>
-                      <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Job name (required)</label>
-                      <input type="text" value={retestLabel} onChange={(e) => setRetestLabel(e.target.value)} placeholder="e.g. US Risky — July" />
-                    </div>
-                    <div>
-                      <p className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5">Statuses to include</p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {RETEST_STATUSES.map((s) => {
-                          const active = retestStatuses.includes(s);
-                          return (
-                            <button
-                              key={s}
-                              onClick={() => setRetestStatuses((prev) => active ? prev.filter((x) => x !== s) : [...prev, s])}
-                              className={`text-[11.5px] px-2.5 py-1 rounded-md border capitalize ${active ? "border-[var(--hm-primary)] bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)] font-medium" : "border-[var(--hm-border)] text-[var(--hm-text-secondary)]"}`}
-                            >
-                              {s}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Vertical</label>
-                        <select value={retestVertical} onChange={(e) => setRetestVertical(e.target.value)} title="Required to send via Instantly — filter-only for the Debounce options below">
-                          <option value="">All verticals</option>
-                          <option value="B2B">B2B</option>
-                          <option value="US">US</option>
-                          <option value="D2C">D2C</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Domain (optional)</label>
-                        <input type="text" value={retestDomain} onChange={(e) => setRetestDomain(e.target.value)} placeholder="e.g. acme.com" />
-                      </div>
-                    </div>
-
-                    <div className="text-[13px] font-semibold text-[var(--hm-link)]">
-                      {retestCounting ? "Counting…" : retestCount != null ? `${retestCount.toLocaleString()} contact(s) match` : "—"}
-                    </div>
-
-                    {retestCount != null && retestCount > 0 && (
-                      <div>
-                        <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">
-                          How many to load (optional — leave blank for all {retestCount.toLocaleString()})
-                        </label>
-                        <input
-                          type="number"
-                          min={1}
-                          max={retestCount}
-                          value={retestLimit}
-                          onChange={(e) => setRetestLimit(e.target.value === "" ? "" : Number(e.target.value))}
-                          onBlur={() => setRetestLimit((v) => (v === "" ? "" : Math.min(retestCount, Math.max(1, v))))}
-                          placeholder={`e.g. 500 (of ${retestCount.toLocaleString()})`}
-                          style={{ width: 200 }}
-                        />
-                      </div>
-                    )}
-
-                    {(() => {
-                      const missing: string[] = [];
-                      if (!retestLabel.trim()) missing.push("a job name");
-                      if (!retestStatuses.length) missing.push("at least one status to include");
-                      if (retestCount === 0) missing.push("contacts matching these filters (currently 0)");
-                      return missing.length ? (
-                        <p className="text-[11.5px] text-[var(--tag-yellow-fg)] dark:text-[var(--tag-yellow-fg)]">Fill in {missing.join(" and ")} before running a job below.</p>
-                      ) : null;
-                    })()}
-
-                    <button
-                      onClick={runAnymailRetest}
-                      disabled={debounceBusy || !retestStatuses.length || !retestCount || !retestLabel.trim()}
-                      className="hm-btn hm-btn-primary w-full"
-                      style={{ height: 38, fontSize: 13 }}
-                    >
-                      {debounceBusy ? (
-                        <span className="inline-flex items-center gap-2">
-                          <span className="w-3 h-3 border-2 border-current/30 border-t-current rounded-full animate-spin" />
-                          Starting… {debounceElapsed}s
-                        </span>
-                      ) : "Verify with Anymail Finder (saves to contacts, nothing sent)"}
-                    </button>
-                    {retestCount != null && retestCount > 0 && (
-                      <p className="text-[11.5px] text-[var(--hm-text-tertiary)] -mt-2">
-                        Uses about {(Math.ceil((retestLimit ? Math.min(Number(retestLimit), retestCount) : retestCount) * 0.2)).toLocaleString()} Anymail credits at most (0.2 each; emails checked in the last 30 days are free). Works with “All verticals”. Runs in the background — you can close this page.
-                      </p>
-                    )}
-
-                    <p className="text-[11.5px] text-[var(--hm-text-tertiary)] pt-1">Advanced — Instantly test-send (sends real emails; needs a vertical):</p>
-                    <button onClick={loadForRetest} disabled={busy || !retestStatuses.length || !retestCount || !retestLabel.trim() || !retestVertical} className="hm-btn hm-btn-secondary w-full" style={{ height: 34, fontSize: 12.5 }}>
-                      {retestLimit ? `Load ${Number(retestLimit).toLocaleString()} contact(s) (sends real test emails via Instantly)` : "Load contacts (sends real test emails via Instantly)"}
-                    </button>
-                    {!retestVertical && (
-                      <p className="text-[11.5px] text-[var(--hm-text-tertiary)] -mt-2">Pick a vertical above to use Instantly — Anymail Finder and Debounce work with “All verticals”.</p>
-                    )}
-
-                    <div className="rounded-lg border border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] p-3 space-y-2">
-                      <p className="text-[12px] text-[var(--hm-text-secondary)]">
-                        Or skip Instantly entirely — check these emails via Debounce and save the result straight to the contact, no test-send.
-                      </p>
-                      <button
-                        onClick={runDebounceRetest}
-                        disabled={debounceBusy || !retestStatuses.length || !retestCount || !retestLabel.trim()}
-                        className="hm-btn hm-btn-secondary w-full"
-                        style={{ height: 34, fontSize: 12.5 }}
-                      >
-                        {debounceBusy ? (
-                          <span className="inline-flex items-center gap-2">
-                            <span className="w-3 h-3 border-2 border-current/30 border-t-current rounded-full animate-spin" />
-                            Validating via Debounce… {debounceElapsed}s (can take up to a minute)
-                          </span>
-                        ) : "Validate via Debounce (save directly, no send)"}
-                      </button>
-                      <label className={`hm-btn hm-btn-secondary w-full cursor-pointer ${(debounceBusy || debounceCsvStage || !retestLabel.trim()) ? "opacity-50 pointer-events-none" : ""}`} style={{ height: 34, fontSize: 12.5 }}>
-                        {debounceCsvStage ? (
-                          <span className="inline-flex items-center gap-2">
-                            <span className="w-3 h-3 border-2 border-current/30 border-t-current rounded-full animate-spin" />
-                            {debounceCsvStage}
-                          </span>
-                        ) : (
-                          "⬆ Upload CSV of emails — validate via Debounce directly"
-                        )}
-                        <input type="file" accept=".csv,text/csv" onChange={runDebounceRetestCsv} style={{ display: "none" }} disabled={debounceBusy || !!debounceCsvStage || !retestLabel.trim()} />
-                      </label>
-                      {retestJobId != null && !retestJobDone && (
-                        <button
-                          onClick={() => checkRetestJobStatus()}
-                          disabled={statusChecking}
-                          className="hm-btn hm-btn-secondary w-full"
-                          style={{ height: 30, fontSize: 12 }}
-                        >
-                          {statusChecking ? "Checking…" : `Check status — job #${retestJobId}`}
-                        </button>
-                      )}
-
-                      <div className="pt-1">
-                        <div className="flex items-center justify-between mb-1">
-                          <p className="text-[11px] font-medium text-[var(--hm-text-tertiary)] uppercase tracking-wide">Recent Debounce jobs</p>
-                          <button onClick={loadRetestJobsList} disabled={retestJobsListLoading} className="text-[11px] text-[var(--hm-link)]">
-                            {retestJobsListLoading ? "Refreshing…" : "Refresh"}
-                          </button>
-                        </div>
-                        {retestJobsListError ? (
-                          <p className="text-[11.5px] text-[var(--tag-red-fg)]">{retestJobsListError}</p>
-                        ) : retestJobsListLoading && !retestJobsList.length ? (
-                          <p className="text-[11.5px] text-[var(--hm-text-tertiary)]">Loading…</p>
-                        ) : !retestJobsList.length ? (
-                          <p className="text-[11.5px] text-[var(--hm-text-tertiary)]">No Debounce jobs yet.</p>
-                        ) : (
-                          <div className="space-y-1 max-h-[160px] overflow-y-auto">
-                            {retestJobsList.map((j) => (
-                              <div
-                                key={j.id}
-                                className="w-full flex items-center gap-1.5 text-left text-[11.5px] px-2 py-1.5 rounded-md bg-[var(--hm-surface)] border border-[var(--hm-border)] hover:border-[var(--hm-primary)]/40"
-                              >
-                                <button onClick={() => checkRetestJobStatus(j.id)} disabled={statusChecking} className="flex-1 min-w-0 flex items-center justify-between text-left">
-                                  <span className="truncate text-[var(--hm-text-secondary)]">#{j.id} {j.label || "Untitled"}{(j as { filters?: { provider?: string } }).filters?.provider === "anymail" ? " · Anymail" : ""}</span>
-                                  <span className={`shrink-0 ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium ${j.status === "done" ? "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]" : j.status === "error" ? "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)]" : j.status === "cancelled" ? "bg-[var(--hm-border)] text-[var(--hm-text-tertiary)]" : "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]"}`}>
-                                    {/* Was falling through to "running" for ANY non-done/non-error
-                                        status, including cancelled — confirmed live: a job stopped
-                                        6 days ago still showed "running" indefinitely. */}
-                                    {j.status === "done" ? `done — ${j.validated}/${j.processed}` : j.status === "error" ? "error" : j.status === "cancelled" ? `stopped — ${j.processed} checked` : `running — ${j.processed} checked`}
-                                  </span>
-                                </button>
-                                {j.status === "running" && (
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); cancelRetestJob(j.id); }}
-                                    disabled={cancellingRetestJobId === j.id}
-                                    title="Stop this job"
-                                    className="shrink-0 text-[var(--tag-red-fg)] hover:text-[var(--tag-red-fg)] disabled:opacity-50"
-                                    style={{ fontSize: 14, lineHeight: 1, padding: "0 2px" }}
-                                  >
-                                    {cancellingRetestJobId === j.id ? "…" : "■"}
-                                  </button>
-                                )}
-                                {/* A job that fails 5x in a row flips to 'error' and the cron's
-                                    `status='running'` sweep never picks it back up on its own — this
-                                    is the only way to resume it (continues from job_offset, nothing
-                                    reprocessed). */}
-                                {j.status === "error" && (
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); retryRetestJob(j.id); }}
-                                    disabled={retryingRetestJobId === j.id}
-                                    title={j.error ? `Retry — last error: ${j.error}` : "Retry — resume from where it left off"}
-                                    className="shrink-0 text-[11px] px-1.5 py-0.5 rounded-md border border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[var(--hm-primary)] hover:text-[var(--hm-text)] disabled:opacity-50"
-                                  >
-                                    {retryingRetestJobId === j.id ? "Resuming…" : "Retry"}
-                                  </button>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                      {debounceMsg && (
-                        <p className={`text-[12px] ${debounceMsg.kind === "err" ? "text-[var(--tag-red-fg)]" : "text-[var(--tag-green-fg)]"}`}>{debounceMsg.text}</p>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      <div className="flex-1 h-px bg-[var(--hm-border)]" />
-                      <span className="text-[11px] text-[var(--hm-text-tertiary)]">or</span>
-                      <div className="flex-1 h-px bg-[var(--hm-border)]" />
-                    </div>
-
-                    <label className={`hm-btn hm-btn-secondary w-full cursor-pointer ${(busy || instantlyCsvStage || !retestLabel.trim() || !retestVertical) ? "opacity-50 pointer-events-none" : ""}`} style={{ height: 36, fontSize: 12.5 }}>
-                      {instantlyCsvStage ? (
-                        <span className="inline-flex items-center gap-2">
-                          <span className="w-3 h-3 border-2 border-current/30 border-t-current rounded-full animate-spin" />
-                          {instantlyCsvStage}
-                        </span>
-                      ) : (
-                        "⬆ CSV upload — send campaign instantly to check statuses"
-                      )}
-                      <input type="file" accept=".csv,text/csv" onChange={loadRetestCsv} style={{ display: "none" }} disabled={busy || !!instantlyCsvStage || !retestLabel.trim() || !retestVertical} />
-                    </label>
-                  </div>
-                </>
+                <EmailValidationPanel />
               )}
             </div>
           )}
@@ -7249,5 +7024,264 @@ Endpoints (all under ${origin}/api/radar/):
   check-db, linkedin-jobs, stats, options, usage, activity-log`}</pre>
       </div>
     </div>
+  );
+}
+
+
+/* ── Email Validation (CSV -> Anymail Finder verifier -> saved to Radar) ─────────────────────────── */
+
+interface VerifyJobRow {
+  id: number; label: string; status: string; processed: number; validated: number; error?: string | null;
+  filters?: { provider?: string; vertical?: string; email_count?: number } | null; created_at?: string;
+}
+interface VerifyResultRow {
+  email: string; result_status: string | null; anymail_status: string; in_radar: boolean; added: boolean; vertical: string | null; checked_at: string;
+}
+interface VerifySummary { total: number; valid: number; risky: number; invalid: number; failed: number; existing: number; added: number }
+
+function EmailValidationPanel() {
+  const [label, setLabel] = useState("");
+  const [vertical, setVertical] = useState("");
+  const [stage, setStage] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const [jobs, setJobs] = useState<VerifyJobRow[]>([]);
+  const [jobId, setJobId] = useState<number | null>(null);
+  const [job, setJob] = useState<VerifyJobRow | null>(null);
+  const [summary, setSummary] = useState<VerifySummary | null>(null);
+  const [rows, setRows] = useState<VerifyResultRow[]>([]);
+  const [exporting, setExporting] = useState(false);
+  const PAGE = 200;
+
+  const post = async (body: Record<string, unknown>) => {
+    const r = await fetch("/api/radar/validate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || "Request failed");
+    return d;
+  };
+
+  const loadJobs = async () => {
+    try {
+      const d = await post({ action: "list_retest_jobs" });
+      setJobs(((d.jobs || []) as VerifyJobRow[]).filter((j) => j.filters?.provider === "anymail"));
+    } catch { /* list is best-effort */ }
+  };
+
+  const refresh = async (id: number) => {
+    try {
+      const [st, res] = await Promise.all([
+        post({ action: "retest_job_status", jobId: id }),
+        post({ action: "retest_job_results", jobId: id, offset: 0, limit: PAGE }),
+      ]);
+      setJob(st.job as VerifyJobRow);
+      setSummary(res.summary as VerifySummary);
+      setRows(res.rows as VerifyResultRow[]);
+    } catch (e) { setError((e as Error).message); }
+  };
+
+  useEffect(() => { loadJobs(); }, []);
+  // Poll while the selected job is still running (it keeps going in the background even if this page is closed).
+  useEffect(() => {
+    if (jobId == null) return;
+    refresh(jobId);
+    const t = setInterval(() => { refresh(jobId); }, 5000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobId]);
+  useEffect(() => { if (job && job.status !== "running") loadJobs(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [job?.status]);
+
+  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setError("");
+    if (!label.trim()) { setError("Give this job a name first."); e.target.value = ""; return; }
+    if (!vertical) { setError("Pick a vertical first — emails not already in Radar are added there."); e.target.value = ""; return; }
+    try {
+      setStage("Reading file…");
+      const { rows: csvRows } = parseCSV(await f.text());
+      const emails = [...new Set(
+        csvRows.map((r) => { const k = Object.keys(r).find((h) => h.toLowerCase().includes("email")); return k ? String(r[k]).trim().toLowerCase() : ""; })
+          .filter((v) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v))
+      )];
+      if (!emails.length) { setError("No email column found in that CSV (needs a column with \"email\" in its header)."); return; }
+      setStage(`Starting verification of ${emails.length.toLocaleString()} email(s)…`);
+      const d = await post({ action: "retest_job_start", emails, label: label.trim(), vertical, provider: "anymail" });
+      setLabel("");
+      setSummary(null); setRows([]); setJob(null);
+      setJobId(d.jobId ?? null);
+      loadJobs();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setStage(null);
+      e.target.value = "";
+    }
+  };
+
+  const exportAll = async () => {
+    if (jobId == null) return;
+    setExporting(true);
+    try {
+      const all: VerifyResultRow[] = [];
+      for (let off = 0; off < 200000; off += 2000) {
+        const d = await post({ action: "retest_job_results", jobId, offset: off, limit: 2000 });
+        all.push(...(d.rows as VerifyResultRow[]));
+        if ((d.rows as unknown[]).length < 2000) break;
+      }
+      downloadCSV(all.map((r) => ({
+        email: r.email,
+        result: r.anymail_status === "valid" ? "valid" : r.anymail_status === "error" ? "could not verify" : r.anymail_status,
+        radar_email_status: r.result_status || "",
+        already_in_radar: r.in_radar ? "yes" : "no",
+        added_to_radar: r.added ? "yes" : "no",
+        vertical: r.vertical || "",
+        checked_at: r.checked_at,
+      })), `email-validation-${(job?.label || `job-${jobId}`).toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${today()}.csv`);
+    } catch (e) { setError((e as Error).message); } finally { setExporting(false); }
+  };
+
+  const totalEmails = job?.filters?.email_count ?? 0;
+  const done = job?.status === "done";
+  const pct = totalEmails ? Math.min(100, Math.round(((job?.processed || 0) / totalEmails) * 100)) : 0;
+  const tone = (st: string) =>
+    st === "valid" ? "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]"
+    : st === "risky" ? "bg-[var(--tag-yellow-bg)] text-[var(--tag-yellow-fg)]"
+    : st === "invalid" ? "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)]"
+    : "bg-[var(--tag-gray-bg)] text-[var(--tag-gray-fg)]";
+
+  return (
+    <>
+      <div className="px-5 py-4 border-b border-[var(--hm-border)]">
+        <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Email Validation</h2>
+        <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">
+          Upload a CSV of emails — each one is checked with <strong>Anymail Finder</strong> (nothing is sent to anyone). Results are saved to Radar
+          automatically: existing contacts get their email status updated, and emails not in Radar yet are added to the vertical you pick.
+        </p>
+      </div>
+      <div className="px-5 py-5 space-y-4">
+        {error && <div className="rounded-lg p-3 text-[12.5px] bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)]">{error}</div>}
+
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex-1 min-w-[220px]">
+            <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Job name (required)</label>
+            <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Trisala emails — Nov" />
+          </div>
+          <div style={{ width: 170 }}>
+            <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Vertical (required)</label>
+            <select value={vertical} onChange={(e) => setVertical(e.target.value)}>
+              <option value="">Select…</option>
+              <option value="B2B">B2B</option>
+              <option value="D2C">D2C</option>
+              <option value="US">US</option>
+            </select>
+          </div>
+        </div>
+
+        <label className={`hm-btn hm-btn-primary w-full cursor-pointer ${(stage || !label.trim() || !vertical) ? "opacity-50 pointer-events-none" : ""}`} style={{ height: 38, fontSize: 13 }}>
+          {stage ? (
+            <span className="inline-flex items-center gap-2">
+              <span className="w-3 h-3 border-2 border-current/30 border-t-current rounded-full animate-spin" />
+              {stage}
+            </span>
+          ) : "⬆ Upload CSV of emails and verify"}
+          <input type="file" accept=".csv,text/csv" onChange={onFile} style={{ display: "none" }} disabled={!!stage || !label.trim() || !vertical} />
+        </label>
+        <p className="text-[11.5px] text-[var(--hm-text-tertiary)] -mt-2">
+          CSV needs one column with “email” in its header. Costs 0.2 Anymail credit per email (emails checked in the last 30 days are free).
+          Runs in the background — you can close this page and come back to it under Recent jobs.
+        </p>
+
+        {job && (
+          <div className="rounded-lg border border-[var(--hm-border)] p-4 space-y-3">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="min-w-0">
+                <p className="text-[13px] font-semibold text-[var(--hm-text)] truncate">#{job.id} {job.label}</p>
+                <p className="text-[11.5px] text-[var(--hm-text-tertiary)]">
+                  {done ? "Done — results below are saved to Radar." : job.status === "error" ? "Stopped with an error." : job.status === "cancelled" ? "Stopped." : "Verifying — saving each result to Radar as it goes…"}
+                </p>
+              </div>
+              <button onClick={exportAll} disabled={exporting || !summary?.total} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 14px", fontSize: 12 }}>
+                {exporting ? "Preparing…" : "Export results CSV"}
+              </button>
+            </div>
+            {job.status === "error" && job.error && <p className="text-[12px] text-[var(--tag-red-fg)]">{job.error}</p>}
+            {!done && job.status !== "error" && totalEmails > 0 && (
+              <div>
+                <div className="h-2 rounded-full bg-[var(--hm-bg-tertiary)] overflow-hidden">
+                  <div className="h-full rounded-full bg-[var(--hm-primary)] transition-all" style={{ width: `${pct}%` }} />
+                </div>
+                <p className="text-[11.5px] text-[var(--hm-text-tertiary)] mt-1 tabular-nums">{(job.processed || 0).toLocaleString()} / {totalEmails.toLocaleString()} emails</p>
+              </div>
+            )}
+            {summary && (
+              <>
+                <div className="flex flex-wrap gap-2">
+                  {([["Valid", summary.valid, "valid"], ["Risky", summary.risky, "risky"], ["Invalid", summary.invalid, "invalid"], ["Couldn't verify", summary.failed, "error"]] as [string, number, string][]).map(([l, n, k]) => (
+                    <span key={l} className={`text-[12px] px-2.5 py-1 rounded-md font-medium tabular-nums ${tone(k)}`}>{l}: {n.toLocaleString()}</span>
+                  ))}
+                </div>
+                <p className="text-[12px] text-[var(--hm-text-secondary)]">
+                  Saved to Radar: <strong>{summary.existing.toLocaleString()}</strong> existing contact(s) updated · <strong>{summary.added.toLocaleString()}</strong> new contact(s) added
+                  {summary.total - summary.existing - summary.added > 0 ? ` · ${(summary.total - summary.existing - summary.added).toLocaleString()} not saved (couldn't verify)` : ""}.
+                </p>
+              </>
+            )}
+            {rows.length > 0 && (
+              <div className="rounded-lg border border-[var(--hm-border)] overflow-hidden">
+                <div className="max-h-80 overflow-auto">
+                  <table className="w-full border-collapse text-[12.5px]">
+                    <thead>
+                      <tr>
+                        {["Email", "Result", "In Radar", "Vertical", "Checked"].map((h) => (
+                          <th key={h} className="text-left text-[10.5px] font-semibold uppercase tracking-wide text-[var(--hm-text-tertiary)] px-3 py-2 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] sticky top-0">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((r) => (
+                        <tr key={r.email}>
+                          <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)] font-mono text-[12px] text-[var(--hm-text)]">{r.email}</td>
+                          <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)]"><span className={`text-[11px] px-2 py-0.5 rounded-md font-medium ${tone(r.anymail_status)}`}>{r.anymail_status === "error" ? "couldn't verify" : r.anymail_status}</span></td>
+                          <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text-secondary)]">{r.added ? "added (new)" : r.in_radar ? "updated" : "—"}</td>
+                          <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text-secondary)]">{r.vertical || "—"}</td>
+                          <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text-tertiary)] whitespace-nowrap">{r.checked_at}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {summary && summary.total > rows.length && (
+                  <p className="text-[11.5px] text-[var(--hm-text-tertiary)] px-3 py-2 bg-[var(--hm-bg-secondary)]">Showing the first {rows.length.toLocaleString()} of {summary.total.toLocaleString()} — use “Export results CSV” for everything.</p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-[11px] font-medium text-[var(--hm-text-tertiary)] uppercase tracking-wide">Recent jobs</p>
+            <button onClick={loadJobs} className="text-[11px] text-[var(--hm-link)]">Refresh</button>
+          </div>
+          {!jobs.length ? (
+            <p className="text-[11.5px] text-[var(--hm-text-tertiary)]">No jobs yet — upload a CSV above.</p>
+          ) : (
+            <div className="space-y-1 max-h-[200px] overflow-y-auto">
+              {jobs.map((j) => (
+                <button
+                  key={j.id}
+                  onClick={() => { setSummary(null); setRows([]); setJob(null); setJobId(j.id); }}
+                  className={`w-full flex items-center justify-between text-left text-[12px] px-2.5 py-1.5 rounded-md border ${jobId === j.id ? "border-[var(--hm-primary)] bg-[var(--hm-bg-tertiary)]" : "border-[var(--hm-border)] bg-[var(--hm-surface)] hover:border-[var(--hm-primary)]/40"}`}
+                >
+                  <span className="truncate text-[var(--hm-text-secondary)]">#{j.id} {j.label || "Untitled"}{j.filters?.vertical ? ` · ${j.filters.vertical}` : ""}</span>
+                  <span className={`shrink-0 ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium ${j.status === "done" ? "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]" : j.status === "error" ? "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)]" : j.status === "cancelled" ? "bg-[var(--hm-border)] text-[var(--hm-text-tertiary)]" : "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]"}`}>
+                    {j.status === "done" ? `done — ${j.processed}` : j.status === "error" ? "error" : j.status === "cancelled" ? `stopped — ${j.processed}` : `running — ${j.processed}`}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </>
   );
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
 import { requireRadarAccess, radarSql, selectFrom, radarFetch, rpc } from "@/lib/radar/supabase";
 import { fetchAllPages } from "@/lib/radar/contactExport";
+import { anymailKey, ensureVerifyResultsTable } from "@/lib/radar/emailVerify";
 import { instantly } from "@/lib/instantly";
 import { logRadarActivity } from "@/lib/radar/activityLog";
 import { db } from "@/lib/db";
@@ -427,7 +428,7 @@ async function continueRetestJob(job: RetestJobRow, startedAt: number, budgetMs:
     const r = await fetch(`https://hivemind.clickpost.io/api/radar/export-validate`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-internal-secret": "fb1d7a0b9b75e887da3ebe28b225b74b7d05f6d0292b8f193cf4d678c8540cd5" },
-      body: JSON.stringify({ action: "validate_chunk", filters: job.filters || {}, offset }),
+      body: JSON.stringify({ action: "validate_chunk", filters: job.filters || {}, offset, jobId: job.id }),
     });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(d.error || "validate_chunk failed");
@@ -964,15 +965,16 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
     // "anymail" = verify with Anymail Finder instead of Debounce; the job carries it in `filters`
     // so every cron continuation uses the same verifier. Refuse up front if the key is missing.
     if (provider === "anymail") {
-      if (!(process.env.ANYMAIL_FINDER_API_KEY || process.env.RADAR_ANYMAIL_FINDER_API_KEY)) {
+      if (!anymailKey()) {
         return { status: 503, body: { error: "Anymail Finder isn't set up yet — add ANYMAIL_FINDER_API_KEY to the environment first." } };
       }
+      if (!["B2B", "D2C", "US"].includes(vertical || "")) return { status: 400, body: { error: "Pick a vertical (B2B / D2C / US) — emails not already in Radar are added there." } };
       filters.provider = "anymail";
     }
     if (vertical) filters.vertical = vertical;
     if (Array.isArray(emailStatus) && emailStatus.length) filters.emailStatus = emailStatus;
     const cleanEmails = Array.isArray(emails) ? emails.map((e) => (e || "").trim().toLowerCase()).filter(Boolean) : [];
-    if (cleanEmails.length) filters.emails = cleanEmails;
+    if (cleanEmails.length) filters.emails = provider === "anymail" ? [...new Set(cleanEmails)] : cleanEmails;
     if (!filters.vertical && !filters.emailStatus && !filters.emails) return { status: 400, body: { error: "No filters or emails given" } };
     if (!label || !label.trim()) return { status: 400, body: { error: "Job name is required" } };
     const filtersJson = JSON.stringify(filters).replace(/'/g, "''");
@@ -987,18 +989,42 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
     }
   }
 
+  // Per-email results of an Email Validation (Anymail) job — summary counts + one page of rows.
+  if (action === "retest_job_results") {
+    const { jobId, offset = 0, limit = 500 } = reqBody as { jobId?: number; offset?: number; limit?: number };
+    if (!jobId) return { status: 400, body: { error: "No jobId" } };
+    await ensureVerifyResultsTable();
+    const jid = Number(jobId);
+    const [sum, rows] = await Promise.all([
+      radarSql<{ anymail_status: string; n: number; existing: number; added: number }>(
+        `SELECT anymail_status, count(*)::int AS n, count(*) FILTER (WHERE in_radar)::int AS existing, count(*) FILTER (WHERE added)::int AS added FROM email_verify_results WHERE job_id = ${jid} GROUP BY 1`
+      ),
+      radarSql(`SELECT email, result_status, anymail_status, in_radar, added, vertical, to_char(checked_at AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD HH24:MI') AS checked_at
+                FROM email_verify_results WHERE job_id = ${jid} ORDER BY id LIMIT ${Math.min(Math.max(Number(limit) || 500, 1), 2000)} OFFSET ${Math.max(Number(offset) || 0, 0)}`),
+    ]);
+    const by = (k: string) => sum.find((x) => x.anymail_status === k)?.n ?? 0;
+    return { status: 200, body: {
+      summary: {
+        total: sum.reduce((a, x) => a + x.n, 0), valid: by("valid"), risky: by("risky"), invalid: by("invalid"), failed: by("error"),
+        existing: sum.reduce((a, x) => a + x.existing, 0), added: sum.reduce((a, x) => a + x.added, 0),
+      },
+      rows,
+    } };
+  }
+
   if (action === "retest_job_status") {
     const { jobId } = reqBody as { jobId?: number };
     if (!jobId) return { status: 400, body: { error: "No jobId" } };
     await ensureRetestJobsTable();
-    const row = (await radarSql(`SELECT * FROM retest_jobs WHERE id = ${Number(jobId)}`))[0];
+    const row = (await radarSql(`SELECT id, created_by, label, job_offset, processed, validated, status, error, created_at, updated_at, fail_count, skipped_fresh, gave_up, retrying, (filters - 'emails') || jsonb_build_object('email_count', COALESCE(jsonb_array_length(filters->'emails'), 0)) AS filters FROM retest_jobs WHERE id = ${Number(jobId)}`))[0];
     if (!row) return { status: 404, body: { error: "Job not found" } };
     return { status: 200, body: { job: row } };
   }
 
   if (action === "list_retest_jobs") {
     await ensureRetestJobsTable();
-    const rows = await radarSql(`SELECT * FROM retest_jobs ORDER BY id DESC LIMIT 20`);
+    // The `emails` list can be thousands long (CSV jobs) — send just its count, not the list, every poll.
+    const rows = await radarSql(`SELECT id, created_by, label, job_offset, processed, validated, status, error, created_at, updated_at, fail_count, skipped_fresh, gave_up, retrying, (filters - 'emails') || jsonb_build_object('email_count', COALESCE(jsonb_array_length(filters->'emails'), 0)) AS filters FROM retest_jobs ORDER BY id DESC LIMIT 20`);
     return { status: 200, body: { jobs: rows } };
   }
 

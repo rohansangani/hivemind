@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRadarAccess, selectFrom, patchByFilter } from "@/lib/radar/supabase";
+import { anymailKey, verifyEmailListChunk } from "@/lib/radar/emailVerify";
 
 /**
  * Radar's Debounce re-validation flow (count_stale, validate_chunk) — ported natively off
@@ -15,8 +16,7 @@ const VERIFIED_COOLDOWN_MS = 30 * 24 * 60 * 60 * 1000; // Instantly-verified: re
 // small enough (2 batches) to leave real margin under Vercel's 60s limit even if every call in
 // every batch happens to be a genuinely slow domain.
 const CHUNK = 6;
-// Anymail Finder documents no rate limit and answers fast, so its chunks are bigger / more parallel.
-const ANYMAIL_CHUNK = 20;
+
 
 interface RetestFilters {
   vertical?: string;
@@ -104,37 +104,6 @@ const isStale = (c: ContactRow, now: number): boolean => {
 // can legitimately take 15-40+ seconds for some domains (a real SMTP handshake check, not an
 // error) — confirmed live on two real contacts (19s and 42s, both eventually valid). Raised to
 // 20s — a smaller CHUNK keeps worst-case request time in check.
-// Anymail Finder email verifier (v5.1): POST /verify-email, key in the raw `Authorization` header (no
-// "Bearer"), returns email_status valid | risky | invalid (never "unknown"). 0.2 credit per check,
-// repeats within 30 days are free. Mapped onto Radar's existing status names so exports/filters keep
-// working: valid -> "safe to send" (same meaning as Debounce's), risky -> "risky", invalid -> "invalid".
-// null = couldn't get an answer this time (counts toward the 3-strikes give-up, like Debounce).
-// Throws on 401/402 so a bad key / empty balance stops the job loudly instead of silently "failing".
-async function anymailVerify(email: string, key: string): Promise<string | null> {
-  const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), 25000);
-  try {
-    const r = await fetch("https://api.anymailfinder.com/v5.1/verify-email", {
-      method: "POST",
-      headers: { Authorization: key, "Content-Type": "application/json" },
-      body: JSON.stringify({ email }),
-      signal: controller.signal,
-    });
-    if (r.status === 401) throw new Error("Anymail Finder rejected the API key (401) — check ANYMAIL_FINDER_API_KEY");
-    if (r.status === 402) throw new Error("Anymail Finder: out of credits (402) — top up at app.anymailfinder.com/purchase");
-    if (!r.ok) return null;
-    const d = await r.json().catch(() => null) as { email_status?: string } | null;
-    const st = String(d?.email_status || "").toLowerCase();
-    if (st === "valid") return "safe to send";
-    if (st === "risky") return "risky";
-    if (st === "invalid") return "invalid";
-    return null;
-  } catch (e) {
-    if (/Anymail Finder/.test((e as Error).message)) throw e;
-    return null;
-  } finally { clearTimeout(t); }
-}
-
 async function debounceValidate(email: string, debounceKey: string, attempt = 0): Promise<string | null> {
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), 20000);
@@ -171,9 +140,8 @@ export async function POST(req: NextRequest) {
     const { action, filters = {}, offset = 0 } = body as { action?: string; filters?: RetestFilters; offset?: number };
     const DEBOUNCE_KEY = process.env.DEBOUNCE_API_KEY;
     const useAnymail = (filters as RetestFilters).provider === "anymail";
-    const ANYMAIL_KEY = process.env.ANYMAIL_FINDER_API_KEY || process.env.RADAR_ANYMAIL_FINDER_API_KEY;
-    const VERIFY_KEY = useAnymail ? ANYMAIL_KEY : DEBOUNCE_KEY;
-    const CH = useAnymail ? ANYMAIL_CHUNK : CHUNK;
+    const ANYMAIL_KEY = anymailKey();
+    const CH = CHUNK;
 
     if (action === "count_stale") {
       const allEmails = Array.isArray(filters.emails) ? filters.emails.filter(Boolean) : null;
@@ -206,6 +174,14 @@ export async function POST(req: NextRequest) {
 
     if (action === "validate_chunk") {
       const allEmails = Array.isArray(filters.emails) ? filters.emails.filter(Boolean) : null;
+      // Email Validation (CSV list) via Anymail Finder: verify the LIST itself, save each result to
+      // Radar (adding the contact in the chosen vertical if it isn't there yet), record per-email results.
+      if (useAnymail && allEmails) {
+        if (!ANYMAIL_KEY) return NextResponse.json({ error: "Anymail Finder API key isn't configured (set ANYMAIL_FINDER_API_KEY in the environment)" }, { status: 503 });
+        const jid = Number((body as { jobId?: number }).jobId) || null;
+        const out = await verifyEmailListChunk(allEmails as string[], offset, jid, filters.vertical, ANYMAIL_KEY);
+        return NextResponse.json({ ...out, skippedFresh: 0, gaveUp: 0 });
+      }
       let contacts: ContactRow[];
       let doneAfterThisChunk = false;
       if (allEmails) {
@@ -253,15 +229,12 @@ export async function POST(req: NextRequest) {
       const MAX_DEBOUNCE_FAILS = 3;
 
       let validated = 0, failed = 0, gaveUp = 0;
-      if (useAnymail && !ANYMAIL_KEY) {
-        return NextResponse.json({ error: "Anymail Finder API key isn't configured (set ANYMAIL_FINDER_API_KEY in the environment)" }, { status: 503 });
-      }
-      if (stale.length && VERIFY_KEY) {
-        const CONC = useAnymail ? 10 : 3; // Debounce's own concurrency cap trips reliably at 5 — confirmed live; Anymail documents none
+      if (stale.length && DEBOUNCE_KEY) {
+        const CONC = 3; // Debounce's own concurrency cap trips reliably at 5 — confirmed live
         for (let i = 0; i < stale.length; i += CONC) {
           const batch = stale.slice(i, i + CONC);
           await Promise.all(batch.map(async (c) => {
-            const status = useAnymail ? await anymailVerify(c.email, VERIFY_KEY) : await debounceValidate(c.email, VERIFY_KEY);
+            const status = await debounceValidate(c.email, DEBOUNCE_KEY);
             const filterQ = `email=eq.${encodeURIComponent(c.email)}`;
             if (!status) {
               failed++;
