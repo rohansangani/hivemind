@@ -3,6 +3,7 @@ import { after } from "next/server";
 import { requireRadarAccess, radarSql, selectFrom, radarFetch, rpc } from "@/lib/radar/supabase";
 import { fetchAllPages } from "@/lib/radar/contactExport";
 import { anymailKey, ensureVerifyResultsTable } from "@/lib/radar/emailVerify";
+import { normDomain, normLinkedinUrl, type FindPerson } from "@/lib/radar/emailFind";
 import { instantly } from "@/lib/instantly";
 import { logRadarActivity } from "@/lib/radar/activityLog";
 import { db } from "@/lib/db";
@@ -964,13 +965,34 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
 
   // ── RETEST JOB actions ──
   if (action === "retest_job_start") {
-    const { userEmail: bodyUserEmail, label, vertical, emailStatus, emails, provider } = reqBody as {
-      userEmail?: string; label?: string; vertical?: string; emailStatus?: string[]; emails?: string[]; provider?: string;
+    const { userEmail: bodyUserEmail, label, vertical, emailStatus, emails, provider, people } = reqBody as {
+      userEmail?: string; label?: string; vertical?: string; emailStatus?: string[]; emails?: string[]; provider?: string; people?: FindPerson[];
     };
     await ensureRetestJobsTable();
     const filters: Record<string, unknown> = {};
     // "anymail" = verify with Anymail Finder instead of Debounce; the job carries it in `filters`
     // so every cron continuation uses the same verifier. Refuse up front if the key is missing.
+    if (provider === "anymail_find") {
+      if (!anymailKey()) return { status: 503, body: { error: "Anymail Finder isn't set up yet — add ANYMAIL_FINDER_API_KEY to the environment first." } };
+      if (!["B2B", "D2C", "US"].includes(vertical || "")) return { status: 400, body: { error: "Pick a vertical (B2B / D2C / US) — found emails are added there." } };
+      // Keep only usable people (a name AND a company domain/name, or a LinkedIn URL), de-duplicated.
+      const seen = new Set<string>();
+      const clean: FindPerson[] = [];
+      for (const raw of Array.isArray(people) ? people.slice(0, 10000) : []) {
+        const first = String(raw.first_name || "").trim(), last = String(raw.last_name || "").trim(), full = String(raw.full_name || "").trim();
+        const domain = normDomain(raw.domain), company = String(raw.company || "").trim(), li = normLinkedinUrl(raw.linkedin_url);
+        const hasName = (first && last) || full;
+        if (!((hasName && (domain || company)) || li)) continue;
+        const k = `${(first + last + full).toLowerCase()}|${domain || company.toLowerCase()}|${li}`;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        clean.push({ first_name: first || undefined, last_name: last || undefined, full_name: full || undefined, domain: domain || undefined, company: company || undefined, linkedin_url: li || undefined, title: String(raw.title || "").trim() || undefined });
+      }
+      if (!clean.length) return { status: 400, body: { error: "No usable people — each needs a first + last name (or full name) AND a company domain, or a LinkedIn URL." } };
+      filters.provider = "anymail_find";
+      filters.people = clean;
+      filters.email_count = clean.length;
+    }
     if (provider === "anymail") {
       if (!anymailKey()) {
         return { status: 503, body: { error: "Anymail Finder isn't set up yet — add ANYMAIL_FINDER_API_KEY to the environment first." } };
@@ -1015,6 +1037,26 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
     const r = await radarFetch(`retest_jobs?select=${JOB_COLS}&order=id.desc&limit=20`);
     if (!r.ok) return { status: 502, body: { error: `Couldn't load jobs (${r.status})` } };
     return { status: 200, body: { jobs: ((await r.json()) as Record<string, unknown>[]).map(shapeJob) } };
+  }
+
+  // Per-person results of a Find Emails job — summary counts + one page of rows (PostgREST only).
+  if (action === "find_job_results") {
+    const { jobId, offset = 0, limit = 500 } = reqBody as { jobId?: number; offset?: number; limit?: number };
+    if (!jobId) return { status: 400, body: { error: "No jobId" } };
+    const base = `email_find_results?job_id=eq.${Number(jobId)}`;
+    const lim = Math.min(Math.max(Number(limit) || 500, 1), 1000);
+    const cnt = async (path: string): Promise<number> => {
+      const r = await radarFetch(path, { headers: { Prefer: "count=exact", Range: "0-0" } });
+      return r.ok ? (parseInt((r.headers.get("content-range") || "").split("/")[1] || "0", 10) || 0) : 0;
+    };
+    const [total, found, notFound, failed, added, updated, rowsRes] = await Promise.all([
+      cnt(`${base}&select=id`), cnt(`${base}&anymail_status=eq.valid&select=id`),
+      cnt(`${base}&anymail_status=in.(not_found,blacklisted)&select=id`), cnt(`${base}&anymail_status=eq.error&select=id`),
+      cnt(`${base}&saved=eq.added&select=id`), cnt(`${base}&saved=eq.updated&select=id`),
+      radarFetch(`${base}&select=idx,first_name,last_name,company,domain,linkedin_url,found_email,anymail_status,saved,vertical,checked_at&order=idx.asc&limit=${lim}&offset=${Math.max(Number(offset) || 0, 0)}`),
+    ]);
+    const rows = rowsRes.ok ? await rowsRes.json() : [];
+    return { status: 200, body: { summary: { total, found, notFound, failed, added, updated }, rows } };
   }
 
   if (action === "retest_job_status") {

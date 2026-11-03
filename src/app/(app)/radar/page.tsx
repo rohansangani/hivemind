@@ -5442,8 +5442,8 @@ function ValidateSection() {
         </div>
       ) : (
         <>
-          {/* Step indicator */}
-          <div className="flex items-center gap-2 flex-wrap">
+          {/* Step indicator — only for an old pattern job opened from Job History; the Validate tabs themselves have no steps */}
+          {phase !== "input" && <div className="flex items-center gap-2 flex-wrap">
             {(["input", "candidates", "sent", "done"] as ValidatePhase[]).map((p, i, arr) => {
               const stepIndex = arr.indexOf(phase);
               const state = i < stepIndex ? "done" : i === stepIndex ? "current" : "todo";
@@ -5466,7 +5466,7 @@ function ValidateSection() {
                 </div>
               );
             })}
-          </div>
+          </div>}
 
           {error && <div className="rounded-lg p-3 text-[12.5px] bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)] dark:bg-[var(--tag-red-bg)]/20 dark:text-[var(--tag-red-fg)]">{error}</div>}
 
@@ -5480,7 +5480,7 @@ function ValidateSection() {
                     inputMode === "patterns" ? "text-[var(--hm-link)] bg-[var(--hm-bg-tertiary)]" : "text-[var(--hm-text-tertiary)]"
                   }`}
                 >
-                  New patterns
+                  Find Emails
                 </button>
                 <button
                   onClick={() => setInputMode("retest")}
@@ -5833,95 +5833,7 @@ function ValidateSection() {
                   </div>
                 </>
               ) : inputMode === "patterns" ? (
-                <>
-                  <div className="px-5 py-4 border-b border-[var(--hm-border)]">
-                    <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Generate email patterns</h2>
-                    <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">Add people to guess email patterns for — name + domain, middle name optional.</p>
-                  </div>
-                  <div className="px-5 py-5 space-y-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Job name (required)</label>
-                        <input type="text" value={patternsLabel} onChange={(e) => setPatternsLabel(e.target.value)} placeholder="e.g. New leads — July" />
-                      </div>
-                      <div>
-                        <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Vertical (required)</label>
-                        <select value={patternsVertical} onChange={(e) => setPatternsVertical(e.target.value)} title="Chosen once here — resolved leads save to contacts automatically as they're checked, no separate save step needed">
-                          <option value="">— Choose —</option>
-                          <option value="B2B">B2B</option>
-                          <option value="US">US</option>
-                          <option value="D2C">D2C</option>
-                        </select>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                      <input type="text" value={draft.first_name} onChange={(e) => setDraft((d) => ({ ...d, first_name: e.target.value }))} onKeyDown={onDraftKeyDown} placeholder="First name" />
-                      <input type="text" value={draft.middle_name || ""} onChange={(e) => setDraft((d) => ({ ...d, middle_name: e.target.value }))} onKeyDown={onDraftKeyDown} placeholder="Middle name (optional)" />
-                      <input type="text" value={draft.last_name} onChange={(e) => setDraft((d) => ({ ...d, last_name: e.target.value }))} onKeyDown={onDraftKeyDown} placeholder="Last name" />
-                      <input type="text" value={draft.domain} onChange={(e) => setDraft((d) => ({ ...d, domain: e.target.value }))} onKeyDown={onDraftKeyDown} placeholder="domain.com" />
-                    </div>
-                    <button onClick={addPerson} className="hm-btn hm-btn-secondary w-full" style={{ height: 32, fontSize: 12 }}>
-                      + Add to list
-                    </button>
-
-                    <div className="rounded-lg border border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] p-3 space-y-2">
-                      <p className="text-[12px] font-medium text-[var(--hm-text-secondary)]">Fetch blank-email contacts (adds to list below)</p>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <select value={blankEmailVertical} onChange={(e) => setBlankEmailVertical(e.target.value)} style={{ width: 140 }}>
-                          <option value="">All verticals</option>
-                          <option value="B2B">B2B</option>
-                          <option value="US">US</option>
-                          <option value="D2C">D2C</option>
-                        </select>
-                        <button onClick={loadBlankEmailContacts} disabled={busy} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 14px", fontSize: 12 }}>
-                          Fetch
-                        </button>
-                      </div>
-                      <p className="text-[11px] text-[var(--hm-text-tertiary)]">
-                        {blankEmailCounting
-                          ? "Counting…"
-                          : blankEmailCount != null
-                          ? `${blankEmailCount.count.toLocaleString()} blank-email contact(s) match (matches the dashboard)${
-                              blankEmailCount.fetchable < blankEmailCount.count
-                                ? ` — ${blankEmailCount.fetchable.toLocaleString()} have a domain and can be fetched`
-                                : ""
-                            }`
-                          : ""}
-                      </p>
-                      {blankEmailMsg && <p className="text-[11px] text-[var(--hm-text-secondary)]">{blankEmailMsg}</p>}
-                    </div>
-
-                    <label className="hm-btn hm-btn-secondary w-full cursor-pointer" style={{ height: 34, fontSize: 12.5 }}>
-                      ⬆ Upload CSV (adds to list below)
-                      <input type="file" accept=".csv,text/csv" onChange={loadPatternsCsv} style={{ display: "none" }} />
-                    </label>
-
-                    {people.length > 0 && (
-                      <div className="space-y-1.5">
-                        <p className="text-[12px] font-medium text-[var(--hm-text-secondary)]">{people.length} {people.length === 1 ? "person" : "people"} queued</p>
-                        <div className="max-h-52 overflow-y-auto space-y-1">
-                          {people.map((p, i) => (
-                            <div key={i} className="flex items-center justify-between text-[12px] px-2.5 py-1.5 rounded-md bg-[var(--hm-bg-secondary)]">
-                              <span>
-                                {[p.first_name, p.middle_name, p.last_name].filter(Boolean).join(" ")}
-                                <span className="text-[var(--hm-text-tertiary)]"> · {p.domain}</span>
-                              </span>
-                              <button onClick={() => removePerson(i)} className="text-[var(--tag-red-fg)] hover:text-[var(--tag-red-fg)]" style={{ fontSize: 14, lineHeight: 1 }} title="Remove">×</button>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    <label className="flex items-center gap-2 text-[12.5px] text-[var(--hm-text-secondary)]">
-                      <input type="checkbox" checked={useAI} onChange={(e) => setUseAI(e.target.checked)} />
-                      Use AI ranking (Claude scores patterns using domain web evidence)
-                    </label>
-                    <button onClick={generate} disabled={busy || !people.length || !patternsLabel.trim() || !patternsVertical} className="hm-btn hm-btn-primary" style={{ height: 38, padding: "0 18px", fontSize: 13 }}>
-                      {busy ? (progressLabel || "Generating…") : "Generate patterns"}
-                    </button>
-                  </div>
-                </>
+                <EmailFinderPanel />
               ) : (
                 <EmailValidationPanel />
               )}
@@ -7287,6 +7199,306 @@ function EmailValidationPanel() {
                   <span className="truncate text-[var(--hm-text-secondary)]">#{j.id} {j.label || "Untitled"}{j.filters?.vertical ? ` · ${j.filters.vertical}` : ""}</span>
                   <span className={`shrink-0 ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium ${j.status === "done" ? "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]" : j.status === "error" ? "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)]" : j.status === "cancelled" ? "bg-[var(--hm-border)] text-[var(--hm-text-tertiary)]" : "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]"}`}>
                     {j.status === "done" ? `done — ${j.processed}` : j.status === "error" ? "error" : j.status === "cancelled" ? `stopped — ${j.processed}` : `running — ${j.processed}`}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* ── Find Emails (name + company domain / LinkedIn -> Anymail Finder Person search -> saved to Radar) ── */
+
+interface FindPersonInput { first_name?: string; last_name?: string; full_name?: string; domain?: string; company?: string; linkedin_url?: string; title?: string }
+interface FindResultRow {
+  idx: number; first_name: string | null; last_name: string | null; company: string | null; domain: string | null; linkedin_url: string | null;
+  found_email: string | null; anymail_status: string; saved: string; vertical: string | null; checked_at: string;
+}
+interface FindSummary { total: number; found: number; notFound: number; failed: number; added: number; updated: number }
+
+function EmailFinderPanel() {
+  const [label, setLabel] = useState("");
+  const [vertical, setVertical] = useState("");
+  const [people, setPeople] = useState<FindPersonInput[]>([]);
+  const [draft, setDraft] = useState({ first: "", last: "", domain: "" });
+  const [stage, setStage] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const [jobs, setJobs] = useState<VerifyJobRow[]>([]);
+  const [jobId, setJobId] = useState<number | null>(null);
+  const [job, setJob] = useState<VerifyJobRow | null>(null);
+  const [summary, setSummary] = useState<FindSummary | null>(null);
+  const [rows, setRows] = useState<FindResultRow[]>([]);
+  const [exporting, setExporting] = useState(false);
+  const MAX_PEOPLE = 10000;
+
+  const post = async (body: Record<string, unknown>) => {
+    const r = await fetch("/api/radar/validate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || "Request failed");
+    return d;
+  };
+  const loadJobs = async () => {
+    try {
+      const d = await post({ action: "list_retest_jobs" });
+      setJobs(((d.jobs || []) as VerifyJobRow[]).filter((j) => j.filters?.provider === "anymail_find"));
+    } catch { /* best-effort */ }
+  };
+  const refresh = async (id: number): Promise<string | undefined> => {
+    try {
+      const [st, res] = await Promise.all([
+        post({ action: "retest_job_status", jobId: id }),
+        post({ action: "find_job_results", jobId: id, offset: 0, limit: 200 }),
+      ]);
+      setJob(st.job as VerifyJobRow);
+      setSummary(res.summary as FindSummary);
+      setRows(res.rows as FindResultRow[]);
+      setError("");
+      return (st.job as VerifyJobRow).status;
+    } catch (e) { setError((e as Error).message); return "error"; }
+  };
+  useEffect(() => { loadJobs(); }, []);
+  useEffect(() => {
+    if (jobId == null) return;
+    let stop = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const tick = async () => {
+      const st = await refresh(jobId);
+      if (stop) return;
+      if (st === "running") timer = setTimeout(tick, document.visibilityState === "hidden" ? 15000 : 5000);
+    };
+    tick();
+    return () => { stop = true; if (timer) clearTimeout(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobId]);
+  useEffect(() => { if (job && job.status !== "running") loadJobs(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [job?.status]);
+
+  const addPerson = () => {
+    const first = draft.first.trim(), last = draft.last.trim(), domain = draft.domain.trim();
+    if (!first || !last || !domain) { setError("Need first name, last name and company domain."); return; }
+    setError("");
+    setPeople((p) => [...p, { first_name: first, last_name: last, domain }]);
+    setDraft({ first: "", last: "", domain: "" });
+  };
+
+  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setError("");
+    try {
+      const { headers, rows: csvRows } = parseCSV(await f.text());
+      const find = (re: RegExp, not?: RegExp) => headers.find((h) => re.test(h.toLowerCase().trim()) && !(not && not.test(h.toLowerCase())));
+      const cFirst = find(/first/), cLast = find(/last|surname/), cFull = find(/^(full ?name|name)$/);
+      const cDomain = find(/domain|website|url|site/, /linkedin/), cCompany = find(/company|organi[sz]ation|account/, /linkedin|domain|website/);
+      const cLi = find(/linkedin/), cTitle = find(/title|position|role/);
+      if (!(cDomain || cCompany || cLi)) { setError("CSV needs a company domain (or website / company) column — or a LinkedIn URL column."); return; }
+      if (!((cFirst && cLast) || cFull || cLi)) { setError("CSV needs first name + last name columns (or a full name column, or a LinkedIn URL column)."); return; }
+      const parsed: FindPersonInput[] = csvRows.map((r) => ({
+        first_name: cFirst ? r[cFirst] : undefined, last_name: cLast ? r[cLast] : undefined, full_name: cFull ? r[cFull] : undefined,
+        domain: cDomain ? r[cDomain] : undefined, company: cCompany ? r[cCompany] : undefined, linkedin_url: cLi ? r[cLi] : undefined, title: cTitle ? r[cTitle] : undefined,
+      })).filter((p) => ((p.first_name && p.last_name) || p.full_name || p.linkedin_url) && (p.domain || p.company || p.linkedin_url));
+      if (!parsed.length) { setError("No usable rows found in that CSV."); return; }
+      setPeople((prev) => [...prev, ...parsed]);
+    } catch (err) { setError((err as Error).message); } finally { e.target.value = ""; }
+  };
+
+  const start = async () => {
+    setError("");
+    if (!label.trim()) { setError("Give this job a name first."); return; }
+    if (!vertical) { setError("Pick a vertical first — found emails are added there."); return; }
+    if (!people.length) { setError("Add at least one person (type them in or upload a CSV)."); return; }
+    if (people.length > MAX_PEOPLE) { setError(`Max ${MAX_PEOPLE.toLocaleString()} people per job — split the list.`); return; }
+    try {
+      setStage(`Starting ${people.length.toLocaleString()} lookup(s)…`);
+      const d = await post({ action: "retest_job_start", provider: "anymail_find", label: label.trim(), vertical, people });
+      setPeople([]); setLabel("");
+      setSummary(null); setRows([]); setJob(null);
+      setJobId(d.jobId ?? null);
+      loadJobs();
+    } catch (e) { setError((e as Error).message); } finally { setStage(null); }
+  };
+
+  const exportAll = async () => {
+    if (jobId == null) return;
+    setExporting(true);
+    try {
+      const all: FindResultRow[] = [];
+      for (let off = 0; off < 200000; off += 1000) {
+        const d = await post({ action: "find_job_results", jobId, offset: off, limit: 1000 });
+        all.push(...(d.rows as FindResultRow[]));
+        if ((d.rows as unknown[]).length < 1000) break;
+      }
+      downloadCSV(all.map((r) => ({
+        first_name: r.first_name || "", last_name: r.last_name || "", company: r.company || "", domain: r.domain || "", linkedin_url: r.linkedin_url || "",
+        email_found: r.found_email || "",
+        result: r.anymail_status === "valid" ? "found (verified)" : r.anymail_status === "error" ? "couldn't search" : r.anymail_status.replace("_", " "),
+        saved_to_radar: r.saved === "added" ? "added as new contact" : r.saved === "updated" ? "updated existing contact" : r.saved === "exists" ? "contact already had a different email" : "no",
+        vertical: r.vertical || "", checked_at: fmtChecked(r.checked_at),
+      })), `find-emails-${(job?.label || `job-${jobId}`).toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${today()}.csv`);
+    } catch (e) { setError((e as Error).message); } finally { setExporting(false); }
+  };
+
+  const done = job?.status === "done";
+  const total = job?.filters?.email_count ?? (summary?.total ?? 0);
+  const pct = total ? Math.min(100, Math.round(((job?.processed || 0) / total) * 100)) : 0;
+  const tone = (st: string) =>
+    st === "valid" ? "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]"
+    : st === "not_found" || st === "blacklisted" ? "bg-[var(--tag-gray-bg)] text-[var(--tag-gray-fg)]"
+    : "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)]";
+
+  return (
+    <>
+      <div className="px-5 py-4 border-b border-[var(--hm-border)]">
+        <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Find Emails</h2>
+        <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">
+          Give a person&apos;s name and company domain (type them in, or upload a CSV) — <strong>Anymail Finder</strong> finds and verifies their email
+          (nothing is sent to anyone). Found emails are saved to Radar automatically: filled onto a matching contact, or added as a new one in the vertical you pick.
+        </p>
+      </div>
+      <div className="px-5 py-5 space-y-4">
+        {error && <div className="rounded-lg p-3 text-[12.5px] bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)]">{error}</div>}
+
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex-1 min-w-[220px]">
+            <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Job name (required)</label>
+            <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Trisala decision makers — Nov" />
+          </div>
+          <div style={{ width: 170 }}>
+            <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Vertical (required)</label>
+            <select value={vertical} onChange={(e) => setVertical(e.target.value)}>
+              <option value="">Select…</option>
+              <option value="B2B">B2B</option>
+              <option value="D2C">D2C</option>
+              <option value="US">US</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-2" onKeyDown={(e) => { if (e.key === "Enter") addPerson(); }}>
+          <input type="text" value={draft.first} onChange={(e) => setDraft((d) => ({ ...d, first: e.target.value }))} placeholder="First name" />
+          <input type="text" value={draft.last} onChange={(e) => setDraft((d) => ({ ...d, last: e.target.value }))} placeholder="Last name" />
+          <input type="text" value={draft.domain} onChange={(e) => setDraft((d) => ({ ...d, domain: e.target.value }))} placeholder="company domain, e.g. acme.com" />
+          <button onClick={addPerson} className="hm-btn hm-btn-secondary" style={{ height: 36, fontSize: 12.5 }}>+ Add to list</button>
+        </div>
+        <div className="flex items-center gap-3 flex-wrap">
+          <label className="hm-btn hm-btn-secondary cursor-pointer" style={{ height: 34, padding: "0 12px", fontSize: 12 }}>
+            ⬆ Upload CSV
+            <input type="file" accept=".csv,text/csv" onChange={onFile} style={{ display: "none" }} />
+          </label>
+          <span className="text-[11.5px] text-[var(--hm-text-tertiary)]">
+            CSV columns: first name + last name (or full name), and domain / website (or company). A LinkedIn URL column also works. Max {MAX_PEOPLE.toLocaleString()} per job.
+          </span>
+        </div>
+
+        {people.length > 0 && (
+          <div className="rounded-lg border border-[var(--hm-border)] overflow-hidden">
+            <div className="flex items-center justify-between px-3 py-2 bg-[var(--hm-bg-secondary)]">
+              <span className="text-[12.5px] text-[var(--hm-text-secondary)]">{people.length.toLocaleString()} person(s) in the list</span>
+              <button onClick={() => setPeople([])} className="text-[11.5px] text-[var(--tag-red-fg)]">Clear</button>
+            </div>
+            <div className="max-h-48 overflow-auto">
+              {people.slice(0, 200).map((p, i) => (
+                <div key={i} className="flex items-center justify-between px-3 py-1.5 border-t border-[var(--hm-border-light)] text-[12.5px]">
+                  <span className="truncate text-[var(--hm-text)]">{p.first_name || p.full_name || "—"} {p.last_name || ""} <span className="text-[var(--hm-text-tertiary)]">· {p.domain || p.company || p.linkedin_url}</span></span>
+                  <button onClick={() => setPeople((prev) => prev.filter((_, j) => j !== i))} className="text-[var(--hm-text-tertiary)] hover:text-[var(--tag-red-fg)] px-1">×</button>
+                </div>
+              ))}
+              {people.length > 200 && <p className="px-3 py-1.5 text-[11.5px] text-[var(--hm-text-tertiary)] border-t border-[var(--hm-border-light)]">…and {(people.length - 200).toLocaleString()} more</p>}
+            </div>
+          </div>
+        )}
+
+        <button onClick={start} disabled={!!stage || !people.length || !label.trim() || !vertical} className="hm-btn hm-btn-primary w-full" style={{ height: 38, fontSize: 13 }}>
+          {stage ? (
+            <span className="inline-flex items-center gap-2"><span className="w-3 h-3 border-2 border-current/30 border-t-current rounded-full animate-spin" />{stage}</span>
+          ) : `Find emails${people.length ? ` for ${people.length.toLocaleString()} person(s)` : ""}`}
+        </button>
+        <p className="text-[11.5px] text-[var(--hm-text-tertiary)] -mt-2">
+          Costs 1 Anymail credit only when a verified email is found — free when nothing is found, and repeat searches within 30 days are free.
+          Each lookup takes ~5–15 seconds; it runs in the background, so you can close this page and come back under Recent jobs.
+        </p>
+
+        {job && (
+          <div className="rounded-lg border border-[var(--hm-border)] p-4 space-y-3">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="min-w-0">
+                <p className="text-[13px] font-semibold text-[var(--hm-text)] truncate">#{job.id} {job.label}</p>
+                <p className="text-[11.5px] text-[var(--hm-text-tertiary)]">
+                  {done ? "Done — found emails are saved to Radar." : job.status === "error" ? "Stopped with an error." : job.status === "cancelled" ? "Stopped." : "Searching — saving each found email to Radar as it goes…"}
+                </p>
+              </div>
+              <button onClick={exportAll} disabled={exporting || !summary?.total} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 14px", fontSize: 12 }}>
+                {exporting ? "Preparing…" : "Export results CSV"}
+              </button>
+            </div>
+            {job.status === "error" && job.error && <p className="text-[12px] text-[var(--tag-red-fg)]">{job.error}</p>}
+            {!done && job.status !== "error" && total > 0 && (
+              <div>
+                <div className="h-2 rounded-full bg-[var(--hm-bg-tertiary)] overflow-hidden"><div className="h-full rounded-full bg-[var(--hm-primary)] transition-all" style={{ width: `${pct}%` }} /></div>
+                <p className="text-[11.5px] text-[var(--hm-text-tertiary)] mt-1 tabular-nums">{(job.processed || 0).toLocaleString()} / {total.toLocaleString()} people</p>
+              </div>
+            )}
+            {summary && (
+              <>
+                <div className="flex flex-wrap gap-2">
+                  {([["Found", summary.found, "valid"], ["Not found", summary.notFound, "not_found"], ["Couldn't search", summary.failed, "error"]] as [string, number, string][]).map(([l, n, k]) => (
+                    <span key={l} className={`text-[12px] px-2.5 py-1 rounded-md font-medium tabular-nums ${tone(k)}`}>{l}: {n.toLocaleString()}</span>
+                  ))}
+                </div>
+                <p className="text-[12px] text-[var(--hm-text-secondary)]">
+                  Saved to Radar: <strong>{summary.added.toLocaleString()}</strong> new contact(s) added · <strong>{summary.updated.toLocaleString()}</strong> existing contact(s) updated.
+                </p>
+              </>
+            )}
+            {rows.length > 0 && (
+              <div className="rounded-lg border border-[var(--hm-border)] overflow-hidden">
+                <div className="max-h-80 overflow-auto">
+                  <table className="w-full border-collapse text-[12.5px]">
+                    <thead>
+                      <tr>
+                        {["Person", "Company / domain", "Email found", "Result", "Saved to Radar"].map((h) => (
+                          <th key={h} className="text-left text-[10.5px] font-semibold uppercase tracking-wide text-[var(--hm-text-tertiary)] px-3 py-2 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] sticky top-0">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((r) => (
+                        <tr key={r.idx}>
+                          <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text)]">{[r.first_name, r.last_name].filter(Boolean).join(" ") || "—"}</td>
+                          <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text-secondary)]">{r.company || r.domain || r.linkedin_url || "—"}</td>
+                          <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)] font-mono text-[12px] text-[var(--hm-text)]">{r.found_email || "—"}</td>
+                          <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)]"><span className={`text-[11px] px-2 py-0.5 rounded-md font-medium ${tone(r.anymail_status)}`}>{r.anymail_status === "valid" ? "found" : r.anymail_status === "error" ? "couldn't search" : r.anymail_status.replace("_", " ")}</span></td>
+                          <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text-secondary)]">{r.saved === "added" ? "added (new)" : r.saved === "updated" ? "updated" : r.saved === "exists" ? "has other email" : "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {summary && summary.total > rows.length && (
+                  <p className="text-[11.5px] text-[var(--hm-text-tertiary)] px-3 py-2 bg-[var(--hm-bg-secondary)]">Showing the first {rows.length.toLocaleString()} of {summary.total.toLocaleString()} — use “Export results CSV” for everything.</p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-[11px] font-medium text-[var(--hm-text-tertiary)] uppercase tracking-wide">Recent jobs</p>
+            <button onClick={loadJobs} className="text-[11px] text-[var(--hm-link)]">Refresh</button>
+          </div>
+          {!jobs.length ? (
+            <p className="text-[11.5px] text-[var(--hm-text-tertiary)]">No jobs yet.</p>
+          ) : (
+            <div className="space-y-1 max-h-[200px] overflow-y-auto">
+              {jobs.map((j) => (
+                <button key={j.id} onClick={() => { setSummary(null); setRows([]); setJob(null); setJobId(j.id); }}
+                  className={`w-full flex items-center justify-between text-left text-[12px] px-2.5 py-1.5 rounded-md border ${jobId === j.id ? "border-[var(--hm-primary)] bg-[var(--hm-bg-tertiary)]" : "border-[var(--hm-border)] bg-[var(--hm-surface)] hover:border-[var(--hm-primary)]/40"}`}>
+                  <span className="truncate text-[var(--hm-text-secondary)]">#{j.id} {j.label || "Untitled"}{j.filters?.vertical ? ` · ${j.filters.vertical}` : ""}</span>
+                  <span className={`shrink-0 ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium ${j.status === "done" ? "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]" : j.status === "error" ? "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)]" : j.status === "cancelled" ? "bg-[var(--hm-border)] text-[var(--hm-text-tertiary)]" : "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]"}`}>
+                    {j.status === "done" ? `done — ${j.validated} found` : j.status === "error" ? "error" : j.status === "cancelled" ? `stopped — ${j.processed}` : `running — ${j.processed}`}
                   </span>
                 </button>
               ))}

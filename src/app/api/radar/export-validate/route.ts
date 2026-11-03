@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRadarAccess, selectFrom, patchByFilter } from "@/lib/radar/supabase";
 import { anymailKey, verifyEmailListChunk } from "@/lib/radar/emailVerify";
+import { findPeopleChunk, type FindPerson } from "@/lib/radar/emailFind";
 
 /**
  * Radar's Debounce re-validation flow (count_stale, validate_chunk) — ported natively off
@@ -8,7 +9,7 @@ import { anymailKey, verifyEmailListChunk } from "@/lib/radar/emailVerify";
  * sync-exclusions/usage.js). export_csv was already replaced earlier by /api/radar/export, so
  * only those two actions are ported here.
  */
-export const maxDuration = 120;
+export const maxDuration = 180; // Anymail person lookups can take up to ~100s each
 
 const STALE_MS = 14 * 24 * 60 * 60 * 1000; // regular contacts: re-check after 14 days
 const VERIFIED_COOLDOWN_MS = 30 * 24 * 60 * 60 * 1000; // Instantly-verified: re-check after 30 days
@@ -33,6 +34,7 @@ interface RetestFilters {
   // Which verifier a job uses: "anymail" = Anymail Finder (saves a result straight to the contact,
   // nothing is sent); anything else = Debounce (the original behaviour).
   provider?: string;
+  people?: unknown[];
 }
 
 interface ContactRow {
@@ -176,6 +178,14 @@ export async function POST(req: NextRequest) {
       const allEmails = Array.isArray(filters.emails) ? filters.emails.filter(Boolean) : null;
       // Email Validation (CSV list) via Anymail Finder: verify the LIST itself, save each result to
       // Radar (adding the contact in the chosen vertical if it isn't there yet), record per-email results.
+      // Find Emails (Anymail Person search): the job carries its list of people; look each one up and save what's found.
+      if ((filters as RetestFilters).provider === "anymail_find" && Array.isArray((filters as RetestFilters).people)) {
+        const key = anymailKey();
+        if (!key) return NextResponse.json({ error: "Anymail Finder API key isn't configured (set ANYMAIL_FINDER_API_KEY in the environment)" }, { status: 503 });
+        const jid = Number((body as { jobId?: number }).jobId) || null;
+        const out = await findPeopleChunk((filters as RetestFilters).people as FindPerson[], offset, jid, String(filters.vertical || ""), key);
+        return NextResponse.json({ ...out, skippedFresh: 0, gaveUp: 0 });
+      }
       if (useAnymail && allEmails) {
         if (!ANYMAIL_KEY) return NextResponse.json({ error: "Anymail Finder API key isn't configured (set ANYMAIL_FINDER_API_KEY in the environment)" }, { status: 503 });
         const jid = Number((body as { jobId?: number }).jobId) || null;
