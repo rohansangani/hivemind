@@ -396,7 +396,13 @@ const restFilters = (vertical?: string, domain?: string, statuses?: string[]): s
 
 const MAX_DEBOUNCE_FAILS_RETEST = 5;
 
+// Runs once per server instance, not once per request: it used to fire 5 Management-API queries
+// (CREATE + 4 ALTERs) on EVERY call, and with the UI polling job status every few seconds that alone
+// blew through Supabase's Management-API rate limit ("ThrottlerException: Too Many Requests") — the
+// page then never loaded a finished job's results.
+let retestTableReady = false;
 async function ensureRetestJobsTable(): Promise<void> {
+  if (retestTableReady) return;
   await radarSql(`CREATE TABLE IF NOT EXISTS retest_jobs (
     id bigserial primary key,
     created_by text,
@@ -415,6 +421,7 @@ async function ensureRetestJobsTable(): Promise<void> {
   await radarSql(`ALTER TABLE retest_jobs ADD COLUMN IF NOT EXISTS skipped_fresh integer NOT NULL DEFAULT 0`);
   await radarSql(`ALTER TABLE retest_jobs ADD COLUMN IF NOT EXISTS gave_up integer NOT NULL DEFAULT 0`);
   await radarSql(`ALTER TABLE retest_jobs ADD COLUMN IF NOT EXISTS retrying integer NOT NULL DEFAULT 0`);
+  retestTableReady = true;
 }
 
 interface RetestJobRow { id: number; job_offset: number; processed: number; validated: number; skipped_fresh?: number; gave_up?: number; retrying?: number; filters?: Record<string, unknown>; fail_count?: number }
@@ -970,6 +977,7 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
       }
       if (!["B2B", "D2C", "US"].includes(vertical || "")) return { status: 400, body: { error: "Pick a vertical (B2B / D2C / US) — emails not already in Radar are added there." } };
       filters.provider = "anymail";
+      filters.email_count = new Set(emails || []).size;
     }
     if (vertical) filters.vertical = vertical;
     if (Array.isArray(emailStatus) && emailStatus.length) filters.emailStatus = emailStatus;
@@ -989,44 +997,56 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
     }
   }
 
-  // Per-email results of an Email Validation (Anymail) job — summary counts + one page of rows.
-  if (action === "retest_job_results") {
-    const { jobId, offset = 0, limit = 500 } = reqBody as { jobId?: number; offset?: number; limit?: number };
-    if (!jobId) return { status: 400, body: { error: "No jobId" } };
-    await ensureVerifyResultsTable();
-    const jid = Number(jobId);
-    const [sum, rows] = await Promise.all([
-      radarSql<{ anymail_status: string; n: number; existing: number; added: number }>(
-        `SELECT anymail_status, count(*)::int AS n, count(*) FILTER (WHERE in_radar)::int AS existing, count(*) FILTER (WHERE added)::int AS added FROM email_verify_results WHERE job_id = ${jid} GROUP BY 1`
-      ),
-      radarSql(`SELECT email, result_status, anymail_status, in_radar, added, vertical, to_char(checked_at AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD HH24:MI') AS checked_at
-                FROM email_verify_results WHERE job_id = ${jid} ORDER BY id LIMIT ${Math.min(Math.max(Number(limit) || 500, 1), 2000)} OFFSET ${Math.max(Number(offset) || 0, 0)}`),
-    ]);
-    const by = (k: string) => sum.find((x) => x.anymail_status === k)?.n ?? 0;
-    return { status: 200, body: {
-      summary: {
-        total: sum.reduce((a, x) => a + x.n, 0), valid: by("valid"), risky: by("risky"), invalid: by("invalid"), failed: by("error"),
-        existing: sum.reduce((a, x) => a + x.existing, 0), added: sum.reduce((a, x) => a + x.added, 0),
-      },
-      rows,
-    } };
+  // ── Email Validation (Anymail) READ endpoints — PostgREST only, zero Management-API calls ──────
+  // The page polls these every few seconds; going through the Management API (radarSql) made them
+  // the biggest consumer of its rate limit. PostgREST has no such limit.
+  const JOB_COLS = "id,created_by,label,job_offset,processed,validated,status,error,created_at,updated_at,fail_count,skipped_fresh,gave_up,retrying,provider:filters->>provider,vertical:filters->>vertical,email_count:filters->>email_count";
+  const shapeJob = (r: Record<string, unknown>) => {
+    const { provider, vertical, email_count, ...rest } = r as { provider?: string | null; vertical?: string | null; email_count?: string | null } & Record<string, unknown>;
+    return { ...rest, filters: { provider: provider ?? null, vertical: vertical ?? null, email_count: email_count != null ? Number(email_count) : null } };
+  };
+  const restCount = async (path: string): Promise<number> => {
+    const r = await radarFetch(path, { headers: { Prefer: "count=exact", Range: "0-0" } });
+    if (!r.ok) return 0;
+    return parseInt((r.headers.get("content-range") || "").split("/")[1] || "0", 10) || 0;
+  };
+
+  if (action === "list_retest_jobs") {
+    const r = await radarFetch(`retest_jobs?select=${JOB_COLS}&order=id.desc&limit=20`);
+    if (!r.ok) return { status: 502, body: { error: `Couldn't load jobs (${r.status})` } };
+    return { status: 200, body: { jobs: ((await r.json()) as Record<string, unknown>[]).map(shapeJob) } };
   }
 
   if (action === "retest_job_status") {
     const { jobId } = reqBody as { jobId?: number };
     if (!jobId) return { status: 400, body: { error: "No jobId" } };
-    await ensureRetestJobsTable();
-    const row = (await radarSql(`SELECT id, created_by, label, job_offset, processed, validated, status, error, created_at, updated_at, fail_count, skipped_fresh, gave_up, retrying, (filters - 'emails') || jsonb_build_object('email_count', COALESCE(jsonb_array_length(filters->'emails'), 0)) AS filters FROM retest_jobs WHERE id = ${Number(jobId)}`))[0];
+    const r = await radarFetch(`retest_jobs?select=${JOB_COLS}&id=eq.${Number(jobId)}`);
+    if (!r.ok) return { status: 502, body: { error: `Couldn't load job (${r.status})` } };
+    const row = ((await r.json()) as Record<string, unknown>[])[0];
     if (!row) return { status: 404, body: { error: "Job not found" } };
-    return { status: 200, body: { job: row } };
+    return { status: 200, body: { job: shapeJob(row) } };
   }
 
-  if (action === "list_retest_jobs") {
-    await ensureRetestJobsTable();
-    // The `emails` list can be thousands long (CSV jobs) — send just its count, not the list, every poll.
-    const rows = await radarSql(`SELECT id, created_by, label, job_offset, processed, validated, status, error, created_at, updated_at, fail_count, skipped_fresh, gave_up, retrying, (filters - 'emails') || jsonb_build_object('email_count', COALESCE(jsonb_array_length(filters->'emails'), 0)) AS filters FROM retest_jobs ORDER BY id DESC LIMIT 20`);
-    return { status: 200, body: { jobs: rows } };
+  // Per-email results of an Email Validation (Anymail) job — summary counts + one page of rows.
+  if (action === "retest_job_results") {
+    const { jobId, offset = 0, limit = 500 } = reqBody as { jobId?: number; offset?: number; limit?: number };
+    if (!jobId) return { status: 400, body: { error: "No jobId" } };
+    const base = `email_verify_results?job_id=eq.${Number(jobId)}`;
+    const lim = Math.min(Math.max(Number(limit) || 500, 1), 1000); // PostgREST caps a response at 1000 rows
+    const [total, valid, risky, invalid, failed, existing, added, rowsRes] = await Promise.all([
+      restCount(`${base}&select=id`),
+      restCount(`${base}&anymail_status=eq.valid&select=id`),
+      restCount(`${base}&anymail_status=eq.risky&select=id`),
+      restCount(`${base}&anymail_status=eq.invalid&select=id`),
+      restCount(`${base}&anymail_status=eq.error&select=id`),
+      restCount(`${base}&in_radar=eq.true&select=id`),
+      restCount(`${base}&added=eq.true&select=id`),
+      radarFetch(`${base}&select=email,result_status,anymail_status,in_radar,added,vertical,checked_at&order=id.asc&limit=${lim}&offset=${Math.max(Number(offset) || 0, 0)}`),
+    ]);
+    const rows = rowsRes.ok ? await rowsRes.json() : [];
+    return { status: 200, body: { summary: { total, valid, risky, invalid, failed, existing, added }, rows } };
   }
+
 
   // Stops a running Debounce-retest job for good — already-validated rows are untouched, and
   // continue_retest_jobs' own `WHERE status = 'running'` sweep naturally stops picking it up

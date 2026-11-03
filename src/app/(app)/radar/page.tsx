@@ -7039,6 +7039,8 @@ interface VerifyResultRow {
 }
 interface VerifySummary { total: number; valid: number; risky: number; invalid: number; failed: number; existing: number; added: number }
 
+const fmtChecked = (v: string) => { try { return new Date(v).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" }); } catch { return v; } };
+
 function EmailValidationPanel() {
   const [label, setLabel] = useState("");
   const [vertical, setVertical] = useState("");
@@ -7066,7 +7068,7 @@ function EmailValidationPanel() {
     } catch { /* list is best-effort */ }
   };
 
-  const refresh = async (id: number) => {
+  const refresh = async (id: number): Promise<string | undefined> => {
     try {
       const [st, res] = await Promise.all([
         post({ action: "retest_job_status", jobId: id }),
@@ -7075,16 +7077,26 @@ function EmailValidationPanel() {
       setJob(st.job as VerifyJobRow);
       setSummary(res.summary as VerifySummary);
       setRows(res.rows as VerifyResultRow[]);
-    } catch (e) { setError((e as Error).message); }
+      setError("");
+      return (st.job as VerifyJobRow).status;
+    } catch (e) { setError((e as Error).message); return "error"; }
   };
 
   useEffect(() => { loadJobs(); }, []);
   // Poll while the selected job is still running (it keeps going in the background even if this page is closed).
+  // Polling stops by itself once the job is no longer running (it used to poll forever, every 5s).
   useEffect(() => {
     if (jobId == null) return;
-    refresh(jobId);
-    const t = setInterval(() => { refresh(jobId); }, 5000);
-    return () => clearInterval(t);
+    let stop = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const tick = async () => {
+      const st = await refresh(jobId);
+      if (stop) return;
+      if (st === "running" && document.visibilityState !== "hidden") timer = setTimeout(tick, 5000);
+      else if (st === "running") timer = setTimeout(tick, 15000); // tab in background: slow right down
+    };
+    tick();
+    return () => { stop = true; if (timer) clearTimeout(timer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId]);
   useEffect(() => { if (job && job.status !== "running") loadJobs(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [job?.status]);
@@ -7122,10 +7134,10 @@ function EmailValidationPanel() {
     setExporting(true);
     try {
       const all: VerifyResultRow[] = [];
-      for (let off = 0; off < 200000; off += 2000) {
-        const d = await post({ action: "retest_job_results", jobId, offset: off, limit: 2000 });
+      for (let off = 0; off < 200000; off += 1000) {
+        const d = await post({ action: "retest_job_results", jobId, offset: off, limit: 1000 });
         all.push(...(d.rows as VerifyResultRow[]));
-        if ((d.rows as unknown[]).length < 2000) break;
+        if ((d.rows as unknown[]).length < 1000) break;
       }
       downloadCSV(all.map((r) => ({
         email: r.email,
@@ -7134,13 +7146,13 @@ function EmailValidationPanel() {
         already_in_radar: r.in_radar ? "yes" : "no",
         added_to_radar: r.added ? "yes" : "no",
         vertical: r.vertical || "",
-        checked_at: r.checked_at,
+        checked_at: fmtChecked(r.checked_at),
       })), `email-validation-${(job?.label || `job-${jobId}`).toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${today()}.csv`);
     } catch (e) { setError((e as Error).message); } finally { setExporting(false); }
   };
 
-  const totalEmails = job?.filters?.email_count ?? 0;
   const done = job?.status === "done";
+  const totalEmails = job?.filters?.email_count ?? (done ? 0 : (summary?.total ?? 0));
   const pct = totalEmails ? Math.min(100, Math.round(((job?.processed || 0) / totalEmails) * 100)) : 0;
   const tone = (st: string) =>
     st === "valid" ? "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]"
@@ -7243,7 +7255,7 @@ function EmailValidationPanel() {
                           <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)]"><span className={`text-[11px] px-2 py-0.5 rounded-md font-medium ${tone(r.anymail_status)}`}>{r.anymail_status === "error" ? "couldn't verify" : r.anymail_status}</span></td>
                           <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text-secondary)]">{r.added ? "added (new)" : r.in_radar ? "updated" : "—"}</td>
                           <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text-secondary)]">{r.vertical || "—"}</td>
-                          <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text-tertiary)] whitespace-nowrap">{r.checked_at}</td>
+                          <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text-tertiary)] whitespace-nowrap">{fmtChecked(r.checked_at)}</td>
                         </tr>
                       ))}
                     </tbody>

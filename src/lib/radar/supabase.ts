@@ -218,7 +218,7 @@ export async function radarSql<T = Record<string, unknown>>(query: string, attem
     // clean). Their own auth backend flapping — 3 quick retries (~3s total) weren't enough to ride
     // it out, so this specific transient gets a longer exponential window (~15s over 6 retries).
     const m = (d as { message?: string })?.message || "";
-    const isAuthFlap = /FGA Authentication/i.test(m);
+    const isAuthFlap = /FGA Authentication|ThrottlerException|Too Many Requests/i.test(m);
     const maxAttempts = isAuthFlap ? 6 : 3;
     if (m && attempt < maxAttempts) {
       const wait = isAuthFlap ? Math.min(500 * 2 ** attempt, 4000) : 500 * (attempt + 1);
