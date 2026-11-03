@@ -956,11 +956,19 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
 
   // ── RETEST JOB actions ──
   if (action === "retest_job_start") {
-    const { userEmail: bodyUserEmail, label, vertical, emailStatus, emails } = reqBody as {
-      userEmail?: string; label?: string; vertical?: string; emailStatus?: string[]; emails?: string[];
+    const { userEmail: bodyUserEmail, label, vertical, emailStatus, emails, provider } = reqBody as {
+      userEmail?: string; label?: string; vertical?: string; emailStatus?: string[]; emails?: string[]; provider?: string;
     };
     await ensureRetestJobsTable();
     const filters: Record<string, unknown> = {};
+    // "anymail" = verify with Anymail Finder instead of Debounce; the job carries it in `filters`
+    // so every cron continuation uses the same verifier. Refuse up front if the key is missing.
+    if (provider === "anymail") {
+      if (!(process.env.ANYMAIL_FINDER_API_KEY || process.env.RADAR_ANYMAIL_FINDER_API_KEY)) {
+        return { status: 503, body: { error: "Anymail Finder isn't set up yet — add ANYMAIL_FINDER_API_KEY to the environment first." } };
+      }
+      filters.provider = "anymail";
+    }
     if (vertical) filters.vertical = vertical;
     if (Array.isArray(emailStatus) && emailStatus.length) filters.emailStatus = emailStatus;
     const cleanEmails = Array.isArray(emails) ? emails.map((e) => (e || "").trim().toLowerCase()).filter(Boolean) : [];

@@ -4852,7 +4852,7 @@ function ValidateSection() {
     return parts.length ? ` (${parts.join(", ")})` : "";
   };
 
-  const startDebounceJob = async (body: Record<string, unknown>, doneNote: string) => {
+  const startDebounceJob = async (body: Record<string, unknown>, doneNote: string, providerLabel = "Debounce") => {
     setDebounceBusy(true);
     setDebounceMsg(null);
     setRetestJobDone(false);
@@ -4870,7 +4870,7 @@ function ValidateSection() {
       const breakdown = debounceBreakdown(d.skippedFresh || 0, d.gaveUp || 0, d.retrying || 0);
       if (d.done) {
         setRetestJobDone(true);
-        setDebounceMsg({ kind: "ok", text: `Checked ${(d.processed || 0).toLocaleString()} ${doneNote} via Debounce, saved ${(d.validated || 0).toLocaleString()} status update(s) directly${breakdown} — done. Nothing sent via Instantly.` });
+        setDebounceMsg({ kind: "ok", text: `Checked ${(d.processed || 0).toLocaleString()} ${doneNote} via ${providerLabel}, saved ${(d.validated || 0).toLocaleString()} status update(s) directly${breakdown} — done. Nothing sent via Instantly.` });
         countRetest();
       } else {
         setDebounceMsg({ kind: "ok", text: `Started (job #${d.jobId}) — checked ${(d.processed || 0).toLocaleString()} so far, saved ${(d.validated || 0).toLocaleString()}${breakdown}. This keeps running in the background every ~15 min even if you leave this page. Click "Check status" any time, or just come back later.` });
@@ -4881,6 +4881,15 @@ function ValidateSection() {
       setDebounceBusy(false);
       loadRetestJobsList();
     }
+  };
+
+  const runAnymailRetest = () => {
+    if (!retestLabel.trim()) { setError("Give this job a name before running it."); return; }
+    return startDebounceJob(
+      { vertical: retestVertical || undefined, emailStatus: retestStatuses, label: retestLabel.trim(), provider: "anymail" },
+      "contact(s)",
+      "Anymail Finder",
+    );
   };
 
   const runDebounceRetest = () => {
@@ -5918,7 +5927,7 @@ function ValidateSection() {
                   <div className="px-5 py-4 border-b border-[var(--hm-border)]">
                     <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Email Validation</h2>
                     <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">
-                      Sends real test emails. Delivered → <strong>verified</strong> (never re-checked). Bounced → <strong>invalid</strong>.
+                      Verifies each email with <strong>Anymail Finder</strong> and saves the result straight to the contact — <strong>nothing is sent</strong>. (Instantly test-sending is still available below as an advanced option.)
                     </p>
                   </div>
                   <div className="px-5 py-5 space-y-4">
@@ -5991,11 +6000,31 @@ function ValidateSection() {
                       ) : null;
                     })()}
 
-                    <button onClick={loadForRetest} disabled={busy || !retestStatuses.length || !retestCount || !retestLabel.trim() || !retestVertical} className="hm-btn hm-btn-primary w-full" style={{ height: 38, fontSize: 13 }}>
+                    <button
+                      onClick={runAnymailRetest}
+                      disabled={debounceBusy || !retestStatuses.length || !retestCount || !retestLabel.trim()}
+                      className="hm-btn hm-btn-primary w-full"
+                      style={{ height: 38, fontSize: 13 }}
+                    >
+                      {debounceBusy ? (
+                        <span className="inline-flex items-center gap-2">
+                          <span className="w-3 h-3 border-2 border-current/30 border-t-current rounded-full animate-spin" />
+                          Starting… {debounceElapsed}s
+                        </span>
+                      ) : "Verify with Anymail Finder (saves to contacts, nothing sent)"}
+                    </button>
+                    {retestCount != null && retestCount > 0 && (
+                      <p className="text-[11.5px] text-[var(--hm-text-tertiary)] -mt-2">
+                        Uses about {(Math.ceil((retestLimit ? Math.min(Number(retestLimit), retestCount) : retestCount) * 0.2)).toLocaleString()} Anymail credits at most (0.2 each; emails checked in the last 30 days are free). Works with “All verticals”. Runs in the background — you can close this page.
+                      </p>
+                    )}
+
+                    <p className="text-[11.5px] text-[var(--hm-text-tertiary)] pt-1">Advanced — Instantly test-send (sends real emails; needs a vertical):</p>
+                    <button onClick={loadForRetest} disabled={busy || !retestStatuses.length || !retestCount || !retestLabel.trim() || !retestVertical} className="hm-btn hm-btn-secondary w-full" style={{ height: 34, fontSize: 12.5 }}>
                       {retestLimit ? `Load ${Number(retestLimit).toLocaleString()} contact(s) (sends real test emails via Instantly)` : "Load contacts (sends real test emails via Instantly)"}
                     </button>
                     {!retestVertical && (
-                      <p className="text-[11.5px] text-[var(--hm-text-tertiary)] -mt-2">Pick a vertical above to send via Instantly — Debounce below works with "All verticals".</p>
+                      <p className="text-[11.5px] text-[var(--hm-text-tertiary)] -mt-2">Pick a vertical above to use Instantly — Anymail Finder and Debounce work with “All verticals”.</p>
                     )}
 
                     <div className="rounded-lg border border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] p-3 space-y-2">
@@ -6058,7 +6087,7 @@ function ValidateSection() {
                                 className="w-full flex items-center gap-1.5 text-left text-[11.5px] px-2 py-1.5 rounded-md bg-[var(--hm-surface)] border border-[var(--hm-border)] hover:border-[var(--hm-primary)]/40"
                               >
                                 <button onClick={() => checkRetestJobStatus(j.id)} disabled={statusChecking} className="flex-1 min-w-0 flex items-center justify-between text-left">
-                                  <span className="truncate text-[var(--hm-text-secondary)]">#{j.id} {j.label || "Untitled"}</span>
+                                  <span className="truncate text-[var(--hm-text-secondary)]">#{j.id} {j.label || "Untitled"}{(j as { filters?: { provider?: string } }).filters?.provider === "anymail" ? " · Anymail" : ""}</span>
                                   <span className={`shrink-0 ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium ${j.status === "done" ? "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]" : j.status === "error" ? "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)]" : j.status === "cancelled" ? "bg-[var(--hm-border)] text-[var(--hm-text-tertiary)]" : "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]"}`}>
                                     {/* Was falling through to "running" for ANY non-done/non-error
                                         status, including cancelled — confirmed live: a job stopped

@@ -7,7 +7,7 @@ import { requireRadarAccess, selectFrom, patchByFilter } from "@/lib/radar/supab
  * sync-exclusions/usage.js). export_csv was already replaced earlier by /api/radar/export, so
  * only those two actions are ported here.
  */
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 const STALE_MS = 14 * 24 * 60 * 60 * 1000; // regular contacts: re-check after 14 days
 const VERIFIED_COOLDOWN_MS = 30 * 24 * 60 * 60 * 1000; // Instantly-verified: re-check after 30 days
@@ -15,6 +15,8 @@ const VERIFIED_COOLDOWN_MS = 30 * 24 * 60 * 60 * 1000; // Instantly-verified: re
 // small enough (2 batches) to leave real margin under Vercel's 60s limit even if every call in
 // every batch happens to be a genuinely slow domain.
 const CHUNK = 6;
+// Anymail Finder documents no rate limit and answers fast, so its chunks are bigger / more parallel.
+const ANYMAIL_CHUNK = 20;
 
 interface RetestFilters {
   vertical?: string;
@@ -28,6 +30,9 @@ interface RetestFilters {
   hubspotExcluded?: boolean | string;
   hasEmail?: string;
   search?: string;
+  // Which verifier a job uses: "anymail" = Anymail Finder (saves a result straight to the contact,
+  // nothing is sent); anything else = Debounce (the original behaviour).
+  provider?: string;
 }
 
 interface ContactRow {
@@ -99,6 +104,37 @@ const isStale = (c: ContactRow, now: number): boolean => {
 // can legitimately take 15-40+ seconds for some domains (a real SMTP handshake check, not an
 // error) — confirmed live on two real contacts (19s and 42s, both eventually valid). Raised to
 // 20s — a smaller CHUNK keeps worst-case request time in check.
+// Anymail Finder email verifier (v5.1): POST /verify-email, key in the raw `Authorization` header (no
+// "Bearer"), returns email_status valid | risky | invalid (never "unknown"). 0.2 credit per check,
+// repeats within 30 days are free. Mapped onto Radar's existing status names so exports/filters keep
+// working: valid -> "safe to send" (same meaning as Debounce's), risky -> "risky", invalid -> "invalid".
+// null = couldn't get an answer this time (counts toward the 3-strikes give-up, like Debounce).
+// Throws on 401/402 so a bad key / empty balance stops the job loudly instead of silently "failing".
+async function anymailVerify(email: string, key: string): Promise<string | null> {
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), 25000);
+  try {
+    const r = await fetch("https://api.anymailfinder.com/v5.1/verify-email", {
+      method: "POST",
+      headers: { Authorization: key, "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+      signal: controller.signal,
+    });
+    if (r.status === 401) throw new Error("Anymail Finder rejected the API key (401) — check ANYMAIL_FINDER_API_KEY");
+    if (r.status === 402) throw new Error("Anymail Finder: out of credits (402) — top up at app.anymailfinder.com/purchase");
+    if (!r.ok) return null;
+    const d = await r.json().catch(() => null) as { email_status?: string } | null;
+    const st = String(d?.email_status || "").toLowerCase();
+    if (st === "valid") return "safe to send";
+    if (st === "risky") return "risky";
+    if (st === "invalid") return "invalid";
+    return null;
+  } catch (e) {
+    if (/Anymail Finder/.test((e as Error).message)) throw e;
+    return null;
+  } finally { clearTimeout(t); }
+}
+
 async function debounceValidate(email: string, debounceKey: string, attempt = 0): Promise<string | null> {
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), 20000);
@@ -134,6 +170,10 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const { action, filters = {}, offset = 0 } = body as { action?: string; filters?: RetestFilters; offset?: number };
     const DEBOUNCE_KEY = process.env.DEBOUNCE_API_KEY;
+    const useAnymail = (filters as RetestFilters).provider === "anymail";
+    const ANYMAIL_KEY = process.env.ANYMAIL_FINDER_API_KEY || process.env.RADAR_ANYMAIL_FINDER_API_KEY;
+    const VERIFY_KEY = useAnymail ? ANYMAIL_KEY : DEBOUNCE_KEY;
+    const CH = useAnymail ? ANYMAIL_CHUNK : CHUNK;
 
     if (action === "count_stale") {
       const allEmails = Array.isArray(filters.emails) ? filters.emails.filter(Boolean) : null;
@@ -172,7 +212,7 @@ export async function POST(req: NextRequest) {
         // Exact-list mode: page through the LIST itself, not a SQL offset against a query that
         // embeds the whole list — see buildRetestQuery's comment for why that failed outright
         // for a large list.
-        const pageEmails = allEmails.slice(offset, offset + CHUNK);
+        const pageEmails = allEmails.slice(offset, offset + CH);
         if (!pageEmails.length) return NextResponse.json({ processed: 0, validated: 0, done: true });
         const { rows } = await selectFrom("contacts_view", buildRetestQuery(filters, undefined, undefined, pageEmails));
         contacts = rows as unknown as ContactRow[];
@@ -196,7 +236,7 @@ export async function POST(req: NextRequest) {
         const d14 = new Date(Date.now() - STALE_MS).toISOString();
         const d30 = new Date(Date.now() - VERIFIED_COOLDOWN_MS).toISOString();
         const dueClause = `&and=(or(validated_at.is.null,validated_at.lt.${d30},and(email_status.neq.verified,validated_at.lt.${d14})))`;
-        const { rows } = await selectFrom("contacts_view", buildRetestQuery(filters, CHUNK, 0) + dueClause);
+        const { rows } = await selectFrom("contacts_view", buildRetestQuery(filters, CH, 0) + dueClause);
         contacts = rows as unknown as ContactRow[];
       }
       if (!contacts.length && !allEmails) return NextResponse.json({ processed: 0, validated: 0, done: true });
@@ -213,12 +253,15 @@ export async function POST(req: NextRequest) {
       const MAX_DEBOUNCE_FAILS = 3;
 
       let validated = 0, failed = 0, gaveUp = 0;
-      if (stale.length && DEBOUNCE_KEY) {
-        const CONC = 3; // Debounce's own concurrency cap trips reliably at 5 — confirmed live
+      if (useAnymail && !ANYMAIL_KEY) {
+        return NextResponse.json({ error: "Anymail Finder API key isn't configured (set ANYMAIL_FINDER_API_KEY in the environment)" }, { status: 503 });
+      }
+      if (stale.length && VERIFY_KEY) {
+        const CONC = useAnymail ? 10 : 3; // Debounce's own concurrency cap trips reliably at 5 — confirmed live; Anymail documents none
         for (let i = 0; i < stale.length; i += CONC) {
           const batch = stale.slice(i, i + CONC);
           await Promise.all(batch.map(async (c) => {
-            const status = await debounceValidate(c.email, DEBOUNCE_KEY);
+            const status = useAnymail ? await anymailVerify(c.email, VERIFY_KEY) : await debounceValidate(c.email, VERIFY_KEY);
             const filterQ = `email=eq.${encodeURIComponent(c.email)}`;
             if (!status) {
               failed++;
@@ -247,8 +290,8 @@ export async function POST(req: NextRequest) {
       // Filter mode always reports offset 0 back (see above) — fewer than CHUNK rows at offset 0
       // genuinely means the filter's remaining matches are exhausted, so contacts.length < CHUNK is
       // still a valid "done" signal, it just no longer drives pagination.
-      const done = allEmails ? doneAfterThisChunk : contacts.length < CHUNK;
-      const nextOffset = allEmails ? offset + Math.min(CHUNK, allEmails.length - offset) : 0;
+      const done = allEmails ? doneAfterThisChunk : contacts.length < CH;
+      const nextOffset = allEmails ? offset + Math.min(CH, allEmails.length - offset) : 0;
       return NextResponse.json({
         processed: contacts.length,
         validated,
