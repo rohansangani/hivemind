@@ -1039,12 +1039,18 @@ async function streamDownloadCsv(endpoint: string, body: Record<string, unknown>
   }
   const reader = r.body.getReader();
   const parts: BlobPart[] = [];
+  // Count real rows: a newline only ends a row outside a quoted field (descriptions can contain
+  // line breaks). Quote state carries across chunk boundaries; "" toggles twice, so it nets out.
   let lines = 0;
+  let inQuote = false;
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
     parts.push(value);
-    for (let i = 0; i < value.length; i++) if (value[i] === 10) lines++;
+    for (let i = 0; i < value.length; i++) {
+      if (value[i] === 34) inQuote = !inQuote;
+      else if (value[i] === 10 && !inQuote) lines++;
+    }
     onProgress(Math.max(0, lines - 1));
   }
   const url = URL.createObjectURL(new Blob(parts, { type: "text/csv" }));
