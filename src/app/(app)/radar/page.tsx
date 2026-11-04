@@ -929,6 +929,8 @@ interface RadarOptions {
   revenueBucketCounts?: Record<string, number>;
   monthlyRevenueBuckets?: string[];
   monthlyRevenueBucketCounts?: Record<string, number>;
+  platforms?: string[];
+  platformCounts?: Record<string, number>;
 }
 const INDUSTRY_SEP = " › ";
 /** Multi-select filter values travel as one string joined with this (server splits it — see multiValues()). */
@@ -997,6 +999,7 @@ const FIRMO_FIELDS: FilterField[] = [
   { key: "employeeBucket", label: "Employees", kind: "select", options: (o) => o?.employeeBuckets || [], counts: (o) => o?.employeeBucketCounts },
   { key: "revenueBucket", label: "Annual revenue (USD)", kind: "select", options: (o) => o?.revenueBuckets || [], counts: (o) => o?.revenueBucketCounts },
   { key: "monthlyRevenueBucket", label: "Monthly revenue (USD)", kind: "select", options: (o) => o?.monthlyRevenueBuckets || [], counts: (o) => o?.monthlyRevenueBucketCounts },
+  { key: "platform", label: "Platform", kind: "select", options: (o) => o?.platforms || [], counts: (o) => o?.platformCounts },
 ];
 const CRM_FIELDS = (sources: (o: RadarOptions | null) => string[]): FilterField[] => [
   { key: "lifecycleStage", label: "HubSpot lifecycle stage", kind: "select", options: (o) => o?.lifecycleStages || [] },
@@ -1016,7 +1019,6 @@ const ACCOUNT_FILTER_GROUPS: FilterGroup[] = [
   { id: "data", label: "Data quality", icon: "validate", fields: [
     { key: "hasDomain", label: "Has domain", kind: "yesno" },
     { key: "hasLinkedin", label: "Has LinkedIn", kind: "yesno" },
-    { key: "shopify", label: "Shopify store", kind: "yesno" },
   ] },
 ];
 
@@ -1639,7 +1641,7 @@ interface AccountRow {
   sdr_owner: string | null;
   parent_company: string | null;
   no_of_stores: string | null;
-  shopify: boolean | null;
+  platform: string | null;
   alt_names: string[] | null;
   source: string | null;
   created_at: string | null;
@@ -1872,7 +1874,7 @@ const ACCOUNT_EDIT_FIELDS: EditField[] = [
   { key: "sdr_owner", label: "SDR Owner" },
   { key: "parent_company", label: "Parent Company" },
   { key: "no_of_stores", label: "No. of Stores" },
-  { key: "shopify", label: "Shopify", type: "boolean" },
+  { key: "platform", label: "Platform (Shopify, WooCommerce, …)" },
   { key: "alt_names", label: "Alt Names (comma-separated)", type: "list" },
   { key: "source", label: "Source" },
 ];
@@ -2132,7 +2134,7 @@ function AccountsSection() {
     { key: "linkedin", header: "LinkedIn", render: (r) => r.linkedin_url ? <a href={linkedinHref(r.linkedin_url)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-[var(--hm-link)] whitespace-nowrap">{linkedinHref(r.linkedin_url)}</a> : <span className="text-[var(--hm-text-tertiary)]">—</span> },
     { key: "sdr", header: "SDR Owner", render: (r) => <Cell value={r.sdr_owner} /> },
     { key: "stores", header: "No. of Stores", className: "tabular-nums", render: (r) => <Cell value={r.no_of_stores} /> },
-    { key: "shopify", header: "Shopify", render: (r) => <YesNo v={r.shopify} /> },
+    { key: "platform", header: "Platform", render: (r) => <Cell value={r.platform} /> },
     { key: "alt_names", header: "Alt Names", render: (r) => <Cell value={r.alt_names?.length ? r.alt_names.join(", ") : null} /> },
     { key: "source", header: "Source", render: (r) => <Cell value={r.source} /> },
     { key: "created", header: "Created", className: "min-w-[190px] whitespace-nowrap", render: (r) => fmtDateTimeIST(r.created_at) },
@@ -2998,7 +3000,7 @@ const DB_COLS: Record<UploadTable, Record<string, string>> = {
     company_location: "Company Location", country: "Country",
     revenue_range: "Annual Revenue", employee_range: "Employee Size",
     account_size: "Account Size", vertical: "Vertical", account_type: "Account Type", customer: "Customer",
-    no_of_stores: "No. of Stores", shopify: "Shopify",
+    no_of_stores: "No. of Stores", platform: "Platform",
     parent_company: "Parent Company", sdr_owner: "SDR Owner", source: "Source",
     state: "State / Region", full_address: "Full Address", street_address: "Street Address", postal_code: "Postal Code",
     employee_count: "Employee Count (number)", annual_revenue: "Annual Revenue (exact)", total_funding: "Total Funding",
@@ -3020,7 +3022,7 @@ const DB_COLS: Record<UploadTable, Record<string, string>> = {
     "a:country": "Company Country", "a:revenue_range": "Annual Revenue",
     "a:employee_range": "Employee Size", "a:account_size": "Account Size",
     "a:vertical": "Vertical", "a:account_type": "Account Type", "a:customer": "Customer",
-    "a:no_of_stores": "No. of Stores", "a:shopify": "Shopify",
+    "a:no_of_stores": "No. of Stores", "a:platform": "Platform",
     "a:parent_company": "Parent Company", "a:sdr_owner": "SDR Owner", "a:source": "Company Source",
     "a:state": "Company State / Region", "a:full_address": "Company Full Address", "a:street_address": "Company Street Address",
     "a:postal_code": "Company Postal Code", "a:employee_count": "Employee Count (number)", "a:annual_revenue": "Annual Revenue (exact)",
@@ -3054,7 +3056,7 @@ const AUTO_MAP: Record<UploadTable, Record<string, string>> = {
     "account type": "account_type", "account-type": "account_type",
     customer: "customer", "is customer": "customer",
     "no of stores": "no_of_stores", "number of stores": "no_of_stores", "no. of stores": "no_of_stores",
-    shopify: "shopify",
+    platform: "platform", "ecommerce platform": "platform", "store platform": "platform", shopify: "platform",
     "parent company": "parent_company",
     "sdr owner": "sdr_owner", owner: "sdr_owner",
     source: "source",
@@ -3104,7 +3106,7 @@ const AUTO_MAP: Record<UploadTable, Record<string, string>> = {
     "account type": "a:account_type", "account-type": "a:account_type",
     customer: "a:customer", "is customer": "a:customer",
     "no of stores": "a:no_of_stores", "no. of stores": "a:no_of_stores", "number of stores": "a:no_of_stores",
-    shopify: "a:shopify",
+    platform: "a:platform", "ecommerce platform": "a:platform", "store platform": "a:platform", shopify: "a:platform",
     "parent company": "a:parent_company", "sdr owner": "a:sdr_owner",
     "first name": "c:first_name", "last name": "c:last_name", "full name": "c:full_name",
     email: "c:email", "email status": "c:email_status",

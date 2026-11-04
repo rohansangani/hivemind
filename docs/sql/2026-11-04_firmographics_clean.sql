@@ -192,3 +192,7 @@ ALTER TABLE accounts ADD COLUMN IF NOT EXISTS monthly_revenue_bucket text
   GENERATED ALWAYS AS (radar_monthly_revenue_bucket(revenue_range, annual_revenue)) STORED;
 CREATE INDEX IF NOT EXISTS idx_accounts_monthly_revenue_bucket ON accounts (monthly_revenue_bucket);
 -- contacts_view: appended a.monthly_revenue_bucket
+-- 2026-11-04: platform (Shopify / WooCommerce / Wix / Custom Cart / …) replaces the shopify boolean.
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS platform text;
+CREATE INDEX IF NOT EXISTS idx_accounts_platform ON accounts (platform);
+-- contacts_view: appended a.platform

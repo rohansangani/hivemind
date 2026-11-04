@@ -14,7 +14,7 @@ const RADAR_ADMIN_ROLES = ["owner", "admin"];
  * acts on exactly the same set the user was looking at. */
 function buildAccountsFilter(body: Record<string, unknown>, role: string): string {
   const { vertical, industry, subIndustry, accountSize, employeeRange, revenueRange, country, search, includeIrrelevant, accountType, customer,
-    state, lifecycleStage, leadStatus, sdrOwner, source, shopify, hasLinkedin, hasDomain } = body as Record<string, string | boolean | undefined>;
+    state, lifecycleStage, leadStatus, sdrOwner, source, hasLinkedin, hasDomain } = body as Record<string, string | boolean | undefined>;
   let query = "";
   query += firmographicFilters(body);
   query += inFilter("state", state);
@@ -22,8 +22,6 @@ function buildAccountsFilter(body: Record<string, unknown>, role: string): strin
   query += inFilter("hubspot_lead_status", leadStatus);
   query += inFilter("sdr_owner", sdrOwner);
   query += inFilter("source", source);
-  if (shopify === "true") query += `&shopify=is.true`;
-  else if (shopify === "false") query += `&shopify=not.is.true`;
   if (hasLinkedin === "true") query += `&linkedin_url=not.is.null&linkedin_url=neq.`;
   else if (hasLinkedin === "false") query += `&linkedin_url=is.null`;
   if (hasDomain === "true") query += `&domain=not.is.null&domain=neq.`;

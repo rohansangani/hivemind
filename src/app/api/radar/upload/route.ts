@@ -159,6 +159,12 @@ async function handleUpload(body: UploadBody): Promise<{ status: number; body: R
     for (const k of DROPPED) delete o[k];
     // employee_count is an integer column — "970", "970+", "1,200" → 970/1200; anything else → null
     // (one bad cell must not fail the whole chunk's insert).
+    // platform replaced the old shopify yes/no column: a legacy "Shopify: true" (or a platform cell that's
+    // just true/yes) means Shopify; false/no means unknown — never store "true" as a platform name.
+    const yes = (v: unknown) => /^(true|yes|y|1)$/i.test(String(v ?? "").trim());
+    const no = (v: unknown) => /^(false|no|n|0)$/i.test(String(v ?? "").trim());
+    if ("shopify" in o) { if (yes(o.shopify) && !o.platform) o.platform = "Shopify"; delete o.shopify; }
+    if ("platform" in o) { if (yes(o.platform)) o.platform = "Shopify"; else if (no(o.platform)) o.platform = null; }
     if ("employee_count" in o) {
       const n = parseInt(String(o.employee_count ?? "").replace(/[^\d]/g, ""), 10);
       o.employee_count = Number.isFinite(n) && n > 0 ? n : null;
@@ -459,7 +465,7 @@ async function handleUpload(body: UploadBody): Promise<{ status: number; body: R
           // nothing gets lost when multiple brands share one domain.
           const BRAND_FIELDS = ["industry", "sub_industry", "account_size", "employee_range", "revenue_range",
             "company_location", "country", "linkedin_url", "no_of_stores",
-            "shopify", "parent_company", "sdr_owner"];
+            "platform", "parent_company", "sdr_owner"];
 
           const groups = new Map<string, Row[]>();
           for (const row of b2bWithDomain) {

@@ -217,6 +217,7 @@ export function firmographicFilters(f: Record<string, unknown>): string {
   q += inFilter("employee_bucket", f.employeeBucket);
   q += inFilter("revenue_bucket", f.revenueBucket);
   q += inFilter("monthly_revenue_bucket", f.monthlyRevenueBucket);
+  q += inFilter("platform", f.platform);
   return q;
 }
 
@@ -480,7 +481,7 @@ export const EDITABLE_COLUMNS: Record<"accounts" | "contacts", string[]> = {
     "name", "domain", "vertical", "industry", "sub_industry", "account_size",
     "employee_range", "revenue_range", "company_location", "country", "linkedin_url",
     "sdr_owner", "parent_company", "no_of_stores",
-    "shopify", "alt_names", "source",
+    "platform", "alt_names", "source",
   ],
   contacts: [
     "account_id", "first_name", "last_name", "full_name", "title", "company_name", "email",
