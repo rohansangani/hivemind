@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRadarAccess, selectFrom, patchByFilter, verticalsFilter, firmographicFilters } from "@/lib/radar/supabase";
+import { requireRadarAccess, selectFrom, patchByFilter, verticalsFilter, firmographicFilters, inFilter } from "@/lib/radar/supabase";
 import { anymailKey, verifyEmailListChunk } from "@/lib/radar/emailVerify";
 import { findPeopleChunk, type FindPerson } from "@/lib/radar/emailFind";
 
@@ -24,7 +24,7 @@ interface RetestFilters {
   industry?: string | string[];
   emailStatus?: string | string[];
   emails?: string[];
-  country?: string;
+  country?: string | string[];
   company?: string;
   title?: string;
   location?: string;
@@ -76,7 +76,7 @@ function buildRetestQuery(filters: RetestFilters, limit?: number, offset?: numbe
   // rather than everything matching the other filters).
   const emails = emailsOverride ?? (Array.isArray(filters.emails) ? filters.emails.filter(Boolean) : []);
   if (emails.length) q += `&email=in.(${emails.map((e) => encodeURIComponent(e.toLowerCase())).join(",")})`;
-  if (filters.country) q += `&country=eq.${encodeURIComponent(filters.country)}`;
+  if (filters.country) q += inFilter("country", filters.country);
   if (filters.company) q += `&company_name=ilike.*${encodeURIComponent(filters.company)}*`;
   if (filters.title) q += `&title=ilike.*${encodeURIComponent(filters.title)}*`;
   if (filters.location) q += `&location=ilike.*${encodeURIComponent(filters.location)}*`;

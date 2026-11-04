@@ -2648,7 +2648,7 @@ function ExportSection() {
     vertical: vertical || undefined,
     industryGroup: industry || undefined,
     employeeBucket: employeeRange || undefined,
-    country: country || undefined,
+    country: country ? splitMulti(country) : undefined,
     search: search || undefined,
   });
   // Filters for the export + live count only (not the Debounce re-validate calls, which must keep
@@ -2835,7 +2835,11 @@ function ExportSection() {
             <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Employees</label>
             <SearchSelect multi label="Employees" value={employeeRange} onChange={setEmployeeRange} options={options?.employeeBuckets || []} counts={options?.employeeBucketCounts} />
           </div>
-          <FilterSelect label="Country" value={country} onChange={setCountry} options={options?.countries || []} />
+          <div style={{ width: 200 }}>
+            <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Country</label>
+            <SearchSelect multi label="Country" value={country} onChange={setCountry}
+              options={(exportType === "contacts" ? options?.contactCountries : options?.countries) || options?.countries || []} />
+          </div>
           <div className="flex-1 min-w-[180px]">
             <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Search (optional)</label>
             <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={exportType === "contacts" ? "name, email…" : "company, domain…"} />
