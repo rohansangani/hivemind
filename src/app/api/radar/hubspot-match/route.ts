@@ -71,65 +71,72 @@ async function runMatch() {
     }
   }
 
-  const [radarContacts, radarAccounts] = await Promise.all([
-    radarSql<{ id: string; domain: string }>("SELECT id, domain FROM contacts WHERE domain IS NOT NULL AND domain <> ''"),
-    radarSql<{ id: string; domain: string }>("SELECT id, domain FROM accounts WHERE domain IS NOT NULL AND domain <> ''"),
-  ]);
+  // Stage the domain map in Radar, tagged with this run, then apply it SET-BASED inside the DB in
+  // one transaction. Replaces the old "blank every row, then rewrite in chunks" sweep, which
+  // (a) left stages empty for ~a minute every 15 min — and until the next run whenever a tick
+  // timed out (confirmed: 280s timeouts once contacts passed ~320k), and (b) rewrote ~110k rows
+  // every tick, bumping updated_at on all of them. Now only rows whose value actually changed are
+  // written, nothing is ever blank in between, and no Radar rows are pulled into this function.
+  await radarSql(`CREATE TABLE IF NOT EXISTS hubspot_domain_stage (run_id text NOT NULL, domain text NOT NULL, stage text, status text, PRIMARY KEY (run_id, domain))`);
+  const runId = `r${Date.now()}`;
+  const rows = [...domainMap.entries()];
+  await mapWithConcurrency(chunks(rows, CHUNK), 4, async (batch) => {
+    const values = batch
+      .map(([d, m]) => `('${runId}', '${esc(d)}', ${m.stage ? `'${esc(m.stage)}'` : "NULL"}, ${m.status ? `'${esc(m.status)}'` : "NULL"})`)
+      .join(",");
+    await radarSql(`INSERT INTO hubspot_domain_stage (run_id, domain, stage, status) VALUES ${values} ON CONFLICT DO NOTHING`);
+    return batch.length;
+  });
 
-  // The two resets and the two rematch loops below are all independent (different tables, or
-  // — for the resets — genuinely unrelated to the rematch data already computed above), so they
-  // run concurrently instead of one after another. Confirmed live: fully sequential blew the
-  // function's 280s ceiling well before accounts even started (contacts alone, 500 rows/chunk,
-  // ate the entire budget on ~79k rows) — this and the much bigger CHUNK below are what make a
-  // full sweep of the whole DB (~108k rows total) actually fit in one run.
-  await Promise.all([
-    radarSql("UPDATE contacts SET hubspot_lifecycle_stage = NULL, hubspot_lead_status = NULL, hubspot_matched_at = NULL WHERE hubspot_matched_at IS NOT NULL"),
-    radarSql("UPDATE accounts SET hubspot_lifecycle_stage = NULL, hubspot_lead_status = NULL, hubspot_matched_at = NULL WHERE hubspot_matched_at IS NOT NULL"),
-  ]);
+  const [res] = await radarSql<{ contacts_changed: number; contacts_cleared: number; accounts_changed: number; accounts_cleared: number }>(`
+    BEGIN;
+    DELETE FROM hubspot_domain_stage WHERE run_id <> '${runId}';
+    CREATE TEMP TABLE _hs_res (k text, n int) ON COMMIT DROP;
 
-  const contactRows = radarContacts
-    .map(rc => ({ id: rc.id, match: domainMap.get(normalizeDomain(rc.domain) || "") }))
-    .filter((r): r is { id: string; match: { stage: string | null; status: string | null } } => !!r.match);
+    WITH u AS (
+      UPDATE contacts c SET hubspot_lifecycle_stage = d.stage, hubspot_lead_status = d.status, hubspot_matched_at = now(),
+        customer = c.customer OR COALESCE(d.stage ILIKE 'customer', false)
+      FROM hubspot_domain_stage d
+      WHERE d.domain = c.match_domain
+        AND (c.hubspot_lifecycle_stage IS DISTINCT FROM d.stage OR c.hubspot_lead_status IS DISTINCT FROM d.status
+             OR (d.stage ILIKE 'customer' AND c.customer IS NOT TRUE))
+      RETURNING 1)
+    INSERT INTO _hs_res SELECT 'contacts_changed', count(*) FROM u;
 
-  const accountRows = radarAccounts
-    .map(ra => ({ id: ra.id, match: domainMap.get(normalizeDomain(ra.domain) || "") }))
-    .filter((r): r is { id: string; match: { stage: string | null; status: string | null } } => !!r.match);
+    WITH u AS (
+      UPDATE contacts c SET hubspot_lifecycle_stage = NULL, hubspot_lead_status = NULL, hubspot_matched_at = NULL
+      WHERE (c.hubspot_lifecycle_stage IS NOT NULL OR c.hubspot_lead_status IS NOT NULL)
+        AND NOT EXISTS (SELECT 1 FROM hubspot_domain_stage d WHERE d.domain = c.match_domain)
+      RETURNING 1)
+    INSERT INTO _hs_res SELECT 'contacts_cleared', count(*) FROM u;
 
-  // CONC bounds how many chunk-UPDATEs are in flight at once per table — same
-  // fewer-round-trips-but-not-all-at-once pattern as mapWithConcurrency's own doc comment
-  // (full-parallel risks overloading Supabase's connection pooler into a flat 500).
-  const CONC = 4;
-  const [contactsMatched, accountsMatched] = await Promise.all([
-    mapWithConcurrency(chunks(contactRows, CHUNK), CONC, async (batch) => {
-      const values = batch
-        .map(r => `('${r.id}'::uuid, ${r.match.stage ? `'${esc(r.match.stage)}'` : "NULL"}, ${r.match.status ? `'${esc(r.match.status)}'` : "NULL"})`)
-        .join(",");
-      await radarSql(`
-        UPDATE contacts AS c SET hubspot_lifecycle_stage = v.stage, hubspot_lead_status = v.status, hubspot_matched_at = now(),
-          customer = c.customer OR COALESCE(v.stage ILIKE 'customer', false)
-        FROM (VALUES ${values}) AS v(id, stage, status)
-        WHERE c.id = v.id
-      `);
-      return batch.length;
-    }).then(counts => counts.reduce((a, b) => a + b, 0)),
-    mapWithConcurrency(chunks(accountRows, CHUNK), CONC, async (batch) => {
-      const values = batch
-        .map(r => `('${r.id}'::uuid, ${r.match.stage ? `'${esc(r.match.stage)}'` : "NULL"}, ${r.match.status ? `'${esc(r.match.status)}'` : "NULL"})`)
-        .join(",");
-      await radarSql(`
-        UPDATE accounts AS a SET hubspot_lifecycle_stage = v.stage, hubspot_lead_status = v.status, hubspot_matched_at = now(),
-          customer = a.customer OR COALESCE(v.stage ILIKE 'customer', false)
-        FROM (VALUES ${values}) AS v(id, stage, status)
-        WHERE a.id = v.id
-      `);
-      return batch.length;
-    }).then(counts => counts.reduce((a, b) => a + b, 0)),
-  ]);
+    WITH u AS (
+      UPDATE accounts a SET hubspot_lifecycle_stage = d.stage, hubspot_lead_status = d.status, hubspot_matched_at = now(),
+        customer = a.customer OR COALESCE(d.stage ILIKE 'customer', false)
+      FROM hubspot_domain_stage d
+      WHERE d.domain = radar_norm_domain(a.domain)
+        AND (a.hubspot_lifecycle_stage IS DISTINCT FROM d.stage OR a.hubspot_lead_status IS DISTINCT FROM d.status
+             OR (d.stage ILIKE 'customer' AND a.customer IS NOT TRUE))
+      RETURNING 1)
+    INSERT INTO _hs_res SELECT 'accounts_changed', count(*) FROM u;
 
-  return {
-    contactsMatched, accountsMatched,
-    totalRadarContacts: radarContacts.length, totalRadarAccounts: radarAccounts.length,
-  };
+    WITH u AS (
+      UPDATE accounts a SET hubspot_lifecycle_stage = NULL, hubspot_lead_status = NULL, hubspot_matched_at = NULL
+      WHERE (a.hubspot_lifecycle_stage IS NOT NULL OR a.hubspot_lead_status IS NOT NULL)
+        AND NOT EXISTS (SELECT 1 FROM hubspot_domain_stage d WHERE d.domain = radar_norm_domain(a.domain))
+      RETURNING 1)
+    INSERT INTO _hs_res SELECT 'accounts_cleared', count(*) FROM u;
+
+    SELECT
+      max(n) FILTER (WHERE k = 'contacts_changed') AS contacts_changed,
+      max(n) FILTER (WHERE k = 'contacts_cleared') AS contacts_cleared,
+      max(n) FILTER (WHERE k = 'accounts_changed') AS accounts_changed,
+      max(n) FILTER (WHERE k = 'accounts_cleared') AS accounts_cleared
+    FROM _hs_res;
+    COMMIT;
+  `);
+
+  return { hubspotDomains: rows.length, ...res };
 }
 
 // Vercel native cron: GET with `Authorization: Bearer $CRON_SECRET`.
