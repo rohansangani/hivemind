@@ -14,15 +14,33 @@ export async function GET(req: NextRequest) {
   if (access instanceof NextResponse) return access;
 
   try {
-    const [industries, subIndustries, accountSizes, employeeRanges, revenueRanges, countries] = await Promise.all([
+    const [industries, subIndustries, accountSizes, employeeRanges, revenueRanges, countries,
+      states, accLifecycle, conLifecycle, accLead, conLead, accSdr, conSdr, accSources, conSources, contactCountries] = await Promise.all([
       distinctValues("accounts", "industry"),
       distinctValues("accounts", "sub_industry"),
       distinctValues("accounts", "account_size"),
       distinctValues("accounts", "employee_range"),
       distinctValues("accounts", "revenue_range"),
       distinctValues("accounts", "country"),
+      distinctValues("accounts", "state"),
+      distinctValues("accounts", "hubspot_lifecycle_stage"),
+      distinctValues("contacts", "hubspot_lifecycle_stage"),
+      distinctValues("accounts", "hubspot_lead_status"),
+      distinctValues("contacts", "hubspot_lead_status"),
+      distinctValues("accounts", "sdr_owner"),
+      distinctValues("contacts", "sdr_owner"),
+      distinctValues("accounts", "source"),
+      distinctValues("contacts", "source"),
+      distinctValues("contacts", "country"),
     ]);
-    return NextResponse.json({ industries, subIndustries, accountSizes, employeeRanges, revenueRanges, countries });
+    const union = (...lists: string[][]) => [...new Set(lists.flat())].sort((a, b) => a.localeCompare(b));
+    return NextResponse.json({
+      industries, subIndustries, accountSizes, employeeRanges, revenueRanges, countries, states,
+      lifecycleStages: union(accLifecycle, conLifecycle),
+      leadStatuses: union(accLead, conLead),
+      sdrOwners: union(accSdr, conSdr),
+      accountSources: accSources, contactSources: conSources, contactCountries,
+    });
   } catch (err) {
     console.error("Radar options error:", err);
     return NextResponse.json({ error: "Failed to load filter options" }, { status: 502 });

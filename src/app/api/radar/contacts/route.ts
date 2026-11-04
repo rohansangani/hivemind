@@ -10,8 +10,21 @@ const RADAR_ADMIN_ROLES = ["owner", "admin"];
  * exist on the base `contacts` table), so mark/delete resolve ids via the view, then mutate the
  * base table with those ids — never write straight through this filter. */
 function buildContactsFilter(body: Record<string, unknown>, role: string): string {
-  const { vertical, industry, subIndustry, employeeRange, revenueRange, company, title, emailStatus, country, search, hasEmail, accountId, matchDomain, includeIrrelevant, accountType, customer } = body as Record<string, string | boolean | undefined>;
+  const { vertical, industry, subIndustry, employeeRange, revenueRange, company, title, emailStatus, country, search, hasEmail, accountId, matchDomain, includeIrrelevant, accountType, customer,
+    lifecycleStage, leadStatus, sdrOwner, source, hubspotExcluded, hasLinkedin, hasPhone } = body as Record<string, string | boolean | undefined>;
   let query = "";
+  const eq = (col: string, v: unknown) => { if (v) query += `&${col}=eq.${encodeURIComponent(String(v))}`; };
+  eq("hubspot_lifecycle_stage", lifecycleStage);
+  eq("hubspot_lead_status", leadStatus);
+  eq("sdr_owner", sdrOwner);
+  eq("source", source);
+  if (hubspotExcluded === "true") query += `&hubspot_excluded=is.true`;
+  else if (hubspotExcluded === "false") query += `&hubspot_excluded=not.is.true`;
+  if (hasLinkedin === "true") query += `&linkedin_url=not.is.null&linkedin_url=neq.`;
+  else if (hasLinkedin === "false") query += `&linkedin_url=is.null`;
+  if (hasPhone === "true") query += `&phone=not.is.null&phone=neq.`;
+  else if (hasPhone === "false") query += `&phone=is.null`;
+  if (hasEmail === "false") query += `&email=is.null`;
   if (accountId) query += `&account_id=eq.${encodeURIComponent(String(accountId))}`;
   // Crossborder accounts don't own contacts — their contacts are everyone at the same domain.
   if (matchDomain) query += `&match_domain=eq.${encodeURIComponent(String(matchDomain).toLowerCase().trim())}`;

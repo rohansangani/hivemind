@@ -1010,6 +1010,185 @@ interface RadarOptions {
   employeeRanges: string[];
   revenueRanges: string[];
   countries: string[];
+  states?: string[];
+  lifecycleStages?: string[];
+  leadStatuses?: string[];
+  sdrOwners?: string[];
+  accountSources?: string[];
+  contactSources?: string[];
+  contactCountries?: string[];
+}
+
+/* ── Filters: categorised panel + searchable pickers ───────────────────── */
+
+interface FilterField {
+  key: string;
+  label: string;
+  kind: "select" | "text" | "yesno";
+  options?: (o: RadarOptions | null) => string[];
+  labels?: Record<string, string>;
+  /** Range-like values ("1-10", "101-200", "$1M-$10M") sort by their first number, not alphabetically. */
+  numeric?: boolean;
+  placeholder?: string;
+}
+interface FilterGroup { id: string; label: string; icon: string; fields: FilterField[] }
+
+const YES_NO = { true: "Yes", false: "No" };
+const VERTICAL_FILTER: FilterField = { key: "vertical", label: "Vertical", kind: "select", options: () => ["B2B", "D2C", "US", "Crossborder"] };
+const SEGMENT_FIELDS: FilterField[] = [
+  VERTICAL_FILTER,
+  { key: "accountType", label: "Account type", kind: "select", options: () => ACCOUNT_TYPE_OPTIONS },
+  { key: "customer", label: "Customer", kind: "yesno" },
+];
+const FIRMO_FIELDS: FilterField[] = [
+  { key: "industry", label: "Industry", kind: "select", options: (o) => o?.industries || [] },
+  { key: "subIndustry", label: "Sub-industry", kind: "select", options: (o) => o?.subIndustries || [] },
+  { key: "employeeRange", label: "Employees", kind: "select", options: (o) => o?.employeeRanges || [], numeric: true },
+  { key: "revenueRange", label: "Revenue", kind: "select", options: (o) => o?.revenueRanges || [], numeric: true },
+];
+const CRM_FIELDS = (sources: (o: RadarOptions | null) => string[]): FilterField[] => [
+  { key: "lifecycleStage", label: "HubSpot lifecycle stage", kind: "select", options: (o) => o?.lifecycleStages || [] },
+  { key: "leadStatus", label: "HubSpot lead status", kind: "select", options: (o) => o?.leadStatuses || [] },
+  { key: "sdrOwner", label: "SDR owner", kind: "select", options: (o) => o?.sdrOwners || [] },
+  { key: "source", label: "Source", kind: "select", options: sources },
+];
+
+const ACCOUNT_FILTER_GROUPS: FilterGroup[] = [
+  { id: "segment", label: "Segment", icon: "icp", fields: SEGMENT_FIELDS },
+  { id: "firmo", label: "Firmographics", icon: "accounts", fields: [...FIRMO_FIELDS, { key: "accountSize", label: "Account size", kind: "select", options: (o) => o?.accountSizes || [] }] },
+  { id: "location", label: "Location", icon: "dashboard", fields: [
+    { key: "country", label: "Country", kind: "select", options: (o) => o?.countries || [] },
+    { key: "state", label: "State / region", kind: "select", options: (o) => o?.states || [] },
+  ] },
+  { id: "crm", label: "CRM & ownership", icon: "contacts", fields: CRM_FIELDS((o) => o?.accountSources || []) },
+  { id: "data", label: "Data quality", icon: "validate", fields: [
+    { key: "hasDomain", label: "Has domain", kind: "yesno" },
+    { key: "hasLinkedin", label: "Has LinkedIn", kind: "yesno" },
+    { key: "shopify", label: "Shopify store", kind: "yesno" },
+  ] },
+];
+
+const CONTACT_FILTER_GROUPS: FilterGroup[] = [
+  { id: "segment", label: "Segment", icon: "icp", fields: SEGMENT_FIELDS },
+  { id: "person", label: "Contact", icon: "contacts", fields: [
+    { key: "title", label: "Job title contains", kind: "text", placeholder: "e.g. founder, head of ops" },
+    { key: "company", label: "Company contains", kind: "text", placeholder: "e.g. acme" },
+    { key: "emailStatus", label: "Email status", kind: "select", options: () => ["safe to send", "verified", "risky", "invalid", "unknown", "unvalidated"],
+      labels: { "safe to send": "Safe to send", verified: "Verified", risky: "Risky", invalid: "Invalid", unknown: "Unknown", unvalidated: "Unvalidated" } },
+  ] },
+  { id: "firmo", label: "Firmographics", icon: "accounts", fields: FIRMO_FIELDS },
+  { id: "location", label: "Location", icon: "dashboard", fields: [
+    { key: "country", label: "Country", kind: "select", options: (o) => o?.contactCountries || o?.countries || [] },
+  ] },
+  { id: "crm", label: "CRM & ownership", icon: "logs", fields: [
+    ...CRM_FIELDS((o) => o?.contactSources || []),
+    { key: "hubspotExcluded", label: "HubSpot excluded", kind: "yesno" },
+  ] },
+  { id: "data", label: "Data quality", icon: "validate", fields: [
+    { key: "hasEmail", label: "Has email", kind: "yesno" },
+    { key: "hasPhone", label: "Has phone", kind: "yesno" },
+    { key: "hasLinkedin", label: "Has LinkedIn", kind: "yesno" },
+  ] },
+];
+
+const firstNum = (v: string) => { const m = v.replace(/,/g, "").match(/\d+(\.\d+)?/); return m ? parseFloat(m[0]) * (/b/i.test(v.slice(0, 12)) ? 1e9 : /m/i.test(v.slice(0, 12)) ? 1e6 : /k/i.test(v.slice(0, 12)) ? 1e3 : 1) : Number.MAX_VALUE; };
+
+/** Dropdown with a search box — long lists (industries, countries, owners) stay usable. */
+function SearchSelect({ value, onChange, options, labels, numeric, label }: {
+  value: string; onChange: (v: string) => void; options: string[]; labels?: Record<string, string>; numeric?: boolean; label: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const [hi, setHi] = useState(0);
+  const ref = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+  const text = (o: string) => labels?.[o] || o;
+  const sorted = numeric ? options.slice().sort((a, b) => firstNum(a) - firstNum(b)) : options;
+  const needle = q.trim().toLowerCase();
+  const matches = needle ? sorted.filter((o) => text(o).toLowerCase().includes(needle)) : sorted;
+  const shown = matches.slice(0, 300);
+  const items = ["", ...shown];
+  const pick = (v: string) => { onChange(v); setOpen(false); setQ(""); };
+  const onKey = (e: React.KeyboardEvent) => {
+    if (e.key === "ArrowDown") { e.preventDefault(); setHi((i) => Math.min(items.length - 1, i + 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setHi((i) => Math.max(0, i - 1)); }
+    else if (e.key === "Enter") { e.preventDefault(); pick(items[hi] ?? ""); }
+    else if (e.key === "Escape") { e.preventDefault(); setOpen(false); }
+  };
+  useEffect(() => { listRef.current?.querySelector(`[data-i="${hi}"]`)?.scrollIntoView({ block: "nearest" }); }, [hi]);
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => { setOpen((o) => !o); setHi(0); }}
+        className={`w-full h-8 px-2.5 rounded-lg border text-left text-[12.5px] flex items-center gap-2 transition-colors ${value ? "border-[var(--hm-primary)] bg-[var(--hm-bg-tertiary)] text-[var(--hm-text)] font-medium" : "border-[var(--hm-border)] bg-[var(--hm-surface)] text-[var(--hm-text-tertiary)] hover:border-[var(--hm-text-tertiary)]"}`}
+        aria-label={label}
+      >
+        <span className="truncate flex-1">{value ? text(value) : "Any"}</span>
+        {value ? (
+          <span role="button" tabIndex={-1} onClick={(e) => { e.stopPropagation(); onChange(""); }} className="text-[var(--hm-text-tertiary)] hover:text-[var(--hm-text)] px-0.5" aria-label={`Clear ${label}`}>×</span>
+        ) : (
+          <svg width="12" height="12" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M6 8l4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        )}
+      </button>
+      {open && (
+        <div className="radar-palette absolute left-0 top-full mt-1 z-40 w-full min-w-[240px] rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] overflow-hidden">
+          <div className="p-2 border-b border-[var(--hm-border)]">
+            <input autoFocus value={q} onChange={(e) => { setQ(e.target.value); setHi(0); }} onKeyDown={onKey}
+              placeholder={`Search ${options.length.toLocaleString()} ${label.toLowerCase()}…`} style={{ height: 30, fontSize: 12.5 }} />
+          </div>
+          <div ref={listRef} className="max-h-[260px] overflow-y-auto py-1">
+            {items.map((o, i) => (
+              <button key={o || "__any"} data-i={i} type="button" onMouseEnter={() => setHi(i)} onClick={() => pick(o)}
+                className={`w-full text-left px-3 py-1.5 text-[12.5px] flex items-center gap-2 ${i === hi ? "bg-[var(--hm-bg-tertiary)]" : ""} ${o === value ? "font-semibold text-[var(--hm-text)]" : o ? "text-[var(--hm-text-secondary)]" : "text-[var(--hm-text-tertiary)] italic"}`}>
+                <span className="w-3 flex-shrink-0 text-[var(--hm-text)]">{o === value ? "✓" : ""}</span>
+                <span className="truncate">{o ? text(o) : "Any"}</span>
+              </button>
+            ))}
+            {!matches.length && <p className="px-3 py-3 text-[12px] text-[var(--hm-text-tertiary)]">No match for “{q}”.</p>}
+            {matches.length > shown.length && <p className="px-3 py-2 text-[11px] text-[var(--hm-text-tertiary)]">Showing 300 of {matches.length.toLocaleString()} — type to narrow.</p>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Free-text filter that only commits after you stop typing (no refetch per keystroke). */
+function TextFilter({ value, onChange, placeholder, label }: { value: string; onChange: (v: string) => void; placeholder?: string; label: string }) {
+  const [v, setV] = useState(value);
+  const [prev, setPrev] = useState(value);
+  if (value !== prev) { setPrev(value); setV(value); }
+  useEffect(() => {
+    if (v === value) return;
+    const t = setTimeout(() => onChange(v.trim()), 450);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [v]);
+  return <input type="text" value={v} onChange={(e) => setV(e.target.value)} placeholder={placeholder} aria-label={label} style={{ height: 32, fontSize: 12.5 }} />;
+}
+
+function YesNoToggle({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="radar-seg inline-flex p-0.5 rounded-lg">
+      {([["", "Any"], ["true", "Yes"], ["false", "No"]] as const).map(([k, l]) => (
+        <button key={l} type="button" onClick={() => onChange(k)}
+          className={`px-2.5 h-6 text-[11.5px] rounded-md transition-colors ${value === k ? "bg-[var(--hm-surface)] text-[var(--hm-text)] font-medium" : "text-[var(--hm-text-tertiary)] hover:text-[var(--hm-text)]"}`}>{l}</button>
+      ))}
+    </div>
+  );
+}
+
+function filterValueLabel(f: FilterField | undefined, v: string): string {
+  if (!f) return v;
+  if (f.kind === "yesno") return YES_NO[v as "true" | "false"] || v;
+  return f.labels?.[v] || v;
 }
 
 /** A compact labelled filter dropdown; hidden when it has no options. */
@@ -1053,7 +1232,8 @@ function DataTable<T extends { id: string }>({
   searchPlaceholder,
   emptyLabel,
   bulkActions,
-  booleanFilters,
+  booleanFilters: _booleanFilters,
+  filterGroups,
   onRowClick,
   refreshToken,
   extraBody,
@@ -1078,6 +1258,8 @@ function DataTable<T extends { id: string }>({
   }) => React.ReactNode;
   /** Extra checkbox filters (e.g. "Email not blank") sent as `{key: "true"}` in the request body. */
   booleanFilters?: Array<{ key: string; label: string }>;
+  /** Categorised filter definitions shown in the Filters panel. */
+  filterGroups: FilterGroup[];
   /** Makes rows clickable (e.g. opening a detail panel) without affecting the checkbox column. */
   onRowClick?: (row: T) => void;
   /** Bump this (e.g. a counter) to force a refetch of the current page/filters — used after an
@@ -1132,6 +1314,15 @@ function DataTable<T extends { id: string }>({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  // Filters panel open/closed — remembered per browser.
+  const [filtersOpen, setFiltersOpen] = useState(true);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    try { if (localStorage.getItem("radar.filtersOpen") === "0") setFiltersOpen(false); } catch {}
+  }, []);
+  const toggleFiltersOpen = () => setFiltersOpen((o) => { try { localStorage.setItem("radar.filtersOpen", o ? "0" : "1"); } catch {} return !o; });
+  const fieldByKey: Record<string, FilterField> = Object.fromEntries(filterGroups.flatMap((g) => g.fields).map((f) => [f.key, f]));
 
   // Load filter dropdown options once.
   useEffect(() => {
@@ -1191,7 +1382,7 @@ function DataTable<T extends { id: string }>({
   const skeletonRows = Array.from({ length: 10 });
 
   return (
-    <div className="radar-card overflow-hidden">
+    <div className="radar-card">
       {/* Toolbar */}
       <div className="px-4 pt-3.5 pb-3 border-b border-[var(--hm-border)] space-y-3">
         <div className="flex items-center gap-2.5 flex-wrap">
@@ -1232,24 +1423,58 @@ function DataTable<T extends { id: string }>({
             </span>
           </div>
         </div>
-        <div className="radar-filters flex items-center gap-2 flex-wrap">
-          <span className="inline-flex items-center gap-1.5 text-[11.5px] font-medium uppercase tracking-[0.06em] text-[var(--hm-text-tertiary)] mr-1">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={toggleFiltersOpen}
+            className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border text-[12.5px] font-medium transition-colors ${filtersOpen ? "border-[var(--hm-primary)] bg-[var(--hm-bg-tertiary)] text-[var(--hm-text)]" : "border-[var(--hm-border)] bg-[var(--hm-surface)] text-[var(--hm-text-secondary)] hover:border-[var(--hm-text-tertiary)] hover:text-[var(--hm-text)]"}`}
+            aria-expanded={filtersOpen}
+          >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4" /></svg>
             Filters
-          </span>
-          <FilterSelect label="Vertical" value={filters.vertical || ""} onChange={(v) => setFilter("vertical", v)} options={["B2B", "US", "D2C", "Crossborder"]} />
-          <FilterSelect label="Account Type" value={filters.accountType || ""} onChange={(v) => setFilter("accountType", v)} options={ACCOUNT_TYPE_OPTIONS} />
-          <FilterSelect label="Customer" value={filters.customer || ""} onChange={(v) => setFilter("customer", v)} options={["true", "false"]} labels={{ true: "Yes", false: "No" }} />
-          <FilterSelect label="Industry" value={filters.industry || ""} onChange={(v) => setFilter("industry", v)} options={options?.industries || []} />
-          <FilterSelect label="Employees" value={filters.employeeRange || ""} onChange={(v) => setFilter("employeeRange", v)} options={options?.employeeRanges || []} />
-          <FilterSelect label="Country" value={filters.country || ""} onChange={(v) => setFilter("country", v)} options={options?.countries || []} />
-          {booleanFilters?.map((bf) => (
-            <label key={bf.key} className={`radar-chip-toggle ${filters[bf.key] === "true" ? "on" : ""}`}>
-              <input type="checkbox" checked={filters[bf.key] === "true"} onChange={(e) => setFilter(bf.key, e.target.checked ? "true" : "")} />
-              {bf.label}
-            </label>
-          ))}
+            {Object.keys(filters).length > 0 && <span className="min-w-4 h-4 px-1 rounded-full bg-[var(--hm-primary)] text-[var(--hm-bg)] text-[10px] font-semibold flex items-center justify-center">{Object.keys(filters).length}</span>}
+            <svg width="11" height="11" viewBox="0 0 20 20" fill="none" aria-hidden="true" className={`transition-transform ${filtersOpen ? "rotate-180" : ""}`}><path d="M6 8l4 4 4-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </button>
+          {Object.entries(filters).map(([k, v]) => {
+            const f = fieldByKey[k];
+            return (
+              <span key={k} className="radar-enter inline-flex items-center gap-1 h-7 pl-2.5 pr-1 rounded-full border border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] text-[12px]">
+                <span className="text-[var(--hm-text-tertiary)]">{f?.label || k}:</span>
+                <span className="font-medium text-[var(--hm-text)] max-w-[220px] truncate" title={filterValueLabel(f, v)}>{filterValueLabel(f, v)}</span>
+                <button onClick={() => setFilter(k, "")} className="w-5 h-5 rounded-full flex items-center justify-center text-[var(--hm-text-tertiary)] hover:bg-[var(--hm-bg-tertiary)] hover:text-[var(--hm-text)]" aria-label={`Remove ${f?.label || k} filter`}>×</button>
+              </span>
+            );
+          })}
         </div>
+        {filtersOpen && (
+          <div className="radar-enter grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+            {filterGroups.map((g) => {
+              const n = g.fields.filter((f) => filters[f.key]).length;
+              return (
+                <div key={g.id} className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] p-3">
+                  <div className="flex items-center gap-2 mb-2.5">
+                    <span className="w-6 h-6 rounded-md bg-[var(--hm-surface)] border border-[var(--hm-border)] flex items-center justify-center text-[var(--hm-text-secondary)]"><NavIcon id={g.icon} size={13} /></span>
+                    <p className="text-[11.5px] font-semibold uppercase tracking-[0.06em] text-[var(--hm-text-secondary)]">{g.label}</p>
+                    {n > 0 && <span className="ml-auto text-[10.5px] px-1.5 rounded-full bg-[var(--hm-primary)] text-[var(--hm-bg)] font-semibold">{n}</span>}
+                  </div>
+                  <div className="space-y-2.5">
+                    {g.fields.map((f) => (
+                      <div key={f.key}>
+                        <p className="text-[11.5px] text-[var(--hm-text-tertiary)] mb-1">{f.label}</p>
+                        {f.kind === "select" ? (
+                          <SearchSelect label={f.label} value={filters[f.key] || ""} onChange={(v) => setFilter(f.key, v)} options={f.options?.(options) || []} labels={f.labels} numeric={f.numeric} />
+                        ) : f.kind === "text" ? (
+                          <TextFilter label={f.label} value={filters[f.key] || ""} onChange={(v) => setFilter(f.key, v)} placeholder={f.placeholder} />
+                        ) : (
+                          <YesNoToggle value={filters[f.key] || ""} onChange={(v) => setFilter(f.key, v)} />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Bulk actions bar — shown once something is checked */}
@@ -1364,7 +1589,7 @@ function DataTable<T extends { id: string }>({
       )}
 
       {/* Footer / pagination */}
-      <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-t border-[var(--hm-border)] bg-[var(--hm-bg-secondary)]">
+      <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-t border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] rounded-b-[12px]">
         <span className="text-[12px] text-[var(--hm-text-tertiary)] tabular-nums">
           {loading ? "Loading…" : <>Rows <b className="font-medium text-[var(--hm-text-secondary)]">{fmt(from)}–{fmt(to)}</b> of {fmt(total)}</>}
         </span>
@@ -1918,6 +2143,7 @@ function AccountsSection() {
         endpoint="/api/radar/accounts"
         columns={cols}
         searchPlaceholder="Search company or domain…"
+        filterGroups={ACCOUNT_FILTER_GROUPS}
         emptyLabel="No accounts match your filters."
         onRowClick={setOpenAccount}
         refreshToken={refreshToken}
@@ -2246,7 +2472,7 @@ function ContactsSection() {
         columns={cols}
         searchPlaceholder="Search name or email…"
         emptyLabel="No contacts match your filters."
-        booleanFilters={[{ key: "hasEmail", label: "Email not blank" }]}
+        filterGroups={CONTACT_FILTER_GROUPS}
         refreshToken={refreshToken}
         extraBody={{ includeIrrelevant: showIrrelevant }}
         bulkActions={({ selected, clearSelection, allFiltered, totalMatching, queryBody }) => {
