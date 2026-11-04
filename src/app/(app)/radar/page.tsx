@@ -1634,11 +1634,7 @@ interface AccountRow {
   linkedin_url: string | null;
   sdr_owner: string | null;
   parent_company: string | null;
-  track_order_page: string | null;
-  edd: string | null;
   no_of_stores: string | null;
-  ebo: string | null;
-  mbo: string | null;
   shopify: boolean | null;
   alt_names: string[] | null;
   source: string | null;
@@ -1871,11 +1867,7 @@ const ACCOUNT_EDIT_FIELDS: EditField[] = [
   { key: "linkedin_url", label: "LinkedIn URL" },
   { key: "sdr_owner", label: "SDR Owner" },
   { key: "parent_company", label: "Parent Company" },
-  { key: "track_order_page", label: "Track Order Page" },
-  { key: "edd", label: "EDD" },
   { key: "no_of_stores", label: "No. of Stores" },
-  { key: "ebo", label: "EBO" },
-  { key: "mbo", label: "MBO" },
   { key: "shopify", label: "Shopify", type: "boolean" },
   { key: "alt_names", label: "Alt Names (comma-separated)", type: "list" },
   { key: "source", label: "Source" },
@@ -2134,11 +2126,7 @@ function AccountsSection() {
     { key: "country", header: "Country", render: (r) => <Cell value={r.country} /> },
     { key: "linkedin", header: "LinkedIn", render: (r) => r.linkedin_url ? <a href={linkedinHref(r.linkedin_url)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-[var(--hm-link)] whitespace-nowrap">{linkedinHref(r.linkedin_url)}</a> : <span className="text-[var(--hm-text-tertiary)]">—</span> },
     { key: "sdr", header: "SDR Owner", render: (r) => <Cell value={r.sdr_owner} /> },
-    { key: "track_order", header: "Track Order Page", render: (r) => <Cell value={r.track_order_page} /> },
-    { key: "edd", header: "EDD", render: (r) => <Cell value={r.edd} /> },
     { key: "stores", header: "No. of Stores", className: "tabular-nums", render: (r) => <Cell value={r.no_of_stores} /> },
-    { key: "ebo", header: "EBO", render: (r) => <Cell value={r.ebo} /> },
-    { key: "mbo", header: "MBO", render: (r) => <Cell value={r.mbo} /> },
     { key: "shopify", header: "Shopify", render: (r) => <YesNo v={r.shopify} /> },
     { key: "alt_names", header: "Alt Names", render: (r) => <Cell value={r.alt_names?.length ? r.alt_names.join(", ") : null} /> },
     { key: "source", header: "Source", render: (r) => <Cell value={r.source} /> },
@@ -3003,8 +2991,7 @@ const DB_COLS: Record<UploadTable, Record<string, string>> = {
     company_location: "Company Location", country: "Country",
     revenue_range: "Annual Revenue", employee_range: "Employee Size",
     account_size: "Account Size", vertical: "Vertical", account_type: "Account Type", customer: "Customer",
-    track_order_page: "Track Order Page", edd: "EDD", no_of_stores: "No. of Stores",
-    ebo: "EBO", mbo: "MBO", shopify: "Shopify",
+    no_of_stores: "No. of Stores", shopify: "Shopify",
     parent_company: "Parent Company", sdr_owner: "SDR Owner", source: "Source",
   },
   contacts: {
@@ -3022,9 +3009,8 @@ const DB_COLS: Record<UploadTable, Record<string, string>> = {
     "a:sub_industry": "Sub-Industry", "a:company_location": "Company Location",
     "a:country": "Company Country", "a:revenue_range": "Annual Revenue",
     "a:employee_range": "Employee Size", "a:account_size": "Account Size",
-    "a:vertical": "Vertical", "a:account_type": "Account Type", "a:customer": "Customer", "a:track_order_page": "Track Order Page",
-    "a:edd": "EDD", "a:no_of_stores": "No. of Stores",
-    "a:ebo": "EBO", "a:mbo": "MBO", "a:shopify": "Shopify",
+    "a:vertical": "Vertical", "a:account_type": "Account Type", "a:customer": "Customer",
+    "a:no_of_stores": "No. of Stores", "a:shopify": "Shopify",
     "a:parent_company": "Parent Company", "a:sdr_owner": "SDR Owner", "a:source": "Company Source",
     "c:company_name": "Contact's Company Name",
     "c:first_name": "First Name", "c:last_name": "Last Name", "c:full_name": "Full Name",
@@ -3053,10 +3039,8 @@ const AUTO_MAP: Record<UploadTable, Record<string, string>> = {
     vertical: "vertical",
     "account type": "account_type", "account-type": "account_type",
     customer: "customer", "is customer": "customer",
-    "track order page": "track_order_page", "track order": "track_order_page",
-    edd: "edd",
     "no of stores": "no_of_stores", "number of stores": "no_of_stores", "no. of stores": "no_of_stores",
-    ebo: "ebo", mbo: "mbo", shopify: "shopify",
+    shopify: "shopify",
     "parent company": "parent_company",
     "sdr owner": "sdr_owner", owner: "sdr_owner",
     source: "source",
@@ -3091,10 +3075,8 @@ const AUTO_MAP: Record<UploadTable, Record<string, string>> = {
     vertical: "a:vertical",
     "account type": "a:account_type", "account-type": "a:account_type",
     customer: "a:customer", "is customer": "a:customer",
-    "track order page": "a:track_order_page", "track order": "a:track_order_page",
-    edd: "a:edd",
     "no of stores": "a:no_of_stores", "no. of stores": "a:no_of_stores", "number of stores": "a:no_of_stores",
-    ebo: "a:ebo", mbo: "a:mbo", shopify: "a:shopify",
+    shopify: "a:shopify",
     "parent company": "a:parent_company", "sdr owner": "a:sdr_owner",
     "first name": "c:first_name", "last name": "c:last_name", "full name": "c:full_name",
     email: "c:email", "email status": "c:email_status",

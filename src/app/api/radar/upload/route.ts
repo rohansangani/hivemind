@@ -449,8 +449,8 @@ async function handleUpload(body: UploadBody): Promise<{ status: number; body: R
           // Fields that legitimately differ PER BRAND — captured per-brand in brand_details so
           // nothing gets lost when multiple brands share one domain.
           const BRAND_FIELDS = ["industry", "sub_industry", "account_size", "employee_range", "revenue_range",
-            "company_location", "country", "linkedin_url", "track_order_page", "edd", "no_of_stores",
-            "ebo", "mbo", "shopify", "parent_company", "sdr_owner"];
+            "company_location", "country", "linkedin_url", "no_of_stores",
+            "shopify", "parent_company", "sdr_owner"];
 
           const groups = new Map<string, Row[]>();
           for (const row of b2bWithDomain) {

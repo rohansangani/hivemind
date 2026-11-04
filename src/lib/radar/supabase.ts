@@ -478,7 +478,7 @@ export const EDITABLE_COLUMNS: Record<"accounts" | "contacts", string[]> = {
   accounts: [
     "name", "domain", "vertical", "industry", "sub_industry", "account_size",
     "employee_range", "revenue_range", "company_location", "country", "linkedin_url",
-    "sdr_owner", "parent_company", "track_order_page", "edd", "no_of_stores", "ebo", "mbo",
+    "sdr_owner", "parent_company", "no_of_stores",
     "shopify", "alt_names", "source",
   ],
   contacts: [
