@@ -4651,6 +4651,8 @@ interface LinkedInCheckRow {
   uncertain?: boolean;
   error?: string;
   created?: boolean;
+  /** Which provider answered (Blitz → Anymail Finder → Apify waterfall). */
+  source?: "blitz" | "anymail" | "apify";
   /** Full raw Apify item — only used for "export everything Apify returned" CSVs, never shown
    * in the on-page preview table. */
   raw?: Record<string, unknown>;
@@ -4668,7 +4670,121 @@ interface LinkedInCompanyCheckRow {
   uncertain?: boolean;
   error?: string;
   created?: boolean;
+  source?: "blitz" | "apify";
   raw?: Record<string, unknown>;
+}
+
+const LI_SOURCE_META: Record<string, { label: string; tone: string }> = {
+  blitz: { label: "Blitz", tone: "bg-[var(--tag-purple-bg)] text-[var(--tag-purple-fg)]" },
+  anymail: { label: "Anymail", tone: "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]" },
+  apify: { label: "Apify", tone: "bg-[var(--tag-orange-bg)] text-[var(--tag-orange-fg)]" },
+};
+
+function LinkedinSourceBadge({ source, error }: { source?: string; error?: string }) {
+  if (error || !source) return <span className="text-[var(--hm-text-tertiary)]">—</span>;
+  const m = LI_SOURCE_META[source];
+  return m ? <span className={`text-[10.5px] px-1.5 py-0.5 rounded font-medium whitespace-nowrap ${m.tone}`}>{m.label}</span> : null;
+}
+
+/** Live view of a Check LinkedIn job: progress bar, what's running right now (from the job's
+ * `stage`, polled every 2.5s), and how many each provider in the Blitz → Anymail → Apify
+ * waterfall has answered so far. */
+function LinkedinPipeline({ job, results, checkType, refreshing, cancelling, onRefresh, onStop }: {
+  job: { status: string; processed: number; total: number; stage?: string | null; error: string | null };
+  results: Array<{ source?: string; error?: string }>;
+  checkType: "profile" | "company";
+  refreshing: boolean;
+  cancelling: boolean;
+  onRefresh: () => void;
+  onStop: () => void;
+}) {
+  const running = job.status === "running";
+  const pct = job.total ? Math.round((job.processed / job.total) * 100) : 0;
+  const count = (src: string) => results.filter((r) => r.source === src && !r.error).length;
+  const missed = results.filter((r) => r.error).length;
+  const stage = job.stage || "";
+  const steps = (checkType === "company"
+    ? [{ key: "blitz", label: "Blitz API", hint: "Company lookup" }, { key: "apify", label: "Apify", hint: "Company scrape" }]
+    : [{ key: "blitz", label: "Blitz API", hint: "25 req/s" }, { key: "anymail", label: "Anymail Finder", hint: "Blitz misses" }, { key: "apify", label: "Apify", hint: "Profile details" }]);
+  const activeKey = !running ? null
+    : /blitz/i.test(stage) ? "blitz" : /anymail/i.test(stage) ? "anymail" : /apify/i.test(stage) ? "apify" : null;
+  const statusPill = running
+    ? { text: "Running", cls: "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]" }
+    : job.status === "done" ? { text: "Done", cls: "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]" }
+    : job.status === "error" ? { text: "Error", cls: "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)]" }
+    : { text: "Stopped", cls: "bg-[var(--tag-gray-bg)] text-[var(--tag-gray-fg)]" };
+
+  return (
+    <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] overflow-hidden">
+      <div className="px-4 py-3 flex items-center gap-3 flex-wrap border-b border-[var(--hm-border)]">
+        <span className={`inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-md font-medium ${statusPill.cls}`}>
+          <span className={`radar-dot ${running ? "radar-live-dot" : ""}`} />{statusPill.text}
+        </span>
+        <span className="text-[13px] font-medium text-[var(--hm-text)] tabular-nums">
+          {fmt(job.processed)} <span className="text-[var(--hm-text-tertiary)] font-normal">/ {fmt(job.total)} {checkType === "company" ? "companies" : "profiles"} checked</span>
+        </span>
+        <span className="text-[12px] text-[var(--hm-text-tertiary)] tabular-nums">{pct}%</span>
+        {running && (
+          <span className="ml-auto flex items-center gap-1.5">
+            <button onClick={onRefresh} disabled={refreshing || cancelling} className="radar-btn-ghost">
+              {refreshing ? <><span className="w-3 h-3 border-2 border-current/30 border-t-current rounded-full animate-spin" />Working…</> : "Refresh"}
+            </button>
+            <button onClick={onStop} disabled={refreshing && cancelling} className="radar-btn-ghost text-[var(--tag-red-fg)]!">
+              {cancelling ? "Stopping…" : "Stop"}
+            </button>
+          </span>
+        )}
+      </div>
+
+      <div className="px-4 pt-3">
+        <div className="h-1.5 rounded-full bg-[var(--hm-bg-tertiary)] overflow-hidden">
+          <div
+            className="h-full rounded-full transition-[width] duration-700 ease-out"
+            style={{ width: `${Math.max(running ? 2 : 0, pct)}%`, background: job.status === "error" ? "var(--tag-red-fg)" : job.status === "done" ? "var(--tag-green-fg)" : "var(--hm-primary)" }}
+          />
+        </div>
+        <p className="mt-2 text-[12.5px] flex items-center gap-2 min-h-[20px]">
+          {running ? (
+            <>
+              <span className="w-3 h-3 border-2 border-[var(--hm-border)] border-t-[var(--hm-text)] rounded-full animate-spin flex-shrink-0" />
+              <span className="text-[var(--hm-text)] truncate">{stage || "Waiting for the next batch…"}</span>
+            </>
+          ) : job.status === "error" ? (
+            <span className="text-[var(--tag-red-fg)]">Stopped on error: {job.error}</span>
+          ) : job.status === "cancelled" ? (
+            <span className="text-[var(--hm-text-tertiary)]">Stopped by you — everything checked so far is saved.</span>
+          ) : (
+            <span className="text-[var(--tag-green-fg)]">Finished — all results saved to Radar.</span>
+          )}
+        </p>
+      </div>
+
+      <div className={`grid gap-2 p-4 pt-3 ${checkType === "company" ? "grid-cols-3" : "grid-cols-2 sm:grid-cols-4"}`}>
+        {steps.map((st, i) => {
+          const on = activeKey === st.key;
+          return (
+            <div key={st.key} className={`rounded-lg border px-3 py-2.5 transition-colors ${on ? "border-[var(--hm-primary)] bg-[var(--hm-bg-secondary)]" : "border-[var(--hm-border)]"}`}>
+              <div className="flex items-center gap-1.5 text-[11px] text-[var(--hm-text-tertiary)]">
+                <span className="w-4 h-4 rounded-full border border-[var(--hm-border)] flex items-center justify-center text-[9px] font-semibold">{i + 1}</span>
+                <span className="font-medium text-[var(--hm-text-secondary)]">{st.label}</span>
+                {on && <span className="ml-auto w-2.5 h-2.5 border-2 border-[var(--hm-border)] border-t-[var(--hm-text)] rounded-full animate-spin" />}
+              </div>
+              <p className="mt-1 text-[18px] font-semibold tabular-nums text-[var(--hm-text)] leading-tight">{fmt(count(st.key))}</p>
+              <p className="text-[10.5px] text-[var(--hm-text-tertiary)]">found · {st.hint}</p>
+            </div>
+          );
+        })}
+        <div className="rounded-lg border border-[var(--hm-border)] px-3 py-2.5">
+          <p className="text-[11px] font-medium text-[var(--hm-text-secondary)]">Not found</p>
+          <p className="mt-1 text-[18px] font-semibold tabular-nums text-[var(--hm-text-tertiary)] leading-tight">{fmt(missed)}</p>
+          <p className="text-[10.5px] text-[var(--hm-text-tertiary)]">after every provider</p>
+        </div>
+      </div>
+      {running && (
+        <p className="px-4 pb-3 -mt-1 text-[11px] text-[var(--hm-text-tertiary)]">Safe to close this tab — it keeps running in the background and picks back up here.</p>
+      )}
+    </div>
+  );
 }
 
 interface PersonInput {
@@ -4735,7 +4851,6 @@ function ValidateSection() {
   // accounts) — see LinkedinCheckJob.checkType.
   const [linkedinCheckType, setLinkedinCheckType] = useState<"profile" | "company">("profile");
   const [linkedinUrlsText, setLinkedinUrlsText] = useState("");
-  const [linkedinScrapeMode, setLinkedinScrapeMode] = useState<"basic" | "email">("basic");
   const [linkedinVertical, setLinkedinVertical] = useState("");
   const [linkedinBusy, setLinkedinBusy] = useState(false);
   const [linkedinResults, setLinkedinResults] = useState<LinkedInCheckRow[]>([]);
@@ -4752,7 +4867,7 @@ function ValidateSection() {
   interface LinkedinJobRow {
     id: string; label: string | null; status: string; checkType?: "profile" | "company"; processed: number; total: number;
     matched: number; mismatched: number; notFound: number; created: number; uncertain: number;
-    error: string | null; createdAt: string; updatedAt: string; results?: (LinkedInCheckRow | LinkedInCompanyCheckRow)[];
+    error: string | null; stage?: string | null; createdAt: string; updatedAt: string; results?: (LinkedInCheckRow | LinkedInCompanyCheckRow)[];
   }
   const [activeLinkedinJobId, setActiveLinkedinJobId] = useState<string | null>(null);
   const [activeLinkedinJob, setActiveLinkedinJob] = useState<LinkedinJobRow | null>(null);
@@ -5089,8 +5204,10 @@ function ValidateSection() {
     const isCompany = linkedinCheckType === "company";
     const urls = [...new Set(linkedinUrlsText.split(/[\n,]+/).map((u) => u.trim()).filter(Boolean))];
     if (!urls.length) { setError(`Add at least one LinkedIn ${isCompany ? "company" : "profile"} URL.`); return; }
-    const costNote = isCompany ? "$4 per 1,000 companies" : linkedinScrapeMode === "email" ? "$10 per 1,000 profiles" : "$4 per 1,000 profiles";
-    if (!confirm(`Scrape ${urls.length} LinkedIn ${isCompany ? "compan(ies)" : "profile(s)"} via Apify (${costNote})? This is a real paid API call.`)) return;
+    const flow = isCompany
+      ? "Blitz API first, then Apify ($4 per 1,000) for any company Blitz doesn't find"
+      : "Blitz API first, then Anymail Finder for misses, then Apify ($4 per 1,000) for anything still not found";
+    if (!confirm(`Check ${urls.length} LinkedIn ${isCompany ? "compan(ies)" : "profile(s)"}?\n\n${flow}. These are real paid API calls.`)) return;
 
     setLinkedinBusy(true);
     setLinkedinResults([]);
@@ -5101,7 +5218,6 @@ function ValidateSection() {
         action: "start",
         urls,
         checkType: linkedinCheckType,
-        scrapeMode: linkedinScrapeMode,
         vertical: linkedinVertical,
         label: `LinkedIn ${isCompany ? "company" : "profile"} check — ${new Date().toISOString().slice(0, 10)}`,
       });
@@ -5929,25 +6045,17 @@ function ValidateSection() {
                         <input type="file" accept=".csv,text/csv" onChange={loadLinkedinCsv} style={{ display: "none" }} />
                       </label>
                     </div>
-                    {linkedinCheckType === "profile" && (
-                      <div>
-                        <p className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5">Mode</p>
-                        <div className="flex gap-1.5">
-                          <button
-                            onClick={() => setLinkedinScrapeMode("basic")}
-                            className={`text-[11.5px] px-2.5 py-1 rounded-md border ${linkedinScrapeMode === "basic" ? "border-[var(--hm-primary)] bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)] font-medium" : "border-[var(--hm-border)] text-[var(--hm-text-secondary)]"}`}
-                          >
-                            Profile details ($4/1k)
-                          </button>
-                          <button
-                            onClick={() => setLinkedinScrapeMode("email")}
-                            className={`text-[11.5px] px-2.5 py-1 rounded-md border ${linkedinScrapeMode === "email" ? "border-[var(--hm-primary)] bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)] font-medium" : "border-[var(--hm-border)] text-[var(--hm-text-secondary)]"}`}
-                          >
-                            Profile details + email ($10/1k)
-                          </button>
-                        </div>
-                      </div>
-                    )}
+                    {/* Lookup order — fixed waterfall, no mode to pick. */}
+                    <div className="flex items-center gap-1.5 flex-wrap text-[11.5px] text-[var(--hm-text-tertiary)]">
+                      <span className="font-medium text-[var(--hm-text-secondary)] mr-0.5">Lookup order</span>
+                      {(linkedinCheckType === "company" ? ["blitz", "apify"] : ["blitz", "anymail", "apify"]).map((k, i, arr) => (
+                        <span key={k} className="flex items-center gap-1.5">
+                          <span className={`px-1.5 py-0.5 rounded font-medium ${LI_SOURCE_META[k].tone}`}>{LI_SOURCE_META[k].label}</span>
+                          {i < arr.length - 1 && <span aria-hidden="true">→</span>}
+                        </span>
+                      ))}
+                      <span className="ml-1">— each step only gets what the one before didn&apos;t find.</span>
+                    </div>
                     <div>
                       <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">
                         {linkedinCheckType === "company" ? "Vertical for new accounts" : "Vertical for new contacts"}
@@ -5961,48 +6069,27 @@ function ValidateSection() {
                       <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-1">
                         {linkedinCheckType === "company"
                           ? "Required. Used when a company page has no matching account — a new account is created under this vertical."
-                          : "Required. Used when a profile has no matching contact — the new contact and its account (if the profile has a company domain, needs the \"+ email\" mode) are created under this vertical."}
+                          : "Required. Used when a profile has no matching contact — the new contact (and its account, when Blitz returns the company domain) is created under this vertical."}
                       </p>
                     </div>
-                    <button onClick={runLinkedInCheck} disabled={linkedinBusy} className="hm-btn hm-btn-primary w-full" style={{ height: 38, fontSize: 13 }}>
-                      {linkedinBusy ? "Starting…" : "Run check"}
+                    <button onClick={runLinkedInCheck} disabled={linkedinBusy || activeLinkedinJob?.status === "running"} className="hm-btn hm-btn-primary w-full" style={{ height: 38, fontSize: 13 }}>
+                      {linkedinBusy
+                        ? <><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />Creating job…</>
+                        : activeLinkedinJob?.status === "running" ? "A check is running — see progress below" : "Run check"}
                     </button>
 
                     {/* Active job status + Refresh/Stop — runs server-side now (each chunk is a
                         real paid Apify call), so it survives closing this tab. */}
                     {activeLinkedinJob && (
-                      <div className="p-3 rounded-lg bg-[var(--hm-bg-secondary)] border border-[var(--hm-border)] text-[12.5px] flex items-center justify-between gap-3">
-                        {activeLinkedinJob.status === "running" ? (
-                          <span className="flex items-center gap-2">
-                            <span className="w-3 h-3 border-2 border-current/30 border-t-current rounded-full animate-spin text-[var(--hm-link)]" />
-                            Running — {activeLinkedinJob.processed}/{activeLinkedinJob.total} checked. Safe to close this tab; it keeps going and picks back up here.
-                          </span>
-                        ) : activeLinkedinJob.status === "error" ? (
-                          <span className="text-[var(--tag-red-fg)]">Job stopped: {activeLinkedinJob.error}</span>
-                        ) : activeLinkedinJob.status === "cancelled" ? (
-                          <span className="text-[var(--hm-text-tertiary)]">Stopped — {activeLinkedinJob.processed}/{activeLinkedinJob.total} checked before you stopped it.</span>
-                        ) : (
-                          <span className="text-[var(--tag-green-fg)]">Done — {activeLinkedinJob.processed}/{activeLinkedinJob.total} checked.</span>
-                        )}
-                        {activeLinkedinJob.status === "running" && (
-                          <span className="shrink-0 flex items-center gap-3">
-                            <button
-                              onClick={refreshLinkedinJob}
-                              disabled={linkedinJobRefreshing || linkedinJobCancelling}
-                              className="text-[11px] font-medium text-[var(--hm-link)] hover:underline disabled:opacity-50"
-                            >
-                              {linkedinJobRefreshing ? "Refreshing..." : "Refresh"}
-                            </button>
-                            <button
-                              onClick={cancelLinkedinJob}
-                              disabled={linkedinJobRefreshing || linkedinJobCancelling}
-                              className="text-[11px] font-medium text-[var(--tag-red-fg)] hover:underline disabled:opacity-50"
-                            >
-                              {linkedinJobCancelling ? "Stopping..." : "Stop"}
-                            </button>
-                          </span>
-                        )}
-                      </div>
+                      <LinkedinPipeline
+                        job={activeLinkedinJob}
+                        results={(activeLinkedinJob.checkType === "company" ? linkedinCompanyResults : linkedinResults) as Array<{ source?: string; error?: string }>}
+                        checkType={activeLinkedinJob.checkType === "company" ? "company" : "profile"}
+                        refreshing={linkedinJobRefreshing}
+                        cancelling={linkedinJobCancelling}
+                        onRefresh={refreshLinkedinJob}
+                        onStop={cancelLinkedinJob}
+                      />
                     )}
 
                     {/* Recent LinkedIn checks — revisit or download results from a past run. */}
@@ -6022,6 +6109,7 @@ function ValidateSection() {
                               <button
                                 onClick={() => watchLinkedinJob(j.id)}
                                 disabled={openingLinkedinJobId === j.id}
+                                title={j.status === "running" && j.stage ? j.stage : undefined}
                                 className={`w-full flex items-center justify-between text-left text-[11.5px] px-2 py-1.5 rounded-md border ${activeLinkedinJobId === j.id ? "border-[var(--hm-primary)]" : "border-[var(--hm-border)]"} bg-[var(--hm-surface)] hover:border-[var(--hm-primary)]/40 disabled:opacity-70 disabled:cursor-wait ${j.status === "running" || j.status === "error" ? "pr-14" : "pr-7"}`}
                               >
                                 <span className="truncate text-[var(--hm-text-secondary)] flex items-center gap-1.5">
@@ -6035,6 +6123,7 @@ function ValidateSection() {
                                   </span>
                                 ) : (
                                   <span className={`shrink-0 ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium ${j.status === "done" ? "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]" : j.status === "error" ? "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)]" : j.status === "cancelled" ? "bg-[var(--hm-border)] text-[var(--hm-text-tertiary)]" : "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]"}`}>
+                                    {j.status === "running" && <span className="radar-dot radar-live-dot mr-1 align-middle" />}
                                     {j.status === "done" ? `done — ${j.total}/${j.total}` : j.status === "error" ? "error" : j.status === "cancelled" ? `stopped — ${j.processed}/${j.total}` : `running — ${j.processed}/${j.total}`}
                                   </span>
                                 )}
@@ -6087,6 +6176,7 @@ function ValidateSection() {
                             // flatten of harvestapi's raw response — that produced 100+ mostly-noise
                             // columns (company logo sizes, school IDs, location-parse variants).
                             ...curatedLinkedinProfileRow(r.raw),
+                            source: r.source || "",
                             db_company: r.dbCompany,
                             db_match_status: r.error ? "not found" : r.uncertain ? "uncertain — needs review" : r.match === true ? "same company" : r.match === false ? "different company (marked moved)" : r.created ? "created" : "no db match",
                           })), `radar_linkedin_check_${today()}.csv`)}
@@ -6113,6 +6203,7 @@ function ValidateSection() {
                             // fundingData, etc. as readable columns, not a raw JSON blob), then our
                             // own DB-match verdict columns after.
                             ...flattenForCsv(r.raw),
+                            source: r.source || "",
                             db_domain: r.dbDomain,
                             db_match_status: r.error ? "not found" : r.uncertain ? "uncertain — no website found" : r.match === true ? "same domain" : r.match === false ? "different domain" : r.created ? "created" : "no db match",
                           })), `radar_linkedin_company_check_${today()}.csv`)}
@@ -6129,7 +6220,7 @@ function ValidateSection() {
                         <table className="w-full border-collapse text-[12.5px]">
                           <thead>
                             <tr>
-                              {["Name", "LinkedIn", "Current Company", "DB Company", "Status", ...(linkedinScrapeMode === "email" ? ["Email"] : [])].map((h) => (
+                              {["Name", "LinkedIn", "Source", "Current Company", "DB Company", "Status", ...(linkedinResults.some((x) => x.email) ? ["Email"] : [])].map((h) => (
                                 <th key={h} className="text-left text-[10.5px] font-semibold uppercase tracking-wide text-[var(--hm-text-tertiary)] px-3 py-2 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] whitespace-nowrap">{h}</th>
                               ))}
                             </tr>
@@ -6141,6 +6232,7 @@ function ValidateSection() {
                                 <td className="px-3 py-2 border-b border-[var(--hm-border-light)]">
                                   {r.linkedinUrl ? <a href={linkedinHref(r.linkedinUrl)} target="_blank" rel="noreferrer" className="text-[var(--hm-link)]">Profile</a> : "—"}
                                 </td>
+                                <td className="px-3 py-2 border-b border-[var(--hm-border-light)]"><LinkedinSourceBadge source={r.source} error={r.error} /></td>
                                 <td className="px-3 py-2 border-b border-[var(--hm-border-light)]">{r.company || "—"}</td>
                                 <td className="px-3 py-2 border-b border-[var(--hm-border-light)]">{r.dbCompany || "—"}</td>
                                 <td className="px-3 py-2 border-b border-[var(--hm-border-light)]">
@@ -6176,7 +6268,7 @@ function ValidateSection() {
                                     : r.created ? <span className="text-[var(--hm-link)] font-medium">+ Created</span>
                                     : <span className="text-[var(--hm-text-tertiary)]">No DB match</span>}
                                 </td>
-                                {linkedinScrapeMode === "email" && (
+                                {linkedinResults.some((x) => x.email) && (
                                   <td className="px-3 py-2 border-b border-[var(--hm-border-light)]">{r.email || "—"}</td>
                                 )}
                               </tr>
@@ -6191,7 +6283,7 @@ function ValidateSection() {
                         <table className="w-full border-collapse text-[12.5px]">
                           <thead>
                             <tr>
-                              {["Name", "LinkedIn", "Website", "Employees", "DB Domain", "Status"].map((h) => (
+                              {["Name", "LinkedIn", "Source", "Website", "Employees", "DB Domain", "Status"].map((h) => (
                                 <th key={h} className="text-left text-[10.5px] font-semibold uppercase tracking-wide text-[var(--hm-text-tertiary)] px-3 py-2 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] whitespace-nowrap">{h}</th>
                               ))}
                             </tr>
@@ -6203,6 +6295,7 @@ function ValidateSection() {
                                 <td className="px-3 py-2 border-b border-[var(--hm-border-light)]">
                                   {r.linkedinUrl ? <a href={linkedinHref(r.linkedinUrl)} target="_blank" rel="noreferrer" className="text-[var(--hm-link)]">Company</a> : "—"}
                                 </td>
+                                <td className="px-3 py-2 border-b border-[var(--hm-border-light)]"><LinkedinSourceBadge source={r.source} error={r.error} /></td>
                                 <td className="px-3 py-2 border-b border-[var(--hm-border-light)]">{r.domain || "—"}</td>
                                 <td className="px-3 py-2 border-b border-[var(--hm-border-light)]">{r.employeeCount ?? "—"}</td>
                                 <td className="px-3 py-2 border-b border-[var(--hm-border-light)]">{r.dbDomain || "—"}</td>

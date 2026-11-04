@@ -9,6 +9,12 @@
  * round-trip to radar-clickpost — now an in-process call instead.
  */
 import { selectFrom, patchByFilter, insertRows } from "@/lib/radar/supabase";
+import { blitzKey, blitzPerson, BlitzUnavailableError, mapPool, BLITZ_RPS, type BlitzPerson } from "@/lib/radar/blitz";
+
+/** Which provider in the waterfall answered for a profile (Blitz → Anymail Finder → Apify). */
+export type LinkedInSource = "blitz" | "anymail" | "apify";
+/** Progress callback — the job runner persists this so the UI can show what's happening live. */
+export type LinkedInStageFn = (stage: string) => Promise<void> | void;
 
 export interface LinkedInCheckResult {
   linkedinUrl: string | null;
@@ -23,6 +29,7 @@ export interface LinkedInCheckResult {
   uncertain?: boolean;
   created?: boolean;
   error?: string;
+  source?: LinkedInSource;
   /** The FULL, unprocessed Apify item for this profile — every field the scraper actually
    * returned (experience, education, skills, location, etc.), not just what we parse above. Kept
    * so CSV export can hand back everything Apify gave, while the on-page preview table still only
@@ -37,6 +44,7 @@ export interface LinkedInCheckSummary {
   notFound: number;
   created: number;
   uncertain: number;
+  bySource: Record<LinkedInSource, number>;
 }
 
 interface ApifyLinkedInItem {
@@ -49,13 +57,88 @@ interface ApifyLinkedInItem {
   lastName?: string;
   headline?: string;
   publicIdentifier?: string;
-  currentPosition?: { companyName?: string }[];
+  currentPosition?: { companyName?: string; position?: string }[];
   // The full work history — currentPosition confirmed (via prod logs, 2026-07-30) to only ever
   // hold ONE entry even when a profile has several present roles; a role is "present" here when
   // endDate.text === "Present" (harvestapi never sets endDate to null/absent for ongoing roles).
-  experience?: { companyName?: string; endDate?: { text?: string } }[];
-  emails?: { email?: string }[];
+  experience?: { companyName?: string; position?: string; startDate?: { text?: string }; endDate?: { text?: string } }[];
+  /** `status` is only set when the provider itself verified the address (Anymail's "valid"). */
+  emails?: { email?: string; status?: string }[];
   companyWebsites?: { domain?: string }[];
+  location?: { linkedinText?: string };
+  education?: { schoolName?: string }[];
+  skills?: { name?: string }[];
+  _source?: LinkedInSource;
+}
+
+const slugOf = (u: string | null | undefined) => (u || "").replace(/[?#].*$/, "").replace(/\/+$/, "").split("/").pop() || "";
+
+/** Blitz person → the same item shape Apify returns, so one code path does matching/saving. */
+function blitzToItem(p: BlitzPerson, inputUrl: string): ApifyLinkedInItem {
+  const exps = p.experiences || [];
+  const current = exps.filter((e) => e.job_is_current);
+  const loc = [p.location?.city, p.location?.state_code, p.location?.country_code].filter(Boolean).join(", ");
+  const domain = current.find((e) => e.company_domain)?.company_domain;
+  return {
+    linkedinUrl: p.linkedin_url || inputUrl,
+    firstName: p.first_name || undefined,
+    lastName: p.last_name || undefined,
+    headline: p.headline || undefined,
+    publicIdentifier: slugOf(p.linkedin_url || inputUrl),
+    currentPosition: current.length ? [{ companyName: current[0].company_name || undefined, position: current[0].job_title || undefined }] : [],
+    experience: exps.map((e) => ({
+      companyName: e.company_name || undefined,
+      position: e.job_title || undefined,
+      startDate: { text: e.job_start_date || undefined },
+      endDate: { text: e.job_is_current ? "Present" : e.job_end_date || undefined },
+    })),
+    emails: [],
+    companyWebsites: domain ? [{ domain }] : [],
+    location: loc ? { linkedinText: loc } : undefined,
+    education: (p.education || []).map((e) => ({ schoolName: String(e.school_name ?? e.school ?? e.name ?? "") })).filter((e) => e.schoolName),
+    skills: (p.skills || []).map((x) => ({ name: typeof x === "string" ? x : String(x.name ?? "") })).filter((x) => x.name),
+    _source: "blitz",
+  };
+}
+
+class AnymailUnavailableError extends Error {}
+
+/** Anymail Finder's LinkedIn lookup — returns name/title/company (+ a verified email when it has
+ * one). Only charges a credit when a valid email is found. */
+async function anymailLinkedin(url: string, key: string): Promise<ApifyLinkedInItem | null> {
+  let r: Response;
+  try {
+    r = await fetch("https://api.anymailfinder.com/v5.1/find-email/linkedin-url", {
+      method: "POST",
+      headers: { Authorization: key, "Content-Type": "application/json" },
+      body: JSON.stringify({ linkedin_url: url }),
+      signal: AbortSignal.timeout(90000),
+    });
+  } catch { return null; }
+  if (r.status === 401) throw new AnymailUnavailableError("Anymail Finder rejected the API key (401)");
+  if (r.status === 402) throw new AnymailUnavailableError("Anymail Finder out of credits (402)");
+  if (!r.ok) return null;
+  const d = (await r.json().catch(() => null)) as {
+    email_status?: string; valid_email?: string | null; person_company_name?: string | null;
+    person_full_name?: string | null; person_job_title?: string | null;
+  } | null;
+  if (!d) return null;
+  const company = d.person_company_name?.trim() || null;
+  const email = String(d.email_status || "").toLowerCase() === "valid" ? (d.valid_email || "").trim().toLowerCase() : "";
+  if (!company && !email) return null;
+  const [firstName, ...rest] = (d.person_full_name || "").trim().split(/\s+/).filter(Boolean);
+  return {
+    linkedinUrl: url,
+    firstName: firstName || undefined,
+    lastName: rest.join(" ") || undefined,
+    headline: d.person_job_title || undefined,
+    publicIdentifier: slugOf(url),
+    currentPosition: company ? [{ companyName: company, position: d.person_job_title || undefined }] : [],
+    experience: company ? [{ companyName: company, position: d.person_job_title || undefined, endDate: { text: "Present" } }] : [],
+    // Anymail only returns an address it has verified — same meaning as Find Emails' "safe to send".
+    emails: email ? [{ email, status: "safe to send" }] : [],
+    _source: "anymail",
+  };
 }
 
 interface ExistingContactRow {
@@ -105,15 +188,56 @@ function companyFromHeadline(headline: string | null | undefined): string | null
   return m ? m[1].trim() : null;
 }
 
-export async function runLinkedInCheck(urls: string[], mode: string | undefined, vertical: string): Promise<LinkedInCheckSummary> {
+export async function runLinkedInCheck(urls: string[], _mode: string | undefined, vertical: string, onStage?: LinkedInStageFn): Promise<LinkedInCheckSummary> {
   const APIFY_TOKEN = process.env.APIFY_TOKEN;
-  if (!APIFY_TOKEN) throw new Error("Apify not configured");
   if (!["B2B", "D2C", "US"].includes(vertical)) throw new Error("vertical is required (B2B, D2C, or US)");
 
   const cleanUrls = urls.map((u) => (u || "").trim()).filter(Boolean);
   if (!cleanUrls.length) throw new Error("No LinkedIn URLs given");
+  const stage = async (msg: string) => { try { await onStage?.(msg); } catch { /* progress only */ } };
 
-  const scraperMode = mode === "email" ? "Profile details + email search ($10 per 1k)" : "Profile details no email ($4 per 1k)";
+  // Waterfall: Blitz (fast, 25 req/s) → Anymail Finder (misses only) → Apify (whatever's left).
+  // Every provider's answer is normalised to Apify's item shape so the matching/saving below is
+  // one code path regardless of who found the profile.
+  const found = new Map<string, ApifyLinkedInItem>();
+  let remaining = cleanUrls.slice();
+
+  const BLITZ = blitzKey();
+  if (BLITZ && remaining.length) {
+    await stage(`Blitz API — looking up ${remaining.length} profile${remaining.length === 1 ? "" : "s"}`);
+    try {
+      const hits = await mapPool(remaining, BLITZ_RPS, async (u) => {
+        const p = await blitzPerson(u, BLITZ);
+        if (!p) return null;
+        const item = blitzToItem(p, u);
+        // Found but no current employer is no use for this check — let Anymail/Apify try.
+        return item.currentPosition?.length || companyFromHeadline(item.headline) ? item : null;
+      });
+      remaining.forEach((u, i) => { if (hits[i]) found.set(u, hits[i]!); });
+    } catch (e) {
+      if (!(e instanceof BlitzUnavailableError)) throw e;
+      console.log(`[check_linkedin] Blitz skipped: ${e.message}`);
+      await stage(`Blitz unavailable (${e.message}) — falling through`);
+    }
+    remaining = remaining.filter((u) => !found.has(u));
+  }
+
+  const ANYMAIL = process.env.ANYMAIL_FINDER_API_KEY?.trim();
+  if (ANYMAIL && remaining.length) {
+    await stage(`Anymail Finder — ${remaining.length} not on Blitz, searching`);
+    try {
+      const hits = await mapPool(remaining, 10, (u) => anymailLinkedin(u, ANYMAIL));
+      remaining.forEach((u, i) => { if (hits[i]) found.set(u, hits[i]!); });
+    } catch (e) {
+      if (!(e instanceof AnymailUnavailableError)) throw e;
+      console.log(`[check_linkedin] Anymail skipped: ${e.message}`);
+      await stage(`Anymail unavailable (${e.message}) — falling through`);
+    }
+    remaining = remaining.filter((u) => !found.has(u));
+  }
+
+  // Always "Profile details" (no email search) — Blitz/Anymail already cover email.
+  const scraperMode = "Profile details no email ($4 per 1k)";
 
   // `timeout` here is how long WE wait for the sync endpoint, not the actor's own execution budget
   // (that's a separate timeoutSecs on the actor itself, confirmed at 5h — nowhere near the real
@@ -126,26 +250,42 @@ export async function runLinkedInCheck(urls: string[], mode: string | undefined,
   // even at worst case (100s + 100s retry = 200s), since this call runs inside a chunk loop with
   // no per-chunk cutoff of its own — a single call anywhere near 280s risks a hard Vercel timeout
   // instead of the clean, catchable error this whole thing exists to produce.
-  async function callApify(attempt = 0): Promise<ApifyLinkedInItem[]> {
+  async function callApify(batch: string[], attempt = 0): Promise<ApifyLinkedInItem[]> {
     const runR = await fetch(`https://api.apify.com/v2/acts/harvestapi~linkedin-profile-scraper/run-sync-get-dataset-items?token=${APIFY_TOKEN}&timeout=100`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ profileScraperMode: scraperMode, queries: cleanUrls }),
+      body: JSON.stringify({ profileScraperMode: scraperMode, queries: batch }),
     });
     const items = (await runR.json().catch(() => null)) as ApifyLinkedInItem[] | null;
     if (!runR.ok || !Array.isArray(items)) {
       const detail = (items as unknown as { error?: { message?: string } | string })?.error;
       const detailMsg = typeof detail === "string" ? detail : detail?.message;
       console.log(`[check_linkedin] Apify call failed: status=${runR.status} body=${detailMsg || JSON.stringify(items)}`);
-      if (attempt === 0 && /TIMED-OUT/i.test(detailMsg || "")) return callApify(1);
+      if (attempt === 0 && /TIMED-OUT/i.test(detailMsg || "")) return callApify(batch, 1);
       throw new Error(`LinkedIn scrape failed (${runR.status}): ${detailMsg || "no details"}`);
     }
-    return items;
+    return items.map((it) => ({ ...it, _source: "apify" as const }));
   }
-  const items = await callApify();
+
+  let apifyItems: ApifyLinkedInItem[] = [];
+  if (remaining.length) {
+    if (!APIFY_TOKEN) {
+      apifyItems = remaining.map((u) => ({ element: null, error: "Not found on Blitz/Anymail (Apify not configured)", query: { query: u } }));
+    } else {
+      await stage(`Apify — scraping ${remaining.length} profile${remaining.length === 1 ? "" : "s"} still not found`);
+      // ≤15 per actor run (the size proven not to time out), runs in parallel.
+      const batches: string[][] = [];
+      for (let i = 0; i < remaining.length; i += 15) batches.push(remaining.slice(i, i + 15));
+      apifyItems = (await Promise.all(batches.map((b) => callApify(b)))).flat();
+    }
+  }
+
+  await stage(`Saving ${cleanUrls.length} result${cleanUrls.length === 1 ? "" : "s"} to Radar`);
+  const items: ApifyLinkedInItem[] = [...cleanUrls.filter((u) => found.has(u)).map((u) => found.get(u)!), ...apifyItems];
 
   const nowIso = new Date().toISOString();
   let matched = 0, mismatched = 0, notFound = 0, created = 0, uncertain = 0;
+  const bySource: Record<LinkedInSource, number> = { blitz: 0, anymail: 0, apify: 0 };
   const results: LinkedInCheckResult[] = [];
 
   for (const item of items) {
@@ -183,12 +323,14 @@ export async function runLinkedInCheck(urls: string[], mode: string | undefined,
       linkedinUrl, firstName: item.firstName || null, lastName: item.lastName || null,
       headline: item.headline || null, company, email,
       dbCompany: null, dbContactId: null, match: null, uncertain: false,
+      source: item._source || "apify",
       raw: item as unknown as Record<string, unknown>,
     };
+    bySource[row.source!]++;
     // Stored linkedin_url values have no https:// prefix and inconsistent trailing slashes, so an
     // exact match against Apify's full URL would never hit — match on the public identifier slug
     // instead (e.g. "lindaqbooth"), which is stable either way.
-    const slug = item.publicIdentifier || (linkedinUrl || "").replace(/\/$/, "").split("/").pop();
+    const slug = item.publicIdentifier || slugOf(linkedinUrl);
     if (!slug) { notFound++; results.push(row); continue; }
 
     try {
@@ -255,7 +397,7 @@ export async function runLinkedInCheck(urls: string[], mode: string | undefined,
         const isDifferentEmail = !!emailInfo?.email && emailInfo.email.toLowerCase() !== (contact.email || "").toLowerCase();
         if (emailInfo?.email && existingIsWeak && isDifferentEmail) {
           patch.email = emailInfo.email;
-          if (verdict === "same") patch.email_status = null;
+          if (verdict === "same") patch.email_status = emailInfo.status ?? null;
         }
         await patchByFilter("contacts", `id=eq.${contact.id}`, patch);
       } else {
@@ -287,7 +429,7 @@ export async function runLinkedInCheck(urls: string[], mode: string | undefined,
         const emailInfo = item.emails?.[0] || null;
         const newContact = {
           first_name: item.firstName || null, last_name: item.lastName || null,
-          email: emailInfo?.email || null, email_status: null,
+          email: emailInfo?.email || null, email_status: emailInfo?.email ? emailInfo.status ?? null : null,
           linkedin_url: linkedinUrl, company_name: company || null,
           validated_company: company || null, linkedin_checked_at: nowIso,
           vertical, account_id: accountId, domain: domain || null,
@@ -304,5 +446,5 @@ export async function runLinkedInCheck(urls: string[], mode: string | undefined,
     results.push(row);
   }
 
-  return { results, matched, mismatched, notFound, created, uncertain };
+  return { results, matched, mismatched, notFound, created, uncertain, bySource };
 }

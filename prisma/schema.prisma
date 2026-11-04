@@ -179,6 +179,7 @@ model LinkedinCheckJob {
   uncertain      Int      @default(0)
   failCount      Int      @default(0) // consecutive chunk failures — see MAX_CONSECUTIVE_FAILS
   error          String?
+  stage          String? // live progress text, e.g. "Profiles 26–50 of 300 · Blitz API — looking up 25"
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

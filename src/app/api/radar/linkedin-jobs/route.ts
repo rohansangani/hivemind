@@ -15,10 +15,9 @@ import { runLinkedInCompanyCheck } from "@/lib/radar/checkLinkedinCompany";
  * Calls lib/radar/checkLinkedin.ts's runLinkedInCheck directly (in-process) — this used to be an
  * HTTP round-trip to radar-clickpost's /api/enrich before that logic was migrated natively here.
  */
-const CHUNK = 15;
-// One chunk (15 real Apify scrapes) can legitimately take a while — budgets below leave real
-// margin under this route's 280s ceiling.
-const START_BUDGET_MS = 250000;
+// 25 = one second of Blitz at its 25 req/s ceiling; only the leftovers go on to Anymail/Apify
+// (Apify itself is split into ≤15-profile runs in parallel), so a chunk stays well inside budget.
+const CHUNK = 25;
 const CONTINUE_BUDGET_MS = 260000;
 const MAX_CONSECUTIVE_FAILS = 5;
 
@@ -70,11 +69,20 @@ async function continueJob(job: JobRow, budgetMs: number, actorEmail: string | n
 
   while (processed < job.total && Date.now() - startedAt < budgetMs) {
     const batch = urls.slice(processed, processed + CHUNK);
+    const noun = job.checkType === "company" ? "Companies" : "Profiles";
+    const range = `${noun} ${processed + 1}–${processed + batch.length} of ${job.total}`;
+    // Live progress for the UI's 2.5s status poll — which provider is working on which slice.
+    const onStage = async (msg: string) => {
+      await db.linkedinCheckJob.updateMany({ where: { id: job.id, status: "running" }, data: { stage: `${range} · ${msg}` } });
+    };
     try {
       const d = job.checkType === "company"
-        ? await runLinkedInCompanyCheck(batch, job.vertical)
-        : await runLinkedInCheck(batch, job.scrapeMode, job.vertical);
-      await logRadarUsage(actorEmail, job.checkType === "company" ? "linkedin_company" : job.scrapeMode === "email" ? "linkedin_email" : "linkedin_check", batch.length);
+        ? await runLinkedInCompanyCheck(batch, job.vertical, onStage)
+        : await runLinkedInCheck(batch, job.scrapeMode, job.vertical, onStage);
+      const src = d.bySource;
+      await logRadarUsage(actorEmail, "linkedin_blitz", src.blitz);
+      await logRadarUsage(actorEmail, "linkedin_anymail", src.anymail);
+      await logRadarUsage(actorEmail, job.checkType === "company" ? "linkedin_company" : "linkedin_check", src.apify);
       results.push(...(d.results || []));
       matched += d.matched || 0;
       mismatched += d.mismatched || 0;
@@ -103,12 +111,13 @@ async function continueJob(job: JobRow, budgetMs: number, actorEmail: string | n
       data: {
         processed, results: results as object[], matched, mismatched, notFound, created, uncertain, failCount,
         status: processed >= job.total ? "done" : "running",
+        stage: processed >= job.total ? null : `${processed} of ${job.total} checked — starting next batch`,
       },
     });
     if (failCount >= MAX_CONSECUTIVE_FAILS) {
       await db.linkedinCheckJob.update({
         where: { id: job.id },
-        data: { status: "error", error: "Too many consecutive failures — check the Apify/Radar connection." },
+        data: { status: "error", stage: null, error: "Too many consecutive failures — check the Blitz/Anymail/Apify connection." },
       });
       return;
     }
@@ -175,7 +184,7 @@ export async function POST(req: NextRequest) {
 
   try {
     if (action === "start") {
-      const { urls, scrapeMode, vertical, label, checkType } = body as {
+      const { urls, vertical, label, checkType } = body as {
         urls?: string[]; scrapeMode?: string; vertical?: string; label?: string; checkType?: string;
       };
       if (!Array.isArray(urls) || !urls.length) {
@@ -193,17 +202,18 @@ export async function POST(req: NextRequest) {
           label: label || null,
           checkType: type,
           urls: urls as object,
-          scrapeMode: scrapeMode === "email" ? "email" : "basic",
+          // Apify is always "Profile details" now — Blitz/Anymail cover email.
+          scrapeMode: "basic",
           vertical,
           total: urls.length,
+          stage: "Queued — starting Blitz API",
         },
       });
 
-      const actorEmail = await getActorEmail(userId);
-      await continueJob(job as unknown as JobRow, START_BUDGET_MS, actorEmail);
-      const fresh = await db.linkedinCheckJob.findUnique({ where: { id: job.id } });
+      // Returns right away so the UI can show live progress; the open tab's "advance" loop (or
+      // the 5-min cron if the tab is closed) does the actual work.
       await logRadarActivity(userId, "linkedin_job_start", `Started a Check LinkedIn ${type} job — ${urls.length} ${type === "company" ? "compan(ies)" : "profile(s)"}`);
-      return NextResponse.json({ job: fresh });
+      return NextResponse.json({ job });
     }
 
     if (action === "advance") {
@@ -250,7 +260,7 @@ export async function POST(req: NextRequest) {
         select: {
           id: true, label: true, status: true, checkType: true, processed: true, total: true,
           matched: true, mismatched: true, notFound: true, created: true, uncertain: true,
-          error: true, createdAt: true, updatedAt: true,
+          error: true, stage: true, createdAt: true, updatedAt: true,
         },
       });
       return NextResponse.json({ jobs });
@@ -264,7 +274,7 @@ export async function POST(req: NextRequest) {
       const job = await db.linkedinCheckJob.findUnique({ where: { id: jobId }, select: { organizationId: true, status: true } });
       if (!job || job.organizationId !== orgId) return NextResponse.json({ error: "Job not found" }, { status: 404 });
       if (job.status !== "running") return NextResponse.json({ error: "Job isn't running" }, { status: 400 });
-      const fresh = await db.linkedinCheckJob.update({ where: { id: jobId }, data: { status: "cancelled" } });
+      const fresh = await db.linkedinCheckJob.update({ where: { id: jobId }, data: { status: "cancelled", stage: null } });
       return NextResponse.json({ job: fresh });
     }
 

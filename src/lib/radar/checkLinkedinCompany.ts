@@ -16,6 +16,8 @@
  * misleading), phone (no column on accounts).
  */
 import { selectFrom, patchByFilter, insertRows } from "@/lib/radar/supabase";
+import { blitzKey, blitzCompany, BlitzUnavailableError, mapPool, BLITZ_RPS, type BlitzCompany } from "@/lib/radar/blitz";
+import type { LinkedInStageFn } from "@/lib/radar/checkLinkedin";
 
 export interface LinkedInCompanyCheckResult {
   linkedinUrl: string | null;
@@ -29,6 +31,7 @@ export interface LinkedInCompanyCheckResult {
   uncertain?: boolean;
   created?: boolean;
   error?: string;
+  source?: "blitz" | "apify";
   /** The FULL, unprocessed Apify item — every field the scraper actually returned (locations,
    * industries, specialities, fundingData, etc.), not just what we parse/persist above. Kept so
    * CSV export can hand back everything Apify gave, while the on-page preview table still only
@@ -43,6 +46,7 @@ export interface LinkedInCompanyCheckSummary {
   notFound: number;
   created: number;
   uncertain: number;
+  bySource: { blitz: number; anymail: number; apify: number };
 }
 
 interface ApifyLocation {
@@ -67,6 +71,28 @@ interface ApifyCompanyItem {
   industries?: string[];
   specialities?: string[];
   locations?: ApifyLocation[];
+  _source?: "blitz" | "apify";
+}
+
+const slugOf = (u: string | null | undefined) => (u || "").replace(/[?#].*$/, "").replace(/\/+$/, "").split("/").pop() || "";
+
+/** Blitz company → Apify's company item shape, so matching/saving stays one code path. */
+function blitzToCompanyItem(c: BlitzCompany, inputUrl: string): ApifyCompanyItem {
+  const hqText = [c.hq?.city, c.hq?.state, c.hq?.country_name].filter(Boolean).join(", ");
+  return {
+    id: c.linkedin_id != null ? String(c.linkedin_id) : undefined,
+    linkedinUrl: c.linkedin_url || inputUrl,
+    universalName: slugOf(c.linkedin_url || inputUrl),
+    name: c.name || undefined,
+    website: c.website || c.domain || undefined,
+    employeeCount: c.employees_on_linkedin ?? undefined,
+    foundedOn: c.founded_year ? { year: c.founded_year } : undefined,
+    description: c.description || undefined,
+    industries: c.industry ? [c.industry] : undefined,
+    specialities: c.specialties || undefined,
+    locations: c.hq ? [{ headquarter: true, parsed: { text: hqText || undefined, country: c.hq.country_name || undefined, state: c.hq.state || undefined, city: c.hq.city || undefined } }] : undefined,
+    _source: "blitz",
+  };
 }
 
 interface ExistingAccountRow {
@@ -169,28 +195,61 @@ function buildNewAccount(item: ApifyCompanyItem, domain: string | null, name: st
   return row;
 }
 
-export async function runLinkedInCompanyCheck(urls: string[], vertical: string): Promise<LinkedInCompanyCheckSummary> {
+export async function runLinkedInCompanyCheck(urls: string[], vertical: string, onStage?: LinkedInStageFn): Promise<LinkedInCompanyCheckSummary> {
   const APIFY_TOKEN = process.env.APIFY_TOKEN;
-  if (!APIFY_TOKEN) throw new Error("Apify not configured");
   if (!["B2B", "D2C", "US"].includes(vertical)) throw new Error("vertical is required (B2B, D2C, or US)");
 
   const cleanUrls = urls.map((u) => (u || "").trim()).filter(Boolean);
   if (!cleanUrls.length) throw new Error("No LinkedIn URLs given");
+  const stage = async (msg: string) => { try { await onStage?.(msg); } catch { /* progress only */ } };
 
-  const runR = await fetch(`https://api.apify.com/v2/acts/harvestapi~linkedin-company/run-sync-get-dataset-items?token=${APIFY_TOKEN}&timeout=55`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ companies: cleanUrls }),
-  });
-  const items = (await runR.json().catch(() => null)) as ApifyCompanyItem[] | null;
-  if (!runR.ok || !Array.isArray(items)) {
-    const detail = (items as unknown as { error?: { message?: string } | string })?.error;
-    const detailMsg = typeof detail === "string" ? detail : detail?.message;
-    console.log(`[check_linkedin_company] Apify call failed: status=${runR.status} body=${detailMsg || JSON.stringify(items)}`);
-    throw new Error(`LinkedIn company scrape failed (${runR.status}): ${detailMsg || "no details"}`);
+  // Blitz first (25 req/s), Apify only for what Blitz doesn't know. (Anymail has no company lookup.)
+  const found = new Map<string, ApifyCompanyItem>();
+  let remaining = cleanUrls.slice();
+  const BLITZ = blitzKey();
+  if (BLITZ) {
+    await stage(`Blitz API — looking up ${remaining.length} compan${remaining.length === 1 ? "y" : "ies"}`);
+    try {
+      const hits = await mapPool(remaining, BLITZ_RPS, async (u) => {
+        const c = await blitzCompany(u, BLITZ);
+        return c ? blitzToCompanyItem(c, u) : null;
+      });
+      remaining.forEach((u, i) => { if (hits[i]) found.set(u, hits[i]!); });
+    } catch (e) {
+      if (!(e instanceof BlitzUnavailableError)) throw e;
+      console.log(`[check_linkedin_company] Blitz skipped: ${e.message}`);
+      await stage(`Blitz unavailable (${e.message}) — falling through`);
+    }
+    remaining = remaining.filter((u) => !found.has(u));
   }
 
+  let apifyItems: ApifyCompanyItem[] = [];
+  if (remaining.length) {
+    if (!APIFY_TOKEN) {
+      apifyItems = remaining.map((u) => ({ error: "Not found on Blitz (Apify not configured)", query: { query: u } }));
+    } else {
+      await stage(`Apify — scraping ${remaining.length} compan${remaining.length === 1 ? "y" : "ies"} still not found`);
+      const runR = await fetch(`https://api.apify.com/v2/acts/harvestapi~linkedin-company/run-sync-get-dataset-items?token=${APIFY_TOKEN}&timeout=55`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ companies: remaining }),
+      });
+      const items = (await runR.json().catch(() => null)) as ApifyCompanyItem[] | null;
+      if (!runR.ok || !Array.isArray(items)) {
+        const detail = (items as unknown as { error?: { message?: string } | string })?.error;
+        const detailMsg = typeof detail === "string" ? detail : detail?.message;
+        console.log(`[check_linkedin_company] Apify call failed: status=${runR.status} body=${detailMsg || JSON.stringify(items)}`);
+        throw new Error(`LinkedIn company scrape failed (${runR.status}): ${detailMsg || "no details"}`);
+      }
+      apifyItems = items.map((it) => ({ ...it, _source: "apify" as const }));
+    }
+  }
+
+  await stage(`Saving ${cleanUrls.length} result${cleanUrls.length === 1 ? "" : "s"} to Radar`);
+  const items: ApifyCompanyItem[] = [...cleanUrls.filter((u) => found.has(u)).map((u) => found.get(u)!), ...apifyItems];
+
   let matched = 0, mismatched = 0, notFound = 0, created = 0, uncertain = 0;
+  const bySource = { blitz: 0, anymail: 0, apify: 0 };
   const results: LinkedInCompanyCheckResult[] = [];
 
   for (const item of items) {
@@ -212,12 +271,14 @@ export async function runLinkedInCompanyCheck(urls: string[], vertical: string):
       linkedinUrl, name: item.name || null, website: item.website || null,
       domain, employeeCount: item.employeeCount ?? null,
       dbDomain: null, dbAccountId: null, match: null, uncertain: false,
+      source: item._source || "apify",
       raw: item as unknown as Record<string, unknown>,
     };
+    bySource[row.source!]++;
 
     // Stored account linkedin_url values are inconsistently shaped (with/without protocol, www,
     // trailing slash — same issue confirmed on contacts) — match on the stable universalName/slug.
-    const slug = item.universalName || (linkedinUrl || "").replace(/\/$/, "").split("/").pop();
+    const slug = item.universalName || slugOf(linkedinUrl);
     if (!slug) { notFound++; results.push(row); continue; }
 
     try {
@@ -265,5 +326,5 @@ export async function runLinkedInCompanyCheck(urls: string[], vertical: string):
     results.push(row);
   }
 
-  return { results, matched, mismatched, notFound, created, uncertain };
+  return { results, matched, mismatched, notFound, created, uncertain, bySource };
 }
