@@ -4681,8 +4681,8 @@ const LI_SOURCE_META: Record<string, { label: string; tone: string }> = {
 };
 
 function LinkedinSourceBadge({ source, error }: { source?: string; error?: string }) {
-  if (error || !source) return <span className="text-[var(--hm-text-tertiary)]">—</span>;
-  const m = LI_SOURCE_META[source];
+  if (error) return <span className="text-[var(--hm-text-tertiary)]">—</span>;
+  const m = LI_SOURCE_META[source || "apify"]; // pre-waterfall jobs were all Apify
   return m ? <span className={`text-[10.5px] px-1.5 py-0.5 rounded font-medium whitespace-nowrap ${m.tone}`}>{m.label}</span> : null;
 }
 
@@ -4700,7 +4700,8 @@ function LinkedinPipeline({ job, results, checkType, refreshing, cancelling, onR
 }) {
   const running = job.status === "running";
   const pct = job.total ? Math.round((job.processed / job.total) * 100) : 0;
-  const count = (src: string) => results.filter((r) => r.source === src && !r.error).length;
+  // Jobs from before the waterfall have no `source` — they were all Apify.
+  const count = (src: string) => results.filter((r) => (r.source || "apify") === src && !r.error).length;
   const missed = results.filter((r) => r.error).length;
   const stage = job.stage || "";
   const steps = (checkType === "company"
