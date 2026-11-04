@@ -119,9 +119,11 @@ export async function POST(req: NextRequest) {
 
     // Every column of every person in the job (kept + dropped, with drop reason) as CSV.
     if (action === "export") {
+      // One email status only — the final call that's also saved to Radar (no separate Debounce /
+      // Anymail-verify columns to second-guess).
       const stream = streamFilteredCsv("enrich2_people", `&job_id=eq.${jobId}`, async (n) => {
         await logRadarActivity(access.userId, "enrich2_export", `Exported Enrich job ${jobId} — ${n} row(s)`);
-      });
+      }, { omit: ["debounce_result", "verify_result"], rename: { final_status: "email_status" } });
       return new NextResponse(stream, { headers: { "Content-Type": "text/csv; charset=utf-8", "Cache-Control": "no-store" } });
     }
 

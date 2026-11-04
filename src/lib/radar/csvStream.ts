@@ -11,6 +11,8 @@ export function streamFilteredCsv(
   table: string,
   filterQuery: string,
   onFinish: (exported: number) => Promise<void>,
+  /** Columns to leave out, and header renames (e.g. final_status → email_status). */
+  shape: { omit?: string[]; rename?: Record<string, string> } = {},
 ): ReadableStream<Uint8Array> {
   const enc = new TextEncoder();
   const PAGE = 1000;
@@ -48,8 +50,9 @@ export function streamFilteredCsv(
         if (!rows) throw lastErr;
         let chunk = "";
         if (!cols && rows.length) {
-          cols = Object.keys(rows[0]);
-          chunk += cols.join(",") + "\n";
+          const omit = new Set(shape.omit || []);
+          cols = Object.keys(rows[0]).filter((c) => !omit.has(c));
+          chunk += cols.map((c) => shape.rename?.[c] || c).join(",") + "\n";
         }
         for (const row of rows) {
           chunk += cols!.map((c) => cell(row[c])).join(",") + "\n";
