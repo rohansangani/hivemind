@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { selectFrom, requireRadarAccess, updateRow, setMarkedIrrelevant, deleteMarkedIrrelevant, fetchAllIds } from "@/lib/radar/supabase";
+import { verticalsFilter, selectFrom, requireRadarAccess, updateRow, setMarkedIrrelevant, deleteMarkedIrrelevant, fetchAllIds } from "@/lib/radar/supabase";
 import { logRadarActivity } from "@/lib/radar/activityLog";
 
 const RADAR_ADMIN_ROLES = ["owner", "admin"];
@@ -10,10 +10,12 @@ const RADAR_ADMIN_ROLES = ["owner", "admin"];
  * exist on the base `contacts` table), so mark/delete resolve ids via the view, then mutate the
  * base table with those ids — never write straight through this filter. */
 function buildContactsFilter(body: Record<string, unknown>, role: string): string {
-  const { vertical, industry, subIndustry, employeeRange, revenueRange, company, title, emailStatus, country, search, hasEmail, accountId, includeIrrelevant, accountType, customer } = body as Record<string, string | boolean | undefined>;
+  const { vertical, industry, subIndustry, employeeRange, revenueRange, company, title, emailStatus, country, search, hasEmail, accountId, matchDomain, includeIrrelevant, accountType, customer } = body as Record<string, string | boolean | undefined>;
   let query = "";
   if (accountId) query += `&account_id=eq.${encodeURIComponent(String(accountId))}`;
-  if (vertical) query += `&vertical=eq.${encodeURIComponent(String(vertical))}`;
+  // Crossborder accounts don't own contacts — their contacts are everyone at the same domain.
+  if (matchDomain) query += `&match_domain=eq.${encodeURIComponent(String(matchDomain).toLowerCase().trim())}`;
+  if (vertical) query += verticalsFilter(String(vertical));
   if (accountType) query += `&account_type=eq.${encodeURIComponent(String(accountType))}`;
   if (customer === "true") query += `&customer=eq.true`;
   else if (customer === "false") query += `&customer=eq.false`;

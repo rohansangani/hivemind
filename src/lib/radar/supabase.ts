@@ -188,6 +188,16 @@ const RADAR_SUPABASE_ACCESS_TOKEN = process.env.RADAR_SUPABASE_ACCESS_TOKEN;
  * express (DISTINCT, aggregates). Retries the transient Redis "OOM" error the
  * Management API occasionally throws (same behaviour as radar's own helper).
  */
+/** PostgREST filter on contacts.verticals — every vertical a contact counts under (its own, plus
+ * Crossborder when its company domain has a Crossborder account; see docs/sql/2026-11-04_crossborder_overlay.sql).
+ * One value → contains; several → overlaps. Use this, not `vertical=eq.`, when pulling contacts BY vertical. */
+export function verticalsFilter(value: string | string[]): string {
+  const vals = (Array.isArray(value) ? value : [value]).map((v) => String(v).trim()).filter(Boolean);
+  if (!vals.length) return "";
+  const arr = `%7B${vals.map((v) => encodeURIComponent(`"${v}"`)).join(",")}%7D`;
+  return vals.length === 1 ? `&verticals=cs.${arr}` : `&verticals=ov.${arr}`;
+}
+
 export async function radarSql<T = Record<string, unknown>>(query: string, attempt = 0): Promise<T[]> {
   if (!RADAR_SUPABASE_REF || !RADAR_SUPABASE_ACCESS_TOKEN) {
     throw new Error("Radar Supabase Management API env vars are not configured");

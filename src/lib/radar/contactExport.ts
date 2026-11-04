@@ -6,7 +6,7 @@
  * Export route is a thin wrapper around these same functions.
  */
 
-import { selectFrom, radarFetch } from "@/lib/radar/supabase";
+import { selectFrom, radarFetch, verticalsFilter } from "@/lib/radar/supabase";
 
 export const DEFAULT_EMAIL_STATUSES = ["safe to send", "verified"];
 
@@ -147,7 +147,13 @@ export function buildContactQuery(filters: Record<string, unknown>): string {
   let q = "select=*&order=id.asc";
   // Every column below now accepts a single string OR an array of any length (see
   // splitFilterCombos above for how a large array stays safe) — not just industry/title.
-  if (filters.vertical) q += buildInFilter("vertical", filters.vertical);
+  // Vertical = every vertical the contact counts under (own + Crossborder overlay), not just its own.
+  if (filters.vertical) {
+    const vs = (Array.isArray(filters.vertical) ? filters.vertical : [filters.vertical]).map((v) => String(v).trim());
+    const real = vs.filter((v) => v && v !== BLANK_VALUE_SENTINEL);
+    if (vs.includes(BLANK_VALUE_SENTINEL)) q += real.length ? `&or=(verticals.eq.%7B%7D,verticals.ov.%7B${real.map((v) => encodeURIComponent(`"${v}"`)).join(",")}%7D)` : `&verticals=eq.%7B%7D`;
+    else q += verticalsFilter(real);
+  }
   if (filters.industry) q += buildInFilter("industry", filters.industry);
   if (filters.employeeRange) q += buildInFilter("employee_range", filters.employeeRange);
   if (filters.country) q += buildInFilter("country", filters.country);

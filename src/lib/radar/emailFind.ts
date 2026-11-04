@@ -1,4 +1,4 @@
-import { radarSql, selectFrom, patchByFilter, insertRows } from "@/lib/radar/supabase";
+import { radarSql, selectFrom, patchByFilter, insertRows, verticalsFilter } from "@/lib/radar/supabase";
 
 /**
  * Find Emails (Radar > Validate > Find Emails) — for each person (name + company domain, or a
@@ -110,12 +110,12 @@ async function saveFound(p: FindPerson, email: string, vertical: string, nowISO:
   // 2) The person is in Radar WITHOUT this email (matched by LinkedIn, else name + domain, within the vertical).
   let target: { id: string; email: string | null } | undefined;
   if (li) {
-    const { rows } = await selectFrom("contacts", `select=id,email&linkedin_url=eq.${encodeURIComponent(li)}&vertical=eq.${vertical}&limit=1`);
+    const { rows } = await selectFrom("contacts", `select=id,email&linkedin_url=eq.${encodeURIComponent(li)}${verticalsFilter(vertical)}&limit=1`);
     target = (rows as { id: string; email: string | null }[])[0];
   }
   if (!target && p.first_name && p.last_name && domain) {
     const { rows } = await selectFrom("contacts",
-      `select=id,email&email=is.null&vertical=eq.${vertical}&first_name=ilike.${encodeURIComponent(p.first_name)}&last_name=ilike.${encodeURIComponent(p.last_name)}&domain=eq.${encodeURIComponent(domain)}&limit=1`);
+      `select=id,email&email=is.null${verticalsFilter(vertical)}&first_name=ilike.${encodeURIComponent(p.first_name)}&last_name=ilike.${encodeURIComponent(p.last_name)}&domain=eq.${encodeURIComponent(domain)}&limit=1`);
     target = (rows as { id: string; email: string | null }[])[0];
   }
   if (target) {

@@ -70,3 +70,22 @@ No secrets in this file; env var *names* only.
 - `LinkedinCheckJob.stage` holds live progress text ("Profiles 26–50 of 300 · Anymail Finder — 4 not on Blitz…").
   The UI polls it every 2.5s. `start` returns immediately; the tab's `advance` loop or the 5-min cron does the work.
 - Usage log actions: `linkedin_blitz`, `linkedin_anymail`, `linkedin_check` / `linkedin_company` (Apify).
+
+## Crossborder = overlay vertical (2026-11-04)
+
+SQL: `docs/sql/2026-11-04_crossborder_overlay.sql` (applied live to the Radar DB).
+
+- **Accounts**: one row per (domain, vertical) as before — a domain can be D2C *and* Crossborder (two account rows).
+- **Contacts**: ONE row per person, in its own vertical. `contacts.verticals text[]` = own vertical + `Crossborder`
+  whenever `contacts.match_domain` (generated: domain, else email domain, normalised) has a Crossborder account.
+  Kept current by triggers on both tables (`trg_contacts_zz_verticals`, `trg_accounts_refresh_overlay`).
+- **No duplicate rows** (`trg_contacts_xb_dedupe`, BEFORE INSERT, every save path): a Crossborder insert for a person
+  already in B2B/D2C/US is skipped and their domain gets a Crossborder account instead; a B2B/D2C/US insert for a
+  person who only exists as a Crossborder row moves that row to the new vertical (fill-blank merge) and keeps the
+  domain's Crossborder account.
+- **Reading by vertical = `verticals`**, never `vertical=eq.` — use `verticalsFilter()` (lib/radar/supabase.ts).
+  Contacts list, exports (contactExport, export-validate), Find Emails matching, stats and the RPCs
+  (`get_contact_status_matrix`, `get_contact_domain_stats`, `get_account_coverage`, `get_growth_snapshots`) all do.
+  Dashboard totals leave the Crossborder row out (marked ↺) so no one is double counted.
+- Crossborder account drawer lists contacts by `matchDomain` (contacts route param), not account_id.
+- `link_contacts_on_account_insert` now only auto-links contacts of the SAME vertical.

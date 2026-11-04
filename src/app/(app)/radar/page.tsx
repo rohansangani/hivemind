@@ -550,6 +550,11 @@ function fmt(n: number): string {
   return (n == null || isNaN(n)) ? "0" : n.toLocaleString();
 }
 
+// Crossborder is an OVERLAY vertical: a contact stays one row in its own vertical and ALSO counts
+// under Crossborder when its company domain has a Crossborder account (contacts.verticals). Totals
+// therefore leave it out so nobody is counted twice.
+const OVERLAY_VERTICAL = "Crossborder";
+
 // Data-viz legend for the three verticals — drawn from the locked tag palette so the
 // bars/dots match chips elsewhere instead of using off-brand brights.
 const VERTICAL_COLORS: Record<string, string> = {
@@ -718,13 +723,13 @@ function RadarDashboard() {
   const acctUnassigned = Math.max(0, stats.total_accounts - acctAssigned);
 
   const cv = stats.contact_verticals;
-  const cvAssigned = cv.B2B + cv.D2C + cv.US + (cv.Crossborder || 0);
+  const cvAssigned = cv.B2B + cv.D2C + cv.US;
   const cvUnassigned = Math.max(0, stats.total_contacts - cvAssigned);
   const blankV = stats.blank_email_verticals;
 
   // Display-only rollups of numbers the stats endpoint already returns.
   const statusTotals: Record<string, number> = {};
-  for (const r of stats.contact_status_matrix) statusTotals[r.status] = (statusTotals[r.status] || 0) + r.n;
+  for (const r of stats.contact_status_matrix) if (r.vertical !== OVERLAY_VERTICAL) statusTotals[r.status] = (statusTotals[r.status] || 0) + r.n;
   const deliverable = (statusTotals["safe to send"] || 0) + (statusTotals["verified"] || 0);
   const withEmail = Math.max(0, stats.total_contacts - stats.blank_email_contacts);
   const covTotal = stats.account_coverage.reduce((s, r) => s + (r.total || 0), 0);
@@ -757,7 +762,7 @@ function RadarDashboard() {
           title="Contacts by vertical"
           meta={`${fmt(cvAssigned)} assigned`}
           rows={([["B2B", cv.B2B, blankV.B2B], ["D2C", cv.D2C, blankV.D2C], ["US", cv.US, blankV.US], ["Crossborder", cv.Crossborder || 0, blankV.Crossborder || 0], ["unassigned", cvUnassigned, blankV.unassigned]] as [string, number, number][])
-            .map(([key, n, blank]) => ({ key, label: key, value: n, color: VERTICAL_COLORS[key], note: blank ? `${fmt(blank)} blank` : "" }))}
+            .map(([key, n, blank]) => ({ key, label: key, value: n, color: VERTICAL_COLORS[key], note: blank ? `${fmt(blank)} blank` : "", overlap: key === OVERLAY_VERTICAL }))}
         />
         <DistributionCard
           className="lg:col-span-2 2xl:col-span-1"
@@ -800,10 +805,11 @@ function DistributionCard({ title, meta, rows, className = "" }: {
   className?: string;
   title: string;
   meta: string;
-  rows: Array<{ key: string; label: string; value: number; color: string; note?: string }>;
+  rows: Array<{ key: string; label: string; value: number; color: string; note?: string; overlap?: boolean }>;
 }) {
   const [hover, setHover] = useState<string | null>(null);
-  const total = rows.reduce((s, r) => s + r.value, 0) || 1;
+  // Overlap rows (Crossborder for contacts) are already inside other rows — keep them out of the total/bar.
+  const total = rows.reduce((s, r) => s + (r.overlap ? 0 : r.value), 0) || 1;
   const max = Math.max(1, ...rows.map((r) => r.value));
   return (
     <div className={`radar-card ${className}`}>
@@ -813,7 +819,7 @@ function DistributionCard({ title, meta, rows, className = "" }: {
       </div>
       <div className="px-5 pt-4 pb-3">
         <div className="flex h-2.5 rounded-full overflow-hidden bg-[var(--hm-bg-tertiary)] gap-px">
-          {rows.filter((r) => r.value > 0).map((r) => (
+          {rows.filter((r) => r.value > 0 && !r.overlap).map((r) => (
             <div
               key={r.key}
               className="radar-grow h-full transition-opacity duration-150"
@@ -832,7 +838,9 @@ function DistributionCard({ title, meta, rows, className = "" }: {
             className="flex items-center gap-3 px-3 py-1.5 rounded-lg hover:bg-[var(--hm-bg-secondary)] transition-colors cursor-default"
           >
             <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: r.color }} />
-            <span className="text-[12.5px] text-[var(--hm-text-secondary)] w-24 flex-shrink-0 capitalize truncate">{r.label}</span>
+            <span className="text-[12.5px] text-[var(--hm-text-secondary)] w-24 flex-shrink-0 capitalize truncate" title={r.overlap ? "Overlap — these contacts also count in their own vertical" : undefined}>
+              {r.label}{r.overlap && <span className="ml-1 text-[10px] normal-case text-[var(--hm-text-tertiary)]">↺</span>}
+            </span>
             <div className="flex-1 h-1.5 rounded-full bg-[var(--hm-bg-tertiary)] overflow-hidden">
               <div className="radar-grow h-full rounded-full" style={{ width: `${(r.value / max) * 100}%`, background: r.color }} />
             </div>
@@ -859,15 +867,16 @@ function ContactStatusMatrix({ stats }: { stats: RadarStats }) {
   for (const r of matrix) {
     m[r.vertical] = m[r.vertical] || {};
     m[r.vertical][r.status] = r.n;
-    colTotals[r.status] = (colTotals[r.status] || 0) + r.n;
+    if (r.vertical !== OVERLAY_VERTICAL) colTotals[r.status] = (colTotals[r.status] || 0) + r.n;
   }
   const rowTotal = (v: string) => STATUS_META.reduce((s, st) => s + (m[v]?.[st.key] || 0), 0);
   const grand = Object.values(colTotals).reduce((a, b) => a + b, 0);
 
   const ds: Record<string, DomainStatsRow> = {};
   for (const r of domainStats) ds[r.vertical] = r;
-  const totDomains = domainStats.reduce((s, r) => s + (r.domains || 0), 0);
-  const totContactsWithDomain = domainStats.reduce((s, r) => s + (r.contacts || 0), 0);
+  const ownDomainStats = domainStats.filter((r) => r.vertical !== OVERLAY_VERTICAL);
+  const totDomains = ownDomainStats.reduce((s, r) => s + (r.domains || 0), 0);
+  const totContactsWithDomain = ownDomainStats.reduce((s, r) => s + (r.contacts || 0), 0);
   const grandAvg = totDomains ? (totContactsWithDomain / totDomains).toFixed(1) : "—";
 
   return (
@@ -876,6 +885,7 @@ function ContactStatusMatrix({ stats }: { stats: RadarStats }) {
         <h2 className="text-[13px] font-semibold text-[var(--hm-text)]">Contacts by Vertical &amp; Email Status</h2>
         <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-0.5">
           <span className="font-semibold" style={{ color: "var(--tag-blue-fg)" }}>Verified</span> = rescued from Risky/Unknown via a real Instantly test send that delivered.
+          {" "}Crossborder ↺ = contacts at Crossborder-account domains — they also count in their own vertical, so they&apos;re left out of Total.
         </p>
       </div>
       <div className="overflow-x-auto">
@@ -896,7 +906,7 @@ function ContactStatusMatrix({ stats }: { stats: RadarStats }) {
               const dv = ds[v];
               return (
                 <tr key={v} className="border-b border-[var(--hm-border-light)]">
-                  <td className="px-3 py-2 font-medium"><VerticalBadge v={v} /></td>
+                  <td className="px-3 py-2 font-medium whitespace-nowrap"><VerticalBadge v={v} />{v === OVERLAY_VERTICAL && <span className="ml-1 text-[11px] text-[var(--hm-text-tertiary)]" title="Also counted in their own vertical">↺</span>}</td>
                   {STATUS_META.map((s) => {
                     const n = m[v]?.[s.key] || 0;
                     return <td key={s.key} className={`text-right px-3 py-2 tabular-nums ${n ? "text-[var(--hm-text)]" : "text-[var(--hm-text-tertiary)]"}`}>{fmt(n)}</td>;
@@ -1975,7 +1985,8 @@ function AccountContactsPanel({ account, onClose }: { account: AccountRow; onClo
     fetch("/api/radar/contacts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ accountId: account.id, limit: 200 }),
+      // Crossborder accounts don't own contacts — show everyone at the domain (one row each, any vertical).
+      body: JSON.stringify(account.vertical === OVERLAY_VERTICAL && account.domain ? { matchDomain: account.domain, limit: 200 } : { accountId: account.id, limit: 200 }),
     })
       .then(async (r) => {
         if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Request failed");
@@ -2091,6 +2102,8 @@ interface ContactRow {
   hubspot_lifecycle_stage: string | null;
   hubspot_lead_status: string | null;
   vertical: string | null;
+  /** Every vertical this contact counts under — own + Crossborder overlay. */
+  verticals?: string[] | null;
   account_type: string | null;
   customer: boolean | null;
   industry: string | null;
@@ -2164,7 +2177,18 @@ function ContactsSection() {
         </button>
       ),
     },
-    { key: "vertical", header: "Vertical", render: (r) => <VerticalBadge v={r.vertical} /> },
+    {
+      key: "vertical",
+      header: "Vertical",
+      render: (r) => (
+        <span className="inline-flex items-center gap-1">
+          <VerticalBadge v={r.vertical} />
+          {r.vertical !== OVERLAY_VERTICAL && r.verticals?.includes(OVERLAY_VERTICAL) && (
+            <span title="Their company is also a Crossborder account"><VerticalBadge v={OVERLAY_VERTICAL} /></span>
+          )}
+        </span>
+      ),
+    },
     { key: "account_type", header: "Account Type", render: (r) => <Cell value={r.account_type} /> },
     { key: "customer", header: "Customer", render: (r) => r.customer ? <span className="text-[11px] px-2 py-0.5 rounded-md font-medium bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]">Yes</span> : <span className="text-[var(--hm-text-tertiary)]">—</span> },
     {

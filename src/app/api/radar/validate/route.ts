@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
-import { requireRadarAccess, radarSql, selectFrom, radarFetch, rpc } from "@/lib/radar/supabase";
+import { requireRadarAccess, radarSql, selectFrom, radarFetch, rpc, verticalsFilter } from "@/lib/radar/supabase";
 import { fetchAllPages } from "@/lib/radar/contactExport";
 import { anymailKey, ensureVerifyResultsTable } from "@/lib/radar/emailVerify";
 import { normDomain, normLinkedinUrl, type FindPerson } from "@/lib/radar/emailFind";
@@ -389,7 +389,7 @@ const restFilters = (vertical?: string, domain?: string, statuses?: string[]): s
     else if (wantsUnvalidated) qs += `&email_status=is.null`;
     else qs += `&email_status=in.(${rest.map((s) => encodeURIComponent(s)).join(",")})`;
   }
-  if (vertical) qs += `&vertical=eq.${encodeURIComponent(vertical)}`;
+  if (vertical) qs += verticalsFilter(vertical);
   if (domain) qs += `&domain=ilike.${encodeURIComponent(domain.toLowerCase().trim())}`; // ilike w/o wildcards = case-insensitive exact match
   qs += `&hubspot_excluded=not.is.true`;
   return qs;
@@ -693,7 +693,7 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
   // ── COUNT BLANK-EMAIL CONTACTS ──
   if (action === "count_blank_emails") {
     const { vertical } = reqBody as { vertical?: string };
-    const base = `select=id&and=(or(email.is.null,email.eq.),or(hubspot_excluded.is.null,hubspot_excluded.eq.false))${vertical ? `&vertical=eq.${encodeURIComponent(vertical)}` : ""}`;
+    const base = `select=id&and=(or(email.is.null,email.eq.),or(hubspot_excluded.is.null,hubspot_excluded.eq.false))${vertical ? verticalsFilter(vertical) : ""}`;
     const [{ total: count }, { total: fetchable }] = await Promise.all([
       selectFrom("contacts", base),
       selectFrom("contacts", `${base}&domain=not.is.null&domain=neq.`),
@@ -706,7 +706,7 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
     const { vertical, limit = 500 } = reqBody as { vertical?: string; limit?: number };
     const want = Number(limit) || 500;
     let q = `select=first_name,last_name,domain&domain=not.is.null&and=(or(email.is.null,email.eq.),or(hubspot_excluded.is.null,hubspot_excluded.eq.false))&order=id.asc&limit=${want * 2}`;
-    if (vertical) q += `&vertical=eq.${encodeURIComponent(vertical)}`;
+    if (vertical) q += verticalsFilter(vertical);
     const { rows } = await selectFrom("contacts", q);
     const filtered = (rows as { domain?: string }[]).filter((c) => (c.domain || "").trim()).slice(0, want);
     return { status: 200, body: { people: filtered, count: filtered.length } };
