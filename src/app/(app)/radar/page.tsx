@@ -7437,13 +7437,211 @@ interface VerifySummary { total: number; valid: number; risky: number; invalid: 
 
 const fmtChecked = (v: string) => { try { return new Date(v).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" }); } catch { return v; } };
 
+const JOB_TONE: Record<string, string> = {
+  green: "text-[var(--tag-green-fg)]", yellow: "text-[var(--tag-yellow-fg)]", red: "text-[var(--tag-red-fg)]", gray: "text-[var(--hm-text-tertiary)]",
+};
+
+/** Live job card shared by Find Emails / Risky Email Validation — same look as Check LinkedIn's
+ * pipeline panel: status, progress bar, what's happening right now, running counts. */
+function JobProgressPanel({ title, status, processed, total, noun, liveText, doneText, error, stats, stopping, onStop, exporting, canExport, onExport }: {
+  title: string; status: string; processed: number; total: number; noun: string;
+  liveText: string; doneText: string; error?: string | null;
+  stats: Array<{ label: string; value: number; tone: keyof typeof JOB_TONE }>;
+  stopping: boolean; onStop: () => void;
+  exporting: boolean; canExport: boolean; onExport: () => void;
+}) {
+  const running = status === "running";
+  const pct = total ? Math.min(100, Math.round((processed / total) * 100)) : 0;
+  const pill = running ? { text: "Running", cls: "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]" }
+    : status === "done" ? { text: "Done", cls: "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]" }
+    : status === "error" ? { text: "Error", cls: "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)]" }
+    : { text: "Stopped", cls: "bg-[var(--tag-gray-bg)] text-[var(--tag-gray-fg)]" };
+  return (
+    <div className="radar-enter rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] overflow-hidden">
+      <div className="px-4 py-3 flex items-center gap-3 flex-wrap border-b border-[var(--hm-border)]">
+        <span className={`inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-md font-medium ${pill.cls}`}>
+          <span className={`radar-dot ${running ? "radar-live-dot" : ""}`} />{pill.text}
+        </span>
+        <span className="text-[13px] font-semibold text-[var(--hm-text)] truncate max-w-[40%]" title={title}>{title}</span>
+        <span className="text-[12.5px] text-[var(--hm-text-secondary)] tabular-nums">
+          {fmt(processed)} <span className="text-[var(--hm-text-tertiary)]">/ {fmt(total)} {noun}</span>
+        </span>
+        <span className="text-[12px] text-[var(--hm-text-tertiary)] tabular-nums">{pct}%</span>
+        <span className="ml-auto flex items-center gap-1.5">
+          {running && (
+            <button onClick={onStop} disabled={stopping} className="radar-btn-ghost text-[var(--tag-red-fg)]!">{stopping ? "Stopping…" : "Stop"}</button>
+          )}
+          <button onClick={onExport} disabled={exporting || !canExport} className="hm-btn hm-btn-secondary" style={{ height: 30, padding: "0 12px", fontSize: 12 }}>
+            {exporting ? <><span className="w-3 h-3 border-2 border-current/30 border-t-current rounded-full animate-spin" />Preparing…</> : "Export results CSV"}
+          </button>
+        </span>
+      </div>
+      <div className="px-4 pt-3">
+        <div className="h-1.5 rounded-full bg-[var(--hm-bg-tertiary)] overflow-hidden">
+          <div className="h-full rounded-full transition-[width] duration-700 ease-out"
+            style={{ width: `${Math.max(running ? 2 : 0, pct)}%`, background: status === "error" ? "var(--tag-red-fg)" : status === "done" ? "var(--tag-green-fg)" : "var(--hm-primary)" }} />
+        </div>
+        <p className="mt-2 text-[12.5px] flex items-center gap-2 min-h-[20px]">
+          {running ? (
+            <><span className="w-3 h-3 border-2 border-[var(--hm-border)] border-t-[var(--hm-text)] rounded-full animate-spin flex-shrink-0" /><span className="text-[var(--hm-text)] truncate">{liveText}</span></>
+          ) : status === "error" ? (
+            <span className="text-[var(--tag-red-fg)]">Stopped on error{error ? `: ${error}` : ""}</span>
+          ) : status === "cancelled" ? (
+            <span className="text-[var(--hm-text-tertiary)]">Stopped by you — everything checked so far is saved.</span>
+          ) : (
+            <span className="text-[var(--tag-green-fg)]">{doneText}</span>
+          )}
+        </p>
+      </div>
+      <div className={`grid gap-2 p-4 pt-3 grid-cols-2 ${stats.length >= 4 ? "sm:grid-cols-4" : "sm:grid-cols-3"}`}>
+        {stats.map((st) => (
+          <div key={st.label} className="rounded-lg border border-[var(--hm-border)] px-3 py-2.5">
+            <p className="text-[11px] font-medium text-[var(--hm-text-secondary)]">{st.label}</p>
+            <p className={`mt-1 text-[18px] font-semibold tabular-nums leading-tight ${JOB_TONE[st.tone]}`}>{fmt(st.value)}</p>
+          </div>
+        ))}
+      </div>
+      {running && <p className="px-4 pb-3 -mt-1 text-[11px] text-[var(--hm-text-tertiary)]">Safe to close this tab — it keeps running in the background and picks back up here.</p>}
+    </div>
+  );
+}
+
+/** "Recent jobs" list shared by Find Emails / Risky Email Validation — same behaviour as Check
+ * LinkedIn's: click to open (with an Opening… state), hover for Stop / Retry / Delete. */
+function RecentJobsList({ jobs, tag, activeId, openingId, retryingId, loading, emptyText, badge, onRefresh, onOpen, onStop, onRetry, onDelete }: {
+  jobs: VerifyJobRow[]; tag: string; activeId: number | null; openingId: number | null; retryingId: number | null;
+  loading: boolean; emptyText: string; badge: (j: VerifyJobRow) => string;
+  onRefresh: () => void; onOpen: (id: number) => void;
+  onStop: (id: number) => void; onRetry: (id: number) => void; onDelete: (id: number) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <p className="text-[11px] font-medium text-[var(--hm-text-tertiary)] uppercase tracking-wide">Recent jobs</p>
+        <button onClick={onRefresh} disabled={loading} className="text-[11px] text-[var(--hm-link)] disabled:opacity-60 inline-flex items-center gap-1.5">
+          {loading && <span className="w-2.5 h-2.5 border-2 border-current/30 border-t-current rounded-full animate-spin" />}
+          {loading ? "Refreshing…" : "Refresh"}
+        </button>
+      </div>
+      {!jobs.length ? (
+        loading ? (
+          <div className="space-y-1">{[0, 1, 2].map((i) => <span key={i} className="radar-skel" style={{ height: 30, borderRadius: 6 }} />)}</div>
+        ) : <p className="text-[11.5px] text-[var(--hm-text-tertiary)]">{emptyText}</p>
+      ) : (
+        <div className="space-y-1 max-h-[200px] overflow-y-auto">
+          {jobs.map((j) => (
+            <div key={j.id} className="relative group/item">
+              <button
+                onClick={() => onOpen(j.id)}
+                disabled={openingId === j.id}
+                className={`w-full flex items-center justify-between text-left text-[11.5px] px-2 py-1.5 rounded-md border ${activeId === j.id ? "border-[var(--hm-primary)]" : "border-[var(--hm-border)]"} bg-[var(--hm-surface)] hover:border-[var(--hm-primary)]/40 disabled:opacity-70 disabled:cursor-wait ${j.status === "running" || j.status === "error" ? "pr-14" : "pr-7"}`}
+              >
+                <span className="truncate text-[var(--hm-text-secondary)] flex items-center gap-1.5">
+                  <span className="shrink-0 px-1 py-0.5 rounded text-[9.5px] font-medium bg-[var(--hm-bg-tertiary)] text-[var(--hm-text-tertiary)] uppercase">{tag}</span>
+                  #{j.id} {j.label || "Untitled"}{j.filters?.vertical ? ` · ${j.filters.vertical}` : ""}
+                </span>
+                {openingId === j.id ? (
+                  <span className="shrink-0 ml-2 flex items-center gap-1.5 text-[10px] text-[var(--hm-text-tertiary)]">
+                    <span className="w-3 h-3 border-2 border-current/30 border-t-current rounded-full animate-spin" />Opening…
+                  </span>
+                ) : (
+                  <span className={`shrink-0 ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium ${j.status === "done" ? "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]" : j.status === "error" ? "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)]" : j.status === "cancelled" ? "bg-[var(--hm-border)] text-[var(--hm-text-tertiary)]" : "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]"}`}>
+                    {j.status === "running" && <span className="radar-dot radar-live-dot mr-1 align-middle" />}
+                    {badge(j)}
+                  </span>
+                )}
+              </button>
+              {j.status === "running" && (
+                <button onClick={(e) => { e.stopPropagation(); onStop(j.id); }} title="Stop this job"
+                  className="absolute top-1.5 right-7 opacity-0 group-hover/item:opacity-100 transition-opacity w-5 h-5 rounded flex items-center justify-center text-[var(--hm-text-tertiary)] hover:bg-[var(--tag-red-bg)] hover:text-[var(--tag-red-fg)]">■</button>
+              )}
+              {j.status === "error" && (
+                <button onClick={(e) => { e.stopPropagation(); onRetry(j.id); }} disabled={retryingId === j.id} title={j.error ? `Retry — last error: ${j.error}` : "Retry — resume from where it left off"}
+                  className="absolute top-1.5 right-7 opacity-0 group-hover/item:opacity-100 transition-opacity px-1.5 h-5 rounded flex items-center justify-center text-[10px] text-[var(--hm-text-secondary)] hover:bg-[var(--hm-bg-tertiary)] hover:text-[var(--hm-text)] disabled:opacity-50">
+                  {retryingId === j.id ? "…" : "Retry"}
+                </button>
+              )}
+              {j.status !== "running" && (
+                <button onClick={(e) => { e.stopPropagation(); onDelete(j.id); }} title="Delete from history"
+                  className="absolute top-1.5 right-1.5 opacity-0 group-hover/item:opacity-100 transition-opacity w-5 h-5 rounded flex items-center justify-center text-[var(--hm-text-tertiary)] hover:bg-[var(--tag-red-bg)] hover:text-[var(--tag-red-fg)]">✕</button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Job-history plumbing shared by both panels: open (with Opening… state), live polling, stop, retry, delete. */
+function useAnymailJobs(provider: "anymail" | "anymail_find", refresh: (id: number) => Promise<string | undefined>, post: (b: Record<string, unknown>) => Promise<Record<string, unknown>>, reset: () => void, setError: (m: string) => void) {
+  const [jobs, setJobs] = useState<VerifyJobRow[]>([]);
+  const [jobsLoading, setJobsLoading] = useState(true);
+  const [jobId, setJobId] = useState<number | null>(null);
+  const [openingId, setOpeningId] = useState<number | null>(null);
+  const [stopping, setStopping] = useState(false);
+  const [retryingId, setRetryingId] = useState<number | null>(null);
+  const [pollKey, setPollKey] = useState(0);
+
+  const loadJobs = async () => {
+    setJobsLoading(true);
+    try {
+      const d = await post({ action: "list_retest_jobs" });
+      setJobs(((d.jobs || []) as VerifyJobRow[]).filter((j) => j.filters?.provider === provider));
+    } catch { /* list is best-effort */ }
+    setJobsLoading(false);
+  };
+  useEffect(() => { loadJobs(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+
+  // Polls the open job while it's running (it keeps going in the background even if this page is closed).
+  useEffect(() => {
+    if (jobId == null) return;
+    let stop = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const tick = async () => {
+      const st = await refresh(jobId);
+      if (stop) return;
+      setOpeningId((o) => (o === jobId ? null : o));
+      setJobs((prev) => prev.map((j) => (j.id === jobId && st && st !== j.status ? { ...j, status: st } : j)));
+      if (st === "running") timer = setTimeout(tick, document.visibilityState === "hidden" ? 15000 : 4000);
+      else loadJobs();
+    };
+    tick();
+    return () => { stop = true; if (timer) clearTimeout(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobId, pollKey]);
+
+  const open = (id: number) => { reset(); setOpeningId(id); setJobId(id); setPollKey((k) => k + 1); };
+  const stopJob = async (id: number) => {
+    if (!confirm("Stop this job? Everything checked so far stays saved, but no more will run.")) return;
+    setStopping(true);
+    try { await post({ action: "retest_job_cancel", jobId: id }); await loadJobs(); if (id === jobId) setPollKey((k) => k + 1); }
+    catch (e) { setError((e as Error).message); } finally { setStopping(false); }
+  };
+  const retryJob = async (id: number) => {
+    setRetryingId(id);
+    try { await post({ action: "retest_job_retry", jobId: id }); await loadJobs(); if (id === jobId) setPollKey((k) => k + 1); }
+    catch (e) { setError((e as Error).message); } finally { setRetryingId(null); }
+  };
+  const deleteJob = async (id: number) => {
+    if (!confirm("Delete this job from history? Contacts it already saved to Radar stay as they are.")) return;
+    try {
+      await post({ action: "retest_job_delete", jobId: id });
+      setJobs((prev) => prev.filter((j) => j.id !== id));
+      if (id === jobId) { setJobId(null); reset(); }
+    } catch (e) { setError((e as Error).message); }
+  };
+  /** After starting a new job: open it straight away and refresh the list. */
+  const started = (id: number | null) => { reset(); if (id != null) { setOpeningId(id); setJobId(id); setPollKey((k) => k + 1); } loadJobs(); };
+
+  return { jobs, jobsLoading, jobId, openingId, stopping, retryingId, loadJobs, open, stopJob, retryJob, deleteJob, started };
+}
+
 function EmailValidationPanel() {
   const [label, setLabel] = useState("");
   const [vertical, setVertical] = useState("");
   const [stage, setStage] = useState<string | null>(null);
   const [error, setError] = useState("");
-  const [jobs, setJobs] = useState<VerifyJobRow[]>([]);
-  const [jobId, setJobId] = useState<number | null>(null);
   const [job, setJob] = useState<VerifyJobRow | null>(null);
   const [summary, setSummary] = useState<VerifySummary | null>(null);
   const [rows, setRows] = useState<VerifyResultRow[]>([]);
@@ -7455,13 +7653,6 @@ function EmailValidationPanel() {
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(d.error || "Request failed");
     return d;
-  };
-
-  const loadJobs = async () => {
-    try {
-      const d = await post({ action: "list_retest_jobs" });
-      setJobs(((d.jobs || []) as VerifyJobRow[]).filter((j) => j.filters?.provider === "anymail"));
-    } catch { /* list is best-effort */ }
   };
 
   const refresh = async (id: number): Promise<string | undefined> => {
@@ -7477,25 +7668,8 @@ function EmailValidationPanel() {
       return (st.job as VerifyJobRow).status;
     } catch (e) { setError((e as Error).message); return "error"; }
   };
-
-  useEffect(() => { loadJobs(); }, []);
-  // Poll while the selected job is still running (it keeps going in the background even if this page is closed).
-  // Polling stops by itself once the job is no longer running (it used to poll forever, every 5s).
-  useEffect(() => {
-    if (jobId == null) return;
-    let stop = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const tick = async () => {
-      const st = await refresh(jobId);
-      if (stop) return;
-      if (st === "running" && document.visibilityState !== "hidden") timer = setTimeout(tick, 5000);
-      else if (st === "running") timer = setTimeout(tick, 15000); // tab in background: slow right down
-    };
-    tick();
-    return () => { stop = true; if (timer) clearTimeout(timer); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [jobId]);
-  useEffect(() => { if (job && job.status !== "running") loadJobs(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [job?.status]);
+  const J = useAnymailJobs("anymail", refresh, post, () => { setSummary(null); setRows([]); setJob(null); }, setError);
+  const jobId = J.jobId;
 
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -7514,9 +7688,7 @@ function EmailValidationPanel() {
       setStage(`Starting verification of ${emails.length.toLocaleString()} email(s)…`);
       const d = await post({ action: "retest_job_start", emails, label: label.trim(), vertical, provider: "anymail" });
       setLabel("");
-      setSummary(null); setRows([]); setJob(null);
-      setJobId(d.jobId ?? null);
-      loadJobs();
+      J.started(d.jobId ?? null);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -7547,9 +7719,7 @@ function EmailValidationPanel() {
     } catch (e) { setError((e as Error).message); } finally { setExporting(false); }
   };
 
-  const done = job?.status === "done";
-  const totalEmails = job?.filters?.email_count ?? (done ? 0 : (summary?.total ?? 0));
-  const pct = totalEmails ? Math.min(100, Math.round(((job?.processed || 0) / totalEmails) * 100)) : 0;
+  const totalEmails = job?.filters?.email_count ?? summary?.total ?? 0;
   const tone = (st: string) =>
     st === "valid" ? "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]"
     : st === "risky" ? "bg-[var(--tag-yellow-bg)] text-[var(--tag-yellow-fg)]"
@@ -7598,42 +7768,49 @@ function EmailValidationPanel() {
           Runs in the background — you can close this page and come back to it under Recent jobs.
         </p>
 
+        {jobId != null && !job && (
+          <div className="rounded-xl border border-[var(--hm-border)] px-4 py-5 flex items-center gap-2 text-[12.5px] text-[var(--hm-text-secondary)]">
+            <span className="w-3.5 h-3.5 border-2 border-[var(--hm-border)] border-t-[var(--hm-text)] rounded-full animate-spin" />Opening job #{jobId}…
+          </div>
+        )}
         {job && (
-          <div className="rounded-lg border border-[var(--hm-border)] p-4 space-y-3">
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div className="min-w-0">
-                <p className="text-[13px] font-semibold text-[var(--hm-text)] truncate">#{job.id} {job.label}</p>
-                <p className="text-[11.5px] text-[var(--hm-text-tertiary)]">
-                  {done ? "Done — results below are saved to Radar." : job.status === "error" ? "Stopped with an error." : job.status === "cancelled" ? "Stopped." : "Verifying — saving each result to Radar as it goes…"}
-                </p>
-              </div>
-              <button onClick={exportAll} disabled={exporting || !summary?.total} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 14px", fontSize: 12 }}>
-                {exporting ? "Preparing…" : "Export results CSV"}
-              </button>
-            </div>
-            {job.status === "error" && job.error && <p className="text-[12px] text-[var(--tag-red-fg)]">{job.error}</p>}
-            {!done && job.status !== "error" && totalEmails > 0 && (
-              <div>
-                <div className="h-2 rounded-full bg-[var(--hm-bg-tertiary)] overflow-hidden">
-                  <div className="h-full rounded-full bg-[var(--hm-primary)] transition-all" style={{ width: `${pct}%` }} />
-                </div>
-                <p className="text-[11.5px] text-[var(--hm-text-tertiary)] mt-1 tabular-nums">{(job.processed || 0).toLocaleString()} / {totalEmails.toLocaleString()} emails</p>
-              </div>
-            )}
-            {summary && (
-              <>
-                <div className="flex flex-wrap gap-2">
-                  {([["Valid", summary.valid, "valid"], ["Risky", summary.risky, "risky"], ["Invalid", summary.invalid, "invalid"], ["Couldn't verify", summary.failed, "error"]] as [string, number, string][]).map(([l, n, k]) => (
-                    <span key={l} className={`text-[12px] px-2.5 py-1 rounded-md font-medium tabular-nums ${tone(k)}`}>{l}: {n.toLocaleString()}</span>
-                  ))}
-                </div>
-                <p className="text-[12px] text-[var(--hm-text-secondary)]">
-                  Saved to Radar: <strong>{summary.existing.toLocaleString()}</strong> existing contact(s) updated · <strong>{summary.added.toLocaleString()}</strong> new contact(s) added
-                  {summary.total - summary.existing - summary.added > 0 ? ` · ${(summary.total - summary.existing - summary.added).toLocaleString()} not saved (couldn't verify)` : ""}.
-                </p>
-              </>
-            )}
-            {rows.length > 0 && (
+          <JobProgressPanel
+            title={`#${job.id} ${job.label}`}
+            status={job.status}
+            processed={job.processed || 0}
+            total={totalEmails}
+            noun="emails"
+            liveText="Verifying with Anymail Finder — each result is saved to Radar as it comes in"
+            doneText="Finished — every result is saved to Radar."
+            error={job.error}
+            stats={[
+              { label: "Valid", value: summary?.valid ?? 0, tone: "green" },
+              { label: "Risky", value: summary?.risky ?? 0, tone: "yellow" },
+              { label: "Invalid", value: summary?.invalid ?? 0, tone: "red" },
+              { label: "Couldn't verify", value: summary?.failed ?? 0, tone: "gray" },
+            ]}
+            stopping={J.stopping}
+            onStop={() => J.stopJob(job.id)}
+            exporting={exporting}
+            canExport={!!summary?.total}
+            onExport={exportAll}
+          />
+        )}
+
+        <RecentJobsList
+          jobs={J.jobs} tag="EV" activeId={jobId} openingId={J.openingId} retryingId={J.retryingId} loading={J.jobsLoading}
+          emptyText="No jobs yet — upload a CSV above."
+          badge={(j) => (j.status === "done" ? `done — ${j.processed}` : j.status === "error" ? "error" : j.status === "cancelled" ? `stopped — ${j.processed}` : `running — ${j.processed}`)}
+          onRefresh={J.loadJobs} onOpen={J.open} onStop={J.stopJob} onRetry={J.retryJob} onDelete={J.deleteJob}
+        />
+
+        {job && summary && (
+          <p className="text-[12px] text-[var(--hm-text-secondary)]">
+            Saved to Radar: <strong>{summary.existing.toLocaleString()}</strong> existing contact(s) updated · <strong>{summary.added.toLocaleString()}</strong> new contact(s) added
+            {summary.total - summary.existing - summary.added > 0 ? ` · ${(summary.total - summary.existing - summary.added).toLocaleString()} not saved (couldn't verify)` : ""}.
+          </p>
+        )}
+        {job && rows.length > 0 && (
               <div className="rounded-lg border border-[var(--hm-border)] overflow-hidden">
                 <div className="max-h-80 overflow-auto">
                   <table className="w-full border-collapse text-[12.5px]">
@@ -7662,33 +7839,6 @@ function EmailValidationPanel() {
                 )}
               </div>
             )}
-          </div>
-        )}
-
-        <div>
-          <div className="flex items-center justify-between mb-1">
-            <p className="text-[11px] font-medium text-[var(--hm-text-tertiary)] uppercase tracking-wide">Recent jobs</p>
-            <button onClick={loadJobs} className="text-[11px] text-[var(--hm-link)]">Refresh</button>
-          </div>
-          {!jobs.length ? (
-            <p className="text-[11.5px] text-[var(--hm-text-tertiary)]">No jobs yet — upload a CSV above.</p>
-          ) : (
-            <div className="space-y-1 max-h-[200px] overflow-y-auto">
-              {jobs.map((j) => (
-                <button
-                  key={j.id}
-                  onClick={() => { setSummary(null); setRows([]); setJob(null); setJobId(j.id); }}
-                  className={`w-full flex items-center justify-between text-left text-[12px] px-2.5 py-1.5 rounded-md border ${jobId === j.id ? "border-[var(--hm-primary)] bg-[var(--hm-bg-tertiary)]" : "border-[var(--hm-border)] bg-[var(--hm-surface)] hover:border-[var(--hm-primary)]/40"}`}
-                >
-                  <span className="truncate text-[var(--hm-text-secondary)]">#{j.id} {j.label || "Untitled"}{j.filters?.vertical ? ` · ${j.filters.vertical}` : ""}</span>
-                  <span className={`shrink-0 ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium ${j.status === "done" ? "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]" : j.status === "error" ? "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)]" : j.status === "cancelled" ? "bg-[var(--hm-border)] text-[var(--hm-text-tertiary)]" : "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]"}`}>
-                    {j.status === "done" ? `done — ${j.processed}` : j.status === "error" ? "error" : j.status === "cancelled" ? `stopped — ${j.processed}` : `running — ${j.processed}`}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
       </div>
     </>
   );
@@ -7710,8 +7860,6 @@ function EmailFinderPanel() {
   const [draft, setDraft] = useState({ first: "", last: "", domain: "" });
   const [stage, setStage] = useState<string | null>(null);
   const [error, setError] = useState("");
-  const [jobs, setJobs] = useState<VerifyJobRow[]>([]);
-  const [jobId, setJobId] = useState<number | null>(null);
   const [job, setJob] = useState<VerifyJobRow | null>(null);
   const [summary, setSummary] = useState<FindSummary | null>(null);
   const [rows, setRows] = useState<FindResultRow[]>([]);
@@ -7723,12 +7871,6 @@ function EmailFinderPanel() {
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(d.error || "Request failed");
     return d;
-  };
-  const loadJobs = async () => {
-    try {
-      const d = await post({ action: "list_retest_jobs" });
-      setJobs(((d.jobs || []) as VerifyJobRow[]).filter((j) => j.filters?.provider === "anymail_find"));
-    } catch { /* best-effort */ }
   };
   const refresh = async (id: number): Promise<string | undefined> => {
     try {
@@ -7743,21 +7885,8 @@ function EmailFinderPanel() {
       return (st.job as VerifyJobRow).status;
     } catch (e) { setError((e as Error).message); return "error"; }
   };
-  useEffect(() => { loadJobs(); }, []);
-  useEffect(() => {
-    if (jobId == null) return;
-    let stop = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const tick = async () => {
-      const st = await refresh(jobId);
-      if (stop) return;
-      if (st === "running") timer = setTimeout(tick, document.visibilityState === "hidden" ? 15000 : 5000);
-    };
-    tick();
-    return () => { stop = true; if (timer) clearTimeout(timer); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [jobId]);
-  useEffect(() => { if (job && job.status !== "running") loadJobs(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [job?.status]);
+  const J = useAnymailJobs("anymail_find", refresh, post, () => { setSummary(null); setRows([]); setJob(null); }, setError);
+  const jobId = J.jobId;
 
   const addPerson = () => {
     const first = draft.first.trim(), last = draft.last.trim(), domain = draft.domain.trim();
@@ -7798,9 +7927,7 @@ function EmailFinderPanel() {
       setStage(`Starting ${people.length.toLocaleString()} lookup(s)…`);
       const d = await post({ action: "retest_job_start", provider: "anymail_find", label: label.trim(), vertical, people });
       setPeople([]); setLabel("");
-      setSummary(null); setRows([]); setJob(null);
-      setJobId(d.jobId ?? null);
-      loadJobs();
+      J.started(d.jobId ?? null);
     } catch (e) { setError((e as Error).message); } finally { setStage(null); }
   };
 
@@ -7824,9 +7951,7 @@ function EmailFinderPanel() {
     } catch (e) { setError((e as Error).message); } finally { setExporting(false); }
   };
 
-  const done = job?.status === "done";
   const total = job?.filters?.email_count ?? (summary?.total ?? 0);
-  const pct = total ? Math.min(100, Math.round(((job?.processed || 0) / total) * 100)) : 0;
   const tone = (st: string) =>
     st === "valid" ? "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]"
     : st === "not_found" || st === "blacklisted" ? "bg-[var(--tag-gray-bg)] text-[var(--tag-gray-fg)]"
@@ -7904,39 +8029,47 @@ function EmailFinderPanel() {
           Each lookup takes ~5–15 seconds; it runs in the background, so you can close this page and come back under Recent jobs.
         </p>
 
+        {jobId != null && !job && (
+          <div className="rounded-xl border border-[var(--hm-border)] px-4 py-5 flex items-center gap-2 text-[12.5px] text-[var(--hm-text-secondary)]">
+            <span className="w-3.5 h-3.5 border-2 border-[var(--hm-border)] border-t-[var(--hm-text)] rounded-full animate-spin" />Opening job #{jobId}…
+          </div>
+        )}
         {job && (
-          <div className="rounded-lg border border-[var(--hm-border)] p-4 space-y-3">
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div className="min-w-0">
-                <p className="text-[13px] font-semibold text-[var(--hm-text)] truncate">#{job.id} {job.label}</p>
-                <p className="text-[11.5px] text-[var(--hm-text-tertiary)]">
-                  {done ? "Done — found emails are saved to Radar." : job.status === "error" ? "Stopped with an error." : job.status === "cancelled" ? "Stopped." : "Searching — saving each found email to Radar as it goes…"}
-                </p>
-              </div>
-              <button onClick={exportAll} disabled={exporting || !summary?.total} className="hm-btn hm-btn-secondary" style={{ height: 32, padding: "0 14px", fontSize: 12 }}>
-                {exporting ? "Preparing…" : "Export results CSV"}
-              </button>
-            </div>
-            {job.status === "error" && job.error && <p className="text-[12px] text-[var(--tag-red-fg)]">{job.error}</p>}
-            {!done && job.status !== "error" && total > 0 && (
-              <div>
-                <div className="h-2 rounded-full bg-[var(--hm-bg-tertiary)] overflow-hidden"><div className="h-full rounded-full bg-[var(--hm-primary)] transition-all" style={{ width: `${pct}%` }} /></div>
-                <p className="text-[11.5px] text-[var(--hm-text-tertiary)] mt-1 tabular-nums">{(job.processed || 0).toLocaleString()} / {total.toLocaleString()} people</p>
-              </div>
-            )}
-            {summary && (
-              <>
-                <div className="flex flex-wrap gap-2">
-                  {([["Found", summary.found, "valid"], ["Not found", summary.notFound, "not_found"], ["Couldn't search", summary.failed, "error"]] as [string, number, string][]).map(([l, n, k]) => (
-                    <span key={l} className={`text-[12px] px-2.5 py-1 rounded-md font-medium tabular-nums ${tone(k)}`}>{l}: {n.toLocaleString()}</span>
-                  ))}
-                </div>
-                <p className="text-[12px] text-[var(--hm-text-secondary)]">
-                  Saved to Radar: <strong>{summary.added.toLocaleString()}</strong> new contact(s) added · <strong>{summary.updated.toLocaleString()}</strong> existing contact(s) updated.
-                </p>
-              </>
-            )}
-            {rows.length > 0 && (
+          <JobProgressPanel
+            title={`#${job.id} ${job.label}`}
+            status={job.status}
+            processed={job.processed || 0}
+            total={total}
+            noun="people"
+            liveText="Searching Anymail Finder (~5–15s per person) — found emails are saved to Radar as they come in"
+            doneText="Finished — every found email is saved to Radar."
+            error={job.error}
+            stats={[
+              { label: "Found", value: summary?.found ?? 0, tone: "green" },
+              { label: "Not found", value: summary?.notFound ?? 0, tone: "gray" },
+              { label: "Couldn't search", value: summary?.failed ?? 0, tone: "red" },
+            ]}
+            stopping={J.stopping}
+            onStop={() => J.stopJob(job.id)}
+            exporting={exporting}
+            canExport={!!summary?.total}
+            onExport={exportAll}
+          />
+        )}
+
+        <RecentJobsList
+          jobs={J.jobs} tag="FE" activeId={jobId} openingId={J.openingId} retryingId={J.retryingId} loading={J.jobsLoading}
+          emptyText="No jobs yet."
+          badge={(j) => (j.status === "done" ? `done — ${j.validated} found` : j.status === "error" ? "error" : j.status === "cancelled" ? `stopped — ${j.processed}` : `running — ${j.processed}`)}
+          onRefresh={J.loadJobs} onOpen={J.open} onStop={J.stopJob} onRetry={J.retryJob} onDelete={J.deleteJob}
+        />
+
+        {job && summary && (
+          <p className="text-[12px] text-[var(--hm-text-secondary)]">
+            Saved to Radar: <strong>{summary.added.toLocaleString()}</strong> new contact(s) added · <strong>{summary.updated.toLocaleString()}</strong> existing contact(s) updated.
+          </p>
+        )}
+        {job && rows.length > 0 && (
               <div className="rounded-lg border border-[var(--hm-border)] overflow-hidden">
                 <div className="max-h-80 overflow-auto">
                   <table className="w-full border-collapse text-[12.5px]">
@@ -7965,30 +8098,6 @@ function EmailFinderPanel() {
                 )}
               </div>
             )}
-          </div>
-        )}
-
-        <div>
-          <div className="flex items-center justify-between mb-1">
-            <p className="text-[11px] font-medium text-[var(--hm-text-tertiary)] uppercase tracking-wide">Recent jobs</p>
-            <button onClick={loadJobs} className="text-[11px] text-[var(--hm-link)]">Refresh</button>
-          </div>
-          {!jobs.length ? (
-            <p className="text-[11.5px] text-[var(--hm-text-tertiary)]">No jobs yet.</p>
-          ) : (
-            <div className="space-y-1 max-h-[200px] overflow-y-auto">
-              {jobs.map((j) => (
-                <button key={j.id} onClick={() => { setSummary(null); setRows([]); setJob(null); setJobId(j.id); }}
-                  className={`w-full flex items-center justify-between text-left text-[12px] px-2.5 py-1.5 rounded-md border ${jobId === j.id ? "border-[var(--hm-primary)] bg-[var(--hm-bg-tertiary)]" : "border-[var(--hm-border)] bg-[var(--hm-surface)] hover:border-[var(--hm-primary)]/40"}`}>
-                  <span className="truncate text-[var(--hm-text-secondary)]">#{j.id} {j.label || "Untitled"}{j.filters?.vertical ? ` · ${j.filters.vertical}` : ""}</span>
-                  <span className={`shrink-0 ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium ${j.status === "done" ? "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]" : j.status === "error" ? "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)]" : j.status === "cancelled" ? "bg-[var(--hm-border)] text-[var(--hm-text-tertiary)]" : "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]"}`}>
-                    {j.status === "done" ? `done — ${j.validated} found` : j.status === "error" ? "error" : j.status === "cancelled" ? `stopped — ${j.processed}` : `running — ${j.processed}`}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
       </div>
     </>
   );

@@ -1463,6 +1463,23 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
   }
 
   // ── DELETE JOB ──
+  // Removes a finished/stopped Email Validation or Find Emails job from history (with its per-row
+  // results). Never a running one — stop it first. Radar contacts it already saved are untouched.
+  if (action === "retest_job_delete") {
+    const { jobId } = reqBody as { jobId?: number };
+    if (!jobId) return { status: 400, body: { error: "No jobId" } };
+    await ensureRetestJobsTable();
+    const id = Number(jobId);
+    const row = (await radarSql<{ status: string }>(`SELECT status FROM retest_jobs WHERE id = ${id}`))[0];
+    if (!row) return { status: 404, body: { error: "Job not found" } };
+    if (row.status === "running") return { status: 400, body: { error: "Stop the job before deleting it" } };
+    for (const t of ["email_verify_results", "email_find_results"]) {
+      try { await radarSql(`DELETE FROM ${t} WHERE job_id = ${id}`); } catch { /* table may not exist yet */ }
+    }
+    await radarSql(`DELETE FROM retest_jobs WHERE id = ${id}`);
+    return { status: 200, body: { ok: true } };
+  }
+
   if (action === "delete_job") {
     const { jobId } = reqBody as { jobId?: number };
     if (!jobId) return { status: 400, body: { error: "No jobId" } };
@@ -1485,6 +1502,7 @@ const LOGGABLE_VALIDATE_ACTIONS: Record<string, (body: Record<string, unknown>, 
   save: (body, result) => `Saved job ${body.jobId ?? ""} to contacts — ${result?.saved ?? "?"} valid, ${result?.savedInvalid ?? "?"} invalid`.trim(),
   apply_results: (body, result) => `Applied validation results for job ${body.jobId ?? ""} — ${result?.updated ?? "?"} contact(s)`.trim(),
   delete_job: (body) => `Deleted validation job ${body.jobId ?? ""}`.trim(),
+  retest_job_delete: (body) => `Deleted Email Validation / Find Emails job ${body.jobId ?? ""}`.trim(),
 };
 
 // Actions that legitimately run with no hivemind user session — the three cron-driven ones
