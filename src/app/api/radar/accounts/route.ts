@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { selectFrom, requireRadarAccess, updateRow, setMarkedIrrelevant, deleteMarkedIrrelevant, fetchAllIds, firmographicFilters } from "@/lib/radar/supabase";
+
+// Streams can run long for "export all matching" (hundreds of thousands of rows).
+export const maxDuration = 280;
+import { selectFrom, requireRadarAccess, updateRow, setMarkedIrrelevant, deleteMarkedIrrelevant, fetchAllIds, firmographicFilters, inFilter } from "@/lib/radar/supabase";
+import { streamFilteredCsv } from "@/lib/radar/csvStream";
+import { logAccountExport } from "@/lib/radar/accountExport";
 import { logRadarActivity } from "@/lib/radar/activityLog";
 
 const RADAR_ADMIN_ROLES = ["owner", "admin"];
@@ -11,29 +16,28 @@ function buildAccountsFilter(body: Record<string, unknown>, role: string): strin
   const { vertical, industry, subIndustry, accountSize, employeeRange, revenueRange, country, search, includeIrrelevant, accountType, customer,
     state, lifecycleStage, leadStatus, sdrOwner, source, shopify, hasLinkedin, hasDomain } = body as Record<string, string | boolean | undefined>;
   let query = "";
-  const eq = (col: string, v: unknown) => { if (v) query += `&${col}=eq.${encodeURIComponent(String(v))}`; };
   query += firmographicFilters(body);
-  eq("state", state);
-  eq("hubspot_lifecycle_stage", lifecycleStage);
-  eq("hubspot_lead_status", leadStatus);
-  eq("sdr_owner", sdrOwner);
-  eq("source", source);
+  query += inFilter("state", state);
+  query += inFilter("hubspot_lifecycle_stage", lifecycleStage);
+  query += inFilter("hubspot_lead_status", leadStatus);
+  query += inFilter("sdr_owner", sdrOwner);
+  query += inFilter("source", source);
   if (shopify === "true") query += `&shopify=is.true`;
   else if (shopify === "false") query += `&shopify=not.is.true`;
   if (hasLinkedin === "true") query += `&linkedin_url=not.is.null&linkedin_url=neq.`;
   else if (hasLinkedin === "false") query += `&linkedin_url=is.null`;
   if (hasDomain === "true") query += `&domain=not.is.null&domain=neq.`;
   else if (hasDomain === "false") query += `&domain=is.null`;
-  if (vertical) query += `&vertical=eq.${encodeURIComponent(String(vertical))}`;
-  if (accountType) query += `&account_type=eq.${encodeURIComponent(String(accountType))}`;
+  query += inFilter("vertical", vertical);
+  query += inFilter("account_type", accountType);
   if (customer === "true") query += `&customer=eq.true`;
   else if (customer === "false") query += `&customer=eq.false`;
-  if (industry) query += `&industry=eq.${encodeURIComponent(String(industry))}`;
-  if (subIndustry) query += `&sub_industry=eq.${encodeURIComponent(String(subIndustry))}`;
-  if (accountSize) query += `&account_size=eq.${encodeURIComponent(String(accountSize))}`;
-  if (employeeRange) query += `&employee_range=eq.${encodeURIComponent(String(employeeRange))}`;
-  if (revenueRange) query += `&revenue_range=eq.${encodeURIComponent(String(revenueRange))}`;
-  if (country) query += `&country=eq.${encodeURIComponent(String(country))}`;
+  query += inFilter("industry", industry);
+  query += inFilter("sub_industry", subIndustry);
+  query += inFilter("account_size", accountSize);
+  query += inFilter("employee_range", employeeRange);
+  query += inFilter("revenue_range", revenueRange);
+  query += inFilter("country", country);
   if (search) {
     const q = encodeURIComponent(String(search));
     query += `&or=(name.ilike.*${q}*,domain.ilike.*${q}*)`;
@@ -69,6 +73,16 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json().catch(() => ({}));
+
+    // "All N matching selected → Export CSV": every column of every matching row, streamed.
+    if (body.action === "export_csv") {
+      const userId = access.userId;
+      const stream = streamFilteredCsv("accounts", buildAccountsFilter(body, access.role), async (n) => {
+        await logAccountExport(userId, n);
+        await logRadarActivity(userId, "export_accounts", `Exported ${n} account(s) to CSV (all matching filters, all columns)`);
+      });
+      return new NextResponse(stream, { headers: { "Content-Type": "text/csv; charset=utf-8", "Cache-Control": "no-store" } });
+    }
 
     if (body.action === "mark_irrelevant") {
       const actor = await getActorEmail(access.userId);

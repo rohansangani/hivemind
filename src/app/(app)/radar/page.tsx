@@ -1026,6 +1026,34 @@ interface RadarOptions {
   revenueBucketCounts?: Record<string, number>;
 }
 const INDUSTRY_SEP = " › ";
+/** Multi-select filter values travel as one string joined with this (server splits it — see multiValues()). */
+const MULTI_SEP = "||";
+const splitMulti = (v: string) => (v ? v.split(MULTI_SEP).filter(Boolean) : []);
+
+/** POSTs to an endpoint that streams a CSV back, reporting rows received as it goes, then downloads it. */
+async function streamDownloadCsv(endpoint: string, body: Record<string, unknown>, filename: string, onProgress: (rows: number) => void) {
+  const r = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!r.ok || !r.body) {
+    const d = await r.json().catch(() => ({}));
+    throw new Error(d.error || `Export failed (${r.status})`);
+  }
+  const reader = r.body.getReader();
+  const parts: BlobPart[] = [];
+  let lines = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    parts.push(value);
+    for (let i = 0; i < value.length; i++) if (value[i] === 10) lines++;
+    onProgress(Math.max(0, lines - 1));
+  }
+  const url = URL.createObjectURL(new Blob(parts, { type: "text/csv" }));
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+  return Math.max(0, lines - 1);
+}
 
 /* ── Filters: categorised panel + searchable pickers ───────────────────── */
 
@@ -1106,9 +1134,11 @@ const CONTACT_FILTER_GROUPS: FilterGroup[] = [
 const firstNum = (v: string) => { const m = v.replace(/,/g, "").match(/\d+(\.\d+)?/); return m ? parseFloat(m[0]) * (/b/i.test(v.slice(0, 12)) ? 1e9 : /m/i.test(v.slice(0, 12)) ? 1e6 : /k/i.test(v.slice(0, 12)) ? 1e3 : 1) : Number.MAX_VALUE; };
 
 /** Dropdown with a search box — long lists (industries, countries, owners) stay usable. */
-function SearchSelect({ value, onChange, options, labels, numeric, label, counts, grouped }: {
+function SearchSelect({ value, onChange, options, labels, numeric, label, counts, grouped, multi }: {
   value: string; onChange: (v: string) => void; options: string[]; labels?: Record<string, string>; numeric?: boolean; label: string;
   counts?: Record<string, number>; grouped?: boolean;
+  /** Pick several values (stored joined with MULTI_SEP); the list stays open while you tick. */
+  multi?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -1128,7 +1158,14 @@ function SearchSelect({ value, onChange, options, labels, numeric, label, counts
   const matches = needle ? sorted.filter((o) => text(o).toLowerCase().includes(needle)) : sorted;
   const shown = matches.slice(0, 300);
   const items = ["", ...shown];
-  const pick = (v: string) => { onChange(v); setOpen(false); setQ(""); };
+  const selected = multi ? splitMulti(value) : value ? [value] : [];
+  const isOn = (o: string) => (o ? selected.includes(o) : selected.length === 0);
+  const pick = (v: string) => {
+    if (!multi || !v) { onChange(v); if (!multi || !v) { setOpen(false); setQ(""); } return; }
+    const next = selected.includes(v) ? selected.filter((x) => x !== v) : [...selected, v];
+    onChange(next.join(MULTI_SEP));
+  };
+  const shortText = (o: string) => (grouped && o.includes(INDUSTRY_SEP) ? o.split(INDUSTRY_SEP)[1] : text(o));
   const onKey = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowDown") { e.preventDefault(); setHi((i) => Math.min(items.length - 1, i + 1)); }
     else if (e.key === "ArrowUp") { e.preventDefault(); setHi((i) => Math.max(0, i - 1)); }
@@ -1144,7 +1181,9 @@ function SearchSelect({ value, onChange, options, labels, numeric, label, counts
         className={`w-full h-8 px-2.5 rounded-lg border text-left text-[12.5px] flex items-center gap-2 transition-colors ${value ? "border-[var(--hm-primary)] bg-[var(--hm-bg-tertiary)] text-[var(--hm-text)] font-medium" : "border-[var(--hm-border)] bg-[var(--hm-surface)] text-[var(--hm-text-tertiary)] hover:border-[var(--hm-text-tertiary)]"}`}
         aria-label={label}
       >
-        <span className="truncate flex-1">{value ? text(value) : "Any"}</span>
+        <span className="truncate flex-1">
+          {!selected.length ? "Any" : selected.length === 1 ? text(selected[0]) : <>{shortText(selected[0])} <span className="text-[var(--hm-text-tertiary)] font-normal">+{selected.length - 1} more</span></>}
+        </span>
         {value ? (
           <span role="button" tabIndex={-1} onClick={(e) => { e.stopPropagation(); onChange(""); }} className="text-[var(--hm-text-tertiary)] hover:text-[var(--hm-text)] px-0.5" aria-label={`Clear ${label}`}>×</span>
         ) : (
@@ -1160,8 +1199,14 @@ function SearchSelect({ value, onChange, options, labels, numeric, label, counts
           <div ref={listRef} className="max-h-[260px] overflow-y-auto py-1">
             {items.map((o, i) => (
               <button key={o || "__any"} data-i={i} type="button" onMouseEnter={() => setHi(i)} onClick={() => pick(o)}
-                className={`w-full text-left px-3 py-1.5 text-[12.5px] flex items-center gap-2 ${i === hi ? "bg-[var(--hm-bg-tertiary)]" : ""} ${grouped && o && !isSub(o) && i > 1 && !needle ? "mt-1 border-t border-[var(--hm-border-light)] pt-2" : ""} ${o === value ? "font-semibold text-[var(--hm-text)]" : !o ? "text-[var(--hm-text-tertiary)] italic" : grouped && !isSub(o) ? "font-semibold text-[var(--hm-text)]" : "text-[var(--hm-text-secondary)]"}`}>
-                <span className="w-3 flex-shrink-0 text-[var(--hm-text)]">{o === value ? "✓" : ""}</span>
+                className={`w-full text-left px-3 py-1.5 text-[12.5px] flex items-center gap-2 ${i === hi ? "bg-[var(--hm-bg-tertiary)]" : ""} ${grouped && o && !isSub(o) && i > 1 && !needle ? "mt-1 border-t border-[var(--hm-border-light)] pt-2" : ""} ${o && isOn(o) ? "font-semibold text-[var(--hm-text)]" : !o ? "text-[var(--hm-text-tertiary)] italic" : grouped && !isSub(o) ? "font-semibold text-[var(--hm-text)]" : "text-[var(--hm-text-secondary)]"}`}>
+                {multi && o ? (
+                  <span className={`w-3.5 h-3.5 flex-shrink-0 rounded border flex items-center justify-center ${isOn(o) ? "bg-[var(--hm-primary)] border-[var(--hm-primary)] text-[var(--hm-bg)]" : "border-[var(--hm-text-tertiary)]"}`}>
+                    {isOn(o) && <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>}
+                  </span>
+                ) : (
+                  <span className="w-3.5 flex-shrink-0 text-[var(--hm-text)]">{isOn(o) ? "✓" : ""}</span>
+                )}
                 {isSub(o) ? (
                   <span className={`truncate ${needle ? "" : "pl-3"}`}>
                     {o.split(INDUSTRY_SEP)[1]}
@@ -1176,6 +1221,15 @@ function SearchSelect({ value, onChange, options, labels, numeric, label, counts
             {!matches.length && <p className="px-3 py-3 text-[12px] text-[var(--hm-text-tertiary)]">No match for “{q}”.</p>}
             {matches.length > shown.length && <p className="px-3 py-2 text-[11px] text-[var(--hm-text-tertiary)]">Showing 300 of {matches.length.toLocaleString()} — type to narrow.</p>}
           </div>
+          {multi && (
+            <div className="flex items-center justify-between px-3 py-2 border-t border-[var(--hm-border)] bg-[var(--hm-bg-secondary)]">
+              <span className="text-[11.5px] text-[var(--hm-text-tertiary)]">{selected.length ? `${selected.length} selected` : "Tick one or more"}</span>
+              <span className="flex items-center gap-1">
+                {selected.length > 0 && <button type="button" onClick={() => onChange("")} className="radar-btn-ghost" style={{ height: 24 }}>Clear</button>}
+                <button type="button" onClick={() => { setOpen(false); setQ(""); }} className="hm-btn hm-btn-primary" style={{ height: 24, padding: "0 10px", fontSize: 11.5 }}>Done</button>
+              </span>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -1210,7 +1264,7 @@ function YesNoToggle({ value, onChange }: { value: string; onChange: (v: string)
 function filterValueLabel(f: FilterField | undefined, v: string): string {
   if (!f) return v;
   if (f.kind === "yesno") return YES_NO[v as "true" | "false"] || v;
-  return f.labels?.[v] || v;
+  return splitMulti(v).map((x) => f.labels?.[x] || x).join(", ");
 }
 
 /** A compact labelled filter dropdown; hidden when it has no options. */
@@ -1494,7 +1548,7 @@ function DataTable<T extends { id: string }>({
                   <div key={f.key}>
                     <p className="text-[11.5px] text-[var(--hm-text-tertiary)] mb-1">{f.label}</p>
                     {f.kind === "select" ? (
-                      <SearchSelect label={f.label} value={filters[f.key] || ""} onChange={(v) => setFilter(f.key, v)} options={f.options?.(options) || []} labels={f.labels} numeric={f.numeric} counts={f.counts?.(options)} grouped={f.grouped} />
+                      <SearchSelect multi label={f.label} value={filters[f.key] || ""} onChange={(v) => setFilter(f.key, v)} options={f.options?.(options) || []} labels={f.labels} numeric={f.numeric} counts={f.counts?.(options)} grouped={f.grouped} />
                     ) : f.kind === "text" ? (
                       <TextFilter label={f.label} value={filters[f.key] || ""} onChange={(v) => setFilter(f.key, v)} placeholder={f.placeholder} />
                     ) : (
@@ -2105,6 +2159,19 @@ function AccountsSection() {
   const [refreshToken, setRefreshToken] = useState(0);
   const [showIrrelevant, setShowIrrelevant] = useState(false);
   const { markIrrelevant, unmark, deleteForever } = useIrrelevantActions("accounts", () => setRefreshToken((t) => t + 1));
+  // "All N matching selected" → stream every column of every matching row from the server.
+  const [exportingAll, setExportingAll] = useState<number | null>(null);
+  const exportAllMatching = async (queryBody: Record<string, unknown>, total: number) => {
+    if (total > 50000 && !confirm(`Export all ${total.toLocaleString()} accounts with every column? This can take a few minutes.`)) return;
+    setExportingAll(0);
+    try {
+      await streamDownloadCsv("/api/radar/accounts", { ...queryBody, action: "export_csv" }, `radar_accounts_all_${today()}.csv`, setExportingAll);
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setExportingAll(null);
+    }
+  };
   const cols: Column<AccountRow>[] = [
     {
       key: "edit",
@@ -2194,7 +2261,17 @@ function AccountsSection() {
           const count = allFiltered ? totalMatching : selected.length;
           return (
             <>
-              {!allFiltered && (
+              {allFiltered ? (
+                <button
+                  onClick={() => exportAllMatching(queryBody, totalMatching)}
+                  disabled={exportingAll !== null}
+                  className="hm-btn hm-btn-primary"
+                  style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}
+                  title="Every column of every matching row"
+                >
+                  {exportingAll !== null ? <><span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />Exporting… {fmt(exportingAll)} / {fmt(totalMatching)}</> : `Export all ${fmt(totalMatching)} (CSV)`}
+                </button>
+              ) : (
                 <button
                   onClick={() => { downloadCSV(selected, `radar_accounts_${today()}.csv`); clearSelection(); }}
                   className="hm-btn hm-btn-primary"
@@ -2434,6 +2511,19 @@ function ContactsSection() {
   const [refreshToken, setRefreshToken] = useState(0);
   const [showIrrelevant, setShowIrrelevant] = useState(false);
   const { markIrrelevant, unmark, deleteForever } = useIrrelevantActions("contacts", () => setRefreshToken((t) => t + 1));
+  // "All N matching selected" → stream every column of every matching row from the server.
+  const [exportingAll, setExportingAll] = useState<number | null>(null);
+  const exportAllMatching = async (queryBody: Record<string, unknown>, total: number) => {
+    if (total > 50000 && !confirm(`Export all ${total.toLocaleString()} contacts with every column? This can take a few minutes.`)) return;
+    setExportingAll(0);
+    try {
+      await streamDownloadCsv("/api/radar/contacts", { ...queryBody, action: "export_csv" }, `radar_contacts_all_${today()}.csv`, setExportingAll);
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setExportingAll(null);
+    }
+  };
   const cols: Column<ContactRow>[] = [
     {
       key: "edit",
@@ -2525,7 +2615,17 @@ function ContactsSection() {
           const count = allFiltered ? totalMatching : selected.length;
           return (
             <>
-              {!allFiltered && (
+              {allFiltered ? (
+                <button
+                  onClick={() => exportAllMatching(queryBody, totalMatching)}
+                  disabled={exportingAll !== null}
+                  className="hm-btn hm-btn-primary"
+                  style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}
+                  title="Every column of every matching row"
+                >
+                  {exportingAll !== null ? <><span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />Exporting… {fmt(exportingAll)} / {fmt(totalMatching)}</> : `Export all ${fmt(totalMatching)} (CSV)`}
+                </button>
+              ) : (
                 <button
                   onClick={() => { downloadCSV(selected, `radar_contacts_${today()}.csv`); clearSelection(); }}
                   className="hm-btn hm-btn-primary"
@@ -2810,11 +2910,11 @@ function ExportSection() {
           </div>
           <div style={{ width: 240 }}>
             <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Industry</label>
-            <SearchSelect label="Industry" value={industry} onChange={setIndustry} options={options?.industryGroups || []} counts={options?.industryGroupCounts} grouped />
+            <SearchSelect multi label="Industry" value={industry} onChange={setIndustry} options={options?.industryGroups || []} counts={options?.industryGroupCounts} grouped />
           </div>
           <div style={{ width: 170 }}>
             <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Employees</label>
-            <SearchSelect label="Employees" value={employeeRange} onChange={setEmployeeRange} options={options?.employeeBuckets || []} counts={options?.employeeBucketCounts} />
+            <SearchSelect multi label="Employees" value={employeeRange} onChange={setEmployeeRange} options={options?.employeeBuckets || []} counts={options?.employeeBucketCounts} />
           </div>
           <FilterSelect label="Country" value={country} onChange={setCountry} options={options?.countries || []} />
           <div className="flex-1 min-w-[180px]">

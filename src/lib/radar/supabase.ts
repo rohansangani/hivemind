@@ -191,16 +191,31 @@ const RADAR_SUPABASE_ACCESS_TOKEN = process.env.RADAR_SUPABASE_ACCESS_TOKEN;
 /** Clean firmographic filters — the generated accounts columns from docs/sql/2026-11-04_firmographics_clean.sql
  * (also on contacts_view). industryGroup is "Category" or "Category › Subcategory". */
 export const INDUSTRY_SEP = " › ";
+/** Filter values may be multi-select: an array, or one string joined with MULTI_SEP. */
+export const MULTI_SEP = "||";
+export function multiValues(v: unknown): string[] {
+  if (Array.isArray(v)) return v.map((x) => String(x).trim()).filter(Boolean);
+  if (v == null || v === "" || typeof v === "boolean") return [];
+  return String(v).split(MULTI_SEP).map((x) => x.trim()).filter(Boolean);
+}
+const pgQuote = (v: string) => encodeURIComponent(`"${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`);
+/** `col = v` for one value, `col IN (…)` for several (values quoted — commas/parens/& are safe). */
+export function inFilter(col: string, v: unknown): string {
+  const vals = multiValues(v);
+  if (!vals.length) return "";
+  return vals.length === 1 ? `&${col}=eq.${encodeURIComponent(vals[0])}` : `&${col}=in.(${vals.map(pgQuote).join(",")})`;
+}
+
 export function firmographicFilters(f: Record<string, unknown>): string {
   let q = "";
-  const g = typeof f.industryGroup === "string" ? f.industryGroup.trim() : "";
-  if (g) {
+  // Industry: each value is a whole category or one "Category › Sub" — OR'd together.
+  const terms = multiValues(f.industryGroup).map((g) => {
     const [cat, sub] = g.split(INDUSTRY_SEP);
-    q += `&industry_category=eq.${encodeURIComponent(cat)}`;
-    if (sub) q += `&industry_subcategory=eq.${encodeURIComponent(sub)}`;
-  }
-  if (typeof f.employeeBucket === "string" && f.employeeBucket) q += `&employee_bucket=eq.${encodeURIComponent(f.employeeBucket)}`;
-  if (typeof f.revenueBucket === "string" && f.revenueBucket) q += `&revenue_bucket=eq.${encodeURIComponent(f.revenueBucket)}`;
+    return sub ? `and(industry_category.eq.${pgQuote(cat)},industry_subcategory.eq.${pgQuote(sub)})` : `industry_category.eq.${pgQuote(cat)}`;
+  });
+  if (terms.length) q += `&or=(${terms.join(",")})`;
+  q += inFilter("employee_bucket", f.employeeBucket);
+  q += inFilter("revenue_bucket", f.revenueBucket);
   return q;
 }
 

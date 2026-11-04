@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verticalsFilter, selectFrom, requireRadarAccess, updateRow, setMarkedIrrelevant, deleteMarkedIrrelevant, fetchAllIds, firmographicFilters } from "@/lib/radar/supabase";
+
+// Streams can run long for "export all matching" (hundreds of thousands of rows).
+export const maxDuration = 280;
+import { verticalsFilter, selectFrom, requireRadarAccess, updateRow, setMarkedIrrelevant, deleteMarkedIrrelevant, fetchAllIds, firmographicFilters, inFilter, multiValues } from "@/lib/radar/supabase";
+import { streamFilteredCsv } from "@/lib/radar/csvStream";
+import { logContactExport } from "@/lib/radar/contactExport";
 import { logRadarActivity } from "@/lib/radar/activityLog";
 
 const RADAR_ADMIN_ROLES = ["owner", "admin"];
@@ -13,36 +18,42 @@ function buildContactsFilter(body: Record<string, unknown>, role: string): strin
   const { vertical, industry, subIndustry, employeeRange, revenueRange, company, title, emailStatus, country, search, hasEmail, accountId, matchDomain, includeIrrelevant, accountType, customer,
     lifecycleStage, leadStatus, sdrOwner, source, hubspotExcluded, hasLinkedin, hasPhone } = body as Record<string, string | boolean | undefined>;
   let query = "";
-  const eq = (col: string, v: unknown) => { if (v) query += `&${col}=eq.${encodeURIComponent(String(v))}`; };
   query += firmographicFilters(body);
-  eq("hubspot_lifecycle_stage", lifecycleStage);
-  eq("hubspot_lead_status", leadStatus);
-  eq("sdr_owner", sdrOwner);
-  eq("source", source);
+  query += inFilter("hubspot_lifecycle_stage", lifecycleStage);
+  query += inFilter("hubspot_lead_status", leadStatus);
+  query += inFilter("sdr_owner", sdrOwner);
+  query += inFilter("source", source);
   if (hubspotExcluded === "true") query += `&hubspot_excluded=is.true`;
   else if (hubspotExcluded === "false") query += `&hubspot_excluded=not.is.true`;
   if (hasLinkedin === "true") query += `&linkedin_url=not.is.null&linkedin_url=neq.`;
   else if (hasLinkedin === "false") query += `&linkedin_url=is.null`;
   if (hasPhone === "true") query += `&phone=not.is.null&phone=neq.`;
   else if (hasPhone === "false") query += `&phone=is.null`;
-  if (hasEmail === "false") query += `&email=is.null`;
+  if (hasEmail === "true") query += `&email=not.is.null&email=neq.`;
+  else if (hasEmail === "false") query += `&email=is.null`;
   if (accountId) query += `&account_id=eq.${encodeURIComponent(String(accountId))}`;
   // Crossborder accounts don't own contacts — their contacts are everyone at the same domain.
   if (matchDomain) query += `&match_domain=eq.${encodeURIComponent(String(matchDomain).toLowerCase().trim())}`;
-  if (vertical) query += verticalsFilter(String(vertical));
-  if (accountType) query += `&account_type=eq.${encodeURIComponent(String(accountType))}`;
+  const verts = multiValues(vertical);
+  if (verts.length) query += verticalsFilter(verts);
+  query += inFilter("account_type", accountType);
   if (customer === "true") query += `&customer=eq.true`;
   else if (customer === "false") query += `&customer=eq.false`;
-  if (industry) query += `&industry=eq.${encodeURIComponent(String(industry))}`;
-  if (subIndustry) query += `&sub_industry=eq.${encodeURIComponent(String(subIndustry))}`;
-  if (employeeRange) query += `&employee_range=eq.${encodeURIComponent(String(employeeRange))}`;
-  if (revenueRange) query += `&revenue_range=eq.${encodeURIComponent(String(revenueRange))}`;
+  query += inFilter("industry", industry);
+  query += inFilter("sub_industry", subIndustry);
+  query += inFilter("employee_range", employeeRange);
+  query += inFilter("revenue_range", revenueRange);
   if (company) query += `&company_name=ilike.*${encodeURIComponent(String(company))}*`;
   if (title) query += `&title=ilike.*${encodeURIComponent(String(title))}*`;
-  if (country) query += `&country=eq.${encodeURIComponent(String(country))}`;
-  if (emailStatus === "unvalidated") query += `&email_status=is.null`;
-  else if (emailStatus) query += `&email_status=eq.${encodeURIComponent(String(emailStatus))}`;
-  if (hasEmail === "true") query += `&email=not.is.null&email=neq.`;
+  query += inFilter("country", country);
+  // Email status: "unvalidated" = NULL; any mix of statuses is OR'd.
+  const st = multiValues(emailStatus);
+  if (st.length) {
+    const named = st.filter((x) => x !== "unvalidated");
+    const inNamed = named.length ? `email_status.in.(${named.map((x) => encodeURIComponent(`"${x}"`)).join(",")})` : "";
+    if (st.includes("unvalidated")) query += named.length ? `&or=(email_status.is.null,${inNamed})` : `&email_status=is.null`;
+    else query += `&${inNamed.replace(".in.", "=in.")}`;
+  }
   if (search) {
     const q = encodeURIComponent(String(search));
     query += `&or=(email.ilike.*${q}*,first_name.ilike.*${q}*,last_name.ilike.*${q}*)`;
@@ -79,6 +90,16 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json().catch(() => ({}));
+
+    // "All N matching selected → Export CSV": every column of every matching row, streamed.
+    if (body.action === "export_csv") {
+      const userId = access.userId;
+      const stream = streamFilteredCsv("contacts_view", buildContactsFilter(body, access.role), async (n) => {
+        await logContactExport(userId, n);
+        await logRadarActivity(userId, "export_contacts", `Exported ${n} contact(s) to CSV (all matching filters, all columns)`);
+      });
+      return new NextResponse(stream, { headers: { "Content-Type": "text/csv; charset=utf-8", "Cache-Control": "no-store" } });
+    }
 
     if (body.action === "mark_irrelevant") {
       const actor = await getActorEmail(access.userId);
