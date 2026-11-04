@@ -51,3 +51,22 @@ No secrets in this file; env var *names* only.
 - Deploy flow: commit on `sushantprod` → `git checkout main && git merge sushantprod --ff-only && git push origin main && git push origin sushantprod` — no confirmation needed. Always `npx tsc --noEmit` + `npx next build` first.
 - UI follows the `hivemind-design` skill (near-black primary, no shadows, tag tokens). Never send test emails to real prospects — only `sushant.mohan@clickpost.ai`.
 - Verify live (query the DB / logs) before claiming a fix works; many "fixes" here needed a second pass once real data scale showed up.
+
+## Check LinkedIn — provider waterfall (2026-11-04)
+
+`lib/radar/checkLinkedin.ts` (profiles) and `checkLinkedinCompany.ts` (companies), run by the
+`linkedin-jobs` route in chunks of 25:
+
+- **Profiles:** Blitz `POST /v2/enrichment/person` → misses to Anymail Finder
+  `POST /v5.1/find-email/linkedin-url` → anything still missing to Apify
+  `harvestapi~linkedin-profile-scraper` (always "Profile details", no email mode; ≤15 per run, runs in parallel).
+- **Companies:** Blitz `POST /v2/enrichment/company` → misses to Apify `harvestapi~linkedin-company`.
+- Each provider's answer is normalised to Apify's item shape, so matching/saving is one code path.
+  Every result row carries `source` (blitz | anymail | apify).
+- Blitz client: `lib/radar/blitz.ts`. `x-api-key: $BLITZ_API_KEY`, paced to 25 request starts/sec
+  per instance, 429/503 retried. A 401/402 skips Blitz for that chunk instead of failing it.
+  With no key set, the waterfall starts at Anymail.
+- An Anymail-found email is saved as `safe to send` (Anymail only returns verified addresses).
+- `LinkedinCheckJob.stage` holds live progress text ("Profiles 26–50 of 300 · Anymail Finder — 4 not on Blitz…").
+  The UI polls it every 2.5s. `start` returns immediately; the tab's `advance` loop or the 5-min cron does the work.
+- Usage log actions: `linkedin_blitz`, `linkedin_anymail`, `linkedin_check` / `linkedin_company` (Apify).
