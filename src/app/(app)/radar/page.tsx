@@ -1322,6 +1322,7 @@ function DataTable<T extends { id: string }>({
     try { if (localStorage.getItem("radar.filtersOpen") === "0") setFiltersOpen(false); } catch {}
   }, []);
   const toggleFiltersOpen = () => setFiltersOpen((o) => { try { localStorage.setItem("radar.filtersOpen", o ? "0" : "1"); } catch {} return !o; });
+  const [filterTab, setFilterTab] = useState(filterGroups[0]?.id || "");
   const fieldByKey: Record<string, FilterField> = Object.fromEntries(filterGroups.flatMap((g) => g.fields).map((f) => [f.key, f]));
 
   // Load filter dropdown options once.
@@ -1445,36 +1446,43 @@ function DataTable<T extends { id: string }>({
             );
           })}
         </div>
-        {filtersOpen && (
-          <div className="radar-enter grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
-            {filterGroups.map((g) => {
-              const n = g.fields.filter((f) => filters[f.key]).length;
-              return (
-                <div key={g.id} className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] p-3">
-                  <div className="flex items-center gap-2 mb-2.5">
-                    <span className="w-6 h-6 rounded-md bg-[var(--hm-surface)] border border-[var(--hm-border)] flex items-center justify-center text-[var(--hm-text-secondary)]"><NavIcon id={g.icon} size={13} /></span>
-                    <p className="text-[11.5px] font-semibold uppercase tracking-[0.06em] text-[var(--hm-text-secondary)]">{g.label}</p>
-                    {n > 0 && <span className="ml-auto text-[10.5px] px-1.5 rounded-full bg-[var(--hm-primary)] text-[var(--hm-bg)] font-semibold">{n}</span>}
+        {filtersOpen && (() => {
+          const group = filterGroups.find((g) => g.id === filterTab) || filterGroups[0];
+          return (
+            <div className="radar-enter rounded-xl border border-[var(--hm-border)] bg-[var(--hm-bg-secondary)]">
+              {/* Category tabs — each shows how many of its filters are active */}
+              <div className="flex gap-0.5 px-1.5 pt-1.5 overflow-x-auto border-b border-[var(--hm-border)]">
+                {filterGroups.map((g) => {
+                  const n = g.fields.filter((f) => filters[f.key]).length;
+                  const on = g.id === group.id;
+                  return (
+                    <button key={g.id} onClick={() => setFilterTab(g.id)}
+                      className={`relative inline-flex items-center gap-1.5 h-8 px-3 rounded-t-lg text-[12.5px] whitespace-nowrap transition-colors ${on ? "bg-[var(--hm-surface)] text-[var(--hm-text)] font-semibold" : "text-[var(--hm-text-secondary)] hover:text-[var(--hm-text)] hover:bg-[var(--hm-bg-tertiary)]"}`}>
+                      <NavIcon id={g.icon} size={13} />
+                      {g.label}
+                      {n > 0 && <span className="min-w-4 h-4 px-1 rounded-full bg-[var(--hm-primary)] text-[var(--hm-bg)] text-[10px] font-semibold flex items-center justify-center">{n}</span>}
+                      {on && <span className="absolute left-2 right-2 bottom-0 h-[2px] rounded-full bg-[var(--hm-primary)]" />}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="grid gap-x-3 gap-y-2.5 p-3 bg-[var(--hm-surface)] rounded-b-xl" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))" }}>
+                {group.fields.map((f) => (
+                  <div key={f.key}>
+                    <p className="text-[11.5px] text-[var(--hm-text-tertiary)] mb-1">{f.label}</p>
+                    {f.kind === "select" ? (
+                      <SearchSelect label={f.label} value={filters[f.key] || ""} onChange={(v) => setFilter(f.key, v)} options={f.options?.(options) || []} labels={f.labels} numeric={f.numeric} />
+                    ) : f.kind === "text" ? (
+                      <TextFilter label={f.label} value={filters[f.key] || ""} onChange={(v) => setFilter(f.key, v)} placeholder={f.placeholder} />
+                    ) : (
+                      <YesNoToggle value={filters[f.key] || ""} onChange={(v) => setFilter(f.key, v)} />
+                    )}
                   </div>
-                  <div className="space-y-2.5">
-                    {g.fields.map((f) => (
-                      <div key={f.key}>
-                        <p className="text-[11.5px] text-[var(--hm-text-tertiary)] mb-1">{f.label}</p>
-                        {f.kind === "select" ? (
-                          <SearchSelect label={f.label} value={filters[f.key] || ""} onChange={(v) => setFilter(f.key, v)} options={f.options?.(options) || []} labels={f.labels} numeric={f.numeric} />
-                        ) : f.kind === "text" ? (
-                          <TextFilter label={f.label} value={filters[f.key] || ""} onChange={(v) => setFilter(f.key, v)} placeholder={f.placeholder} />
-                        ) : (
-                          <YesNoToggle value={filters[f.key] || ""} onChange={(v) => setFilter(f.key, v)} />
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+                ))}
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Bulk actions bar — shown once something is checked */}
