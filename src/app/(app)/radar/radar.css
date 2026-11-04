@@ -1,0 +1,210 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Radar — enterprise console skin.
+   Scoped to `.radar-ui` so nothing leaks into the rest of HiveMind. Purely
+   presentational: density, hover/press/focus states, sticky grids, motion.
+   Follows the HiveMind rules — neutral chrome, near-black primary, colour only
+   in tags/status/legends, depth from hairlines (no drop shadows).
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.radar-ui {
+  --rd-hover-border: color-mix(in srgb, var(--hm-text-tertiary) 45%, var(--hm-border));
+  --rd-row-hover: color-mix(in srgb, var(--hm-bg-tertiary) 70%, var(--hm-surface));
+  --rd-row-selected: color-mix(in srgb, var(--hm-bg-tertiary) 100%, var(--hm-surface));
+  --rd-focus: color-mix(in srgb, var(--hm-link) 22%, transparent);
+  --rd-ease: cubic-bezier(0.2, 0, 0, 1);
+  font-feature-settings: "cv11", "ss01";
+}
+
+/* ── Canvas & scrollbars ───────────────────────────────────────────────── */
+.radar-ui .radar-canvas { background: var(--hm-bg-secondary); }
+.radar-ui ::-webkit-scrollbar { width: 8px; height: 8px; }
+.radar-ui ::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--hm-text-tertiary) 35%, transparent);
+  border-radius: 8px; border: 2px solid transparent; background-clip: padding-box;
+}
+.radar-ui ::-webkit-scrollbar-thumb:hover { background-color: color-mix(in srgb, var(--hm-text-tertiary) 65%, transparent); }
+
+/* ── Section enter motion ──────────────────────────────────────────────── */
+@keyframes radarIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes radarFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes radarSlideIn { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes radarPop { from { opacity: 0; transform: translateY(-6px) scale(0.985); } to { opacity: 1; transform: none; } }
+@keyframes radarShimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
+@keyframes radarPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@keyframes radarGrow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+.radar-ui .radar-enter { animation: radarIn 260ms var(--rd-ease) both; }
+.radar-ui .radar-grow { transform-origin: left center; animation: radarGrow 700ms var(--rd-ease) both; }
+.radar-ui .radar-live-dot { animation: radarPulse 1.6s ease-in-out infinite; }
+
+/* ── Cards ─────────────────────────────────────────────────────────────── */
+.radar-ui .radar-card {
+  background: var(--hm-surface);
+  border: 1px solid var(--hm-border);
+  border-radius: 12px;
+  transition: border-color 180ms var(--rd-ease), background-color 180ms var(--rd-ease);
+}
+.radar-ui .radar-card:hover { border-color: var(--rd-hover-border); }
+.radar-ui .radar-card > .border-b:first-child { border-top-left-radius: 12px; border-top-right-radius: 12px; }
+
+/* KPI tiles */
+.radar-ui .radar-kpi { position: relative; overflow: hidden; }
+.radar-ui .radar-kpi .radar-kpi-icon { transition: background-color 180ms var(--rd-ease), color 180ms var(--rd-ease); }
+.radar-ui .radar-kpi:hover .radar-kpi-icon { background: var(--hm-primary); color: var(--hm-bg); }
+.radar-ui .radar-kpi:hover .radar-kpi-icon svg { stroke: currentColor; }
+
+/* ── Buttons ───────────────────────────────────────────────────────────── */
+.radar-ui .hm-btn {
+  height: 32px; padding: 0 12px; font-size: 12.5px; font-weight: 500; letter-spacing: -0.005em;
+  transition: background-color 150ms var(--rd-ease), border-color 150ms var(--rd-ease),
+              color 150ms var(--rd-ease), transform 90ms var(--rd-ease), opacity 150ms ease;
+  user-select: none;
+}
+.radar-ui .hm-btn:active:not(:disabled) { transform: scale(0.97); }
+.radar-ui .hm-btn:focus-visible,
+.radar-ui button:focus-visible,
+.radar-ui a:focus-visible {
+  outline: none; box-shadow: 0 0 0 3px var(--rd-focus); border-radius: 8px;
+}
+.radar-ui .hm-btn-primary:hover { background: var(--hm-primary-hover); }
+.radar-ui .hm-btn-secondary { color: var(--hm-text); }
+.radar-ui .hm-btn-secondary:hover { background: var(--hm-bg-tertiary); border-color: var(--rd-hover-border); }
+.radar-ui .hm-btn:disabled { opacity: 0.45; }
+.radar-ui .radar-btn-ghost {
+  display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px;
+  border-radius: 7px; font-size: 12px; color: var(--hm-text-secondary); background: transparent;
+  border: 1px solid transparent;
+}
+.radar-ui .radar-btn-ghost:hover:not(:disabled) { background: var(--hm-bg-tertiary); color: var(--hm-text); }
+.radar-ui .radar-btn-ghost:disabled { opacity: 0.4; cursor: not-allowed; }
+.radar-ui .radar-btn-danger { background: var(--tag-red-bg); color: var(--tag-red-fg); border: 1px solid transparent; }
+.radar-ui .radar-btn-danger:hover { border-color: var(--tag-red-fg); }
+
+/* ── Form controls (denser, enterprise) ────────────────────────────────── */
+.radar-ui input[type="text"],
+.radar-ui input[type="email"],
+.radar-ui input[type="number"],
+.radar-ui input[type="url"],
+.radar-ui input[type="search"],
+.radar-ui input:not([type]),
+.radar-ui select {
+  height: 34px; font-size: 13px; border-radius: 8px; background-color: var(--hm-surface);
+  transition: border-color 150ms var(--rd-ease), box-shadow 150ms var(--rd-ease), background-color 150ms var(--rd-ease);
+}
+.radar-ui textarea { font-size: 13px; border-radius: 8px; background-color: var(--hm-surface); }
+.radar-ui input:hover:not(:focus):not(:disabled),
+.radar-ui select:hover:not(:focus):not(:disabled),
+.radar-ui textarea:hover:not(:focus):not(:disabled) { border-color: var(--rd-hover-border); }
+.radar-ui input:focus,
+.radar-ui select:focus,
+.radar-ui textarea:focus { border-color: var(--hm-link); box-shadow: 0 0 0 3px var(--rd-focus); }
+.radar-ui input[type="checkbox"],
+.radar-ui input[type="radio"] { accent-color: var(--hm-primary); width: 15px; height: 15px; cursor: pointer; }
+.radar-ui label { transition: color 150ms ease; }
+
+/* Search field with leading icon + trailing kbd hint */
+.radar-ui .radar-search { position: relative; }
+.radar-ui .radar-search input { padding-left: 34px !important; padding-right: 44px; height: 36px; background: var(--hm-bg-secondary); border-color: transparent; }
+.radar-ui .radar-search input:hover:not(:focus) { background: var(--hm-bg-tertiary); border-color: transparent; }
+.radar-ui .radar-search input:focus { background: var(--hm-surface); }
+
+/* Filter "pills" — selects that read like chips */
+.radar-ui .radar-filters select {
+  height: 30px; font-size: 12.5px; border-radius: 999px; padding-left: 12px; padding-right: 28px;
+  background-color: var(--hm-surface); background-position: right 8px center; background-size: 14px;
+  color: var(--hm-text-secondary);
+}
+.radar-ui .radar-filters select.radar-filter-on {
+  border-color: var(--hm-primary); color: var(--hm-text); background-color: var(--hm-bg-tertiary); font-weight: 500;
+}
+.radar-ui .radar-chip-toggle {
+  display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 999px;
+  border: 1px solid var(--hm-border); font-size: 12.5px; color: var(--hm-text-secondary); cursor: pointer;
+  background: var(--hm-surface); user-select: none;
+  transition: border-color 150ms var(--rd-ease), background-color 150ms var(--rd-ease), color 150ms var(--rd-ease);
+}
+.radar-ui .radar-chip-toggle:hover { border-color: var(--rd-hover-border); color: var(--hm-text); }
+.radar-ui .radar-chip-toggle.on { border-color: var(--hm-primary); background: var(--hm-bg-tertiary); color: var(--hm-text); font-weight: 500; }
+
+/* ── Tables ────────────────────────────────────────────────────────────── */
+.radar-ui table { font-variant-numeric: tabular-nums; }
+.radar-ui thead th {
+  font-size: 11px !important; font-weight: 600; letter-spacing: 0.04em;
+  color: var(--hm-text-tertiary);
+  background: var(--hm-bg-secondary);
+}
+.radar-ui tbody tr { transition: background-color 120ms var(--rd-ease); }
+.radar-ui tbody tr:hover { background-color: var(--rd-row-hover); }
+.radar-ui tbody tr:hover > td:first-child { box-shadow: inset 2px 0 0 var(--hm-primary); }
+.radar-ui tfoot td { background: var(--hm-bg-secondary); }
+
+/* The main data grid: own scroll box so the header (and the select column) stay pinned. */
+.radar-ui .radar-grid { max-height: calc(100vh - 330px); min-height: 280px; overflow: auto; }
+.radar-ui .radar-grid table { border-collapse: separate; border-spacing: 0; }
+.radar-ui .radar-grid thead th { position: sticky; top: 0; z-index: 2; }
+.radar-ui .radar-grid .radar-sticky-col { position: sticky; left: 0; z-index: 1; background: var(--hm-surface); }
+.radar-ui .radar-grid thead .radar-sticky-col { z-index: 3; background: var(--hm-bg-secondary); }
+.radar-ui .radar-grid tbody tr:hover .radar-sticky-col { background: var(--rd-row-hover); }
+.radar-ui .radar-grid tbody tr.radar-row-selected,
+.radar-ui .radar-grid tbody tr.radar-row-selected .radar-sticky-col { background: var(--rd-row-selected); }
+.radar-ui .radar-grid tbody tr.radar-row-selected > td:first-child { box-shadow: inset 2px 0 0 var(--hm-primary); }
+.radar-ui .radar-grid td { white-space: nowrap; max-width: 340px; overflow: hidden; text-overflow: ellipsis; }
+
+/* Skeleton loading */
+.radar-ui .radar-skel {
+  display: block; height: 10px; border-radius: 6px;
+  background: linear-gradient(90deg, var(--hm-bg-tertiary) 0%, var(--hm-bg-secondary) 50%, var(--hm-bg-tertiary) 100%);
+  background-size: 800px 100%; animation: radarShimmer 1.3s linear infinite;
+}
+
+/* ── Segmented controls (Download | Check DB, etc.) ─────────────────────── */
+.radar-ui .radar-seg { background: var(--hm-bg-tertiary); border: 1px solid var(--hm-border); }
+.radar-ui .radar-seg > button { transition: background-color 150ms var(--rd-ease), color 150ms var(--rd-ease); }
+.radar-ui .radar-seg > button:hover { color: var(--hm-text); }
+.radar-ui .radar-seg > button[class*="bg-[var(--hm-surface)]"] { box-shadow: 0 0 0 1px var(--hm-border); }
+
+/* ── Sidebar nav ───────────────────────────────────────────────────────── */
+.radar-ui .radar-nav-item {
+  position: relative; display: flex; align-items: center; gap: 10px; width: 100%;
+  height: 34px; padding: 0 10px; border-radius: 8px; font-size: 13px; text-align: left;
+  color: var(--hm-text-secondary); border: 1px solid transparent;
+  transition: background-color 140ms var(--rd-ease), color 140ms var(--rd-ease), border-color 140ms var(--rd-ease);
+}
+.radar-ui .radar-nav-item svg { flex-shrink: 0; color: var(--hm-text-tertiary); transition: color 140ms var(--rd-ease), transform 200ms var(--rd-ease); }
+.radar-ui .radar-nav-item:hover { background: var(--hm-bg-tertiary); color: var(--hm-text); }
+.radar-ui .radar-nav-item:hover svg { color: var(--hm-text); transform: scale(1.06); }
+.radar-ui .radar-nav-item.active { background: var(--hm-surface); color: var(--hm-text); font-weight: 600; border-color: var(--hm-border); }
+.radar-ui .radar-nav-item.active svg { color: var(--hm-text); }
+.radar-ui .radar-nav-item.active::before {
+  content: ""; position: absolute; left: -9px; top: 8px; bottom: 8px; width: 3px; border-radius: 3px; background: var(--hm-primary);
+}
+.radar-ui .radar-nav-kbd { margin-left: auto; font-size: 10.5px; color: var(--hm-text-tertiary); opacity: 0; transition: opacity 140ms ease; }
+.radar-ui .radar-nav-item:hover .radar-nav-kbd { opacity: 1; }
+.radar-ui .radar-collapsed .radar-nav-item { justify-content: center; padding: 0; }
+
+/* Mobile tab strip */
+.radar-ui .radar-tab {
+  height: 32px; padding: 0 12px; border-radius: 8px; font-size: 13px; white-space: nowrap;
+  color: var(--hm-text-secondary); display: inline-flex; align-items: center; gap: 6px;
+}
+.radar-ui .radar-tab:hover { background: var(--hm-bg-tertiary); color: var(--hm-text); }
+.radar-ui .radar-tab.active { background: var(--hm-primary); color: var(--hm-bg); font-weight: 500; }
+
+/* Keyboard hint */
+.radar-ui kbd, .radar-kbd {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 4px;
+  font-family: inherit; font-size: 10.5px; font-weight: 500; color: var(--hm-text-tertiary);
+  background: var(--hm-surface); border: 1px solid var(--hm-border); border-bottom-width: 2px; border-radius: 5px;
+}
+
+/* ── Drawers / dialogs ─────────────────────────────────────────────────── */
+.radar-ui [role="dialog"] > .absolute.inset-0 { animation: radarFade 180ms ease both; backdrop-filter: blur(2px); }
+.radar-ui [role="dialog"] > .relative { animation: radarSlideIn 240ms var(--rd-ease) both; border-left: 1px solid var(--hm-border); }
+.radar-ui .radar-palette { animation: radarPop 160ms var(--rd-ease) both; }
+
+/* Status dot used in pills */
+.radar-ui .radar-dot { width: 6px; height: 6px; border-radius: 999px; background: currentColor; display: inline-block; flex-shrink: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .radar-ui *, .radar-ui *::before { animation: none !important; transition: none !important; }
+}

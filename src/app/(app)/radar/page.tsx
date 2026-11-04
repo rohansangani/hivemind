@@ -5,6 +5,7 @@ import { LogoLoader } from "@/components/LogoLoader";
 import { useUser } from "@/lib/UserContext";
 import { hasModuleAccess } from "@/lib/modules";
 import { APIFY_LEADS_FINDER_LOCATIONS } from "@/lib/radar/apifyLocations";
+import "./radar.css";
 
 /**
  * Radar — prospecting module (accounts, contacts, enrichment, email validation).
@@ -57,6 +58,31 @@ export default function RadarPage() {
     setVisited((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
   };
 
+  // Shell-only UI state: collapsible sidebar (remembered per browser) + ⌘K section switcher.
+  const [collapsed, setCollapsed] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  useEffect(() => {
+    // Read after mount (not in the initializer) so SSR and first client render agree.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    try { setCollapsed(localStorage.getItem("radar.sidebarCollapsed") === "1"); } catch {}
+  }, []);
+  const toggleCollapsed = () => {
+    setCollapsed((c) => {
+      try { localStorage.setItem("radar.sidebarCollapsed", c ? "0" : "1"); } catch {}
+      return !c;
+    });
+  };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((o) => !o);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   const modulePermissions = (user?.modulePermissions ?? {}) as Record<string, "none" | "view" | "edit">;
   const canAccess = hasModuleAccess(modulePermissions, "radar", "view");
   const isAdmin = user?.role === "owner" || user?.role === "admin";
@@ -91,40 +117,118 @@ export default function RadarPage() {
     );
   }
 
+  const activeMeta = SECTIONS.find((s) => s.id === active) ?? SECTIONS[0];
+  const activeGroup = NAV_GROUPS.find((g) => g.ids.includes(active))?.label ?? "Radar";
+
   return (
-    <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+    <div className="radar-ui flex-1 flex min-w-0 overflow-hidden">
 
-      {/* ── Header bar ─────────────────────────────────────────────── */}
-      <div className="px-4 md:px-7 py-4 bg-[var(--hm-surface)] border-b border-[var(--hm-border)]" style={{ boxShadow: "var(--hm-shadow-xs)" }}>
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-          <div className="min-w-0">
-            <h1 className="text-[18px] md:text-[22px] font-semibold leading-tight text-[var(--hm-text)]">Radar</h1>
-            <p className="text-[12px] text-[var(--hm-text-tertiary)] mt-0.5">
-              Accounts, contacts &amp; email validation — one prospecting workspace.
+      {/* ── Sidebar (desktop) ─────────────────────────────────────── */}
+      <aside
+        className={`hidden md:flex flex-col flex-shrink-0 border-r border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] transition-[width] duration-200 ${collapsed ? "w-[60px] radar-collapsed" : "w-[224px]"}`}
+      >
+        <div className={`h-[60px] flex items-center gap-2.5 border-b border-[var(--hm-border)] ${collapsed ? "justify-center px-0" : "px-4"}`}>
+          <RadarMark />
+          {!collapsed && (
+            <div className="min-w-0">
+              <p className="text-[14px] font-semibold leading-tight text-[var(--hm-text)] tracking-[-0.01em]">Radar</p>
+              <p className="text-[11px] text-[var(--hm-text-tertiary)] leading-tight">Prospecting workspace</p>
+            </div>
+          )}
+        </div>
+
+        <div className={collapsed ? "px-2 pt-3" : "px-3 pt-3"}>
+          <button
+            onClick={() => setPaletteOpen(true)}
+            title="Jump to… (⌘K)"
+            className={`w-full h-8 flex items-center gap-2 rounded-lg border border-[var(--hm-border)] bg-[var(--hm-surface)] text-[12.5px] text-[var(--hm-text-tertiary)] hover:text-[var(--hm-text)] hover:border-[var(--hm-text-tertiary)] ${collapsed ? "justify-center px-0" : "px-2.5"}`}
+          >
+            <NavIcon id="search" />
+            {!collapsed && <><span>Jump to…</span><span className="ml-auto flex gap-0.5"><kbd>⌘</kbd><kbd>K</kbd></span></>}
+          </button>
+        </div>
+
+        <nav className={`flex-1 overflow-y-auto pb-3 ${collapsed ? "px-2" : "px-3"}`}>
+          {NAV_GROUPS.map((g) => {
+            const items = visibleSections.filter((s) => g.ids.includes(s.id));
+            if (!items.length) return null;
+            return (
+              <div key={g.label} className="mt-4">
+                {!collapsed && (
+                  <p className="px-2.5 mb-1 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--hm-text-tertiary)]">{g.label}</p>
+                )}
+                <div className="space-y-0.5">
+                  {items.map((s) => (
+                    <button
+                      key={s.id}
+                      onClick={() => goTo(s.id)}
+                      title={collapsed ? s.label : s.blurb}
+                      className={`radar-nav-item ${active === s.id ? "active" : ""}`}
+                    >
+                      <NavIcon id={s.id} />
+                      {!collapsed && <span className="truncate">{s.label}</span>}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </nav>
+
+        <div className={`border-t border-[var(--hm-border)] py-2 ${collapsed ? "px-2" : "px-3"}`}>
+          <button
+            onClick={toggleCollapsed}
+            className="radar-nav-item"
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            <NavIcon id={collapsed ? "expand" : "collapse"} />
+            {!collapsed && <span>Collapse</span>}
+          </button>
+        </div>
+      </aside>
+
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* ── Top bar ─────────────────────────────────────────────── */}
+        <header className="flex-shrink-0 bg-[var(--hm-surface)] border-b border-[var(--hm-border)]">
+          <div className="px-4 md:px-7 min-h-[60px] py-2.5 flex items-center justify-between gap-4">
+            <div className="min-w-0 flex items-center gap-3">
+              <div className="w-9 h-9 rounded-[10px] border border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] flex items-center justify-center flex-shrink-0 text-[var(--hm-text)]">
+                <NavIcon id={active} size={17} />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 text-[11.5px] text-[var(--hm-text-tertiary)] leading-tight">
+                  <span>Radar</span>
+                  <svg width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                  <span>{activeGroup}</span>
+                </div>
+                <h1 className="text-[17px] font-semibold leading-tight text-[var(--hm-text)] tracking-[-0.015em] truncate">{activeMeta.label}</h1>
+              </div>
+            </div>
+            <p className="hidden lg:block flex-1 min-w-0 text-[12.5px] text-[var(--hm-text-tertiary)] truncate text-right" title={activeMeta.blurb}>
+              {activeMeta.blurb}
             </p>
-          </div>
-        </div>
-
-        {/* ── Section tabs ───────────────────────────────────────── */}
-        <div className="flex gap-0.5 p-1 rounded-xl bg-[var(--hm-bg-tertiary)] w-fit max-w-full overflow-x-auto">
-          {visibleSections.map((s) => (
             <button
-              key={s.id}
-              onClick={() => goTo(s.id)}
-              className={`px-3.5 py-1.5 text-[13px] rounded-lg whitespace-nowrap transition-colors ${
-                active === s.id
-                  ? "bg-[var(--hm-surface)] text-[var(--hm-text)] font-medium shadow-[var(--hm-shadow-sm)]"
-                  : "text-[var(--hm-text-secondary)] hover:text-[var(--hm-text)]"
-              }`}
+              onClick={() => setPaletteOpen(true)}
+              className="md:hidden hm-btn hm-btn-secondary flex-shrink-0"
+              aria-label="Jump to section"
             >
-              {s.label}
+              <NavIcon id="search" />
             </button>
-          ))}
-        </div>
-      </div>
+          </div>
+
+          {/* ── Mobile tab strip ─────────────────────────────────── */}
+          <div className="md:hidden flex gap-1 px-3 pb-2.5 overflow-x-auto">
+            {visibleSections.map((s) => (
+              <button key={s.id} onClick={() => goTo(s.id)} className={`radar-tab ${active === s.id ? "active" : ""}`}>
+                <NavIcon id={s.id} size={14} />
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </header>
 
       {/* ── Section body (scrollable, full width) ─────────────────── */}
-      <div className="flex-1 overflow-auto px-4 md:px-7 py-6">
+      <div className="radar-canvas flex-1 overflow-auto px-4 md:px-7 py-6">
 
         {/* ── Section body ─────────────────────────────────────────
             Every section visited this session stays mounted (hidden via CSS when not active)
@@ -132,7 +236,7 @@ export default function RadarPage() {
             Upload in flight survives switching tabs and back. Unvisited tabs still aren't
             mounted at all, so this adds no upfront cost for tabs the user never opens. */}
         {SECTIONS.filter((s) => visited.has(s.id)).map((s) => (
-          <div key={s.id} style={{ display: active === s.id ? "block" : "none" }}>
+          <div key={s.id} className={active === s.id ? "radar-enter" : undefined} style={{ display: active === s.id ? "block" : "none" }}>
             {s.id === "dashboard" ? <RadarDashboard />
               : s.id === "accounts" ? <AccountsSection />
               : s.id === "contacts" ? <ContactsSection />
@@ -145,7 +249,7 @@ export default function RadarPage() {
               : s.id === "logs" ? <RadarActivityLogSection />
               : s.id === "apikeys" ? <RadarApiKeysSection />
               : (
-                <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
+                <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] radar-card">
                   <div className="px-5 py-4 border-b border-[var(--hm-border)]">
                     <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">{s.label}</h2>
                     <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">{s.blurb}</p>
@@ -167,6 +271,138 @@ export default function RadarPage() {
           </div>
         ))}
 
+      </div>
+      </div>
+
+      {paletteOpen && (
+        <CommandPalette
+          sections={visibleSections}
+          active={active}
+          onPick={(id) => { goTo(id); setPaletteOpen(false); }}
+          onClose={() => setPaletteOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ── Shell chrome: nav groups, icons, command palette ──────────────────── */
+
+const NAV_GROUPS: Array<{ label: string; ids: SectionId[] }> = [
+  { label: "Overview",  ids: ["dashboard"] },
+  { label: "Database",  ids: ["accounts", "contacts", "upload"] },
+  { label: "Prospect",  ids: ["icp", "enrich", "validate"] },
+  { label: "Outbound",  ids: ["export", "capacity"] },
+  { label: "Admin",     ids: ["logs", "apikeys"] },
+];
+
+const NAV_ICON_PATHS: Record<string, React.ReactNode> = {
+  dashboard: <><rect x="3" y="3" width="7" height="9" rx="1.5" /><rect x="14" y="3" width="7" height="5" rx="1.5" /><rect x="14" y="12" width="7" height="9" rx="1.5" /><rect x="3" y="16" width="7" height="5" rx="1.5" /></>,
+  accounts: <><path d="M4 21V5a2 2 0 012-2h8a2 2 0 012 2v16" /><path d="M16 9h2a2 2 0 012 2v10" /><path d="M2 21h20M8 7h4M8 11h4M8 15h4" /></>,
+  contacts: <><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20a6.5 6.5 0 0113 0" /><path d="M16 4.5a3.5 3.5 0 010 7M18.5 20a6.5 6.5 0 00-3-5.5" /></>,
+  upload: <><path d="M12 15V4M7.5 8.5L12 4l4.5 4.5" /><path d="M4 15v3a2 2 0 002 2h12a2 2 0 002-2v-3" /></>,
+  icp: <><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1.2" /></>,
+  enrich: <><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z" /><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z" /></>,
+  validate: <><path d="M12 3l7.5 3v5.5c0 4.6-3.2 8.3-7.5 9.5-4.3-1.2-7.5-4.9-7.5-9.5V6z" /><path d="M8.5 12l2.5 2.5 4.5-5" /></>,
+  export: <><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5" /><path d="M4 15v3a2 2 0 002 2h12a2 2 0 002-2v-3" /></>,
+  capacity: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3.5 7l8.5 6 8.5-6" /></>,
+  logs: <><path d="M8 6h13M8 12h13M8 18h13" /><circle cx="3.5" cy="6" r="1" /><circle cx="3.5" cy="12" r="1" /><circle cx="3.5" cy="18" r="1" /></>,
+  apikeys: <><circle cx="8" cy="15" r="4" /><path d="M10.8 12.2L20 3M16 7l3 3M18 5l2 2" /></>,
+  search: <><circle cx="11" cy="11" r="6.5" /><path d="M16 16l4.5 4.5" /></>,
+  collapse: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16M15.5 10L13.5 12l2 2" /></>,
+  expand: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16M13.5 10l2 2-2 2" /></>,
+};
+
+function NavIcon({ id, size = 16 }: { id: string; size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {NAV_ICON_PATHS[id] ?? NAV_ICON_PATHS.search}
+    </svg>
+  );
+}
+
+/** Radar's mark — concentric sweep in the near-black primary tile. */
+function RadarMark() {
+  return (
+    <div className="w-8 h-8 rounded-[9px] bg-[var(--hm-primary)] flex items-center justify-center flex-shrink-0">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--hm-bg)" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="8.5" opacity="0.45" />
+        <circle cx="12" cy="12" r="4.5" opacity="0.75" />
+        <path d="M12 12L18 6" />
+        <circle cx="12" cy="12" r="1.3" fill="var(--hm-bg)" stroke="none" />
+      </svg>
+    </div>
+  );
+}
+
+/** ⌘K / Ctrl+K quick switcher across the Radar sections the user can see. */
+function CommandPalette({
+  sections, active, onPick, onClose,
+}: {
+  sections: Array<{ id: SectionId; label: string; blurb: string }>;
+  active: SectionId;
+  onPick: (id: SectionId) => void;
+  onClose: () => void;
+}) {
+  const [q, setQ] = useState("");
+  const [idx, setIdx] = useState(0);
+  const needle = q.trim().toLowerCase();
+  const results = needle
+    ? sections.filter((s) => s.label.toLowerCase().includes(needle) || s.blurb.toLowerCase().includes(needle))
+    : sections;
+
+  const onKey = (e: React.KeyboardEvent) => {
+    if (e.key === "Escape") { e.preventDefault(); onClose(); }
+    else if (e.key === "ArrowDown") { e.preventDefault(); setIdx((i) => Math.min(results.length - 1, i + 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setIdx((i) => Math.max(0, i - 1)); }
+    else if (e.key === "Enter" && results[idx]) { e.preventDefault(); onPick(results[idx].id); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[12vh] px-4" onKeyDown={onKey}>
+      <div className="absolute inset-0 bg-black/30" style={{ backdropFilter: "blur(2px)" }} onClick={onClose} />
+      <div className="radar-palette relative w-full max-w-[560px] rounded-2xl border border-[var(--hm-border)] bg-[var(--hm-surface)] overflow-hidden">
+        <div className="flex items-center gap-2.5 px-4 border-b border-[var(--hm-border)] text-[var(--hm-text-tertiary)]">
+          <NavIcon id="search" />
+          <input
+            autoFocus
+            value={q}
+            onChange={(e) => { setQ(e.target.value); setIdx(0); }}
+            placeholder="Jump to a Radar section…"
+            className="flex-1"
+            style={{ border: "none", boxShadow: "none", height: 52, fontSize: 15, padding: 0, background: "transparent" }}
+          />
+          <kbd>esc</kbd>
+        </div>
+        <div className="max-h-[52vh] overflow-y-auto p-2">
+          {results.length === 0 ? (
+            <p className="px-3 py-8 text-center text-[13px] text-[var(--hm-text-tertiary)]">No section matches “{q}”.</p>
+          ) : results.map((s, i) => (
+            <button
+              key={s.id}
+              onMouseEnter={() => setIdx(i)}
+              onClick={() => onPick(s.id)}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left ${i === idx ? "bg-[var(--hm-bg-tertiary)]" : ""}`}
+            >
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${i === idx ? "bg-[var(--hm-primary)] text-[var(--hm-bg)]" : "bg-[var(--hm-bg-secondary)] text-[var(--hm-text-secondary)] border border-[var(--hm-border)]"}`}>
+                <NavIcon id={s.id} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[13.5px] font-medium text-[var(--hm-text)] flex items-center gap-2">
+                  {s.label}
+                  {s.id === active && <span className="text-[10.5px] px-1.5 py-px rounded bg-[var(--hm-bg-tertiary)] text-[var(--hm-text-tertiary)] font-normal">current</span>}
+                </p>
+                <p className="text-[12px] text-[var(--hm-text-tertiary)] truncate">{s.blurb}</p>
+              </div>
+              {i === idx && <kbd>↵</kbd>}
+            </button>
+          ))}
+        </div>
+        <div className="px-4 py-2 border-t border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] flex items-center gap-3 text-[11px] text-[var(--hm-text-tertiary)]">
+          <span className="flex items-center gap-1"><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
+          <span className="flex items-center gap-1"><kbd>↵</kbd> open</span>
+          <span className="flex items-center gap-1"><kbd>esc</kbd> close</span>
+        </div>
       </div>
     </div>
   );
@@ -217,7 +453,7 @@ function RadarActivityLogSection() {
   const maxPage = Math.max(0, Math.ceil(total / ACTIVITY_LOG_PAGE_SIZE) - 1);
 
   return (
-    <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
+    <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] radar-card">
       <div className="px-5 py-4 border-b border-[var(--hm-border)]">
         <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Activity Log</h2>
         <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">
@@ -371,7 +607,7 @@ function MailboxCapacitySection() {
   const totalLimit = (rows || []).reduce((s, r) => s + r.dailyLimit, 0);
 
   return (
-    <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
+    <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] radar-card">
       <div className="px-5 py-4 border-b border-[var(--hm-border)] flex items-center justify-between flex-wrap gap-2">
         <div>
           <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">MRTeam Mailbox Capacity</h2>
@@ -440,8 +676,25 @@ function RadarDashboard() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <LogoLoader size={34} />
+      <div className="space-y-5" aria-busy="true">
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-3.5">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="radar-card px-5 py-4 space-y-3">
+              <span className="radar-skel" style={{ width: 90 }} />
+              <span className="radar-skel" style={{ width: 130, height: 22 }} />
+              <span className="radar-skel" style={{ width: "100%", height: 4 }} />
+            </div>
+          ))}
+        </div>
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-3.5">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="radar-card px-5 py-5 space-y-4">
+              <span className="radar-skel" style={{ width: 140 }} />
+              <span className="radar-skel" style={{ width: "100%", height: 8 }} />
+              {[0, 1, 2, 3].map((j) => <span key={j} className="radar-skel" style={{ width: `${85 - j * 15}%` }} />)}
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
@@ -459,82 +712,134 @@ function RadarDashboard() {
   const v = stats.verticals;
   const acctAssigned = v.B2B + v.D2C + v.US;
   const acctUnassigned = Math.max(0, stats.total_accounts - acctAssigned);
-  const acctMax = Math.max(v.B2B, v.D2C, v.US, acctUnassigned, 1);
 
   const cv = stats.contact_verticals;
   const cvAssigned = cv.B2B + cv.D2C + cv.US;
   const cvUnassigned = Math.max(0, stats.total_contacts - cvAssigned);
-  const cvMax = Math.max(cv.B2B, cv.D2C, cv.US, cvUnassigned, 1);
   const blankV = stats.blank_email_verticals;
+
+  // Display-only rollups of numbers the stats endpoint already returns.
+  const statusTotals: Record<string, number> = {};
+  for (const r of stats.contact_status_matrix) statusTotals[r.status] = (statusTotals[r.status] || 0) + r.n;
+  const deliverable = (statusTotals["safe to send"] || 0) + (statusTotals["verified"] || 0);
+  const withEmail = Math.max(0, stats.total_contacts - stats.blank_email_contacts);
+  const covTotal = stats.account_coverage.reduce((s, r) => s + (r.total || 0), 0);
+  const covWith = stats.account_coverage.reduce((s, r) => s + (r.with_contacts || 0), 0);
+  const pct = (n: number, d: number) => (d ? Math.round((n / d) * 100) : 0);
 
   return (
     <div className="space-y-5">
-      {/* Hero cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-        <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)] px-5 py-4 flex items-center gap-4">
-          <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 bg-[var(--hm-bg-tertiary)]">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--hm-text-secondary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>
-          </div>
-          <div>
-            <p className="text-[24px] font-semibold text-[var(--hm-text)] tabular-nums leading-tight">{fmt(stats.total_accounts)}</p>
-            <p className="text-[12px] text-[var(--hm-text-tertiary)]">Total Accounts</p>
-          </div>
-        </div>
-        <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)] px-5 py-4 flex items-center gap-4">
-          <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 bg-[var(--hm-bg-tertiary)]">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--hm-text-secondary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
-          </div>
-          <div>
-            <p className="text-[24px] font-semibold text-[var(--hm-text)] tabular-nums leading-tight">{fmt(stats.total_contacts)}</p>
-            <p className="text-[12px] text-[var(--hm-text-tertiary)]">Total Contacts</p>
-          </div>
-        </div>
+      {/* KPI strip */}
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3.5">
+        <KpiTile icon="accounts" label="Total accounts" value={fmt(stats.total_accounts)}
+          foot={`${pct(acctAssigned, stats.total_accounts)}% assigned to a vertical`} ratio={acctAssigned / (stats.total_accounts || 1)} />
+        <KpiTile icon="contacts" label="Total contacts" value={fmt(stats.total_contacts)}
+          foot={`${fmt(withEmail)} with an email (${pct(withEmail, stats.total_contacts)}%)`} ratio={withEmail / (stats.total_contacts || 1)} />
+        <KpiTile icon="validate" label="Deliverable emails" value={fmt(deliverable)} tone="var(--tag-green-fg)"
+          foot={`Safe to send + Verified · ${pct(deliverable, withEmail)}% of emails`} ratio={deliverable / (withEmail || 1)} />
+        <KpiTile icon="icp" label="Account coverage" value={`${pct(covWith, covTotal)}%`}
+          foot={`${fmt(covWith)} of ${fmt(covTotal)} accounts have contacts`} ratio={covWith / (covTotal || 1)} />
       </div>
 
-      {/* Vertical breakdowns */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
-        <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
-          <div className="px-5 py-3.5 border-b border-[var(--hm-border)] flex items-center justify-between">
-            <h2 className="text-[13px] font-semibold text-[var(--hm-text)]">Accounts by Vertical</h2>
-            <span className="text-[11px] text-[var(--hm-text-tertiary)]">{fmt(acctAssigned)} assigned</span>
-          </div>
-          <div className="px-5 py-4 space-y-2.5">
-            {([["B2B", v.B2B], ["D2C", v.D2C], ["US", v.US], ["unassigned", acctUnassigned]] as [string, number][]).map(([key, n]) => (
-              <div key={key} className="flex items-center gap-3">
-                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: VERTICAL_COLORS[key] }} />
-                <span className="text-[12px] text-[var(--hm-text-secondary)] w-20 flex-shrink-0 capitalize">{key}</span>
-                <div className="flex-1 h-2 rounded-full bg-[var(--hm-bg-tertiary)] overflow-hidden">
-                  <div className="h-full rounded-full transition-all" style={{ width: `${(n / acctMax) * 100}%`, background: VERTICAL_COLORS[key] }} />
-                </div>
-                <span className="text-[12px] text-[var(--hm-text-secondary)] w-14 text-right tabular-nums">{fmt(n)}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
-          <div className="px-5 py-3.5 border-b border-[var(--hm-border)] flex items-center justify-between">
-            <h2 className="text-[13px] font-semibold text-[var(--hm-text)]">Contacts</h2>
-            <span className="text-[11px] text-[var(--hm-text-tertiary)]">{fmt(cvAssigned)} assigned</span>
-          </div>
-          <div className="px-5 py-4 space-y-2.5">
-            {([["B2B", cv.B2B, blankV.B2B], ["D2C", cv.D2C, blankV.D2C], ["US", cv.US, blankV.US], ["unassigned", cvUnassigned, blankV.unassigned]] as [string, number, number][]).map(([key, n, blank]) => (
-              <div key={key} className="flex items-center gap-3">
-                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: VERTICAL_COLORS[key] }} />
-                <span className="text-[12px] text-[var(--hm-text-secondary)] w-20 flex-shrink-0 capitalize">{key}</span>
-                <div className="flex-1 h-2 rounded-full bg-[var(--hm-bg-tertiary)] overflow-hidden">
-                  <div className="h-full rounded-full transition-all" style={{ width: `${(n / cvMax) * 100}%`, background: VERTICAL_COLORS[key] }} />
-                </div>
-                <span className="text-[12px] text-[var(--hm-text-secondary)] w-14 text-right tabular-nums">{fmt(n)}</span>
-                <span className="text-[10.5px] text-[var(--tag-red-fg)] w-16 text-right flex-shrink-0">{blank ? `${fmt(blank)} blank` : ""}</span>
-              </div>
-            ))}
-          </div>
-        </div>
+      {/* Distribution cards */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-3.5">
+        <DistributionCard
+          title="Accounts by vertical"
+          meta={`${fmt(acctAssigned)} assigned`}
+          rows={([["B2B", v.B2B], ["D2C", v.D2C], ["US", v.US], ["unassigned", acctUnassigned]] as [string, number][])
+            .map(([key, n]) => ({ key, label: key, value: n, color: VERTICAL_COLORS[key] }))}
+        />
+        <DistributionCard
+          title="Contacts by vertical"
+          meta={`${fmt(cvAssigned)} assigned`}
+          rows={([["B2B", cv.B2B, blankV.B2B], ["D2C", cv.D2C, blankV.D2C], ["US", cv.US, blankV.US], ["unassigned", cvUnassigned, blankV.unassigned]] as [string, number, number][])
+            .map(([key, n, blank]) => ({ key, label: key, value: n, color: VERTICAL_COLORS[key], note: blank ? `${fmt(blank)} blank` : "" }))}
+        />
+        <DistributionCard
+          className="lg:col-span-2 2xl:col-span-1"
+          title="Email status mix"
+          meta={`${fmt(Object.values(statusTotals).reduce((a, b) => a + b, 0))} contacts`}
+          rows={STATUS_META.map((s) => ({ key: s.key, label: s.label, value: statusTotals[s.key] || 0, color: s.key === "unvalidated" ? "var(--tag-gray-bg)" : s.color }))}
+        />
       </div>
 
       <ContactStatusMatrix stats={stats} />
       <AccountCoverageTable coverage={stats.account_coverage} />
+    </div>
+  );
+}
+
+/** Headline metric tile — big number, one-line context, thin fill bar. */
+function KpiTile({ icon, label, value, foot, ratio, tone }: {
+  icon: string; label: string; value: string; foot: string; ratio: number; tone?: string;
+}) {
+  const w = Math.max(0, Math.min(1, ratio || 0)) * 100;
+  return (
+    <div className="radar-card radar-kpi px-5 py-4">
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-[11.5px] font-medium uppercase tracking-[0.06em] text-[var(--hm-text-tertiary)]">{label}</p>
+        <div className="radar-kpi-icon w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-[var(--hm-bg-tertiary)] text-[var(--hm-text-secondary)]">
+          <NavIcon id={icon} size={15} />
+        </div>
+      </div>
+      <p className="text-[28px] font-semibold text-[var(--hm-text)] tabular-nums leading-none tracking-[-0.02em] -mt-1" style={tone ? { color: tone } : undefined}>{value}</p>
+      <div className="mt-3.5 h-1 rounded-full bg-[var(--hm-bg-tertiary)] overflow-hidden">
+        <div className="radar-grow h-full rounded-full" style={{ width: `${w}%`, background: tone || "var(--hm-primary)" }} />
+      </div>
+      <p className="mt-2 text-[11.5px] text-[var(--hm-text-tertiary)] truncate" title={foot}>{foot}</p>
+    </div>
+  );
+}
+
+/** One stacked share bar + a legend row per category; hovering a row spotlights its segment. */
+function DistributionCard({ title, meta, rows, className = "" }: {
+  className?: string;
+  title: string;
+  meta: string;
+  rows: Array<{ key: string; label: string; value: number; color: string; note?: string }>;
+}) {
+  const [hover, setHover] = useState<string | null>(null);
+  const total = rows.reduce((s, r) => s + r.value, 0) || 1;
+  const max = Math.max(1, ...rows.map((r) => r.value));
+  return (
+    <div className={`radar-card ${className}`}>
+      <div className="px-5 py-3.5 border-b border-[var(--hm-border)] flex items-center justify-between">
+        <h2 className="text-[13px] font-semibold text-[var(--hm-text)]">{title}</h2>
+        <span className="text-[11px] text-[var(--hm-text-tertiary)] tabular-nums">{meta}</span>
+      </div>
+      <div className="px-5 pt-4 pb-3">
+        <div className="flex h-2.5 rounded-full overflow-hidden bg-[var(--hm-bg-tertiary)] gap-px">
+          {rows.filter((r) => r.value > 0).map((r) => (
+            <div
+              key={r.key}
+              className="radar-grow h-full transition-opacity duration-150"
+              title={`${r.label}: ${fmt(r.value)} (${((r.value / total) * 100).toFixed(1)}%)`}
+              style={{ width: `${(r.value / total) * 100}%`, background: r.color, opacity: hover && hover !== r.key ? 0.25 : 1 }}
+            />
+          ))}
+        </div>
+      </div>
+      <div className="px-2 pb-3">
+        {rows.map((r) => (
+          <div
+            key={r.key}
+            onMouseEnter={() => setHover(r.key)}
+            onMouseLeave={() => setHover(null)}
+            className="flex items-center gap-3 px-3 py-1.5 rounded-lg hover:bg-[var(--hm-bg-secondary)] transition-colors cursor-default"
+          >
+            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: r.color }} />
+            <span className="text-[12.5px] text-[var(--hm-text-secondary)] w-24 flex-shrink-0 capitalize truncate">{r.label}</span>
+            <div className="flex-1 h-1.5 rounded-full bg-[var(--hm-bg-tertiary)] overflow-hidden">
+              <div className="radar-grow h-full rounded-full" style={{ width: `${(r.value / max) * 100}%`, background: r.color }} />
+            </div>
+            <span className="text-[12.5px] font-medium text-[var(--hm-text)] w-16 text-right tabular-nums">{fmt(r.value)}</span>
+            <span className="text-[11px] text-[var(--hm-text-tertiary)] w-10 text-right tabular-nums">{Math.round((r.value / total) * 100)}%</span>
+            {rows.some((x) => x.note !== undefined) && (
+              <span className="text-[10.5px] text-[var(--tag-red-fg)] w-16 text-right flex-shrink-0 truncate">{r.note}</span>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -562,7 +867,7 @@ function ContactStatusMatrix({ stats }: { stats: RadarStats }) {
   const grandAvg = totDomains ? (totContactsWithDomain / totDomains).toFixed(1) : "—";
 
   return (
-    <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
+    <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] radar-card">
       <div className="px-5 py-3.5 border-b border-[var(--hm-border)]">
         <h2 className="text-[13px] font-semibold text-[var(--hm-text)]">Contacts by Vertical &amp; Email Status</h2>
         <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-0.5">
@@ -625,7 +930,7 @@ function AccountCoverageTable({ coverage }: { coverage: AccountCoverageRow[] }) 
   const tw = coverage.reduce((s, r) => s + (r.with_contacts || 0), 0);
 
   return (
-    <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
+    <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] radar-card">
       <div className="px-5 py-3.5 border-b border-[var(--hm-border)]">
         <h2 className="text-[13px] font-semibold text-[var(--hm-text)]">Account Coverage by Vertical</h2>
         <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-0.5">accounts with contacts vs empty</p>
@@ -709,7 +1014,7 @@ function FilterSelect({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       style={{ width: "auto", minWidth: 130, maxWidth: 200 }}
-      className={value ? "border-[var(--hm-primary)]! text-[var(--hm-text)]" : ""}
+      className={value ? "radar-filter-on border-[var(--hm-primary)]! text-[var(--hm-text)]" : ""}
       aria-label={label}
     >
       <option value="">{label}: All</option>
@@ -798,6 +1103,22 @@ function DataTable<T extends { id: string }>({
   const clearSelection = () => { setSelected(new Set()); setAllFiltered(false); };
   const selectedRows = rows.filter((r) => selected.has(r.id));
 
+  // "/" focuses this table's search box (only when the table is on screen and you're not typing).
+  const searchRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "/" || e.metaKey || e.ctrlKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+      const el = searchRef.current;
+      if (!el || el.offsetParent === null) return;
+      e.preventDefault();
+      el.focus();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   // Load filter dropdown options once.
   useEffect(() => {
     fetch("/api/radar/options")
@@ -852,36 +1173,56 @@ function DataTable<T extends { id: string }>({
   const to = Math.min((page + 1) * PAGE_SIZE, total);
   const maxPage = Math.max(0, Math.ceil(total / PAGE_SIZE) - 1);
 
+  const pageBtn = "radar-btn-ghost w-7 justify-center px-0";
+  const skeletonRows = Array.from({ length: 10 });
+
   return (
-    <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
+    <div className="radar-card overflow-hidden">
       {/* Toolbar */}
-      <div className="px-4 py-3 border-b border-[var(--hm-border)] space-y-2">
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="relative flex-1 min-w-[180px]">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
-              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <circle cx="7" cy="7" r="4.5" stroke="var(--hm-text-tertiary)" strokeWidth="1.3" />
-                <path d="M10.5 10.5L14 14" stroke="var(--hm-text-tertiary)" strokeWidth="1.3" strokeLinecap="round" />
-              </svg>
+      <div className="px-4 pt-3.5 pb-3 border-b border-[var(--hm-border)] space-y-3">
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <div className="radar-search flex-1 min-w-[220px] max-w-[560px]">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none text-[var(--hm-text-tertiary)]">
+              <NavIcon id="search" size={14} />
             </span>
             <input
+              ref={searchRef}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={searchPlaceholder}
               className="search-input"
               style={{ width: "100%" }}
             />
+            {search ? (
+              <button
+                onClick={() => setSearch("")}
+                aria-label="Clear search"
+                className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 rounded-md flex items-center justify-center text-[var(--hm-text-tertiary)] hover:text-[var(--hm-text)] hover:bg-[var(--hm-bg-tertiary)]"
+              >
+                ×
+              </button>
+            ) : (
+              <span className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none"><kbd>/</kbd></span>
+            )}
           </div>
-          {activeFilterCount > 0 && (
-            <button
-              onClick={clearFilters}
-              className="text-[12px] text-[var(--hm-text-secondary)] hover:text-[var(--hm-link)] px-2 py-1 rounded-md border border-[var(--hm-border)] whitespace-nowrap"
-            >
-              Clear {activeFilterCount}
-            </button>
-          )}
+          <div className="ml-auto flex items-center gap-2">
+            {activeFilterCount > 0 && (
+              <button onClick={clearFilters} className="radar-btn-ghost whitespace-nowrap">
+                <span className="w-4 h-4 rounded-full bg-[var(--hm-primary)] text-[var(--hm-bg)] text-[10px] font-semibold flex items-center justify-center">{activeFilterCount}</span>
+                Clear filters
+              </button>
+            )}
+            <span className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-[var(--hm-bg-secondary)] border border-[var(--hm-border)] text-[12px] text-[var(--hm-text-secondary)] tabular-nums whitespace-nowrap">
+              <span className={`radar-dot ${loading ? "radar-live-dot text-[var(--hm-text-tertiary)]" : "text-[var(--tag-green-fg)]"}`} />
+              {loading ? "Loading…" : <><b className="font-semibold text-[var(--hm-text)]">{fmt(total)}</b> results</>}
+            </span>
+          </div>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="radar-filters flex items-center gap-2 flex-wrap">
+          <span className="inline-flex items-center gap-1.5 text-[11.5px] font-medium uppercase tracking-[0.06em] text-[var(--hm-text-tertiary)] mr-1">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4" /></svg>
+            Filters
+          </span>
           <FilterSelect label="Vertical" value={filters.vertical || ""} onChange={(v) => setFilter("vertical", v)} options={["B2B", "US", "D2C"]} />
           <FilterSelect label="Account Type" value={filters.accountType || ""} onChange={(v) => setFilter("accountType", v)} options={ACCOUNT_TYPE_OPTIONS} />
           <FilterSelect label="Customer" value={filters.customer || ""} onChange={(v) => setFilter("customer", v)} options={["true", "false"]} labels={{ true: "Yes", false: "No" }} />
@@ -889,7 +1230,7 @@ function DataTable<T extends { id: string }>({
           <FilterSelect label="Employees" value={filters.employeeRange || ""} onChange={(v) => setFilter("employeeRange", v)} options={options?.employeeRanges || []} />
           <FilterSelect label="Country" value={filters.country || ""} onChange={(v) => setFilter("country", v)} options={options?.countries || []} />
           {booleanFilters?.map((bf) => (
-            <label key={bf.key} className="flex items-center gap-1.5 text-[12.5px] text-[var(--hm-text-secondary)] cursor-pointer select-none px-1">
+            <label key={bf.key} className={`radar-chip-toggle ${filters[bf.key] === "true" ? "on" : ""}`}>
               <input type="checkbox" checked={filters[bf.key] === "true"} onChange={(e) => setFilter(bf.key, e.target.checked ? "true" : "")} />
               {bf.label}
             </label>
@@ -899,11 +1240,15 @@ function DataTable<T extends { id: string }>({
 
       {/* Bulk actions bar — shown once something is checked */}
       {bulkActions && (selected.size > 0 || allFiltered) && (
-        <div className="px-4 py-2.5 border-b border-[var(--hm-border)] bg-[var(--hm-bg-tertiary)] flex flex-col gap-2">
-          <div className="flex items-center gap-3 flex-wrap">
-            <span className="text-[12.5px] font-medium text-[var(--hm-link)]">
+        <div className="radar-enter px-4 py-2.5 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] flex flex-col gap-2">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <span className="inline-flex items-center gap-1.5 h-7 pl-1 pr-2.5 rounded-full bg-[var(--hm-primary)] text-[var(--hm-bg)] text-[12px] font-medium tabular-nums">
+              <span className="w-5 h-5 rounded-full bg-[var(--hm-bg)] text-[var(--hm-primary)] flex items-center justify-center">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+              </span>
               {allFiltered ? `All ${fmt(total)} matching selected` : `${selected.size} selected`}
             </span>
+            <span className="w-px h-5 bg-[var(--hm-border)] mx-0.5" />
             {bulkActions({
               selected: selectedRows,
               clearSelection,
@@ -911,7 +1256,7 @@ function DataTable<T extends { id: string }>({
               totalMatching: total,
               queryBody: { search: term, ...filters, ...extraBody },
             })}
-            <button onClick={clearSelection} className="text-[12px] text-[var(--hm-text-tertiary)] hover:text-[var(--hm-text)] ml-auto">
+            <button onClick={clearSelection} className="radar-btn-ghost ml-auto">
               Clear selection
             </button>
           </div>
@@ -929,24 +1274,31 @@ function DataTable<T extends { id: string }>({
       )}
 
       {/* Body */}
-      {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <LogoLoader size={34} />
-        </div>
-      ) : error ? (
+      {error ? (
         <div className="m-4 rounded-lg border border-[var(--hm-border)] bg-[var(--tag-red-bg)] dark:bg-[var(--tag-red-bg)]/20 dark:border-[var(--hm-border)] p-4 text-[13px] text-[var(--tag-red-fg)] dark:text-[var(--tag-red-fg)]">
           {error}
         </div>
-      ) : rows.length === 0 ? (
-        <div className="py-16 text-center text-[13px] text-[var(--hm-text-tertiary)]">{emptyLabel}</div>
+      ) : !loading && rows.length === 0 ? (
+        <div className="py-20 flex flex-col items-center text-center gap-3">
+          <div className="w-12 h-12 rounded-xl border border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] flex items-center justify-center text-[var(--hm-text-tertiary)]">
+            <NavIcon id="search" size={20} />
+          </div>
+          <div>
+            <p className="text-[13.5px] font-medium text-[var(--hm-text)]">{emptyLabel}</p>
+            <p className="text-[12px] text-[var(--hm-text-tertiary)] mt-0.5">Try a broader search or remove a filter.</p>
+          </div>
+          {activeFilterCount > 0 && (
+            <button onClick={clearFilters} className="hm-btn hm-btn-secondary">Clear all filters</button>
+          )}
+        </div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-[13px]">
+        <div className="radar-grid">
+          <table className="w-full text-[13px]">
             <thead>
               <tr>
                 {bulkActions && (
-                  <th className="px-4 py-2.5 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)]">
-                    <input type="checkbox" checked={rows.length > 0 && selected.size === rows.length} onChange={toggleAll} />
+                  <th className="radar-sticky-col w-10 px-4 py-2.5 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)]">
+                    <input type="checkbox" checked={rows.length > 0 && selected.size === rows.length} onChange={toggleAll} disabled={loading} aria-label="Select page" />
                   </th>
                 )}
                 {columns.map((c) => (
@@ -960,21 +1312,32 @@ function DataTable<T extends { id: string }>({
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
+              {loading
+                ? skeletonRows.map((_, i) => (
+                    <tr key={`sk-${i}`}>
+                      {bulkActions && <td className="radar-sticky-col px-4 py-3.5 border-b border-[var(--hm-border-light)]"><span className="radar-skel" style={{ width: 14, height: 14, borderRadius: 4 }} /></td>}
+                      {columns.map((c, j) => (
+                        <td key={c.key} className="px-4 py-3.5 border-b border-[var(--hm-border-light)]">
+                          <span className="radar-skel" style={{ width: [64, 92, 120, 78, 104][(i + j) % 5], opacity: 1 - i * 0.06 }} />
+                        </td>
+                      ))}
+                    </tr>
+                  ))
+                : rows.map((row) => (
                 <tr
                   key={row.id}
                   onClick={onRowClick ? () => onRowClick(row) : undefined}
-                  className={`hover:bg-[var(--hm-surface-hover)] ${selected.has(row.id) ? "bg-[var(--hm-bg-tertiary)]" : ""} ${onRowClick ? "cursor-pointer" : ""}`}
+                  className={`group ${selected.has(row.id) ? "radar-row-selected" : ""} ${onRowClick ? "cursor-pointer" : ""}`}
                 >
                   {bulkActions && (
-                    <td className="px-4 py-3 border-b border-[var(--hm-border-light)]" onClick={(e) => e.stopPropagation()}>
-                      <input type="checkbox" checked={selected.has(row.id)} onChange={() => toggleRow(row.id)} />
+                    <td className="radar-sticky-col px-4 py-2.5 border-b border-[var(--hm-border-light)]" onClick={(e) => e.stopPropagation()}>
+                      <input type="checkbox" checked={selected.has(row.id)} onChange={() => toggleRow(row.id)} aria-label="Select row" />
                     </td>
                   )}
                   {columns.map((c) => (
                     <td
                       key={c.key}
-                      className={`px-4 py-3 border-b border-[var(--hm-border-light)] text-[var(--hm-text)] align-middle ${c.className ?? ""}`}
+                      className={`px-4 py-2.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text)] align-middle ${c.className ?? ""}`}
                     >
                       {c.render(row)}
                     </td>
@@ -987,27 +1350,25 @@ function DataTable<T extends { id: string }>({
       )}
 
       {/* Footer / pagination */}
-      <div className="flex items-center justify-between px-4 py-3 border-t border-[var(--hm-border)]">
+      <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-t border-[var(--hm-border)] bg-[var(--hm-bg-secondary)]">
         <span className="text-[12px] text-[var(--hm-text-tertiary)] tabular-nums">
-          {loading ? "Loading…" : `Showing ${fmt(from)}–${fmt(to)} of ${fmt(total)}`}
+          {loading ? "Loading…" : <>Rows <b className="font-medium text-[var(--hm-text-secondary)]">{fmt(from)}–{fmt(to)}</b> of {fmt(total)}</>}
         </span>
-        <div className="flex items-center gap-1.5">
-          <button
-            onClick={() => setPage((p) => Math.max(0, p - 1))}
-            disabled={page === 0 || loading}
-            className="h-7 px-2.5 rounded-md border border-[var(--hm-border)] bg-[var(--hm-surface)] text-[12px] text-[var(--hm-text-secondary)] disabled:opacity-40 hover:enabled:border-[var(--hm-primary)] transition-colors"
-          >
-            ‹ Prev
+        <div className="flex items-center gap-0.5">
+          <button onClick={() => setPage(0)} disabled={page === 0 || loading} className={pageBtn} aria-label="First page" title="First page">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M11 17l-5-5 5-5M18 17l-5-5 5-5" /></svg>
           </button>
-          <span className="text-[12px] text-[var(--hm-text-tertiary)] px-1 tabular-nums">
-            {page + 1} / {maxPage + 1}
+          <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0 || loading} className={pageBtn} aria-label="Previous page" title="Previous page">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>
+          </button>
+          <span className="text-[12px] text-[var(--hm-text-secondary)] px-2.5 tabular-nums whitespace-nowrap">
+            Page <b className="font-semibold text-[var(--hm-text)]">{page + 1}</b> of {fmt(maxPage + 1)}
           </span>
-          <button
-            onClick={() => setPage((p) => Math.min(maxPage, p + 1))}
-            disabled={page >= maxPage || loading}
-            className="h-7 px-2.5 rounded-md border border-[var(--hm-border)] bg-[var(--hm-surface)] text-[12px] text-[var(--hm-text-secondary)] disabled:opacity-40 hover:enabled:border-[var(--hm-primary)] transition-colors"
-          >
-            Next ›
+          <button onClick={() => setPage((p) => Math.min(maxPage, p + 1))} disabled={page >= maxPage || loading} className={pageBtn} aria-label="Next page" title="Next page">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6" /></svg>
+          </button>
+          <button onClick={() => setPage(maxPage)} disabled={page >= maxPage || loading} className={pageBtn} aria-label="Last page" title="Last page">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M13 17l5-5-5-5M6 17l5-5-5-5" /></svg>
           </button>
         </div>
       </div>
@@ -1530,8 +1891,8 @@ function AccountsSection() {
   return (
     <>
       {isAdmin && (
-        <div className="flex justify-end mb-2">
-          <label className="flex items-center gap-1.5 text-[12.5px] text-[var(--hm-text-secondary)] cursor-pointer select-none">
+        <div className="flex justify-end mb-3">
+          <label className={`radar-chip-toggle ${showIrrelevant ? "on" : ""}`}>
             <input type="checkbox" checked={showIrrelevant} onChange={(e) => setShowIrrelevant(e.target.checked)} />
             Show irrelevant records
           </label>
@@ -1565,7 +1926,7 @@ function AccountsSection() {
                     Unmark
                   </button>
                   {isAdmin && (
-                    <button onClick={() => deleteForever(sel, clearSelection, count)} className="hm-btn" style={{ height: 28, padding: "0 10px", fontSize: 11.5, background: "var(--tag-red-bg)", color: "var(--tag-red-fg)" }}>
+                    <button onClick={() => deleteForever(sel, clearSelection, count)} className="hm-btn radar-btn-danger" style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}>
                       Delete permanently
                     </button>
                   )}
@@ -1626,14 +1987,41 @@ function AccountContactsPanel({ account, onClose }: { account: AccountRow; onClo
     <div className="fixed inset-0 z-40 flex justify-end" role="dialog" aria-modal="true">
       <div className="absolute inset-0 bg-black/30" onClick={onClose} />
       <div className="relative w-full max-w-lg h-full bg-[var(--hm-surface)] flex flex-col">
-        <div className="px-5 py-4 border-b border-[var(--hm-border)] flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className="text-[14px] font-semibold text-[var(--hm-text)] truncate">{account.name || account.domain}</h2>
-            <p className="text-[12px] text-[var(--hm-text-tertiary)] mt-0.5">
-              {loading ? "Loading contacts…" : `${total} contact(s)${total > rows.length ? ` — showing first ${rows.length}` : ""}`}
-            </p>
+        <div className="px-5 pt-5 pb-4 border-b border-[var(--hm-border)]">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-11 h-11 rounded-xl border border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] flex items-center justify-center text-[13px] font-semibold text-[var(--hm-text-secondary)] flex-shrink-0">
+                {initials(account.name || account.domain || "?")}
+              </div>
+              <div className="min-w-0">
+                <h2 className="text-[16px] font-semibold text-[var(--hm-text)] truncate tracking-[-0.01em]">{account.name || account.domain}</h2>
+                {account.domain && (
+                  <a href={`https://${account.domain}`} target="_blank" rel="noreferrer" className="text-[12.5px] text-[var(--hm-link)] hover:underline">{account.domain}</a>
+                )}
+              </div>
+            </div>
+            <button onClick={onClose} aria-label="Close" className="hm-btn hm-btn-secondary flex-shrink-0" style={{ height: 30, width: 30, padding: 0, fontSize: 14 }}>×</button>
           </div>
-          <button onClick={onClose} className="hm-btn hm-btn-secondary flex-shrink-0" style={{ height: 30, width: 30, padding: 0, fontSize: 14 }}>×</button>
+          <div className="flex items-center gap-1.5 flex-wrap mt-3">
+            <VerticalBadge v={account.vertical} />
+            {account.account_type && <span className="text-[11px] px-2 py-0.5 rounded-md font-medium bg-[var(--tag-gray-bg)] text-[var(--tag-gray-fg)]">{account.account_type}</span>}
+            {account.customer && <span className="text-[11px] px-2 py-0.5 rounded-md font-medium bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]">Customer</span>}
+            {account.hubspot_lifecycle_stage && <HubspotBadge v={account.hubspot_lifecycle_stage} />}
+          </div>
+          <dl className="grid grid-cols-2 gap-px mt-4 rounded-lg overflow-hidden border border-[var(--hm-border)] bg-[var(--hm-border)]">
+            {([["Industry", account.industry], ["Employees", account.employee_range], ["Revenue", account.revenue_range], ["Country", account.country || account.company_location]] as [string, string | null][]).map(([k, val]) => (
+              <div key={k} className="bg-[var(--hm-surface)] px-3 py-2">
+                <dt className="text-[10.5px] uppercase tracking-[0.06em] text-[var(--hm-text-tertiary)]">{k}</dt>
+                <dd className="text-[12.5px] text-[var(--hm-text)] truncate mt-0.5" title={val || ""}>{val || "—"}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+        <div className="px-5 py-2.5 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] flex items-center justify-between">
+          <p className="text-[11.5px] font-semibold uppercase tracking-[0.06em] text-[var(--hm-text-tertiary)]">Contacts</p>
+          <p className="text-[12px] text-[var(--hm-text-tertiary)] tabular-nums">
+            {loading ? "Loading…" : `${fmt(total)}${total > rows.length ? ` · showing first ${rows.length}` : ""}`}
+          </p>
         </div>
         <div className="flex-1 overflow-y-auto">
           {loading ? (
@@ -1646,23 +2034,29 @@ function AccountContactsPanel({ account, onClose }: { account: AccountRow; onClo
             <div className="py-16 text-center text-[13px] text-[var(--hm-text-tertiary)]">No contacts for this account.</div>
           ) : (
             <div className="divide-y divide-[var(--hm-border-light)]">
-              {rows.map((c) => (
-                <div key={c.id} className="px-5 py-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-[13px] font-medium text-[var(--hm-text)] truncate">
-                      {[c.first_name, c.last_name].filter(Boolean).join(" ") || c.full_name || "—"}
-                    </p>
-                    <EmailStatusPill status={c.email_status} />
+              {rows.map((c) => {
+                const nm = [c.first_name, c.last_name].filter(Boolean).join(" ") || c.full_name || "—";
+                return (
+                  <div key={c.id} className="px-5 py-3 flex gap-3 hover:bg-[var(--hm-bg-secondary)] transition-colors">
+                    <div className="w-8 h-8 rounded-full bg-[var(--hm-bg-tertiary)] text-[var(--hm-text-secondary)] text-[11px] font-semibold flex items-center justify-center flex-shrink-0">
+                      {initials(nm)}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[13px] font-medium text-[var(--hm-text)] truncate">{nm}</p>
+                        <EmailStatusPill status={c.email_status} />
+                      </div>
+                      {c.title && <p className="text-[12px] text-[var(--hm-text-tertiary)] mt-0.5 truncate">{c.title}</p>}
+                      <div className="flex items-center gap-2 mt-1 text-[12px] text-[var(--hm-text-secondary)] min-w-0">
+                        {c.email && <span className="truncate">{c.email}</span>}
+                        {c.linkedin_url && (
+                          <a href={linkedinHref(c.linkedin_url)} target="_blank" rel="noreferrer" className="text-[var(--hm-link)] hover:underline flex-shrink-0">LinkedIn ↗</a>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                  {c.title && <p className="text-[12px] text-[var(--hm-text-tertiary)] mt-0.5">{c.title}</p>}
-                  <div className="flex items-center gap-2 mt-1 text-[12px] text-[var(--hm-text-secondary)]">
-                    {c.email && <span className="truncate">{c.email}</span>}
-                    {c.linkedin_url && (
-                      <a href={linkedinHref(c.linkedin_url)} target="_blank" rel="noreferrer" className="text-[var(--hm-link)] truncate">{linkedinHref(c.linkedin_url)}</a>
-                    )}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -1720,7 +2114,7 @@ function EmailStatusPill({ status }: { status: string | null }) {
   else if (s === "risky") { cls = "bg-[var(--tag-yellow-bg)] text-[var(--tag-yellow-fg)]"; label = "Risky"; }
   else if (s === "invalid" || s === "bounced") { cls = "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)]"; label = s === "bounced" ? "Bounced" : "Invalid"; }
   else if (s === "unknown") { cls = "bg-[var(--hm-bg-tertiary)] text-[var(--hm-text-tertiary)]"; label = "Unknown"; }
-  return <span className={`text-[11px] px-2 py-0.5 rounded-md font-medium whitespace-nowrap ${cls}`}>{label}</span>;
+  return <span className={`inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-md font-medium whitespace-nowrap ${cls}`}><span className="radar-dot" />{label}</span>;
 }
 
 /** "2 safe to send, 1 risky, 1 invalid" — order matters most-to-least useful. */
@@ -1772,7 +2166,13 @@ function ContactsSection() {
       header: "First Name",
       render: (r) => {
         const v = r.first_name || (!r.last_name ? r.full_name : null);
-        return <span className="font-medium"><Cell value={v} /></span>;
+        const nm = [v, r.last_name].filter(Boolean).join(" ");
+        return (
+          <span className="inline-flex items-center gap-2 font-medium">
+            <span className="w-6 h-6 rounded-full bg-[var(--hm-bg-tertiary)] text-[var(--hm-text-secondary)] text-[9.5px] font-semibold flex items-center justify-center flex-shrink-0">{nm ? initials(nm) : "?"}</span>
+            <Cell value={v} />
+          </span>
+        );
       },
     },
     { key: "last_name", header: "Last Name", render: (r) => <Cell value={r.last_name} /> },
@@ -1804,8 +2204,8 @@ function ContactsSection() {
   return (
     <>
       {isAdmin && (
-        <div className="flex justify-end mb-2">
-          <label className="flex items-center gap-1.5 text-[12.5px] text-[var(--hm-text-secondary)] cursor-pointer select-none">
+        <div className="flex justify-end mb-3">
+          <label className={`radar-chip-toggle ${showIrrelevant ? "on" : ""}`}>
             <input type="checkbox" checked={showIrrelevant} onChange={(e) => setShowIrrelevant(e.target.checked)} />
             Show irrelevant records
           </label>
@@ -1839,7 +2239,7 @@ function ContactsSection() {
                     Unmark
                   </button>
                   {isAdmin && (
-                    <button onClick={() => deleteForever(sel, clearSelection, count)} className="hm-btn" style={{ height: 28, padding: "0 10px", fontSize: 11.5, background: "var(--tag-red-bg)", color: "var(--tag-red-fg)" }}>
+                    <button onClick={() => deleteForever(sel, clearSelection, count)} className="hm-btn radar-btn-danger" style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}>
                       Delete permanently
                     </button>
                   )}
@@ -1873,14 +2273,14 @@ function ExportAndCheckSection() {
   const [mode, setMode] = useState<"download" | "check">("download");
   return (
     <div className="space-y-4">
-      <div className="flex gap-0.5 p-1 rounded-xl bg-[var(--hm-bg-tertiary)] w-fit">
+      <div className="radar-seg flex gap-0.5 p-1 rounded-xl bg-[var(--hm-bg-tertiary)] w-fit">
         {(["download", "check"] as const).map((m) => (
           <button
             key={m}
             onClick={() => setMode(m)}
             className={`px-3.5 py-1.5 text-[13px] rounded-lg whitespace-nowrap transition-colors ${
               mode === m
-                ? "bg-[var(--hm-surface)] text-[var(--hm-text)] font-medium shadow-[var(--hm-shadow-sm)]"
+                ? "bg-[var(--hm-surface)] text-[var(--hm-text)] font-medium"
                 : "text-[var(--hm-text-secondary)] hover:text-[var(--hm-text)]"
             }`}
           >
@@ -2072,7 +2472,7 @@ function ExportSection() {
 
   return (
     <>
-    <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
+    <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] radar-card">
       <div className="px-5 py-4 border-b border-[var(--hm-border)]">
         <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Export</h2>
         <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">
@@ -2227,7 +2627,7 @@ function RecentExports({ refreshToken }: { refreshToken: number }) {
   useEffect(load, [refreshToken]);
 
   return (
-    <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
+    <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] radar-card">
       <div className="px-5 py-4 border-b border-[var(--hm-border)] flex items-center justify-between">
         <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Recent exports</h2>
         <button onClick={load} className="text-[12px] text-[var(--hm-text-secondary)] hover:text-[var(--hm-link)]">Refresh</button>
@@ -2613,7 +3013,7 @@ function UploadSection() {
 
   return (
     <div className="space-y-5">
-      <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
+      <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] radar-card">
         <div className="px-5 py-4 border-b border-[var(--hm-border)]">
           <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Bulk import from CSV</h2>
           <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">
@@ -2812,7 +3212,7 @@ function UploadJobs() {
   useEffect(load, []);
 
   return (
-    <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
+    <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] radar-card">
       <div className="px-5 py-4 border-b border-[var(--hm-border)] flex items-center justify-between">
         <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Recent imports</h2>
         <button onClick={load} className="text-[12px] text-[var(--hm-text-secondary)] hover:text-[var(--hm-link)]">Refresh</button>
@@ -3698,7 +4098,7 @@ function EnrichSection() {
 
   return (
     <div className="space-y-5">
-      <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
+      <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] radar-card">
         <div className="px-5 py-4 border-b border-[var(--hm-border)]">
           <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Find new contacts</h2>
           <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">
@@ -5387,7 +5787,7 @@ function ValidateSection() {
           Recent jobs, and the old pattern/Instantly jobs it showed are no longer used (they stay in the database). */}
 
       {view === "history" ? (
-        <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
+        <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] radar-card">
           <div className="px-5 py-3 border-b border-[var(--hm-border)] flex items-center justify-between">
             <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Validation jobs</h2>
             <button onClick={loadJobs} className="text-[12px] text-[var(--hm-text-secondary)] hover:text-[var(--hm-link)]">Refresh</button>
@@ -5459,7 +5859,7 @@ function ValidateSection() {
           {error && <div className="rounded-lg p-3 text-[12.5px] bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)] dark:bg-[var(--tag-red-bg)]/20 dark:text-[var(--tag-red-fg)]">{error}</div>}
 
           {phase === "input" && (
-            <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
+            <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] radar-card">
               {/* Prominent mode toggle — matches radar's own Patterns / Retest split */}
               <div className="flex border-b border-[var(--hm-border)]">
                 <button
@@ -5829,7 +6229,7 @@ function ValidateSection() {
           )}
 
           {(phase === "candidates" || phase === "sent" || phase === "done") && (
-            <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
+            <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] radar-card">
               <div className="px-5 py-3 border-b border-[var(--hm-border)] flex items-center justify-between flex-wrap gap-2">
                 <span className="text-[12.5px] text-[var(--hm-text-secondary)]">
                   {candidates.length} pattern(s) · {selectedCount} selected
@@ -6224,7 +6624,7 @@ function CheckDbSection() {
 
   return (
     <div className="space-y-5">
-      <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
+      <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] radar-card">
         <div className="px-5 py-4 border-b border-[var(--hm-border)]">
           <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Check values against the database</h2>
           <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">Paste values (one per line) or upload a CSV — with a multi-column file, pick which column to check (e.g. just a LinkedIn URL column). We&apos;ll show which already exist, by any column, in Contacts or Accounts — and let you bulk-mark all matched rows as irrelevant.</p>
@@ -6298,7 +6698,7 @@ function CheckDbSection() {
       </div>
 
       {result && (
-        <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
+        <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] radar-card">
           <div className="px-5 py-3 border-b border-[var(--hm-border)] flex items-center justify-between flex-wrap gap-2">
             <span className="text-[12.5px] text-[var(--hm-text-secondary)]">
               Found <strong className="text-[var(--hm-text)]">{result.found}</strong> of <strong className="text-[var(--hm-text)]">{result.checked}</strong>
@@ -6495,7 +6895,7 @@ function SearchableMultiSelect({ options, selected, onChange, placeholder = "Sel
         />
       </div>
       {open && (
-        <div className="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto rounded-lg border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
+        <div className="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto rounded-lg border border-[var(--hm-border)] bg-[var(--hm-surface)] radar-card">
           {filtered.length === 0 ? (
             <div className="px-3 py-2 text-[12px] text-[var(--hm-text-tertiary)]">No matches</div>
           ) : (
@@ -6609,7 +7009,7 @@ function IcpBaseSection() {
   return (
     <div className="space-y-5">
       {/* AI auto-fill */}
-      <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)] p-5">
+      <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] radar-card p-5">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--hm-text-tertiary)] mb-2">✨ Describe your ICP in plain English</p>
         <div className="grid grid-cols-1 md:grid-cols-[1fr_180px] gap-3 items-end">
           <textarea
@@ -6627,13 +7027,13 @@ function IcpBaseSection() {
       </div>
 
       {/* Vertical tabs */}
-      <div className="flex gap-0.5 p-1 rounded-xl bg-[var(--hm-bg-tertiary)] w-fit">
+      <div className="radar-seg flex gap-0.5 p-1 rounded-xl bg-[var(--hm-bg-tertiary)] w-fit">
         {ICP_VERTICALS.map((v) => (
           <button
             key={v}
             onClick={() => switchVertical(v)}
             className={`px-3.5 py-1.5 text-[13px] rounded-lg transition-colors ${
-              vertical === v ? "bg-[var(--hm-surface)] text-[var(--hm-text)] font-medium shadow-[var(--hm-shadow-sm)]" : "text-[var(--hm-text-secondary)]"
+              vertical === v ? "bg-[var(--hm-surface)] text-[var(--hm-text)] font-medium" : "text-[var(--hm-text-secondary)]"
             }`}
           >
             {v}
@@ -6642,7 +7042,7 @@ function IcpBaseSection() {
       </div>
 
       {/* Form */}
-      <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)] p-5 space-y-4 max-w-3xl">
+      <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] radar-card p-5 space-y-4 max-w-3xl">
         <p className="text-[12px] font-semibold uppercase tracking-wide text-[var(--hm-text-tertiary)]">{vertical} ICP</p>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
