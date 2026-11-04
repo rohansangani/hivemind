@@ -36,7 +36,7 @@ const SECTIONS: Array<{ id: SectionId; label: string; blurb: string }> = [
   { id: "accounts",  label: "Accounts",  blurb: "Browse and filter the accounts database." },
   { id: "contacts",  label: "Contacts",  blurb: "Query validated contacts across the database." },
   { id: "icp",       label: "ICP Base",  blurb: "Define Ideal Customer Profiles to auto-fill Enrich searches." },
-  { id: "enrich",    label: "Enrich",    blurb: "Find new contacts from LinkedIn for a target account." },
+  { id: "enrich",    label: "Enrich",    blurb: "Blitz → Anymail → Debounce → Anymail verify: find ICP contacts + emails for company domains." },
   { id: "validate",  label: "Validate",  blurb: "Generate email patterns, test deliverability, save confirmed emails." },
   { id: "export",    label: "Export",    blurb: "Download validated contact lists, or check a list of emails against the database." },
   { id: "logs",      label: "Logs",      blurb: "Admin-only audit trail of edits, deletes, uploads, exports, and validate/enrich runs." },
@@ -233,7 +233,7 @@ export default function RadarPage() {
               : s.id === "icp" ? <IcpBaseSection />
               : s.id === "export" ? <ExportAndCheckSection />
               : s.id === "upload" ? <UploadSection />
-              : s.id === "enrich" ? <EnrichSection />
+              : s.id === "enrich" ? <EnrichV2Section />
               : s.id === "validate" ? <ValidateSection />
               : s.id === "logs" ? <RadarActivityLogSection />
               : s.id === "apikeys" ? <RadarApiKeysSection />
@@ -3666,6 +3666,442 @@ interface EnrichJobRow {
   created_at: string;
 }
 
+/* ── Enrich v2: Blitz → Anymail → Debounce → Anymail verify (lib/radar/enrichPipeline.ts) ── */
+
+interface Enrich2Job {
+  id: number; label: string; vertical: string; created_by: string | null; status: string; phase: string; stage: string | null;
+  options: { maxPerCompany: number; anymailFallback: boolean; anymailVerify: boolean; phones: boolean; excludeSupportHrFinance: boolean };
+  counts: Record<string, number | Record<string, number>>; error: string | null; created_at: string; updated_at: string;
+}
+interface Enrich2Person {
+  id: number; full_name: string | null; title: string | null; company_name: string | null; domain: string | null; tier: number | null; phase: number | null;
+  department: string | null; dropped_reason: string | null; email: string | null; email_source: string | null; debounce_result: string | null;
+  verify_result: string | null; final_status: string | null; phone: string | null; linkedin_url: string | null; saved: boolean;
+}
+interface Enrich2Input { domain: string; brand?: string; linkedin?: string; altDomains?: string[] }
+
+const ENRICH2_PHASES = ["resolve", "search", "email", "anymail", "debounce", "verify", "phone", "save", "done"];
+
+async function enrich2Call<T = Record<string, unknown>>(body: Record<string, unknown>): Promise<T> {
+  const r = await fetch("/api/radar/enrich2", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || `Request failed (${r.status})`);
+  return d as T;
+}
+
+function parseEnrichCompanies(text: string): Enrich2Input[] {
+  return text.split(/\n+/).map((line) => line.trim()).filter(Boolean).map((line) => {
+    const parts = line.split(/[,\t]/).map((x) => x.trim()).filter(Boolean);
+    const linkedin = parts.find((x) => /linkedin\.com\/company\//i.test(x));
+    const rest = parts.filter((x) => x !== linkedin);
+    return { domain: rest[0] || "", brand: rest[1], linkedin };
+  }).filter((c) => c.domain.includes("."));
+}
+
+function EnrichV2Section() {
+  const [label, setLabel] = useState("");
+  const [vertical, setVertical] = useState("");
+  const [text, setText] = useState("");
+  const [csvCompanies, setCsvCompanies] = useState<Enrich2Input[]>([]);
+  const [csvName, setCsvName] = useState("");
+  const [maxPer, setMaxPer] = useState(25);
+  const [anymailFallback, setAnymailFallback] = useState(true);
+  const [anymailVerify, setAnymailVerify] = useState(true);
+  const [phones, setPhones] = useState(false);
+  const [excludeShf, setExcludeShf] = useState(true);
+  const [showTiers, setShowTiers] = useState(false);
+  const [keys, setKeys] = useState<{ blitz: boolean; anymail: boolean; debounce: boolean; tiers: { label: string; include: string[]; exclude: string[] }[] } | null>(null);
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState("");
+
+  const [jobs, setJobs] = useState<Enrich2Job[]>([]);
+  const [jobsLoading, setJobsLoading] = useState(true);
+  const [jobId, setJobId] = useState<number | null>(null);
+  const [job, setJob] = useState<Enrich2Job | null>(null);
+  const [openingId, setOpeningId] = useState<number | null>(null);
+  const [people, setPeople] = useState<Enrich2Person[]>([]);
+  const [peopleTotal, setPeopleTotal] = useState(0);
+  const [advancing, setAdvancing] = useState(false);
+  const [stopping, setStopping] = useState(false);
+  const [retryingId, setRetryingId] = useState<number | null>(null);
+  const [exporting, setExporting] = useState<number | null>(null);
+  const jobIdRef = useRef<number | null>(null);
+
+  const companies = csvCompanies.length ? csvCompanies : parseEnrichCompanies(text);
+
+  const loadJobs = useCallback(async () => {
+    setJobsLoading(true);
+    try { const d = await enrich2Call<{ jobs: Enrich2Job[] }>({ action: "list" }); setJobs(d.jobs || []); } catch { /* best-effort */ }
+    setJobsLoading(false);
+  }, []);
+  useEffect(() => {
+    loadJobs();
+    enrich2Call<typeof keys & object>({ action: "check_keys" }).then((d) => setKeys(d as never)).catch(() => {});
+  }, [loadJobs]);
+
+  const loadStatus = useCallback(async (id: number) => {
+    const d = await enrich2Call<{ job: Enrich2Job }>({ action: "status", jobId: id });
+    if (jobIdRef.current !== id) return null;
+    setJob(d.job);
+    setJobs((prev) => prev.map((j) => (j.id === id ? d.job : j)));
+    return d.job;
+  }, []);
+  const loadPeople = useCallback(async (id: number) => {
+    const d = await enrich2Call<{ people: Enrich2Person[]; total: number }>({ action: "people", jobId: id, offset: 0, limit: 200 });
+    if (jobIdRef.current !== id) return;
+    setPeople(d.people || []); setPeopleTotal(d.total || 0);
+  }, []);
+
+  const open = async (id: number) => {
+    jobIdRef.current = id;
+    setJobId(id); setJob(null); setPeople([]); setPeopleTotal(0); setOpeningId(id); setError("");
+    try { await Promise.all([loadStatus(id), loadPeople(id)]); } catch (e) { setError((e as Error).message); }
+    setOpeningId((o) => (o === id ? null : o));
+  };
+  const close = () => { jobIdRef.current = null; setJobId(null); setJob(null); setPeople([]); setPeopleTotal(0); };
+
+  // Live view: while the open job runs, poll its status every 2.5s and results every 8s so every
+  // step's numbers climb in real time — independent of who is doing the work.
+  const running = job?.status === "running";
+  useEffect(() => {
+    if (!jobId || !running) return;
+    const id = jobId;
+    const statusPoll = setInterval(() => { loadStatus(id).catch(() => {}); }, 2500);
+    const peoplePoll = setInterval(() => { loadPeople(id).catch(() => {}); }, 8000);
+    return () => { clearInterval(statusPoll); clearInterval(peoplePoll); };
+  }, [jobId, running, loadStatus, loadPeople]);
+
+  // Work: drive the open job forward from this tab, one ~4-minute tick after another (the 1-minute
+  // cron is the backstop once the tab is closed; a DB lease stops the two overlapping).
+  const advancingRef = useRef(false);
+  const [advanceTick, setAdvanceTick] = useState(0);
+  useEffect(() => {
+    if (!jobId || !running || advancingRef.current) return;
+    const id = jobId;
+    advancingRef.current = true;
+    setAdvancing(true);
+    (async () => {
+      try { await enrich2Call({ action: "advance", jobId: id }); }
+      catch (e) { if (jobIdRef.current === id) setError((e as Error).message); }
+      finally {
+        if (jobIdRef.current === id) { await Promise.all([loadStatus(id), loadPeople(id)]).catch(() => {}); loadJobs(); }
+        advancingRef.current = false;
+        setAdvancing(false);
+        setAdvanceTick((t) => t + 1);
+      }
+    })();
+  }, [jobId, running, advanceTick, loadStatus, loadPeople, loadJobs]);
+
+  const scopeRef = useRef<HTMLDivElement>(null);
+  useCloseJobOnWhitespace(scopeRef, jobId != null, close);
+
+  const onCsv = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setError("");
+    try {
+      const { headers, rows } = parseCSV(await f.text());
+      const find = (re: RegExp, not?: RegExp) => headers.find((h) => re.test(h.toLowerCase()) && !(not && not.test(h.toLowerCase())));
+      const cDomain = find(/domain|website|url|site/, /linkedin|alt/);
+      const cBrand = find(/brand|company|name|account/, /linkedin|domain|url/);
+      const cLi = find(/linkedin/);
+      const cAlt = find(/alt/);
+      if (!cDomain) { setError("CSV needs a domain / website column."); return; }
+      const list = rows.map((r) => ({
+        domain: r[cDomain] || "", brand: cBrand ? r[cBrand] : undefined, linkedin: cLi ? r[cLi] : undefined,
+        altDomains: cAlt && r[cAlt] ? r[cAlt].split(/[;|,\s]+/).filter(Boolean) : undefined,
+      })).filter((c) => c.domain.includes("."));
+      if (!list.length) { setError("No usable domains found in that CSV."); return; }
+      setCsvCompanies(list); setCsvName(`${f.name} · ${list.length.toLocaleString()} companies`);
+    } catch (err) { setError((err as Error).message); } finally { e.target.value = ""; }
+  };
+
+  const start = async () => {
+    setError("");
+    if (!label.trim()) { setError("Give this job a name."); return; }
+    if (!vertical) { setError("Pick a vertical — everything found is saved to Radar under it."); return; }
+    if (!companies.length) { setError("Add company domains (one per line) or upload a CSV."); return; }
+    const credits = companies.length * maxPer;
+    if (!confirm(`Enrich ${companies.length.toLocaleString()} compan${companies.length === 1 ? "y" : "ies"}?\n\nUp to ${maxPer} contacts each → up to ~${credits.toLocaleString()} Blitz records for people, plus 1 per email found. Debounce and Anymail charges apply per email.`)) return;
+    setStarting(true);
+    try {
+      const d = await enrich2Call<{ job: Enrich2Job }>({
+        action: "start", label: label.trim(), vertical, companies,
+        options: { maxPerCompany: maxPer, anymailFallback, anymailVerify, phones, excludeSupportHrFinance: excludeShf },
+      });
+      setLabel(""); setText(""); setCsvCompanies([]); setCsvName("");
+      setJobs((prev) => [d.job, ...prev]);
+      await open(d.job.id);
+    } catch (e) { setError((e as Error).message); } finally { setStarting(false); }
+  };
+
+  const stopJob = async (id: number) => {
+    if (!confirm("Stop this enrichment? Everything found so far stays, but no more steps run. Nothing unsaved is written to Radar.")) return;
+    setStopping(true);
+    try { await enrich2Call({ action: "cancel", jobId: id }); await loadJobs(); if (id === jobId) await loadStatus(id); } catch (e) { setError((e as Error).message); }
+    setStopping(false);
+  };
+  const retryJob = async (id: number) => {
+    setRetryingId(id);
+    try { await enrich2Call({ action: "retry", jobId: id }); await loadJobs(); if (id === jobId) await loadStatus(id); } catch (e) { setError((e as Error).message); }
+    setRetryingId(null);
+  };
+  const deleteJob = async (id: number) => {
+    if (!confirm("Delete this job and its results from history? Contacts already saved to Radar stay.")) return;
+    try { await enrich2Call({ action: "delete", jobId: id }); setJobs((prev) => prev.filter((j) => j.id !== id)); if (id === jobId) close(); } catch (e) { setError((e as Error).message); }
+  };
+  const exportJob = async () => {
+    if (!job) return;
+    setExporting(0);
+    try { await streamDownloadCsv("/api/radar/enrich2", { action: "export", jobId: job.id }, `enrich-${job.label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${today()}.csv`, setExporting); }
+    catch (e) { setError((e as Error).message); } finally { setExporting(null); }
+  };
+
+  const n = (k: string) => Number((job?.counts || {})[k] || 0);
+  const missingKeys = keys ? [!keys.blitz && "BLITZ_API_KEY", !keys.debounce && "DEBOUNCE_API_KEY", !keys.anymail && "ANYMAIL_FINDER_API_KEY"].filter(Boolean) : [];
+
+  const toggle = (on: boolean, set: (v: boolean) => void, title: string, hint: string) => (
+    <label className={`flex items-start gap-2.5 p-3 rounded-lg border cursor-pointer transition-colors ${on ? "border-[var(--hm-primary)] bg-[var(--hm-bg-secondary)]" : "border-[var(--hm-border)] hover:border-[var(--hm-text-tertiary)]"}`}>
+      <input type="checkbox" checked={on} onChange={(e) => set(e.target.checked)} className="mt-0.5" />
+      <span><span className="block text-[12.5px] font-medium text-[var(--hm-text)]">{title}</span><span className="block text-[11.5px] text-[var(--hm-text-tertiary)]">{hint}</span></span>
+    </label>
+  );
+
+  return (
+    <div className="radar-card">
+      <div className="px-5 py-4 border-b border-[var(--hm-border)]">
+        <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Enrich companies</h2>
+        <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">
+          Give company domains — Radar finds each company&apos;s LinkedIn page, pulls ICP contacts with <strong>Blitz</strong> (7 title tiers), finds emails
+          with Blitz then <strong>Anymail Finder</strong>, validates every email with <strong>Debounce</strong>, re-checks Risky/Unknown with Anymail, and saves it all to Radar.
+        </p>
+      </div>
+      <div ref={scopeRef} className="px-5 py-5 space-y-4">
+        {missingKeys.length > 0 && (
+          <div className="rounded-lg p-3 text-[12.5px] bg-[var(--tag-yellow-bg)] text-[var(--tag-yellow-fg)]">
+            Not configured in Vercel yet: <strong>{missingKeys.join(", ")}</strong> — jobs will stop at the step that needs it until it&apos;s added.
+          </div>
+        )}
+        {error && <div className="rounded-lg p-3 text-[12.5px] bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)]">{error}</div>}
+
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex-1 min-w-[220px]">
+            <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Job name (required)</label>
+            <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. US Shopify brands — Nov" />
+          </div>
+          <div style={{ width: 170 }}>
+            <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Vertical (required)</label>
+            <select value={vertical} onChange={(e) => setVertical(e.target.value)}>
+              <option value="">Select…</option>
+              {VERTICALS.filter(Boolean).map((v) => <option key={v} value={v}>{v}</option>)}
+            </select>
+          </div>
+          <div style={{ width: 190 }}>
+            <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Max contacts per company</label>
+            <select value={maxPer} onChange={(e) => setMaxPer(Number(e.target.value))}>
+              {[10, 25, 50, 100].map((v) => <option key={v} value={v}>{v}</option>)}
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-[12px] font-medium text-[var(--hm-text-secondary)]">Companies — one per line: <code>domain, brand name, company LinkedIn URL</code> (brand and LinkedIn optional)</label>
+            <label className="hm-btn hm-btn-secondary cursor-pointer" style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}>
+              ⬆ Upload CSV
+              <input type="file" accept=".csv,text/csv" onChange={onCsv} style={{ display: "none" }} />
+            </label>
+          </div>
+          {csvCompanies.length ? (
+            <div className="flex items-center justify-between rounded-lg border border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] px-3 py-2.5 text-[12.5px]">
+              <span className="text-[var(--hm-text)]">📄 {csvName}</span>
+              <button onClick={() => { setCsvCompanies([]); setCsvName(""); }} className="radar-btn-ghost">Remove</button>
+            </div>
+          ) : (
+            <textarea value={text} onChange={(e) => setText(e.target.value)} style={{ minHeight: 110 }}
+              placeholder={"boat-lifestyle.com, boAt\nmamaearth.in, Mamaearth, https://www.linkedin.com/company/mamaearth\nlevi.in"} />
+          )}
+          <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-1">
+            {companies.length ? `${companies.length.toLocaleString()} compan${companies.length === 1 ? "y" : "ies"} ready. ` : ""}
+            CSV columns: domain / website (required), brand / company name, company LinkedIn URL, alt domains. Max 5,000 per job.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          {toggle(anymailFallback, setAnymailFallback, "Anymail Finder for missing emails", "Name + domain search when Blitz has no email · 1 credit per email found")}
+          {toggle(anymailVerify, setAnymailVerify, "Anymail verify Risky / Unknown", "Second pass on everything Debounce didn't call Safe or Invalid · 0.2 credit each")}
+          {toggle(excludeShf, setExcludeShf, "Drop junior support, HR & finance titles", "Interns, trainees and students are always dropped")}
+          {toggle(phones, setPhones, "Find phone numbers (Blitz)", "Needs a LinkedIn URL · ~12–15% hit on Indian lists, ~30% on US")}
+        </div>
+
+        <div className="rounded-lg border border-[var(--hm-border)]">
+          <button onClick={() => setShowTiers((v) => !v)} className="w-full flex items-center justify-between px-3 py-2 text-[12.5px] text-[var(--hm-text-secondary)] hover:text-[var(--hm-text)]">
+            <span><strong className="text-[var(--hm-text)]">7 title tiers</strong> · Phase 1 = tiers 1–6 (ICP titles) · Phase 2 = tier 7 (any seniority with a department keyword)</span>
+            <span>{showTiers ? "Hide" : "Show"}</span>
+          </button>
+          {showTiers && keys?.tiers && (
+            <div className="border-t border-[var(--hm-border)] divide-y divide-[var(--hm-border-light)]">
+              {keys.tiers.map((t, i) => (
+                <div key={t.label} className="px-3 py-2 text-[11.5px]">
+                  <p className="font-semibold text-[var(--hm-text)]">Tier {i + 1} · {t.label} <span className="font-normal text-[var(--hm-text-tertiary)]">({i < 6 ? "phase 1" : "phase 2"})</span></p>
+                  <p className="text-[var(--hm-text-secondary)] mt-0.5">{t.include.slice(0, 18).join(", ")}{t.include.length > 18 ? ` +${t.include.length - 18} more` : ""}</p>
+                  {t.exclude.length > 0 && <p className="text-[var(--hm-text-tertiary)] mt-0.5">Excludes: {t.exclude.join(", ")}</p>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <button onClick={start} disabled={starting || !companies.length || !label.trim() || !vertical} className="hm-btn hm-btn-primary w-full" style={{ height: 40, fontSize: 13 }}>
+          {starting ? <><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />Creating job…</>
+            : `Start enrichment${companies.length ? ` · ${companies.length.toLocaleString()} compan${companies.length === 1 ? "y" : "ies"}` : ""}`}
+        </button>
+
+        {jobId != null && !job && (
+          <div data-job-keep className="rounded-xl border border-[var(--hm-border)] px-4 py-5 flex items-center gap-2 text-[12.5px] text-[var(--hm-text-secondary)]">
+            <span className="w-3.5 h-3.5 border-2 border-[var(--hm-border)] border-t-[var(--hm-text)] rounded-full animate-spin" />Opening job #{jobId}…
+          </div>
+        )}
+
+        {job && (
+          <div data-job-keep className="radar-enter rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] overflow-hidden">
+            {(() => {
+              const running = job.status === "running";
+              const pill = running ? { t: "Running", c: "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]" }
+                : job.status === "done" ? { t: "Done", c: "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]" }
+                : job.status === "error" ? { t: "Error", c: "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)]" }
+                : { t: "Stopped", c: "bg-[var(--tag-gray-bg)] text-[var(--tag-gray-fg)]" };
+              const phaseIdx = ENRICH2_PHASES.indexOf(job.phase);
+              const o = job.options;
+              const pct = (a: number, b: number) => (b ? Math.min(100, Math.round((a / b) * 100)) : 0);
+              const steps = [
+                { key: "resolve", label: "Company LinkedIn", on: true, value: `${fmt(n("resolved"))} / ${fmt(n("companies"))}`, p: pct(n("companies") - n("pending_resolve"), n("companies")),
+                  sub: `${fmt(n("unresolved"))} not found · ${fmt(n("low"))} low-confidence skipped` },
+                { key: "search", label: "Blitz ICP search", on: true, value: `${fmt(n("kept"))} contacts`, p: pct(n("searched"), n("resolved")),
+                  sub: `${fmt(n("searched"))}/${fmt(n("resolved"))} companies · P1 ${fmt(n("phase1"))} · P2 ${fmt(n("phase2"))} · ${fmt(n("dropped"))} filtered out` },
+                { key: "email", label: "Blitz emails", on: true, value: `${fmt(n("email_blitz"))} found`, p: pct(n("email_tried"), n("email_eligible")),
+                  sub: `${fmt(n("email_tried"))}/${fmt(n("email_eligible"))} looked up` },
+                { key: "anymail", label: "Anymail Finder", on: o.anymailFallback, value: `${fmt(n("email_anymail"))} found`, p: pct(n("anymail_tried"), Math.max(0, n("kept") - n("email_blitz"))),
+                  sub: `${fmt(n("anymail_tried"))} searched (Blitz misses)` },
+                { key: "debounce", label: "Debounce", on: true, value: `${fmt(n("debounced"))} / ${fmt(n("with_email"))}`, p: pct(n("debounced"), n("with_email")),
+                  sub: `${fmt(n("db_safe"))} safe · ${fmt(n("db_risky"))} risky · ${fmt(n("db_invalid"))} invalid · ${fmt(n("db_unknown"))} unknown` },
+                { key: "verify", label: "Anymail verify", on: o.anymailVerify, value: `${fmt(n("verify_valid"))} valid`, p: pct(n("verified"), n("verify_eligible")),
+                  sub: `${fmt(n("verified"))}/${fmt(n("verify_eligible"))} Risky/Unknown re-checked` },
+                { key: "phone", label: "Phones", on: o.phones, value: `${fmt(n("phones"))} found`, p: pct(n("phone_tried"), n("email_eligible")),
+                  sub: `${fmt(n("phone_tried"))}/${fmt(n("email_eligible"))} looked up` },
+                { key: "save", label: "Saved to Radar", on: true, value: `${fmt(n("saved"))} / ${fmt(n("kept"))}`, p: pct(n("saved"), n("kept")), sub: `${job.vertical} vertical` },
+              ];
+              return (
+                <>
+                  <div className="px-4 py-3 flex items-center gap-3 flex-wrap border-b border-[var(--hm-border)]">
+                    <span className={`inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-md font-medium ${pill.c}`}><span className={`radar-dot ${running ? "radar-live-dot" : ""}`} />{pill.t}</span>
+                    <span className="text-[13px] font-semibold text-[var(--hm-text)] truncate max-w-[40%]">#{job.id} {job.label}</span>
+                    <VerticalBadge v={job.vertical} />
+                    <span className="text-[12px] text-[var(--hm-text-tertiary)]">{fmt(n("companies"))} companies · up to {o.maxPerCompany}/company</span>
+                    <span className="ml-auto flex items-center gap-1.5">
+                      {running && <button onClick={() => stopJob(job.id)} disabled={stopping} className="radar-btn-ghost text-[var(--tag-red-fg)]!">{stopping ? "Stopping…" : "Stop"}</button>}
+                      {(job.status === "error" || job.status === "cancelled") && <button onClick={() => retryJob(job.id)} disabled={retryingId === job.id} className="radar-btn-ghost">{retryingId === job.id ? "Resuming…" : "Resume"}</button>}
+                      <button onClick={exportJob} disabled={exporting !== null || !n("people")} className="hm-btn hm-btn-secondary" style={{ height: 30, padding: "0 12px", fontSize: 12 }}>
+                        {exporting !== null ? <><span className="w-3 h-3 border-2 border-current/30 border-t-current rounded-full animate-spin" />Exporting… {fmt(exporting)}</> : "Export CSV (all columns)"}
+                      </button>
+                    </span>
+                  </div>
+                  <p className="px-4 pt-3 text-[12.5px] flex items-center gap-2 min-h-[20px]">
+                    {running ? (<><span className="w-3 h-3 border-2 border-[var(--hm-border)] border-t-[var(--hm-text)] rounded-full animate-spin flex-shrink-0" /><span className="text-[var(--hm-text)] truncate">{job.stage || "Waiting for the next step…"}</span></>)
+                      : job.status === "error" ? <span className="text-[var(--tag-red-fg)]">Stopped on error: {job.error}</span>
+                      : job.status === "cancelled" ? <span className="text-[var(--hm-text-tertiary)]">Stopped by you — results so far are kept (not saved to Radar). Resume to finish.</span>
+                      : <span className="text-[var(--tag-green-fg)]">Finished — {fmt(n("saved"))} contacts saved to Radar ({job.vertical}).</span>}
+                  </p>
+                  <div className="grid gap-2 p-4 grid-cols-2 lg:grid-cols-4">
+                    {steps.map((st, i) => {
+                      const idx = ENRICH2_PHASES.indexOf(st.key);
+                      const active = running && st.key === job.phase;
+                      const doneStep = idx < phaseIdx || job.status === "done";
+                      return (
+                        <div key={st.key} className={`rounded-lg border px-3 py-2.5 transition-colors ${!st.on ? "opacity-50 border-dashed border-[var(--hm-border)]" : active ? "border-[var(--hm-primary)] bg-[var(--hm-bg-secondary)]" : "border-[var(--hm-border)]"}`}>
+                          <div className="flex items-center gap-1.5 text-[11px]">
+                            <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-semibold ${doneStep && st.on ? "bg-[var(--tag-green-fg)] text-white" : active ? "bg-[var(--hm-primary)] text-[var(--hm-bg)]" : "border border-[var(--hm-border)] text-[var(--hm-text-tertiary)]"}`}>{doneStep && st.on ? "✓" : i + 1}</span>
+                            <span className="font-medium text-[var(--hm-text-secondary)] truncate">{st.label}</span>
+                            {active && <span className="ml-auto w-2.5 h-2.5 border-2 border-[var(--hm-border)] border-t-[var(--hm-text)] rounded-full animate-spin" />}
+                            {!st.on && <span className="ml-auto text-[10px] text-[var(--hm-text-tertiary)]">off</span>}
+                          </div>
+                          <p className="mt-1 text-[16px] font-semibold tabular-nums text-[var(--hm-text)] leading-tight">{st.on ? st.value : "—"}</p>
+                          <div className="mt-1.5 h-1 rounded-full bg-[var(--hm-bg-tertiary)] overflow-hidden">
+                            <div className="h-full rounded-full transition-[width] duration-700" style={{ width: `${st.on ? (doneStep ? 100 : st.p) : 0}%`, background: doneStep ? "var(--tag-green-fg)" : "var(--hm-primary)" }} />
+                          </div>
+                          <p className="mt-1 text-[10.5px] text-[var(--hm-text-tertiary)] truncate" title={st.sub}>{st.on ? st.sub : "Skipped for this job"}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="px-4 pb-3 flex flex-wrap gap-2 text-[12px]">
+                    {([["Safe to send", "final_safe", "bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]"], ["Risky", "final_risky", "bg-[var(--tag-yellow-bg)] text-[var(--tag-yellow-fg)]"],
+                      ["Invalid", "final_invalid", "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)]"], ["Unknown", "final_unknown", "bg-[var(--tag-gray-bg)] text-[var(--tag-gray-fg)]"]] as const).map(([l, k, c]) => (
+                      <span key={k} className={`px-2.5 py-1 rounded-md font-medium tabular-nums ${c}`}>{l}: {fmt(n(k))}</span>
+                    ))}
+                    <span className="px-2.5 py-1 rounded-md font-medium tabular-nums bg-[var(--hm-bg-tertiary)] text-[var(--hm-text-secondary)]">No email: {fmt(Math.max(0, n("kept") - n("with_email")))}</span>
+                  </div>
+                  {running && <p className="px-4 pb-3 -mt-1 text-[11px] text-[var(--hm-text-tertiary)]">Safe to close this tab — it keeps running in the background (every minute) and picks back up here.</p>}
+                </>
+              );
+            })()}
+          </div>
+        )}
+
+        <RecentJobsList
+          jobs={jobs.map((j) => ({ id: j.id, label: j.label, status: j.status, processed: Number(j.counts?.kept || 0), validated: Number(j.counts?.saved || 0), error: j.error, filters: { vertical: j.vertical } }))}
+          tag="EN" activeId={jobId} openingId={openingId} retryingId={retryingId} loading={jobsLoading}
+          emptyText="No enrichment jobs yet."
+          badge={(j) => {
+            const full = jobs.find((x) => x.id === j.id);
+            return j.status === "done" ? `done — ${fmt(j.validated)} saved` : j.status === "error" ? "error" : j.status === "cancelled" ? "stopped" : `${full?.phase || "running"} — ${fmt(j.processed)} contacts`;
+          }}
+          onRefresh={loadJobs} onOpen={open} onStop={stopJob} onRetry={retryJob} onDelete={deleteJob}
+        />
+
+        {job && people.length > 0 && (
+          <div data-job-keep className="rounded-lg border border-[var(--hm-border)] overflow-hidden">
+            <div className="max-h-[420px] overflow-auto">
+              <table className="w-full border-collapse text-[12.5px]">
+                <thead>
+                  <tr>
+                    {["Name", "Title", "Company", "Tier", "Dept", "Email", "Source", "Debounce", "Verify", "Final", "Phone", "LinkedIn"].map((h) => (
+                      <th key={h} className="text-left text-[10.5px] font-semibold uppercase tracking-wide text-[var(--hm-text-tertiary)] px-3 py-2 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] sticky top-0 whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {people.map((p) => (
+                    <tr key={p.id} className={p.dropped_reason ? "opacity-45" : ""} title={p.dropped_reason ? `Filtered out: ${p.dropped_reason}` : undefined}>
+                      <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)] whitespace-nowrap text-[var(--hm-text)]">{p.full_name || "—"}</td>
+                      <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)] max-w-[220px] truncate" title={p.title || ""}>{p.title || "—"}</td>
+                      <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)] whitespace-nowrap text-[var(--hm-text-secondary)]">{p.company_name || p.domain || "—"}</td>
+                      <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)] whitespace-nowrap tabular-nums">{p.tier ? `T${p.tier} · P${p.phase}` : "—"}</td>
+                      <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)] whitespace-nowrap text-[var(--hm-text-secondary)]">{p.dropped_reason ? <span className="italic">filtered</span> : p.department || "—"}</td>
+                      <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)] font-mono text-[11.5px]">{p.email || "—"}</td>
+                      <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)]">{p.email_source ? <span className={`text-[10.5px] px-1.5 py-0.5 rounded font-medium ${p.email_source === "blitz" ? "bg-[var(--tag-purple-bg)] text-[var(--tag-purple-fg)]" : "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]"}`}>{p.email_source === "blitz" ? "Blitz" : "Anymail"}</span> : "—"}</td>
+                      <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)] whitespace-nowrap text-[var(--hm-text-secondary)]">{p.debounce_result || "—"}</td>
+                      <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)] whitespace-nowrap text-[var(--hm-text-secondary)]">{p.verify_result || "—"}</td>
+                      <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)] whitespace-nowrap">{p.final_status ? <EmailStatusPill status={p.final_status} /> : "—"}</td>
+                      <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)] whitespace-nowrap">{p.phone || "—"}</td>
+                      <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)]">{p.linkedin_url ? <a href={linkedinHref(p.linkedin_url)} target="_blank" rel="noreferrer" className="text-[var(--hm-link)]">Profile ↗</a> : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {peopleTotal > people.length && (
+              <p className="text-[11.5px] text-[var(--hm-text-tertiary)] px-3 py-2 bg-[var(--hm-bg-secondary)]">Showing {people.length.toLocaleString()} of {peopleTotal.toLocaleString()} — use “Export CSV (all columns)” for everything.</p>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Legacy Apify leads-finder Enrich — no longer rendered (replaced by EnrichV2Section). */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function EnrichSection() {
   const [jobLabel, setJobLabel] = useState("");
   const [domain, setDomain] = useState("");

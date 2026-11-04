@@ -15,9 +15,12 @@ export function blitzKey(): string | null {
   return process.env.BLITZ_API_KEY?.trim() || null;
 }
 
-// Sliding 1s window of request start times — shared by every caller in this instance.
-const starts: number[] = [];
-async function blitzSlot(): Promise<void> {
+// Sliding 1s window of request start times PER ENDPOINT — Blitz budgets each endpoint separately
+// (25 req/s each), shared by every caller in this instance.
+const startsByPath = new Map<string, number[]>();
+async function blitzSlot(path: string): Promise<void> {
+  const starts = startsByPath.get(path) || [];
+  startsByPath.set(path, starts);
   for (;;) {
     const now = Date.now();
     while (starts.length && now - starts[0] >= 1000) starts.shift();
@@ -30,9 +33,9 @@ async function blitzSlot(): Promise<void> {
  * through to the next provider for every remaining URL instead of retrying each one. */
 export class BlitzUnavailableError extends Error {}
 
-async function blitzPost<T>(path: string, body: Record<string, unknown>, key: string): Promise<T | null> {
+export async function blitzPost<T>(path: string, body: Record<string, unknown>, key: string): Promise<T | null> {
   for (let attempt = 0; attempt < 4; attempt++) {
-    await blitzSlot();
+    await blitzSlot(path);
     let r: Response;
     try {
       r = await fetch(`${BLITZ_BASE}${path}`, {
@@ -117,4 +120,38 @@ export interface BlitzCompany {
 export async function blitzCompany(linkedinUrl: string, key: string): Promise<BlitzCompany | null> {
   const d = await blitzPost<{ found?: boolean; company?: BlitzCompany | null }>("/v2/enrichment/company", { company_linkedin_url: linkedinUrl }, key);
   return d?.found && d.company ? d.company : null;
+}
+
+/* ── Enrich pipeline endpoints ─────────────────────────────────────────── */
+
+export async function blitzDomainToLinkedin(domain: string, key: string): Promise<{ url: string; name: string | null } | null> {
+  const d = await blitzPost<{ found?: boolean; company_linkedin_url?: string; company_name?: string }>("/v2/enrichment/domain-to-linkedin", { domain }, key);
+  return d?.found && d.company_linkedin_url ? { url: d.company_linkedin_url, name: d.company_name || null } : null;
+}
+
+export interface BlitzCompanyHit { linkedin_url?: string | null; name?: string | null; domain?: string | null; website?: string | null }
+export async function blitzCompanySearchByName(names: string[], key: string): Promise<BlitzCompanyHit[]> {
+  const d = await blitzPost<{ results?: BlitzCompanyHit[] }>("/v2/search/companies", { company: { name: { include: names.slice(0, 50) } }, max_results: 10 }, key);
+  return d?.results || [];
+}
+
+export interface BlitzIcpTier { include_title: string[]; exclude_title?: string[]; include_active_jobs?: boolean; include_past_jobs?: boolean }
+export interface BlitzIcpResult { icp: number; ranking?: number; person: BlitzPerson & { connections_count?: number } }
+export async function blitzWaterfallIcp(companyLinkedinUrl: string, cascade: BlitzIcpTier[], maxResults: number, key: string): Promise<BlitzIcpResult[] | null> {
+  const d = await blitzPost<{ results?: BlitzIcpResult[] }>("/v2/search/waterfall-icp-keyword", { company_linkedin_url: companyLinkedinUrl, cascade, max_results: maxResults }, key);
+  return d ? d.results || [] : null;
+}
+
+export async function blitzWorkEmail(personLinkedinUrl: string, key: string): Promise<string | null> {
+  const d = await blitzPost<{ found?: boolean; email?: string | null }>("/v2/enrichment/email", { person_linkedin_url: personLinkedinUrl }, key);
+  return d?.found && d.email ? d.email.trim().toLowerCase() : null;
+}
+
+export async function blitzPhone(personLinkedinUrl: string, key: string): Promise<string | null> {
+  const d = await blitzPost<Record<string, unknown>>("/v2/enrichment/phone", { person_linkedin_url: personLinkedinUrl }, key);
+  if (!d || d.found === false) return null;
+  const pick = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v.trim() : null);
+  const arr = (d.phones || d.phone_numbers || d.all_phones) as unknown;
+  const first = Array.isArray(arr) ? (arr[0] as Record<string, unknown> | string | undefined) : undefined;
+  return pick(d.phone) || pick(d.phone_number) || pick(d.mobile) || (typeof first === "string" ? pick(first) : first ? pick(first.phone) || pick(first.number) || pick(first.phone_number) : null);
 }

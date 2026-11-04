@@ -101,3 +101,21 @@ untouched; STORED generated columns on `accounts` (also on `contacts_view`) give
   (Under $1M … $1B+, via `radar_revenue_usd()`; ₹ and Cr convert at ₹95 = $1; ranges use lower bound).
 - Filters/exports use `industryGroup` ("Category" or "Category › Sub"), `employeeBucket`, `revenueBucket`
   (`firmographicFilters()` in lib/radar/supabase.ts). `/api/radar/options` returns the ordered tree + counts.
+
+## Enrich v2 — Blitz → Anymail → Debounce → Anymail verify (2026-11-04)
+
+Replaces the Apify leads-finder Enrich (old `EnrichSection`/`api/radar/enrich` left in place but not shown).
+Code: `lib/radar/enrichPipeline.ts`, route `api/radar/enrich2` (cron every minute), tables
+`docs/sql/2026-11-04_enrich_v2.sql` (`enrich2_jobs/companies/people`, `save_enrich2_job()`).
+
+Steps (per-row progress markers, resumable; one tick per job at a time via `locked_until` lease):
+1. resolve — sheet LinkedIn → Blitz `domain-to-linkedin` → parent domain → alt domains → Blitz company name search
+   (high = domain matches, medium = same name; low = skipped). No Apify.
+2. search — Blitz `waterfall-icp-keyword`, 7 tiers (`ICP_TIERS`); tiers 1-6 = phase 1, tier 7 = phase 2 (needs a dept
+   keyword). Interns/trainees/students always dropped; junior support/HR/finance dropped when the option is on
+   (rows kept with `dropped_reason`, never saved).
+3. email — Blitz `/v2/enrichment/email` by LinkedIn URL. 4. anymail (opt) — Anymail person search for blanks.
+5. debounce — every email (≤4 concurrent). 6. verify (opt) — Anymail `verify-email` on Debounce risky/unknown.
+7. phone (opt) — Blitz phone. 8. save — `save_enrich2_job` (accounts by domain+vertical, contacts merged by email
+   then LinkedIn within the vertical, fresh `email_status`).
+Env: `BLITZ_API_KEY`, `DEBOUNCE_API_KEY` (or `RADAR_DEBOUNCE_API_KEY`), `ANYMAIL_FINDER_API_KEY`.
