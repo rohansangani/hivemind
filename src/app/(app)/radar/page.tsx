@@ -5383,20 +5383,8 @@ function ValidateSection() {
 
   return (
     <div className="space-y-5">
-      {/* View toggle */}
-      <div className="flex gap-0.5 p-1 rounded-xl bg-[var(--hm-bg-tertiary)] w-fit">
-        {(["current", "history"] as const).map((v) => (
-          <button
-            key={v}
-            onClick={() => setView(v)}
-            className={`px-3.5 py-1.5 text-[13px] rounded-lg transition-colors ${
-              view === v ? "bg-[var(--hm-surface)] text-[var(--hm-text)] font-medium shadow-[var(--hm-shadow-sm)]" : "text-[var(--hm-text-secondary)]"
-            }`}
-          >
-            {v === "current" ? "Current" : "Job History"}
-          </button>
-        ))}
-      </div>
+      {/* The Current | Job History switch was removed: Find Emails and Risky Email Validation each list their own
+          Recent jobs, and the old pattern/Instantly jobs it showed are no longer used (they stay in the database). */}
 
       {view === "history" ? (
         <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] shadow-[var(--hm-shadow-card)]">
