@@ -154,8 +154,17 @@ async function handleUpload(body: UploadBody): Promise<{ status: number; body: R
   let inserted = 0;
 
   // Columns that were dropped from the schema — strip them so stale mappings can't break inserts.
-  const DROPPED = ["city"];
-  const stripDropped = (o: Row) => { for (const k of DROPPED) delete o[k]; return o; };
+  const DROPPED = ["city", "track_order_page", "edd", "ebo", "mbo"];
+  const stripDropped = (o: Row) => {
+    for (const k of DROPPED) delete o[k];
+    // employee_count is an integer column — "970", "970+", "1,200" → 970/1200; anything else → null
+    // (one bad cell must not fail the whole chunk's insert).
+    if ("employee_count" in o) {
+      const n = parseInt(String(o.employee_count ?? "").replace(/[^\d]/g, ""), 10);
+      o.employee_count = Number.isFinite(n) && n > 0 ? n : null;
+    }
+    return o;
+  };
 
   // For contacts: set validated_at when email_status provided; normalize country for both tables.
   // `source` defaults to "CSV Upload" but a user can map their own CSV column to it — their mapped
