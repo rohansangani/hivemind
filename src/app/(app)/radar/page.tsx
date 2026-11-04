@@ -1449,7 +1449,8 @@ function DataTable<T extends { id: string }>({
         {filtersOpen && (() => {
           const group = filterGroups.find((g) => g.id === filterTab) || filterGroups[0];
           return (
-            <div className="radar-enter rounded-xl border border-[var(--hm-border)] bg-[var(--hm-bg-secondary)]">
+            // relative z-20: the panel's fade-in makes it a stacking context — lift it above the table's sticky header so picker lists aren't hidden behind it.
+            <div className="radar-enter relative z-20 rounded-xl border border-[var(--hm-border)] bg-[var(--hm-bg-secondary)]">
               {/* Category tabs — each shows how many of its filters are active */}
               <div className="flex gap-0.5 px-1.5 pt-1.5 overflow-x-auto border-b border-[var(--hm-border)]">
                 {filterGroups.map((g) => {
