@@ -482,7 +482,7 @@ async function handleAction(req: NextRequest, userEmail: string | null, override
     let jobId = existingJobId;
     if (!jobId) {
       if (!label || !label.trim()) return { status: 400, body: { error: "Job name is required" } };
-      const vert = ["B2B", "D2C", "US"].includes(vertical || "") ? vertical : null;
+      const vert = ["B2B", "D2C", "US", "Crossborder"].includes(vertical || "") ? vertical : null;
       if (!vert) return { status: 400, body: { error: "Vertical is required" } };
       await radarSql(`ALTER TABLE email_validation_jobs ADD COLUMN IF NOT EXISTS vertical text`);
       const jobRes = await radarSql<{ id: number }>(
@@ -768,7 +768,7 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
     let jobId = existingJobId;
     if (!jobId) {
       if (!label || !label.trim()) return { status: 400, body: { error: "Job name is required" } };
-      const vert = ["B2B", "D2C", "US"].includes(vertical || "") ? vertical : null;
+      const vert = ["B2B", "D2C", "US", "Crossborder"].includes(vertical || "") ? vertical : null;
       if (!vert) return { status: 400, body: { error: "Vertical is required" } };
       await radarSql(`ALTER TABLE email_validation_jobs ADD COLUMN IF NOT EXISTS vertical text`);
       const jobRows = await radarSql<{ id: number }>(`INSERT INTO email_validation_jobs (created_by, label, status, vertical) VALUES ('${esc(userEmail)}', '${esc(label.trim())}', 'draft', '${esc(vert)}') RETURNING id`);
@@ -974,7 +974,7 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
     // so every cron continuation uses the same verifier. Refuse up front if the key is missing.
     if (provider === "anymail_find") {
       if (!anymailKey()) return { status: 503, body: { error: "Anymail Finder isn't set up yet — add ANYMAIL_FINDER_API_KEY to the environment first." } };
-      if (!["B2B", "D2C", "US"].includes(vertical || "")) return { status: 400, body: { error: "Pick a vertical (B2B / D2C / US) — found emails are added there." } };
+      if (!["B2B", "D2C", "US", "Crossborder"].includes(vertical || "")) return { status: 400, body: { error: "Pick a vertical (B2B / D2C / US / Crossborder) — found emails are added there." } };
       // Keep only usable people (a name AND a company domain/name, or a LinkedIn URL), de-duplicated.
       const seen = new Set<string>();
       const clean: FindPerson[] = [];
@@ -997,7 +997,7 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
       if (!anymailKey()) {
         return { status: 503, body: { error: "Anymail Finder isn't set up yet — add ANYMAIL_FINDER_API_KEY to the environment first." } };
       }
-      if (!["B2B", "D2C", "US"].includes(vertical || "")) return { status: 400, body: { error: "Pick a vertical (B2B / D2C / US) — emails not already in Radar are added there." } };
+      if (!["B2B", "D2C", "US", "Crossborder"].includes(vertical || "")) return { status: 400, body: { error: "Pick a vertical (B2B / D2C / US / Crossborder) — emails not already in Radar are added there." } };
       filters.provider = "anymail";
       filters.email_count = new Set(emails || []).size;
     }
@@ -1328,10 +1328,10 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
   if (action === "save") {
     const { jobId, vertical } = reqBody as { jobId?: number; vertical?: string };
     if (!jobId) return { status: 400, body: { error: "No jobId" } };
-    let vert = ["B2B", "D2C", "US"].includes(vertical || "") ? vertical : null;
+    let vert = ["B2B", "D2C", "US", "Crossborder"].includes(vertical || "") ? vertical : null;
     if (!vert) {
       const job = (await radarSql<{ vertical?: string }>(`SELECT vertical FROM email_validation_jobs WHERE id = ${Number(jobId)}`))[0];
-      vert = ["B2B", "D2C", "US"].includes(job?.vertical || "") ? (job?.vertical as string) : null;
+      vert = ["B2B", "D2C", "US", "Crossborder"].includes(job?.vertical || "") ? (job?.vertical as string) : null;
     }
     if (!vert) return { status: 400, body: { error: "Vertical is required" } };
 

@@ -141,15 +141,15 @@ async function runSync(): Promise<{ status: number; body: Record<string, unknown
         COALESCE(c.contacts,0), COALESCE(c.nd,0),
         ROUND(COALESCE(c.contacts,0)::numeric / NULLIF(c.nd,0), 2),
         COALESCE(c.verified,0), COALESCE(c.validated,0), COALESCE(a.acc,0)
-      FROM (VALUES ('B2B'),('D2C'),('US')) v(vertical)
+      FROM (VALUES ('B2B'),('D2C'),('US'),('Crossborder')) v(vertical)
       LEFT JOIN (
         SELECT vertical, COUNT(*) AS contacts,
           COUNT(DISTINCT domain) FILTER (WHERE domain IS NOT NULL AND domain <> '') AS nd,
           COUNT(*) FILTER (WHERE email_status='verified') AS verified,
           COUNT(*) FILTER (WHERE validated_at IS NOT NULL) AS validated
-        FROM contacts WHERE vertical IN ('B2B','D2C','US') GROUP BY vertical
+        FROM contacts WHERE vertical IN ('B2B','D2C','US','Crossborder') GROUP BY vertical
       ) c ON c.vertical = v.vertical
-      LEFT JOIN (SELECT vertical, COUNT(*) AS acc FROM accounts WHERE vertical IN ('B2B','D2C','US') GROUP BY vertical) a ON a.vertical = v.vertical
+      LEFT JOIN (SELECT vertical, COUNT(*) AS acc FROM accounts WHERE vertical IN ('B2B','D2C','US','Crossborder') GROUP BY vertical) a ON a.vertical = v.vertical
       ON CONFLICT (snapshot_date, vertical) DO UPDATE SET
         contacts=EXCLUDED.contacts, nonempty_domains=EXCLUDED.nonempty_domains, avg_per_domain=EXCLUDED.avg_per_domain,
         verified=EXCLUDED.verified, validated=EXCLUDED.validated, total_accounts=EXCLUDED.total_accounts

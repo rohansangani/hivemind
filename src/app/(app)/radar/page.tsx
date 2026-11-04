@@ -538,9 +538,9 @@ interface RadarStats {
   total_accounts: number;
   total_contacts: number;
   blank_email_contacts: number;
-  blank_email_verticals: { B2B: number; D2C: number; US: number; unassigned: number };
-  verticals: { B2B: number; D2C: number; US: number };
-  contact_verticals: { B2B: number; D2C: number; US: number };
+  blank_email_verticals: { B2B: number; D2C: number; US: number; Crossborder?: number; unassigned: number };
+  verticals: { B2B: number; D2C: number; US: number; Crossborder?: number };
+  contact_verticals: { B2B: number; D2C: number; US: number; Crossborder?: number };
   contact_status_matrix: StatusMatrixRow[];
   contact_domain_stats: DomainStatsRow[];
   account_coverage: AccountCoverageRow[];
@@ -555,6 +555,7 @@ function fmt(n: number): string {
 const VERTICAL_COLORS: Record<string, string> = {
   B2B: "var(--tag-blue-fg)",
   D2C: "var(--tag-purple-fg)",
+  Crossborder: "var(--tag-pink-fg)",
   US: "var(--tag-orange-fg)",
   unassigned: "var(--hm-text-tertiary)",
 };
@@ -713,11 +714,11 @@ function RadarDashboard() {
   if (!stats) return null;
 
   const v = stats.verticals;
-  const acctAssigned = v.B2B + v.D2C + v.US;
+  const acctAssigned = v.B2B + v.D2C + v.US + (v.Crossborder || 0);
   const acctUnassigned = Math.max(0, stats.total_accounts - acctAssigned);
 
   const cv = stats.contact_verticals;
-  const cvAssigned = cv.B2B + cv.D2C + cv.US;
+  const cvAssigned = cv.B2B + cv.D2C + cv.US + (cv.Crossborder || 0);
   const cvUnassigned = Math.max(0, stats.total_contacts - cvAssigned);
   const blankV = stats.blank_email_verticals;
 
@@ -749,13 +750,13 @@ function RadarDashboard() {
         <DistributionCard
           title="Accounts by vertical"
           meta={`${fmt(acctAssigned)} assigned`}
-          rows={([["B2B", v.B2B], ["D2C", v.D2C], ["US", v.US], ["unassigned", acctUnassigned]] as [string, number][])
+          rows={([["B2B", v.B2B], ["D2C", v.D2C], ["US", v.US], ["Crossborder", v.Crossborder || 0], ["unassigned", acctUnassigned]] as [string, number][])
             .map(([key, n]) => ({ key, label: key, value: n, color: VERTICAL_COLORS[key] }))}
         />
         <DistributionCard
           title="Contacts by vertical"
           meta={`${fmt(cvAssigned)} assigned`}
-          rows={([["B2B", cv.B2B, blankV.B2B], ["D2C", cv.D2C, blankV.D2C], ["US", cv.US, blankV.US], ["unassigned", cvUnassigned, blankV.unassigned]] as [string, number, number][])
+          rows={([["B2B", cv.B2B, blankV.B2B], ["D2C", cv.D2C, blankV.D2C], ["US", cv.US, blankV.US], ["Crossborder", cv.Crossborder || 0, blankV.Crossborder || 0], ["unassigned", cvUnassigned, blankV.unassigned]] as [string, number, number][])
             .map(([key, n, blank]) => ({ key, label: key, value: n, color: VERTICAL_COLORS[key], note: blank ? `${fmt(blank)} blank` : "" }))}
         />
         <DistributionCard
@@ -848,7 +849,7 @@ function DistributionCard({ title, meta, rows, className = "" }: {
 }
 
 function ContactStatusMatrix({ stats }: { stats: RadarStats }) {
-  const verticals = ["B2B", "D2C", "US"];
+  const verticals = ["B2B", "D2C", "US", "Crossborder"];
   const matrix = stats.contact_status_matrix.filter((r) => r.vertical !== "Unassigned");
   const domainStats = stats.contact_domain_stats.filter((r) => r.vertical !== "Unassigned");
 
@@ -925,7 +926,7 @@ function ContactStatusMatrix({ stats }: { stats: RadarStats }) {
 }
 
 function AccountCoverageTable({ coverage }: { coverage: AccountCoverageRow[] }) {
-  const order = ["B2B", "D2C", "US", "Unassigned"];
+  const order = ["B2B", "D2C", "US", "Crossborder", "Unassigned"];
   const by: Record<string, AccountCoverageRow> = {};
   for (const r of coverage) by[r.vertical] = r;
   const rows = order.filter((v) => by[v]);
@@ -989,7 +990,7 @@ function AccountCoverageTable({ coverage }: { coverage: AccountCoverageRow[] }) 
 
 /* ── Shared data-table shell ───────────────────────────────────────────── */
 
-const VERTICALS = ["", "B2B", "US", "D2C"];
+const VERTICALS = ["", "B2B", "US", "D2C", "Crossborder"];
 const PAGE_SIZE = 50;
 
 interface RadarOptions {
@@ -1226,7 +1227,7 @@ function DataTable<T extends { id: string }>({
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4" /></svg>
             Filters
           </span>
-          <FilterSelect label="Vertical" value={filters.vertical || ""} onChange={(v) => setFilter("vertical", v)} options={["B2B", "US", "D2C"]} />
+          <FilterSelect label="Vertical" value={filters.vertical || ""} onChange={(v) => setFilter("vertical", v)} options={["B2B", "US", "D2C", "Crossborder"]} />
           <FilterSelect label="Account Type" value={filters.accountType || ""} onChange={(v) => setFilter("accountType", v)} options={ACCOUNT_TYPE_OPTIONS} />
           <FilterSelect label="Customer" value={filters.customer || ""} onChange={(v) => setFilter("customer", v)} options={["true", "false"]} labels={{ true: "Yes", false: "No" }} />
           <FilterSelect label="Industry" value={filters.industry || ""} onChange={(v) => setFilter("industry", v)} options={options?.industries || []} />
@@ -1423,6 +1424,7 @@ function initials(name: string): string {
 const VERTICAL_TAG: Record<string, string> = {
   B2B: "bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]",
   D2C: "bg-[var(--tag-purple-bg)] text-[var(--tag-purple-fg)]",
+  CROSSBORDER: "bg-[var(--tag-pink-bg)] text-[var(--tag-pink-fg)]",
   US: "bg-[var(--tag-orange-bg)] text-[var(--tag-orange-fg)]",
 };
 function VerticalBadge({ v }: { v: string | null }) {
@@ -1749,6 +1751,7 @@ function EditRecordPanel<T extends { id: string }>({
                   <option value="B2B">B2B</option>
                   <option value="US">US</option>
                   <option value="D2C">D2C</option>
+                  <option value="Crossborder">Crossborder</option>
                 </select>
               ) : f.type === "email_status" ? (
                 <select value={values[f.key] as string} onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}>
@@ -2873,14 +2876,14 @@ function UploadSection() {
   // again silently — a DB CHECK constraint now rejects it outright at insert time too, but
   // catching it here means the user sees exactly which CSV values are bad before importing,
   // instead of a bulk 400 partway through. Any column mapped straight to vertical/a:vertical/
-  // c:vertical whose values aren't B2B/D2C/US (case-insensitive) gets flagged.
+  // c:vertical whose values aren't B2B/D2C/US/Crossborder (case-insensitive) gets flagged.
   const verticalMapWarning = (() => {
     if (!parsed) return null;
     const badCols: { col: string; bad: string[] }[] = [];
     for (const [csvCol, dbKey] of Object.entries(mapping)) {
       if (dbKey !== "vertical" && dbKey !== "a:vertical" && dbKey !== "c:vertical") continue;
       const bad = [...new Set(
-        parsed.rows.map((r) => (r[csvCol] || "").trim()).filter((v) => v && !["B2B", "D2C", "US"].includes(v.toUpperCase()))
+        parsed.rows.map((r) => (r[csvCol] || "").trim()).filter((v) => v && !["B2B", "D2C", "US", "CROSSBORDER"].includes(v.toUpperCase().replace(/[^A-Z0-9]/g, "")))
       )].slice(0, 5);
       if (bad.length) badCols.push({ col: csvCol, bad });
     }
@@ -2941,7 +2944,7 @@ function UploadSection() {
     if (!parsed || !parsed.rows.length) return;
     if (!mappedCount) { setMsg({ kind: "err", text: "Map at least one column first." }); return; }
     if (!uploadVertical) { setMsg({ kind: "err", text: "Select a vertical for this upload first." }); return; }
-    if (verticalMapWarning) { setMsg({ kind: "err", text: "Fix the Vertical column mapping — some values aren't B2B/D2C/US." }); return; }
+    if (verticalMapWarning) { setMsg({ kind: "err", text: "Fix the Vertical column mapping — some values aren't B2B/D2C/US/Crossborder." }); return; }
 
     setBusy(true);
     setMsg(null);
@@ -3049,6 +3052,7 @@ function UploadSection() {
               <option value="">— Select —</option>
               <option value="B2B">B2B</option>
               <option value="D2C">D2C</option>
+              <option value="Crossborder">Crossborder</option>
               <option value="US">US</option>
             </select>
           </div>
@@ -3128,7 +3132,7 @@ function UploadSection() {
 
           {verticalMapWarning && (
             <div className="rounded-lg p-3 text-[12.5px] bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)] dark:bg-[var(--tag-red-bg)]/20 dark:text-[var(--tag-red-fg)]">
-              <strong>Vertical column has values other than B2B/D2C/US</strong> — fix the mapping or the source data before importing:
+              <strong>Vertical column has values other than B2B/D2C/US/Crossborder</strong> — fix the mapping or the source data before importing:
               <ul className="mt-1 space-y-0.5 list-disc list-inside">
                 {verticalMapWarning.map(({ col, bad }) => (
                   <li key={col}>&quot;{col}&quot;: {bad.join(", ")}{bad.length === 5 ? "…" : ""}</li>
@@ -4321,6 +4325,7 @@ function EnrichSection() {
                         <option value="B2B">B2B</option>
                         <option value="US">US</option>
                         <option value="D2C">D2C</option>
+                        <option value="Crossborder">Crossborder</option>
                       </select>
                       <button
                         onClick={runBulkSync}
@@ -4390,6 +4395,7 @@ function EnrichSection() {
                           <option value="B2B">B2B</option>
                           <option value="US">US</option>
                           <option value="D2C">D2C</option>
+                          <option value="Crossborder">Crossborder</option>
                         </select>
                         <button
                           onClick={() => quickSyncJob(j)}
@@ -4530,6 +4536,7 @@ function EnrichSection() {
                     <option value="B2B">B2B</option>
                     <option value="US">US</option>
                     <option value="D2C">D2C</option>
+                    <option value="Crossborder">Crossborder</option>
                   </select>
                   <button
                     onClick={saveSelected}
@@ -6108,6 +6115,7 @@ function ValidateSection() {
                         <option value="B2B">B2B</option>
                         <option value="US">US</option>
                         <option value="D2C">D2C</option>
+                        <option value="Crossborder">Crossborder</option>
                       </select>
                       <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-1">
                         {linkedinCheckType === "company"
@@ -6891,7 +6899,7 @@ function CheckDbSection() {
 
 /* ── ICP Base ──────────────────────────────────────────────────────────── */
 
-const ICP_VERTICALS = ["B2B", "D2C", "US"] as const;
+const ICP_VERTICALS = ["B2B", "D2C", "US", "Crossborder"] as const;
 type IcpVertical = (typeof ICP_VERTICALS)[number];
 
 const ICP_SENIORITY = ["founder", "owner", "c_suite", "partner", "director", "vp", "head", "manager", "senior", "entry", "trainee"];
@@ -7794,6 +7802,7 @@ function EmailValidationPanel() {
               <option value="">Select…</option>
               <option value="B2B">B2B</option>
               <option value="D2C">D2C</option>
+              <option value="Crossborder">Crossborder</option>
               <option value="US">US</option>
             </select>
           </div>
@@ -8027,6 +8036,7 @@ function EmailFinderPanel() {
               <option value="">Select…</option>
               <option value="B2B">B2B</option>
               <option value="D2C">D2C</option>
+              <option value="Crossborder">Crossborder</option>
               <option value="US">US</option>
             </select>
           </div>

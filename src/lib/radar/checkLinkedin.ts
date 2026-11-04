@@ -190,7 +190,7 @@ function companyFromHeadline(headline: string | null | undefined): string | null
 
 export async function runLinkedInCheck(urls: string[], _mode: string | undefined, vertical: string, onStage?: LinkedInStageFn): Promise<LinkedInCheckSummary> {
   const APIFY_TOKEN = process.env.APIFY_TOKEN;
-  if (!["B2B", "D2C", "US"].includes(vertical)) throw new Error("vertical is required (B2B, D2C, or US)");
+  if (!["B2B", "D2C", "US", "Crossborder"].includes(vertical)) throw new Error("vertical is required (B2B, D2C, US, or Crossborder)");
 
   const cleanUrls = urls.map((u) => (u || "").trim()).filter(Boolean);
   if (!cleanUrls.length) throw new Error("No LinkedIn URLs given");

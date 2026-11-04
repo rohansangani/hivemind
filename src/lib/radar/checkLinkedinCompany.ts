@@ -197,7 +197,7 @@ function buildNewAccount(item: ApifyCompanyItem, domain: string | null, name: st
 
 export async function runLinkedInCompanyCheck(urls: string[], vertical: string, onStage?: LinkedInStageFn): Promise<LinkedInCompanyCheckSummary> {
   const APIFY_TOKEN = process.env.APIFY_TOKEN;
-  if (!["B2B", "D2C", "US"].includes(vertical)) throw new Error("vertical is required (B2B, D2C, or US)");
+  if (!["B2B", "D2C", "US", "Crossborder"].includes(vertical)) throw new Error("vertical is required (B2B, D2C, US, or Crossborder)");
 
   const cleanUrls = urls.map((u) => (u || "").trim()).filter(Boolean);
   if (!cleanUrls.length) throw new Error("No LinkedIn URLs given");

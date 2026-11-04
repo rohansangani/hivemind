@@ -82,8 +82,8 @@ async function callClaude(
 // limit how many values go in one array or split one export into multiple calls to stay safe.
 const RADAR_FILTER_PROPERTIES = {
   vertical: {
-    description: "Radar's vertical bucket(s) for the account/contact — B2B, D2C, and/or US. Pass an array to combine more than one in one query.",
-    anyOf: [{ type: "string", enum: ["B2B", "D2C", "US"] }, { type: "array", items: { type: "string", enum: ["B2B", "D2C", "US"] } }],
+    description: "Radar's vertical bucket(s) for the account/contact — B2B, D2C, US, and/or Crossborder. Pass an array to combine more than one in one query.",
+    anyOf: [{ type: "string", enum: ["B2B", "D2C", "US", "Crossborder"] }, { type: "array", items: { type: "string", enum: ["B2B", "D2C", "US", "Crossborder"] } }],
   },
   industry: {
     description:
@@ -130,8 +130,8 @@ const RADAR_FILTER_PROPERTIES = {
 
 const ACCOUNT_FILTER_PROPERTIES = {
   vertical: {
-    description: "Radar's vertical bucket(s) for the account — B2B, D2C, and/or US. Pass an array to combine more than one in one query.",
-    anyOf: [{ type: "string", enum: ["B2B", "D2C", "US"] }, { type: "array", items: { type: "string", enum: ["B2B", "D2C", "US"] } }],
+    description: "Radar's vertical bucket(s) for the account — B2B, D2C, US, and/or Crossborder. Pass an array to combine more than one in one query.",
+    anyOf: [{ type: "string", enum: ["B2B", "D2C", "US", "Crossborder"] }, { type: "array", items: { type: "string", enum: ["B2B", "D2C", "US", "Crossborder"] } }],
   },
   industry: {
     description:
@@ -327,7 +327,7 @@ const ENRICH_TOOLS = [
       type: "object",
       properties: {
         description: { type: "string", description: "The user's plain-English description of who to find." },
-        vertical: { type: "string", description: "Radar vertical bucket if known (B2B, D2C, US) — optional context, not required." },
+        vertical: { type: "string", description: "Radar vertical bucket if known (B2B, D2C, US, Crossborder) — optional context, not required." },
       },
       required: ["description"],
     },
@@ -445,7 +445,7 @@ const ENRICH_TOOLS = [
       properties: {
         datasetId: { type: "string" },
         jobId: { type: "number" },
-        vertical: { type: "string", enum: ["B2B", "D2C", "US"], description: "Radar vertical bucket to save these leads under." },
+        vertical: { type: "string", enum: ["B2B", "D2C", "US", "Crossborder"], description: "Radar vertical bucket to save these leads under." },
       },
       required: ["datasetId", "vertical"],
     },

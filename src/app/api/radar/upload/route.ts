@@ -115,14 +115,24 @@ interface UploadBody {
   vertical?: string;
 }
 
+// Canonical stored spelling per vertical — B2B/D2C/US are codes, Crossborder is a word (the DB
+// CHECK constraint only accepts these exact strings). Anything else passes through upper-cased,
+// as before, so the constraint still rejects it loudly.
+const CANON_VERTICAL: Record<string, string> = { B2B: "B2B", D2C: "D2C", US: "US", CROSSBORDER: "Crossborder" };
+function canonVertical(v: unknown): string {
+  const raw = (v == null ? "" : String(v)).trim();
+  if (!raw) return "";
+  return CANON_VERTICAL[raw.toUpperCase().replace(/[^A-Z0-9]/g, "")] || raw.toUpperCase();
+}
+
 async function handleUpload(body: UploadBody): Promise<{ status: number; body: Record<string, unknown> }> {
   const { table, rows, jobId, userEmail, filename, isLast, vertical: batchVertical } = body;
   if (!table || !rows?.length) return { status: 400, body: { error: "Missing table or rows" } };
   if (!["accounts", "contacts"].includes(table)) return { status: 400, body: { error: "Invalid table" } };
-  if (!batchVertical || !["B2B", "D2C", "US"].includes(batchVertical.toUpperCase())) {
+  if (!batchVertical || !Object.values(CANON_VERTICAL).includes(canonVertical(batchVertical))) {
     return { status: 400, body: { error: "Vertical is required" } };
   }
-  const fallbackVertical = batchVertical.toUpperCase();
+  const fallbackVertical = canonVertical(batchVertical);
 
   // Job tracking: lets the frontend show a shared upload log and hit Stop mid-upload. When a jobId
   // is present, register/refresh the job row and read its current status in one round-trip.
@@ -152,7 +162,7 @@ async function handleUpload(body: UploadBody): Promise<{ status: number; body: R
   // value wins when non-blank.
   const cleanRows: Row[] = table === "contacts"
     ? rows.map((r) => {
-        const out: Row = stripDropped({ ...r, domain: r.domain ? toDomain(String(r.domain)) : r.domain, country: normalizeCountry(r.country ? String(r.country) : null), source: (r.source ? String(r.source).trim() : "") || "CSV Upload", vertical: (r.vertical ? String(r.vertical).trim() : "") || fallbackVertical });
+        const out: Row = stripDropped({ ...r, domain: r.domain ? toDomain(String(r.domain)) : r.domain, country: normalizeCountry(r.country ? String(r.country) : null), source: (r.source ? String(r.source).trim() : "") || "CSV Upload", vertical: canonVertical(r.vertical) || fallbackVertical });
         if (r.email_status && r.email) {
           out.email_status = String(r.email_status).toLowerCase().trim();
           out.validated_at = new Date().toISOString();
@@ -164,7 +174,7 @@ async function handleUpload(body: UploadBody): Promise<{ status: number; body: R
       }).filter((r) => r.email || r.first_name || r.last_name || r.company_name || r.linkedin_url)
     : rows.map((r) => {
         const domain = r.domain ? toDomain(String(r.domain)) : r.domain;
-        return stripDropped({ ...r, domain, name: r.name || domain || null, country: normalizeCountry(r.country ? String(r.country) : null), source: (r.source ? String(r.source).trim() : "") || "CSV Upload", vertical: (r.vertical ? String(r.vertical).trim() : "") || fallbackVertical });
+        return stripDropped({ ...r, domain, name: r.name || domain || null, country: normalizeCountry(r.country ? String(r.country) : null), source: (r.source ? String(r.source).trim() : "") || "CSV Upload", vertical: canonVertical(r.vertical) || fallbackVertical });
       }).filter((r) => r.name);
 
   // Deduplicate rows (used in both upload and post-processing)
@@ -255,7 +265,7 @@ async function handleUpload(body: UploadBody): Promise<{ status: number; body: R
         r.email = String(r.email).toLowerCase();
         // "" (a real, comparable value), never bare null/undefined — a NULL vertical is never
         // equal to another NULL under Postgres's UNIQUE semantics.
-        r.vertical = (r.vertical ? String(r.vertical) : "").trim().toUpperCase();
+        r.vertical = canonVertical(r.vertical);
         dedupMap.set(`${r.email}::${r.vertical}`, r);
         return;
       }
@@ -385,7 +395,7 @@ async function handleUpload(body: UploadBody): Promise<{ status: number; body: R
         inserted += newNoEmailRows.length;
         if (jobId && newNoEmailRows.length) {
           jobTagConds.contacts.push(...newNoEmailRows.map((r) => r.linkedin_url
-            ? `(linkedin_url = '${esc(String(r.linkedin_url))}' AND COALESCE(vertical,'') = '${esc(String(r.vertical || "").toUpperCase())}')`
+            ? `(linkedin_url = '${esc(String(r.linkedin_url))}' AND COALESCE(vertical,'') = '${esc(canonVertical(r.vertical))}')`
             : `(email IS NULL AND LOWER(COALESCE(first_name,'')) = '${esc(String(r.first_name || "").toLowerCase())}' AND LOWER(COALESCE(last_name,'')) = '${esc(String(r.last_name || "").toLowerCase())}' AND LOWER(COALESCE(domain,COALESCE(company_name,''))) = '${esc(String(r.domain || r.company_name || "").toLowerCase())}')`
           ));
         }
@@ -899,7 +909,7 @@ async function handleJobAction(body: JobActionBody): Promise<{ status: number; b
        LANGUAGE plpgsql
       AS $function$
       DECLARE
-        v_vert text := CASE WHEN p_vertical IN ('B2B','D2C','US') THEN p_vertical ELSE NULL END;
+        v_vert text := CASE WHEN p_vertical IN ('B2B','D2C','US','Crossborder') THEN p_vertical ELSE NULL END;
         v_valid_count int;
         v_invalid_count int;
       BEGIN

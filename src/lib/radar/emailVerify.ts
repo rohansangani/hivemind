@@ -84,7 +84,7 @@ export async function verifyEmailListChunk(
 
   await ensureVerifyResultsTable();
   const nowISO = new Date().toISOString();
-  const canAdd = vertical === "B2B" || vertical === "D2C" || vertical === "US";
+  const canAdd = vertical === "B2B" || vertical === "D2C" || vertical === "US" || vertical === "Crossborder";
 
   // Existing Radar contacts for these emails (any vertical).
   const list = emails.map((e) => encodeURIComponent(e)).join(",");
