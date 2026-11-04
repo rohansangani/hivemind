@@ -210,3 +210,13 @@
 @media (prefers-reduced-motion: reduce) {
   .radar-ui *, .radar-ui *::before { animation: none !important; transition: none !important; }
 }
+
+/* ── Generic affordances for section-level controls ────────────────────── */
+/* Dashed drop zones (Upload, CSV pickers) */
+.radar-ui .border-dashed { transition: border-color 160ms var(--rd-ease), background-color 160ms var(--rd-ease); }
+.radar-ui .border-dashed:hover { border-color: var(--hm-text-tertiary); background-color: var(--hm-bg-secondary); }
+/* Bordered toggle/pill buttons that aren't .hm-btn (Import into, Contacts/Accounts, chips) */
+.radar-ui button.border:not(.hm-btn):not(:disabled):hover { border-color: var(--rd-hover-border); color: var(--hm-text); }
+.radar-ui button.border:not(.hm-btn):active:not(:disabled) { transform: scale(0.97); }
+/* Code blocks */
+.radar-ui pre { border-radius: 10px; }

@@ -345,8 +345,13 @@ function CommandPalette({
   const [q, setQ] = useState("");
   const [idx, setIdx] = useState(0);
   const needle = q.trim().toLowerCase();
+  // Label hits first (prefix before substring), then sections that only match on their blurb.
   const results = needle
-    ? sections.filter((s) => s.label.toLowerCase().includes(needle) || s.blurb.toLowerCase().includes(needle))
+    ? [
+        ...sections.filter((s) => s.label.toLowerCase().startsWith(needle)),
+        ...sections.filter((s) => !s.label.toLowerCase().startsWith(needle) && s.label.toLowerCase().includes(needle)),
+        ...sections.filter((s) => !s.label.toLowerCase().includes(needle) && s.blurb.toLowerCase().includes(needle)),
+      ]
     : sections;
 
   const onKey = (e: React.KeyboardEvent) => {
@@ -368,7 +373,7 @@ function CommandPalette({
             onChange={(e) => { setQ(e.target.value); setIdx(0); }}
             placeholder="Jump to a Radar section…"
             className="flex-1"
-            style={{ border: "none", boxShadow: "none", height: 52, fontSize: 15, padding: 0, background: "transparent" }}
+            style={{ border: "none", boxShadow: "none", outline: "none", height: 52, fontSize: 15, padding: 0, background: "transparent" }}
           />
           <kbd>esc</kbd>
         </div>
