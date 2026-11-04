@@ -112,9 +112,9 @@ Steps (per-row progress markers, resumable; one tick per job at a time via `lock
 1. resolve — sheet LinkedIn → Blitz `domain-to-linkedin` → parent domain → alt domains → Blitz company name search
    (high = domain matches, medium = same name; low = skipped). No Apify.
 2. search — Blitz `waterfall-icp-keyword`, 7 tiers (`ICP_TIERS`); tiers 1-6 = phase 1, tier 7 = phase 2 (needs a dept
-   keyword). Interns/trainees/students always dropped; junior support/HR/finance dropped when the option is on
+   keyword). Interns/trainees/students and junior support always dropped; HR/finance dropped when the option is on
    (rows kept with `dropped_reason`, never saved).
-3. email — Blitz `/v2/enrichment/email` by LinkedIn URL. 4. anymail (opt) — Anymail person search for blanks.
+3. email — Blitz `/v2/enrichment/email` by LinkedIn URL. 4. anymail (opt) — Anymail Finder `find-email/linkedin-url` for blanks.
 5. debounce — every email (≤4 concurrent). 6. verify (opt) — Anymail `verify-email` on Debounce risky/unknown.
 7. phone (opt) — Blitz phone. 8. save — `save_enrich2_job` (accounts by domain+vertical, contacts merged by email
    then LinkedIn within the vertical, fresh `email_status`).

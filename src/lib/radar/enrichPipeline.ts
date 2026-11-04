@@ -5,9 +5,9 @@
  *               domain → alt domains → Blitz brand-name search; low-confidence name matches skipped)
  *   2 search    Blitz Waterfall ICP search per company, 7 title tiers (phase 1 = tiers 1-6 ICP titles,
  *               phase 2 = tier 7 any seniority with a department keyword); interns/trainees/students
- *               always dropped, junior support / HR / finance optionally dropped
+ *               and junior support always dropped, HR / finance optionally dropped
  *   3 email     Blitz work email by LinkedIn URL (no guessing)
- *   4 anymail   (optional) Anymail Finder person search for the blanks
+ *   4 anymail   (optional) Anymail Finder LinkedIn-URL search for the blanks
  *   5 debounce  Debounce every email (≤4 concurrent, Debounce's own limit)
  *   6 verify    (optional) Anymail verify on everything Debounce didn't call Safe to Send / Invalid
  *   7 phone     (optional) Blitz phone by LinkedIn URL
@@ -31,6 +31,7 @@ export interface EnrichOptions {
   anymailFallback: boolean;   // step 4
   anymailVerify: boolean;     // step 6
   phones: boolean;            // step 7
+  /** Drop HR & finance titles (junior support is always dropped). */
   excludeSupportHrFinance: boolean;
 }
 
@@ -68,7 +69,9 @@ export function departmentOf(title: string, tierNo: number): string | null {
   return null;
 }
 const ALWAYS_DROP = /\b(intern|internship|trainee|student|apprentice)\b/i;
-const SUPPORT_HR_FINANCE = /\b(hr|human resources?|talent|recruit\w*|people (ops|operations|partner)|payroll|finance|financial|accounts?|accountant|accounting|audit\w*|tax|treasury|controller)\b|\b(junior|jr\.?|associate|agent|representative|executive)\b.*\b(support|customer care|helpdesk|help desk|service desk)\b|\b(support|customer care|helpdesk|help desk)\b.*\b(executive|associate|agent|representative)\b/i;
+// Junior support is always dropped; HR & finance only when the job's option is on.
+const JUNIOR_SUPPORT = /\b(junior|jr\.?|associate|agent|representative|executive|advisor)\b.*\b(support|customer care|helpdesk|help desk|service desk|call cent(er|re))\b|\b(support|customer care|helpdesk|help desk|call cent(er|re))\b.*\b(executive|associate|agent|representative|advisor)\b/i;
+const HR_FINANCE = /\b(hr|human resources?|talent|recruit\w*|people (ops|operations|partner)|payroll|finance|financial|accounts?|accountant|accounting|audit\w*|tax|treasury|controller)\b/i;
 
 /* ── Helpers ───────────────────────────────────────────────────────────── */
 
@@ -300,12 +303,12 @@ async function runPhaseBatch(job: EnrichJobRow, phase: EnrichPhase, left: () => 
 
   if (phase === "anymail") {
     if (!ANYMAIL) return "next";
-    const { rows } = await selectFrom("enrich2_people", `select=id,full_name,first_name,last_name,domain,linkedin_url&job_id=eq.${id}&dropped_reason=is.null&email=is.null&anymail_tried=is.false&order=id.asc&limit=60`);
+    const { rows } = await selectFrom("enrich2_people", `select=id,linkedin_url&job_id=eq.${id}&dropped_reason=is.null&email=is.null&anymail_tried=is.false&linkedin_url=not.is.null&order=id.asc&limit=60`);
     if (!rows.length) return "next";
-    await stage(`Step 4 · Anymail Finder for people Blitz had no email for — ${c.anymail_tried || 0} searched, ${c.email_anymail || 0} found`, true);
-    const res = await mapPool(rows as Record<string, string | number | null>[], 12, async (p) => {
+    await stage(`Step 4 · Anymail Finder (LinkedIn URL) for people Blitz had no email for — ${c.anymail_tried || 0} searched, ${c.email_anymail || 0} found`, true);
+    const res = await mapPool(rows as { id: number; linkedin_url: string }[], 12, async (p) => {
       if (left() < 15000) return null;
-      const email = await anymailFindPerson(p, ANYMAIL);
+      const email = await anymailFindByLinkedin(p.linkedin_url, ANYMAIL);
       return { id: p.id, job_id: id, anymail_tried: true, ...(email ? { email, email_source: "anymail" } : {}) };
     });
     await upsertPeople(res);
@@ -424,7 +427,8 @@ function personRow(job: EnrichJobRow, co: Record<string, unknown>, r: BlitzIcpRe
   let dropped: string | null = null;
   if (ALWAYS_DROP.test(title)) dropped = "intern/trainee/student";
   else if (tierNo === 7 && !department) dropped = "no department keyword (tier 7)";
-  else if (job.options.excludeSupportHrFinance && tierNo !== 1 && SUPPORT_HR_FINANCE.test(title)) dropped = "junior support / HR / finance";
+  else if (tierNo !== 1 && JUNIOR_SUPPORT.test(title)) dropped = "junior support";
+  else if (job.options.excludeSupportHrFinance && tierNo !== 1 && HR_FINANCE.test(title)) dropped = "HR / finance";
   const full = (p.full_name || [p.first_name, p.last_name].filter(Boolean).join(" ") || "").trim();
   return {
     job_id: job.id, company_id: co.id, domain: co.domain,
@@ -441,16 +445,12 @@ function personRow(job: EnrichJobRow, co: Record<string, unknown>, r: BlitzIcpRe
 
 /* ── Anymail + Debounce calls ──────────────────────────────────────────── */
 
-async function anymailFindPerson(p: Record<string, string | number | null>, key: string): Promise<string | null> {
-  const body: Record<string, string> = {};
-  const full = String(p.full_name || [p.first_name, p.last_name].filter(Boolean).join(" ") || "").trim();
-  if (full) body.full_name = full;
-  if (p.domain) body.domain = String(p.domain);
-  if (p.linkedin_url) body.linkedin_url = String(p.linkedin_url);
-  if (!body.domain && !body.linkedin_url) return null;
+/** Anymail Finder's LinkedIn lookup — email for a LinkedIn profile URL (1 credit only when a valid email is found). */
+async function anymailFindByLinkedin(linkedinUrl: string, key: string): Promise<string | null> {
   try {
-    const r = await fetch("https://api.anymailfinder.com/v5.1/find-email/person", {
-      method: "POST", headers: { Authorization: key, "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(90000),
+    const r = await fetch("https://api.anymailfinder.com/v5.1/find-email/linkedin-url", {
+      method: "POST", headers: { Authorization: key, "Content-Type": "application/json" },
+      body: JSON.stringify({ linkedin_url: linkedinUrl }), signal: AbortSignal.timeout(90000),
     });
     if (r.status === 401 || r.status === 402) throw new Error(`Anymail Finder ${r.status === 401 ? "rejected the API key" : "is out of credits"} (${r.status})`);
     if (!r.ok) return null;

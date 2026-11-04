@@ -3928,9 +3928,9 @@ function EnrichV2Section() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-          {toggle(anymailFallback, setAnymailFallback, "Anymail Finder for missing emails", "Name + domain search when Blitz has no email · 1 credit per email found")}
+          {toggle(anymailFallback, setAnymailFallback, "Anymail Finder for missing emails", "LinkedIn URL search when Blitz has no email · 1 credit per email found")}
           {toggle(anymailVerify, setAnymailVerify, "Anymail verify Risky / Unknown", "Second pass on everything Debounce didn't call Safe or Invalid · 0.2 credit each")}
-          {toggle(excludeShf, setExcludeShf, "Drop junior support, HR & finance titles", "Interns, trainees and students are always dropped")}
+          {toggle(excludeShf, setExcludeShf, "Drop HR & finance titles", "Interns, trainees, students and junior support are always dropped")}
           {toggle(phones, setPhones, "Find phone numbers (Blitz)", "Needs a LinkedIn URL · ~12–15% hit on Indian lists, ~30% on US")}
         </div>
 
