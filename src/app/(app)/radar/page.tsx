@@ -2583,20 +2583,30 @@ function ExportAndCheckSection() {
   const [mode, setMode] = useState<"download" | "check">("download");
   return (
     <div className="space-y-4">
-      <div className="radar-seg flex gap-0.5 p-1 rounded-xl bg-[var(--hm-bg-tertiary)] w-fit">
-        {(["download", "check"] as const).map((m) => (
-          <button
-            key={m}
-            onClick={() => setMode(m)}
-            className={`px-3.5 py-1.5 text-[13px] rounded-lg whitespace-nowrap transition-colors ${
-              mode === m
-                ? "bg-[var(--hm-surface)] text-[var(--hm-text)] font-medium"
-                : "text-[var(--hm-text-secondary)] hover:text-[var(--hm-text)]"
-            }`}
-          >
-            {m === "download" ? "Download" : "Check DB"}
-          </button>
-        ))}
+      {/* Mode cards — same pattern as Validate's Find Emails / Risky / Check LinkedIn switcher. */}
+      <div className="radar-card overflow-hidden grid grid-cols-1 sm:grid-cols-2 bg-[var(--hm-bg-secondary)]">
+        {([
+          { id: "download", label: "Download", hint: "Export accounts or contacts matching your filters as CSV", icon: "export" },
+          { id: "check", label: "Check DB", hint: "Paste or upload a list to see which values already exist in Radar", icon: "search" },
+        ] as const).map((m) => {
+          const on = mode === m.id;
+          return (
+            <button
+              key={m.id}
+              onClick={() => setMode(m.id)}
+              className={`group relative flex items-center gap-3 px-4 py-3.5 text-left transition-colors ${on ? "bg-[var(--hm-surface)]" : "hover:bg-[var(--hm-bg-tertiary)]"} sm:[&:not(:first-child)]:border-l border-[var(--hm-border)]`}
+            >
+              <span className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors ${on ? "bg-[var(--hm-primary)] text-[var(--hm-bg)]" : "bg-[var(--hm-surface)] border border-[var(--hm-border)] text-[var(--hm-text-tertiary)] group-hover:text-[var(--hm-text)]"}`}>
+                <NavIcon id={m.icon} size={16} />
+              </span>
+              <span className="min-w-0">
+                <span className={`block text-[13.5px] font-semibold ${on ? "text-[var(--hm-text)]" : "text-[var(--hm-text-secondary)] group-hover:text-[var(--hm-text)]"}`}>{m.label}</span>
+                <span className="block text-[11.5px] text-[var(--hm-text-tertiary)] truncate">{m.hint}</span>
+              </span>
+              {on && <span className="absolute left-0 right-0 bottom-0 h-[2px] bg-[var(--hm-primary)]" />}
+            </button>
+          );
+        })}
       </div>
       {mode === "download" ? <ExportSection /> : <CheckDbSection />}
     </div>
