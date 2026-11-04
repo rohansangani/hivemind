@@ -6,7 +6,7 @@
  * Export route is a thin wrapper around these same functions.
  */
 
-import { selectFrom, radarFetch, verticalsFilter } from "@/lib/radar/supabase";
+import { selectFrom, radarFetch, verticalsFilter, firmographicFilters } from "@/lib/radar/supabase";
 
 export const DEFAULT_EMAIL_STATUSES = ["safe to send", "verified"];
 
@@ -157,6 +157,7 @@ export function buildContactQuery(filters: Record<string, unknown>): string {
   if (filters.industry) q += buildInFilter("industry", filters.industry);
   if (filters.employeeRange) q += buildInFilter("employee_range", filters.employeeRange);
   if (filters.country) q += buildInFilter("country", filters.country);
+  q += firmographicFilters(filters);
   if (filters.company) q += buildIlikeOrFilter("company_name", filters.company);
   // title may be a single string or an array of strings (multiple job-title buckets in one
   // combined export, e.g. ["Founder", "Co-Founder", "Operations"]) — OR'd together so one query/

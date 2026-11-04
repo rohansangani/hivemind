@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verticalsFilter, selectFrom, requireRadarAccess, updateRow, setMarkedIrrelevant, deleteMarkedIrrelevant, fetchAllIds } from "@/lib/radar/supabase";
+import { verticalsFilter, selectFrom, requireRadarAccess, updateRow, setMarkedIrrelevant, deleteMarkedIrrelevant, fetchAllIds, firmographicFilters } from "@/lib/radar/supabase";
 import { logRadarActivity } from "@/lib/radar/activityLog";
 
 const RADAR_ADMIN_ROLES = ["owner", "admin"];
@@ -14,6 +14,7 @@ function buildContactsFilter(body: Record<string, unknown>, role: string): strin
     lifecycleStage, leadStatus, sdrOwner, source, hubspotExcluded, hasLinkedin, hasPhone } = body as Record<string, string | boolean | undefined>;
   let query = "";
   const eq = (col: string, v: unknown) => { if (v) query += `&${col}=eq.${encodeURIComponent(String(v))}`; };
+  query += firmographicFilters(body);
   eq("hubspot_lifecycle_stage", lifecycleStage);
   eq("hubspot_lead_status", leadStatus);
   eq("sdr_owner", sdrOwner);

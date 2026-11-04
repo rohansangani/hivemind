@@ -89,3 +89,15 @@ SQL: `docs/sql/2026-11-04_crossborder_overlay.sql` (applied live to the Radar DB
   Dashboard totals leave the Crossborder row out (marked ↺) so no one is double counted.
 - Crossborder account drawer lists contacts by `matchDomain` (contacts route param), not account_id.
 - `link_contacts_on_account_insert` now only auto-links contacts of the SAME vertical.
+
+## Clean firmographics (2026-11-04)
+
+SQL: `docs/sql/2026-11-04_firmographics_clean.sql`. Raw `industry/sub_industry/employee_range/revenue_range` are
+untouched; STORED generated columns on `accounts` (also on `contacts_view`) give a clean taxonomy:
+- `industry_category` / `industry_subcategory` via `radar_industry_path()` — 18 categories, ordered regex rules
+  (first match wins) over "industry | sub_industry". Change a rule → re-run the function, then
+  `UPDATE accounts SET industry = industry;` to recompute.
+- `employee_bucket` (1-10 … 10,001+, upper bound of the range; employee_count wins), `revenue_bucket`
+  (Under $1M … $1B+, via `radar_revenue_usd()`; ₹ and Cr convert at ₹95 = $1; ranges use lower bound).
+- Filters/exports use `industryGroup` ("Category" or "Category › Sub"), `employeeBucket`, `revenueBucket`
+  (`firmographicFilters()` in lib/radar/supabase.ts). `/api/radar/options` returns the ordered tree + counts.

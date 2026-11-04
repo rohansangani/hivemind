@@ -188,6 +188,22 @@ const RADAR_SUPABASE_ACCESS_TOKEN = process.env.RADAR_SUPABASE_ACCESS_TOKEN;
  * express (DISTINCT, aggregates). Retries the transient Redis "OOM" error the
  * Management API occasionally throws (same behaviour as radar's own helper).
  */
+/** Clean firmographic filters — the generated accounts columns from docs/sql/2026-11-04_firmographics_clean.sql
+ * (also on contacts_view). industryGroup is "Category" or "Category › Subcategory". */
+export const INDUSTRY_SEP = " › ";
+export function firmographicFilters(f: Record<string, unknown>): string {
+  let q = "";
+  const g = typeof f.industryGroup === "string" ? f.industryGroup.trim() : "";
+  if (g) {
+    const [cat, sub] = g.split(INDUSTRY_SEP);
+    q += `&industry_category=eq.${encodeURIComponent(cat)}`;
+    if (sub) q += `&industry_subcategory=eq.${encodeURIComponent(sub)}`;
+  }
+  if (typeof f.employeeBucket === "string" && f.employeeBucket) q += `&employee_bucket=eq.${encodeURIComponent(f.employeeBucket)}`;
+  if (typeof f.revenueBucket === "string" && f.revenueBucket) q += `&revenue_bucket=eq.${encodeURIComponent(f.revenueBucket)}`;
+  return q;
+}
+
 /** PostgREST filter on contacts.verticals — every vertical a contact counts under (its own, plus
  * Crossborder when its company domain has a Crossborder account; see docs/sql/2026-11-04_crossborder_overlay.sql).
  * One value → contains; several → overlaps. Use this, not `vertical=eq.`, when pulling contacts BY vertical. */

@@ -1017,7 +1017,15 @@ interface RadarOptions {
   accountSources?: string[];
   contactSources?: string[];
   contactCountries?: string[];
+  /** Clean taxonomy: "Category" and "Category › Subcategory", ordered, with account counts. */
+  industryGroups?: string[];
+  industryGroupCounts?: Record<string, number>;
+  employeeBuckets?: string[];
+  employeeBucketCounts?: Record<string, number>;
+  revenueBuckets?: string[];
+  revenueBucketCounts?: Record<string, number>;
 }
+const INDUSTRY_SEP = " › ";
 
 /* ── Filters: categorised panel + searchable pickers ───────────────────── */
 
@@ -1029,6 +1037,10 @@ interface FilterField {
   labels?: Record<string, string>;
   /** Range-like values ("1-10", "101-200", "$1M-$10M") sort by their first number, not alphabetically. */
   numeric?: boolean;
+  /** Account counts shown next to each option. */
+  counts?: (o: RadarOptions | null) => Record<string, number> | undefined;
+  /** Options are "Category" / "Category › Sub" — render as a grouped tree. */
+  grouped?: boolean;
   placeholder?: string;
 }
 interface FilterGroup { id: string; label: string; icon: string; fields: FilterField[] }
@@ -1040,11 +1052,11 @@ const SEGMENT_FIELDS: FilterField[] = [
   { key: "accountType", label: "Account type", kind: "select", options: () => ACCOUNT_TYPE_OPTIONS },
   { key: "customer", label: "Customer", kind: "yesno" },
 ];
+// Clean, categorised firmographics (generated columns — raw values stay untouched in the DB).
 const FIRMO_FIELDS: FilterField[] = [
-  { key: "industry", label: "Industry", kind: "select", options: (o) => o?.industries || [] },
-  { key: "subIndustry", label: "Sub-industry", kind: "select", options: (o) => o?.subIndustries || [] },
-  { key: "employeeRange", label: "Employees", kind: "select", options: (o) => o?.employeeRanges || [], numeric: true },
-  { key: "revenueRange", label: "Revenue", kind: "select", options: (o) => o?.revenueRanges || [], numeric: true },
+  { key: "industryGroup", label: "Industry", kind: "select", grouped: true, options: (o) => o?.industryGroups || [], counts: (o) => o?.industryGroupCounts },
+  { key: "employeeBucket", label: "Employees", kind: "select", options: (o) => o?.employeeBuckets || [], counts: (o) => o?.employeeBucketCounts },
+  { key: "revenueBucket", label: "Revenue (USD)", kind: "select", options: (o) => o?.revenueBuckets || [], counts: (o) => o?.revenueBucketCounts },
 ];
 const CRM_FIELDS = (sources: (o: RadarOptions | null) => string[]): FilterField[] => [
   { key: "lifecycleStage", label: "HubSpot lifecycle stage", kind: "select", options: (o) => o?.lifecycleStages || [] },
@@ -1094,8 +1106,9 @@ const CONTACT_FILTER_GROUPS: FilterGroup[] = [
 const firstNum = (v: string) => { const m = v.replace(/,/g, "").match(/\d+(\.\d+)?/); return m ? parseFloat(m[0]) * (/b/i.test(v.slice(0, 12)) ? 1e9 : /m/i.test(v.slice(0, 12)) ? 1e6 : /k/i.test(v.slice(0, 12)) ? 1e3 : 1) : Number.MAX_VALUE; };
 
 /** Dropdown with a search box — long lists (industries, countries, owners) stay usable. */
-function SearchSelect({ value, onChange, options, labels, numeric, label }: {
+function SearchSelect({ value, onChange, options, labels, numeric, label, counts, grouped }: {
   value: string; onChange: (v: string) => void; options: string[]; labels?: Record<string, string>; numeric?: boolean; label: string;
+  counts?: Record<string, number>; grouped?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -1109,6 +1122,7 @@ function SearchSelect({ value, onChange, options, labels, numeric, label }: {
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
   const text = (o: string) => labels?.[o] || o;
+  const isSub = (o: string) => grouped && o.includes(INDUSTRY_SEP);
   const sorted = numeric ? options.slice().sort((a, b) => firstNum(a) - firstNum(b)) : options;
   const needle = q.trim().toLowerCase();
   const matches = needle ? sorted.filter((o) => text(o).toLowerCase().includes(needle)) : sorted;
@@ -1138,17 +1152,25 @@ function SearchSelect({ value, onChange, options, labels, numeric, label }: {
         )}
       </button>
       {open && (
-        <div className="radar-palette absolute left-0 top-full mt-1 z-40 w-full min-w-[240px] rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] overflow-hidden">
+        <div className={`radar-palette absolute left-0 top-full mt-1 z-40 w-full ${grouped ? "min-w-[320px]" : "min-w-[240px]"} rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] overflow-hidden`}>
           <div className="p-2 border-b border-[var(--hm-border)]">
             <input type="text" autoFocus value={q} onChange={(e) => { setQ(e.target.value); setHi(0); }} onKeyDown={onKey}
-              placeholder={`Search ${options.length.toLocaleString()} option${options.length === 1 ? "" : "s"}…`} style={{ height: 30, fontSize: 12.5, width: "100%" }} />
+              placeholder={grouped ? `Search ${options.filter((o) => !o.includes(INDUSTRY_SEP)).length} categories & subcategories…` : `Search ${options.length.toLocaleString()} option${options.length === 1 ? "" : "s"}…`} style={{ height: 30, fontSize: 12.5, width: "100%" }} />
           </div>
           <div ref={listRef} className="max-h-[260px] overflow-y-auto py-1">
             {items.map((o, i) => (
               <button key={o || "__any"} data-i={i} type="button" onMouseEnter={() => setHi(i)} onClick={() => pick(o)}
-                className={`w-full text-left px-3 py-1.5 text-[12.5px] flex items-center gap-2 ${i === hi ? "bg-[var(--hm-bg-tertiary)]" : ""} ${o === value ? "font-semibold text-[var(--hm-text)]" : o ? "text-[var(--hm-text-secondary)]" : "text-[var(--hm-text-tertiary)] italic"}`}>
+                className={`w-full text-left px-3 py-1.5 text-[12.5px] flex items-center gap-2 ${i === hi ? "bg-[var(--hm-bg-tertiary)]" : ""} ${grouped && o && !isSub(o) && i > 1 && !needle ? "mt-1 border-t border-[var(--hm-border-light)] pt-2" : ""} ${o === value ? "font-semibold text-[var(--hm-text)]" : !o ? "text-[var(--hm-text-tertiary)] italic" : grouped && !isSub(o) ? "font-semibold text-[var(--hm-text)]" : "text-[var(--hm-text-secondary)]"}`}>
                 <span className="w-3 flex-shrink-0 text-[var(--hm-text)]">{o === value ? "✓" : ""}</span>
-                <span className="truncate">{o ? text(o) : "Any"}</span>
+                {isSub(o) ? (
+                  <span className={`truncate ${needle ? "" : "pl-3"}`}>
+                    {o.split(INDUSTRY_SEP)[1]}
+                    {needle && <span className="text-[var(--hm-text-tertiary)] font-normal"> · {o.split(INDUSTRY_SEP)[0]}</span>}
+                  </span>
+                ) : (
+                  <span className="truncate">{o ? text(o) : "Any"}{grouped && o && !needle && <span className="ml-1 text-[10.5px] font-normal text-[var(--hm-text-tertiary)]">(all)</span>}</span>
+                )}
+                {o && counts?.[o] != null && <span className="ml-auto pl-2 text-[11px] font-normal tabular-nums text-[var(--hm-text-tertiary)]">{counts[o].toLocaleString()}</span>}
               </button>
             ))}
             {!matches.length && <p className="px-3 py-3 text-[12px] text-[var(--hm-text-tertiary)]">No match for “{q}”.</p>}
@@ -1472,7 +1494,7 @@ function DataTable<T extends { id: string }>({
                   <div key={f.key}>
                     <p className="text-[11.5px] text-[var(--hm-text-tertiary)] mb-1">{f.label}</p>
                     {f.kind === "select" ? (
-                      <SearchSelect label={f.label} value={filters[f.key] || ""} onChange={(v) => setFilter(f.key, v)} options={f.options?.(options) || []} labels={f.labels} numeric={f.numeric} />
+                      <SearchSelect label={f.label} value={filters[f.key] || ""} onChange={(v) => setFilter(f.key, v)} options={f.options?.(options) || []} labels={f.labels} numeric={f.numeric} counts={f.counts?.(options)} grouped={f.grouped} />
                     ) : f.kind === "text" ? (
                       <TextFilter label={f.label} value={filters[f.key] || ""} onChange={(v) => setFilter(f.key, v)} placeholder={f.placeholder} />
                     ) : (
@@ -1637,6 +1659,10 @@ interface AccountRow {
   customer: boolean | null;
   industry: string | null;
   sub_industry: string | null;
+  industry_category?: string | null;
+  industry_subcategory?: string | null;
+  employee_bucket?: string | null;
+  revenue_bucket?: string | null;
   account_size: string | null;
   employee_range: string | null;
   revenue_range: string | null;
@@ -1679,6 +1705,12 @@ function VerticalBadge({ v }: { v: string | null }) {
       {v}
     </span>
   );
+}
+
+/** Clean (categorised) value, with the raw source value on hover — falls back to raw when no clean value. */
+function CleanCell({ clean, raw }: { clean?: string | null; raw?: string | null }) {
+  if (!clean) return <Cell value={raw} />;
+  return <span title={raw && raw !== clean ? `Original: ${raw}` : undefined}>{clean}</span>;
 }
 
 /** Renders a value or a muted dash when blank. */
@@ -2117,11 +2149,11 @@ function AccountsSection() {
     },
     { key: "hubspot_stage", header: "HubSpot Lifecycle Stage", render: (r) => <HubspotBadge v={r.hubspot_lifecycle_stage} /> },
     { key: "hubspot_status", header: "HubSpot Lead Status", render: (r) => <HubspotBadge v={r.hubspot_lead_status} /> },
-    { key: "industry", header: "Industry", render: (r) => <Cell value={r.industry} /> },
-    { key: "sub_industry", header: "Sub-Industry", render: (r) => <Cell value={r.sub_industry} /> },
+    { key: "industry", header: "Industry", render: (r) => <CleanCell clean={r.industry_category} raw={r.industry} /> },
+    { key: "sub_industry", header: "Sub-Industry", render: (r) => <CleanCell clean={r.industry_subcategory} raw={r.sub_industry || r.industry} /> },
     { key: "account_size", header: "Account Size", render: (r) => <Cell value={r.account_size} /> },
-    { key: "employees", header: "Employees", className: "tabular-nums", render: (r) => <Cell value={r.employee_range} /> },
-    { key: "revenue", header: "Revenue", className: "tabular-nums", render: (r) => <Cell value={r.revenue_range} /> },
+    { key: "employees", header: "Employees", className: "tabular-nums", render: (r) => <CleanCell clean={r.employee_bucket} raw={r.employee_range} /> },
+    { key: "revenue", header: "Revenue", className: "tabular-nums", render: (r) => <CleanCell clean={r.revenue_bucket} raw={r.revenue_range} /> },
     { key: "location", header: "Company Location", render: (r) => <Cell value={r.company_location} /> },
     { key: "country", header: "Country", render: (r) => <Cell value={r.country} /> },
     { key: "linkedin", header: "LinkedIn", render: (r) => r.linkedin_url ? <a href={linkedinHref(r.linkedin_url)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-[var(--hm-link)] whitespace-nowrap">{linkedinHref(r.linkedin_url)}</a> : <span className="text-[var(--hm-text-tertiary)]">—</span> },
@@ -2343,6 +2375,10 @@ interface ContactRow {
   customer: boolean | null;
   industry: string | null;
   sub_industry: string | null;
+  industry_category?: string | null;
+  industry_subcategory?: string | null;
+  employee_bucket?: string | null;
+  revenue_bucket?: string | null;
   employee_range: string | null;
   revenue_range: string | null;
   phone: string | null;
@@ -2452,10 +2488,10 @@ function ContactsSection() {
     { key: "hubspot", header: "HubSpot Excluded", render: (r) => <YesNo v={r.hubspot_excluded} /> },
     { key: "hubspot_stage", header: "HubSpot Lifecycle Stage", render: (r) => <HubspotBadge v={r.hubspot_lifecycle_stage} /> },
     { key: "hubspot_status", header: "HubSpot Lead Status", render: (r) => <HubspotBadge v={r.hubspot_lead_status} /> },
-    { key: "industry", header: "Industry", render: (r) => <Cell value={r.industry} /> },
-    { key: "sub_industry", header: "Sub-Industry", render: (r) => <Cell value={r.sub_industry} /> },
-    { key: "employees", header: "Employees", className: "tabular-nums", render: (r) => <Cell value={r.employee_range} /> },
-    { key: "revenue", header: "Revenue", className: "tabular-nums", render: (r) => <Cell value={r.revenue_range} /> },
+    { key: "industry", header: "Industry", render: (r) => <CleanCell clean={r.industry_category} raw={r.industry} /> },
+    { key: "sub_industry", header: "Sub-Industry", render: (r) => <CleanCell clean={r.industry_subcategory} raw={r.sub_industry || r.industry} /> },
+    { key: "employees", header: "Employees", className: "tabular-nums", render: (r) => <CleanCell clean={r.employee_bucket} raw={r.employee_range} /> },
+    { key: "revenue", header: "Revenue", className: "tabular-nums", render: (r) => <CleanCell clean={r.revenue_bucket} raw={r.revenue_range} /> },
     { key: "phone", header: "Phone", render: (r) => <Cell value={r.phone} /> },
     { key: "phone2", header: "Phone 2", render: (r) => <Cell value={r.phone2} /> },
     { key: "location", header: "Location", render: (r) => <Cell value={r.location} /> },
@@ -2591,8 +2627,8 @@ function ExportSection() {
 
   const filters = () => ({
     vertical: vertical || undefined,
-    industry: industry || undefined,
-    employeeRange: employeeRange || undefined,
+    industryGroup: industry || undefined,
+    employeeBucket: employeeRange || undefined,
     country: country || undefined,
     search: search || undefined,
   });
@@ -2772,8 +2808,14 @@ function ExportSection() {
               ))}
             </select>
           </div>
-          <FilterSelect label="Industry" value={industry} onChange={setIndustry} options={options?.industries || []} />
-          <FilterSelect label="Employees" value={employeeRange} onChange={setEmployeeRange} options={options?.employeeRanges || []} />
+          <div style={{ width: 240 }}>
+            <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Industry</label>
+            <SearchSelect label="Industry" value={industry} onChange={setIndustry} options={options?.industryGroups || []} counts={options?.industryGroupCounts} grouped />
+          </div>
+          <div style={{ width: 170 }}>
+            <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Employees</label>
+            <SearchSelect label="Employees" value={employeeRange} onChange={setEmployeeRange} options={options?.employeeBuckets || []} counts={options?.employeeBucketCounts} />
+          </div>
           <FilterSelect label="Country" value={country} onChange={setCountry} options={options?.countries || []} />
           <div className="flex-1 min-w-[180px]">
             <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Search (optional)</label>

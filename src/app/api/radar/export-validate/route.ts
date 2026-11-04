@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRadarAccess, selectFrom, patchByFilter, verticalsFilter } from "@/lib/radar/supabase";
+import { requireRadarAccess, selectFrom, patchByFilter, verticalsFilter, firmographicFilters } from "@/lib/radar/supabase";
 import { anymailKey, verifyEmailListChunk } from "@/lib/radar/emailVerify";
 import { findPeopleChunk, type FindPerson } from "@/lib/radar/emailFind";
 
@@ -56,6 +56,7 @@ function buildRetestQuery(filters: RetestFilters, limit?: number, offset?: numbe
   if (limit) q += `&limit=${limit}`;
   if (offset) q += `&offset=${offset}`;
   if (filters.vertical) q += verticalsFilter(filters.vertical);
+  q += firmographicFilters(filters as unknown as Record<string, unknown>);
 
   const industries = Array.isArray(filters.industry) ? filters.industry.filter(Boolean) : filters.industry ? [filters.industry] : [];
   if (industries.length === 1) q += `&industry=eq.${encodeURIComponent(industries[0])}`;

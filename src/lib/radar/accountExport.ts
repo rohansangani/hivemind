@@ -6,7 +6,7 @@
  * both paths filter/export identically.
  */
 
-import { selectFrom } from "@/lib/radar/supabase";
+import { selectFrom, firmographicFilters } from "@/lib/radar/supabase";
 import { fetchAllPages, csvCell, buildInFilter, splitFilterCombos, encodeIlikeValue, mapWithConcurrency, type ArrayFieldConfig } from "@/lib/radar/contactExport";
 
 // Same reasoning as CONTACT_ARRAY_FIELDS in contactExport.ts — every one of these accepts a single
@@ -46,6 +46,7 @@ export function buildAccountQuery(filters: Record<string, unknown>): string {
   if (filters.employeeRange) q += buildInFilter("employee_range", filters.employeeRange);
   if (filters.revenueRange) q += buildInFilter("revenue_range", filters.revenueRange);
   if (filters.country) q += buildInFilter("country", filters.country);
+  q += firmographicFilters(filters);
   if (filters.search) {
     const s = encodeIlikeValue(String(filters.search));
     q += `&or=(name.ilike.${s},domain.ilike.${s})`;
