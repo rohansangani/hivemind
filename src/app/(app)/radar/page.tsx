@@ -4686,6 +4686,37 @@ function LinkedinSourceBadge({ source, error }: { source?: string; error?: strin
   return m ? <span className={`text-[10.5px] px-1.5 py-0.5 rounded font-medium whitespace-nowrap ${m.tone}`}>{m.label}</span> : null;
 }
 
+/** Closes an opened job when the user clicks empty space (or presses Esc) — anything marked
+ * `data-job-keep` (the job panel, job list, results) and any control (button, link, input…)
+ * doesn't count. Only acts while `scopeRef`'s element is actually on screen, so a job left open
+ * in a hidden Radar tab isn't closed by clicks elsewhere. */
+function useCloseJobOnWhitespace(scopeRef: React.RefObject<HTMLElement | null>, open: boolean, onClose: () => void) {
+  const closeRef = useRef(onClose);
+  useEffect(() => { closeRef.current = onClose; });
+  useEffect(() => {
+    if (!open) return;
+    const visible = () => !!scopeRef.current && scopeRef.current.offsetParent !== null;
+    const onClick = (e: MouseEvent) => {
+      if (!visible() || e.button !== 0) return;
+      const t = e.target as HTMLElement | null;
+      if (!t || !t.isConnected) return;
+      if (t.closest('[data-job-keep], button, a, input, select, textarea, label, option, [role="dialog"], [contenteditable="true"]')) return;
+      if (window.getSelection()?.toString()) return; // finished a text selection, not a click
+      closeRef.current();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || !visible()) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT")) return;
+      if (document.querySelector('[role="dialog"]')) return; // let an open drawer/palette take Esc
+      closeRef.current();
+    };
+    document.addEventListener("click", onClick);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("click", onClick); document.removeEventListener("keydown", onKey); };
+  }, [open, scopeRef]);
+}
+
 /** Live view of a Check LinkedIn job: progress bar, what's running right now (from the job's
  * `stage`, polled every 2.5s), and how many each provider in the Blitz → Anymail → Apify
  * waterfall has answered so far. */
@@ -4716,7 +4747,7 @@ function LinkedinPipeline({ job, results, checkType, refreshing, cancelling, onR
     : { text: "Stopped", cls: "bg-[var(--tag-gray-bg)] text-[var(--tag-gray-fg)]" };
 
   return (
-    <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] overflow-hidden">
+    <div data-job-keep className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] overflow-hidden">
       <div className="px-4 py-3 flex items-center gap-3 flex-wrap border-b border-[var(--hm-border)]">
         <span className={`inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-md font-medium ${statusPill.cls}`}>
           <span className={`radar-dot ${running ? "radar-live-dot" : ""}`} />{statusPill.text}
@@ -5024,6 +5055,17 @@ function ValidateSection() {
       setRetryingLinkedinJobId(null);
     }
   };
+
+  const closeLinkedinJob = () => {
+    activeLinkedinJobIdRef.current = null;
+    setActiveLinkedinJobId(null);
+    setActiveLinkedinJob(null);
+    setLinkedinResults([]);
+    setLinkedinCompanyResults([]);
+    setLinkedinSummary(null);
+  };
+  const linkedinScopeRef = useRef<HTMLDivElement>(null);
+  useCloseJobOnWhitespace(linkedinScopeRef, activeLinkedinJobId != null, closeLinkedinJob);
 
   const deleteLinkedinJob = async (jobId: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -6028,7 +6070,7 @@ function ValidateSection() {
                       ))}
                     </div>
                   </div>
-                  <div className="px-5 py-5 space-y-4">
+                  <div ref={linkedinScopeRef} className="px-5 py-5 space-y-4">
                     <div>
                       <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">
                         {linkedinCheckType === "company" ? "LinkedIn company URLs (one per line, or comma-separated)" : "LinkedIn profile URLs (one per line, or comma-separated)"}
@@ -6094,7 +6136,7 @@ function ValidateSection() {
                     )}
 
                     {/* Recent LinkedIn checks — revisit or download results from a past run. */}
-                    <div className="space-y-2">
+                    <div className="space-y-2" data-job-keep>
                       <div className="flex items-center justify-between">
                         <p className="text-[11px] font-medium text-[var(--hm-text-tertiary)] uppercase tracking-wide">Recent LinkedIn checks</p>
                         <button onClick={loadRecentLinkedinJobs} disabled={recentLinkedinJobsLoading} className="text-[11px] text-[var(--hm-link)]">
@@ -6162,7 +6204,7 @@ function ValidateSection() {
                     </div>
 
                     {linkedinCheckType === "profile" && linkedinSummary && (
-                      <div className="flex items-center gap-4 text-[12.5px] flex-wrap">
+                      <div data-job-keep className="flex items-center gap-4 text-[12.5px] flex-wrap">
                         <span className="text-[var(--tag-green-fg)]">✓ {linkedinSummary.matched} same company</span>
                         <span className="text-[var(--tag-red-fg)]">✗ {linkedinSummary.mismatched} different company (marked moved)</span>
                         {linkedinSummary.uncertain > 0 && (
@@ -6190,7 +6232,7 @@ function ValidateSection() {
                     )}
 
                     {linkedinCheckType === "company" && linkedinSummary && (
-                      <div className="flex items-center gap-4 text-[12.5px] flex-wrap">
+                      <div data-job-keep className="flex items-center gap-4 text-[12.5px] flex-wrap">
                         <span className="text-[var(--tag-green-fg)]">✓ {linkedinSummary.matched} same domain</span>
                         <span className="text-[var(--tag-red-fg)]">✗ {linkedinSummary.mismatched} different domain</span>
                         {linkedinSummary.uncertain > 0 && (
@@ -6217,7 +6259,7 @@ function ValidateSection() {
                     )}
 
                     {linkedinCheckType === "profile" && linkedinResults.length > 0 && (
-                      <div className="overflow-x-auto rounded-lg border border-[var(--hm-border)]">
+                      <div data-job-keep className="overflow-x-auto rounded-lg border border-[var(--hm-border)]">
                         <table className="w-full border-collapse text-[12.5px]">
                           <thead>
                             <tr>
@@ -6280,7 +6322,7 @@ function ValidateSection() {
                     )}
 
                     {linkedinCheckType === "company" && linkedinCompanyResults.length > 0 && (
-                      <div className="overflow-x-auto rounded-lg border border-[var(--hm-border)]">
+                      <div data-job-keep className="overflow-x-auto rounded-lg border border-[var(--hm-border)]">
                         <table className="w-full border-collapse text-[12.5px]">
                           <thead>
                             <tr>
@@ -7457,7 +7499,7 @@ function JobProgressPanel({ title, status, processed, total, noun, liveText, don
     : status === "error" ? { text: "Error", cls: "bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)]" }
     : { text: "Stopped", cls: "bg-[var(--tag-gray-bg)] text-[var(--tag-gray-fg)]" };
   return (
-    <div className="radar-enter rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] overflow-hidden">
+    <div data-job-keep className="radar-enter rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] overflow-hidden">
       <div className="px-4 py-3 flex items-center gap-3 flex-wrap border-b border-[var(--hm-border)]">
         <span className={`inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-md font-medium ${pill.cls}`}>
           <span className={`radar-dot ${running ? "radar-live-dot" : ""}`} />{pill.text}
@@ -7515,7 +7557,7 @@ function RecentJobsList({ jobs, tag, activeId, openingId, retryingId, loading, e
   onStop: (id: number) => void; onRetry: (id: number) => void; onDelete: (id: number) => void;
 }) {
   return (
-    <div className="space-y-2">
+    <div className="space-y-2" data-job-keep>
       <div className="flex items-center justify-between">
         <p className="text-[11px] font-medium text-[var(--hm-text-tertiary)] uppercase tracking-wide">Recent jobs</p>
         <button onClick={onRefresh} disabled={loading} className="text-[11px] text-[var(--hm-link)] disabled:opacity-60 inline-flex items-center gap-1.5">
@@ -7631,10 +7673,11 @@ function useAnymailJobs(provider: "anymail" | "anymail_find", refresh: (id: numb
       if (id === jobId) { setJobId(null); reset(); }
     } catch (e) { setError((e as Error).message); }
   };
+  const close = () => { setJobId(null); setOpeningId(null); reset(); };
   /** After starting a new job: open it straight away and refresh the list. */
   const started = (id: number | null) => { reset(); if (id != null) { setOpeningId(id); setJobId(id); setPollKey((k) => k + 1); } loadJobs(); };
 
-  return { jobs, jobsLoading, jobId, openingId, stopping, retryingId, loadJobs, open, stopJob, retryJob, deleteJob, started };
+  return { jobs, jobsLoading, jobId, openingId, stopping, retryingId, loadJobs, open, close, stopJob, retryJob, deleteJob, started };
 }
 
 function EmailValidationPanel() {
@@ -7670,6 +7713,8 @@ function EmailValidationPanel() {
   };
   const J = useAnymailJobs("anymail", refresh, post, () => { setSummary(null); setRows([]); setJob(null); }, setError);
   const jobId = J.jobId;
+  const scopeRef = useRef<HTMLDivElement>(null);
+  useCloseJobOnWhitespace(scopeRef, jobId != null, J.close);
 
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -7735,7 +7780,7 @@ function EmailValidationPanel() {
           automatically: existing contacts get their email status updated, and emails not in Radar yet are added to the vertical you pick.
         </p>
       </div>
-      <div className="px-5 py-5 space-y-4">
+      <div ref={scopeRef} className="px-5 py-5 space-y-4">
         {error && <div className="rounded-lg p-3 text-[12.5px] bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)]">{error}</div>}
 
         <div className="flex flex-wrap items-end gap-3">
@@ -7769,7 +7814,7 @@ function EmailValidationPanel() {
         </p>
 
         {jobId != null && !job && (
-          <div className="rounded-xl border border-[var(--hm-border)] px-4 py-5 flex items-center gap-2 text-[12.5px] text-[var(--hm-text-secondary)]">
+          <div data-job-keep className="rounded-xl border border-[var(--hm-border)] px-4 py-5 flex items-center gap-2 text-[12.5px] text-[var(--hm-text-secondary)]">
             <span className="w-3.5 h-3.5 border-2 border-[var(--hm-border)] border-t-[var(--hm-text)] rounded-full animate-spin" />Opening job #{jobId}…
           </div>
         )}
@@ -7805,13 +7850,13 @@ function EmailValidationPanel() {
         />
 
         {job && summary && (
-          <p className="text-[12px] text-[var(--hm-text-secondary)]">
+          <p data-job-keep className="text-[12px] text-[var(--hm-text-secondary)]">
             Saved to Radar: <strong>{summary.existing.toLocaleString()}</strong> existing contact(s) updated · <strong>{summary.added.toLocaleString()}</strong> new contact(s) added
             {summary.total - summary.existing - summary.added > 0 ? ` · ${(summary.total - summary.existing - summary.added).toLocaleString()} not saved (couldn't verify)` : ""}.
           </p>
         )}
         {job && rows.length > 0 && (
-              <div className="rounded-lg border border-[var(--hm-border)] overflow-hidden">
+              <div data-job-keep className="rounded-lg border border-[var(--hm-border)] overflow-hidden">
                 <div className="max-h-80 overflow-auto">
                   <table className="w-full border-collapse text-[12.5px]">
                     <thead>
@@ -7887,6 +7932,8 @@ function EmailFinderPanel() {
   };
   const J = useAnymailJobs("anymail_find", refresh, post, () => { setSummary(null); setRows([]); setJob(null); }, setError);
   const jobId = J.jobId;
+  const scopeRef = useRef<HTMLDivElement>(null);
+  useCloseJobOnWhitespace(scopeRef, jobId != null, J.close);
 
   const addPerson = () => {
     const first = draft.first.trim(), last = draft.last.trim(), domain = draft.domain.trim();
@@ -7966,7 +8013,7 @@ function EmailFinderPanel() {
           (nothing is sent to anyone). Found emails are saved to Radar automatically: filled onto a matching contact, or added as a new one in the vertical you pick.
         </p>
       </div>
-      <div className="px-5 py-5 space-y-4">
+      <div ref={scopeRef} className="px-5 py-5 space-y-4">
         {error && <div className="rounded-lg p-3 text-[12.5px] bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)]">{error}</div>}
 
         <div className="flex flex-wrap items-end gap-3">
@@ -8030,7 +8077,7 @@ function EmailFinderPanel() {
         </p>
 
         {jobId != null && !job && (
-          <div className="rounded-xl border border-[var(--hm-border)] px-4 py-5 flex items-center gap-2 text-[12.5px] text-[var(--hm-text-secondary)]">
+          <div data-job-keep className="rounded-xl border border-[var(--hm-border)] px-4 py-5 flex items-center gap-2 text-[12.5px] text-[var(--hm-text-secondary)]">
             <span className="w-3.5 h-3.5 border-2 border-[var(--hm-border)] border-t-[var(--hm-text)] rounded-full animate-spin" />Opening job #{jobId}…
           </div>
         )}
@@ -8065,12 +8112,12 @@ function EmailFinderPanel() {
         />
 
         {job && summary && (
-          <p className="text-[12px] text-[var(--hm-text-secondary)]">
+          <p data-job-keep className="text-[12px] text-[var(--hm-text-secondary)]">
             Saved to Radar: <strong>{summary.added.toLocaleString()}</strong> new contact(s) added · <strong>{summary.updated.toLocaleString()}</strong> existing contact(s) updated.
           </p>
         )}
         {job && rows.length > 0 && (
-              <div className="rounded-lg border border-[var(--hm-border)] overflow-hidden">
+              <div data-job-keep className="rounded-lg border border-[var(--hm-border)] overflow-hidden">
                 <div className="max-h-80 overflow-auto">
                   <table className="w-full border-collapse text-[12.5px]">
                     <thead>
