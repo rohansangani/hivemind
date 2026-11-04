@@ -20,7 +20,7 @@ const CHUNK = 6;
 
 
 interface RetestFilters {
-  vertical?: string;
+  vertical?: string | string[];
   industry?: string | string[];
   emailStatus?: string | string[];
   emails?: string[];
@@ -190,7 +190,7 @@ export async function POST(req: NextRequest) {
       if (useAnymail && allEmails) {
         if (!ANYMAIL_KEY) return NextResponse.json({ error: "Anymail Finder API key isn't configured (set ANYMAIL_FINDER_API_KEY in the environment)" }, { status: 503 });
         const jid = Number((body as { jobId?: number }).jobId) || null;
-        const out = await verifyEmailListChunk(allEmails as string[], offset, jid, filters.vertical, ANYMAIL_KEY);
+        const out = await verifyEmailListChunk(allEmails as string[], offset, jid, Array.isArray(filters.vertical) ? filters.vertical[0] : filters.vertical, ANYMAIL_KEY);
         return NextResponse.json({ ...out, skippedFresh: 0, gaveUp: 0 });
       }
       let contacts: ContactRow[];

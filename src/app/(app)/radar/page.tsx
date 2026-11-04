@@ -2645,7 +2645,7 @@ function ExportSection() {
   }, []);
 
   const filters = () => ({
-    vertical: vertical || undefined,
+    vertical: vertical ? splitMulti(vertical) : undefined,
     industryGroup: industry || undefined,
     employeeBucket: employeeRange || undefined,
     country: country ? splitMulti(country) : undefined,
@@ -2819,13 +2819,9 @@ function ExportSection() {
 
         {/* Filters */}
         <div className="flex items-end gap-3 flex-wrap">
-          <div>
+          <div style={{ width: 170 }}>
             <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Vertical</label>
-            <select value={vertical} onChange={(e) => setVertical(e.target.value)} style={{ width: 140 }}>
-              {VERTICALS.map((v) => (
-                <option key={v} value={v}>{v === "" ? "All" : v}</option>
-              ))}
-            </select>
+            <SearchSelect multi label="Vertical" value={vertical} onChange={setVertical} options={VERTICALS.filter(Boolean)} />
           </div>
           <div style={{ width: 240 }}>
             <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Industry</label>
