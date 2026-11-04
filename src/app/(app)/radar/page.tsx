@@ -1140,8 +1140,8 @@ function SearchSelect({ value, onChange, options, labels, numeric, label }: {
       {open && (
         <div className="radar-palette absolute left-0 top-full mt-1 z-40 w-full min-w-[240px] rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] overflow-hidden">
           <div className="p-2 border-b border-[var(--hm-border)]">
-            <input autoFocus value={q} onChange={(e) => { setQ(e.target.value); setHi(0); }} onKeyDown={onKey}
-              placeholder={`Search ${options.length.toLocaleString()} ${label.toLowerCase()}…`} style={{ height: 30, fontSize: 12.5 }} />
+            <input type="text" autoFocus value={q} onChange={(e) => { setQ(e.target.value); setHi(0); }} onKeyDown={onKey}
+              placeholder={`Search ${options.length.toLocaleString()} option${options.length === 1 ? "" : "s"}…`} style={{ height: 30, fontSize: 12.5, width: "100%" }} />
           </div>
           <div ref={listRef} className="max-h-[260px] overflow-y-auto py-1">
             {items.map((o, i) => (
