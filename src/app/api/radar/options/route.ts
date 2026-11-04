@@ -3,7 +3,8 @@ import { distinctValues, requireRadarAccess, radarSql, INDUSTRY_SEP } from "@/li
 
 // Canonical order for the clean buckets (docs/sql/2026-11-04_firmographics_clean.sql).
 const EMPLOYEE_ORDER = ["1-10", "11-50", "51-200", "201-500", "501-1,000", "1,001-5,000", "5,001-10,000", "10,001+"];
-const REVENUE_ORDER = ["Under $1M", "$1M-$10M", "$10M-$50M", "$50M-$100M", "$100M-$500M", "$500M-$1B", "$1B+"];
+const REVENUE_ORDER = ["Under $1M", "$1M-$10M", "$10M-$50M", "$50M-$100M", "$100M-$500M", "$500M-$1B", "$1B+", "Unknown"];
+const MONTHLY_ORDER = ["Under $10K", "$10K-$25K", "$25K-$50K", "$50K-$100K", "$100K-$250K", "$250K-$500K", "$500K-$1M", "$1M-$5M", "$5M+", "Unknown"];
 
 /**
  * Radar filter options — complete distinct values for the Accounts/Contacts
@@ -39,10 +40,11 @@ export async function GET(req: NextRequest) {
     ]);
     // Clean firmographics: industry tree (categories by size, "Other" last; subcategories by size)
     // and bucket lists with counts, in their natural order.
-    const [tree, emp, rev] = await Promise.all([
+    const [tree, emp, rev, mon] = await Promise.all([
       radarSql<{ c: string; s: string; n: number }>(`SELECT industry_category c, industry_subcategory s, count(*)::int n FROM accounts WHERE industry_category IS NOT NULL AND industry_category <> '' AND marked_irrelevant IS NOT TRUE GROUP BY 1,2`),
       radarSql<{ v: string; n: number }>(`SELECT employee_bucket v, count(*)::int n FROM accounts WHERE employee_bucket IS NOT NULL AND marked_irrelevant IS NOT TRUE GROUP BY 1`),
       radarSql<{ v: string; n: number }>(`SELECT revenue_bucket v, count(*)::int n FROM accounts WHERE revenue_bucket IS NOT NULL AND marked_irrelevant IS NOT TRUE GROUP BY 1`),
+      radarSql<{ v: string; n: number }>(`SELECT monthly_revenue_bucket v, count(*)::int n FROM accounts WHERE monthly_revenue_bucket IS NOT NULL AND marked_irrelevant IS NOT TRUE GROUP BY 1`),
     ]);
     const cats = new Map<string, { n: number; subs: { s: string; n: number }[] }>();
     for (const r of tree) {
@@ -60,7 +62,7 @@ export async function GET(req: NextRequest) {
       const m = new Map(rows.map((r) => [r.v, r.n]));
       return { list: order.filter((v) => m.has(v)), counts: Object.fromEntries(order.filter((v) => m.has(v)).map((v) => [v, m.get(v)!])) };
     };
-    const empB = ordered(emp, EMPLOYEE_ORDER), revB = ordered(rev, REVENUE_ORDER);
+    const empB = ordered(emp, EMPLOYEE_ORDER), revB = ordered(rev, REVENUE_ORDER), monB = ordered(mon, MONTHLY_ORDER);
     const union = (...lists: string[][]) => [...new Set(lists.flat())].sort((a, b) => a.localeCompare(b));
     return NextResponse.json({
       industries, subIndustries, employeeRanges, revenueRanges, countries, states,
@@ -71,6 +73,7 @@ export async function GET(req: NextRequest) {
       industryGroups, industryGroupCounts,
       employeeBuckets: empB.list, employeeBucketCounts: empB.counts,
       revenueBuckets: revB.list, revenueBucketCounts: revB.counts,
+      monthlyRevenueBuckets: monB.list, monthlyRevenueBucketCounts: monB.counts,
       accountSizes: accountSizes.filter((v) => /[a-z]/i.test(v)),
     });
   } catch (err) {

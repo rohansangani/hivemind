@@ -216,6 +216,7 @@ export function firmographicFilters(f: Record<string, unknown>): string {
   if (terms.length) q += `&or=(${terms.join(",")})`;
   q += inFilter("employee_bucket", f.employeeBucket);
   q += inFilter("revenue_bucket", f.revenueBucket);
+  q += inFilter("monthly_revenue_bucket", f.monthlyRevenueBucket);
   return q;
 }
 

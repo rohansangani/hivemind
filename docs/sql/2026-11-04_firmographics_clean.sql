@@ -146,3 +146,49 @@ CREATE INDEX IF NOT EXISTS idx_accounts_employee_bucket ON accounts (employee_bu
 CREATE INDEX IF NOT EXISTS idx_accounts_revenue_bucket ON accounts (revenue_bucket);
 
 -- contacts_view: appended a.industry_category, a.industry_subcategory, a.employee_bucket, a.revenue_bucket (at the end).
+-- 2026-11-04 (2): DTCConnect "₹1.2K" is a placeholder, not revenue → unknown; "Unknown" band; monthly band.
+CREATE OR REPLACE FUNCTION radar_revenue_usd(p_range text, p_annual text) RETURNS numeric
+LANGUAGE plpgsql IMMUTABLE AS $fn$
+-- Best-effort ANNUAL USD from the mixed revenue formats ("₹1.2K", "5M - 10M", "₹50–100 Cr", "10M+", "1.5B").
+-- ₹ / crore values convert at ₹95 = $1. Ranges use their lower bound. Unparseable -> NULL.
+-- DTCConnect's exact "₹1.2K" is a no-data placeholder (~16k accounts) -> NULL (Unknown), not "Under $1M".
+DECLARE t text := lower(replace(COALESCE(p_range, ''), ',', '')); m text[]; num numeric; mult numeric; inr boolean;
+BEGIN
+  IF p_annual ~ '^\s*[0-9]+(\.[0-9]+)?\s*$' AND p_annual::numeric > 0 THEN RETURN p_annual::numeric; END IF;
+  IF btrim(COALESCE(p_range, '')) = '₹1.2K' THEN RETURN NULL; END IF;
+  IF t = '' THEN RETURN NULL; END IF;
+  inr := t LIKE '%₹%' OR t ~ '(^|[^a-z])cr([^a-z]|$)';
+  m := regexp_match(t, '([0-9]+(\.[0-9]+)?)\s*(k|m|b|t|cr)?([^a-z]|$)');
+  IF m IS NULL THEN RETURN NULL; END IF;
+  num := m[1]::numeric;
+  mult := CASE m[3] WHEN 'k' THEN 1e3 WHEN 'm' THEN 1e6 WHEN 'b' THEN 1e9 WHEN 't' THEN 1e12 WHEN 'cr' THEN 1e7 END;
+  IF mult IS NULL THEN
+    IF t ~ '(^|[^a-z])cr([^a-z]|$)' THEN mult := 1e7;
+    ELSIF t ~ '[0-9.]+\s*(-|–|to)\s*[0-9.]+\s*m' THEN mult := 1e6;
+    ELSIF num >= 1000 THEN mult := 1;
+    ELSE RETURN NULL;
+    END IF;
+  END IF;
+  RETURN CASE WHEN inr THEN num * mult / 95 ELSE num * mult END;
+END $fn$;
+
+CREATE OR REPLACE FUNCTION radar_revenue_bucket(p_range text, p_annual text) RETURNS text
+LANGUAGE sql IMMUTABLE AS $fn$
+  SELECT CASE WHEN v IS NULL THEN 'Unknown' WHEN v < 1e6 THEN 'Under $1M' WHEN v < 1e7 THEN '$1M-$10M' WHEN v < 5e7 THEN '$10M-$50M'
+              WHEN v < 1e8 THEN '$50M-$100M' WHEN v < 5e8 THEN '$100M-$500M' WHEN v < 1e9 THEN '$500M-$1B' ELSE '$1B+' END
+  FROM (SELECT radar_revenue_usd(p_range, p_annual) AS v) x
+$fn$;
+
+-- Monthly = annual / 12 (StoreLeads' annual is exactly monthly sales x 12).
+CREATE OR REPLACE FUNCTION radar_monthly_revenue_bucket(p_range text, p_annual text) RETURNS text
+LANGUAGE sql IMMUTABLE AS $fn$
+  SELECT CASE WHEN v IS NULL THEN 'Unknown' WHEN v < 1e4 THEN 'Under $10K' WHEN v < 2.5e4 THEN '$10K-$25K' WHEN v < 5e4 THEN '$25K-$50K'
+              WHEN v < 1e5 THEN '$50K-$100K' WHEN v < 2.5e5 THEN '$100K-$250K' WHEN v < 5e5 THEN '$250K-$500K'
+              WHEN v < 1e6 THEN '$500K-$1M' WHEN v < 5e6 THEN '$1M-$5M' ELSE '$5M+' END
+  FROM (SELECT radar_revenue_usd(p_range, p_annual) / 12 AS v) x
+$fn$;
+
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS monthly_revenue_bucket text
+  GENERATED ALWAYS AS (radar_monthly_revenue_bucket(revenue_range, annual_revenue)) STORED;
+CREATE INDEX IF NOT EXISTS idx_accounts_monthly_revenue_bucket ON accounts (monthly_revenue_bucket);
+-- contacts_view: appended a.monthly_revenue_bucket

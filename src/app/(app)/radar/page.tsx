@@ -927,6 +927,8 @@ interface RadarOptions {
   employeeBucketCounts?: Record<string, number>;
   revenueBuckets?: string[];
   revenueBucketCounts?: Record<string, number>;
+  monthlyRevenueBuckets?: string[];
+  monthlyRevenueBucketCounts?: Record<string, number>;
 }
 const INDUSTRY_SEP = " › ";
 /** Multi-select filter values travel as one string joined with this (server splits it — see multiValues()). */
@@ -993,7 +995,8 @@ const SEGMENT_FIELDS: FilterField[] = [
 const FIRMO_FIELDS: FilterField[] = [
   { key: "industryGroup", label: "Industry", kind: "select", grouped: true, options: (o) => o?.industryGroups || [], counts: (o) => o?.industryGroupCounts },
   { key: "employeeBucket", label: "Employees", kind: "select", options: (o) => o?.employeeBuckets || [], counts: (o) => o?.employeeBucketCounts },
-  { key: "revenueBucket", label: "Revenue (USD)", kind: "select", options: (o) => o?.revenueBuckets || [], counts: (o) => o?.revenueBucketCounts },
+  { key: "revenueBucket", label: "Annual revenue (USD)", kind: "select", options: (o) => o?.revenueBuckets || [], counts: (o) => o?.revenueBucketCounts },
+  { key: "monthlyRevenueBucket", label: "Monthly revenue (USD)", kind: "select", options: (o) => o?.monthlyRevenueBuckets || [], counts: (o) => o?.monthlyRevenueBucketCounts },
 ];
 const CRM_FIELDS = (sources: (o: RadarOptions | null) => string[]): FilterField[] => [
   { key: "lifecycleStage", label: "HubSpot lifecycle stage", kind: "select", options: (o) => o?.lifecycleStages || [] },
@@ -1626,6 +1629,7 @@ interface AccountRow {
   industry_subcategory?: string | null;
   employee_bucket?: string | null;
   revenue_bucket?: string | null;
+  monthly_revenue_bucket?: string | null;
   account_size: string | null;
   employee_range: string | null;
   revenue_range: string | null;
@@ -2121,7 +2125,8 @@ function AccountsSection() {
     { key: "sub_industry", header: "Sub-Industry", render: (r) => <CleanCell clean={r.industry_subcategory} raw={r.sub_industry || r.industry} /> },
     { key: "account_size", header: "Account Size", render: (r) => <Cell value={r.account_size} /> },
     { key: "employees", header: "Employees", className: "tabular-nums", render: (r) => <CleanCell clean={r.employee_bucket} raw={r.employee_range} /> },
-    { key: "revenue", header: "Revenue", className: "tabular-nums", render: (r) => <CleanCell clean={r.revenue_bucket} raw={r.revenue_range} /> },
+    { key: "revenue", header: "Annual Revenue", className: "tabular-nums", render: (r) => <CleanCell clean={r.revenue_bucket} raw={r.revenue_range} /> },
+    { key: "monthly_revenue", header: "Monthly Revenue", className: "tabular-nums whitespace-nowrap", render: (r) => <CleanCell clean={r.monthly_revenue_bucket} raw={r.revenue_range} /> },
     { key: "location", header: "Company Location", render: (r) => <Cell value={r.company_location} /> },
     { key: "country", header: "Country", render: (r) => <Cell value={r.country} /> },
     { key: "linkedin", header: "LinkedIn", render: (r) => r.linkedin_url ? <a href={linkedinHref(r.linkedin_url)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-[var(--hm-link)] whitespace-nowrap">{linkedinHref(r.linkedin_url)}</a> : <span className="text-[var(--hm-text-tertiary)]">—</span> },
@@ -2353,6 +2358,7 @@ interface ContactRow {
   industry_subcategory?: string | null;
   employee_bucket?: string | null;
   revenue_bucket?: string | null;
+  monthly_revenue_bucket?: string | null;
   employee_range: string | null;
   revenue_range: string | null;
   phone: string | null;
@@ -2478,7 +2484,8 @@ function ContactsSection() {
     { key: "industry", header: "Industry", render: (r) => <CleanCell clean={r.industry_category} raw={r.industry} /> },
     { key: "sub_industry", header: "Sub-Industry", render: (r) => <CleanCell clean={r.industry_subcategory} raw={r.sub_industry || r.industry} /> },
     { key: "employees", header: "Employees", className: "tabular-nums", render: (r) => <CleanCell clean={r.employee_bucket} raw={r.employee_range} /> },
-    { key: "revenue", header: "Revenue", className: "tabular-nums", render: (r) => <CleanCell clean={r.revenue_bucket} raw={r.revenue_range} /> },
+    { key: "revenue", header: "Annual Revenue", className: "tabular-nums", render: (r) => <CleanCell clean={r.revenue_bucket} raw={r.revenue_range} /> },
+    { key: "monthly_revenue", header: "Monthly Revenue", className: "tabular-nums whitespace-nowrap", render: (r) => <CleanCell clean={r.monthly_revenue_bucket} raw={r.revenue_range} /> },
     { key: "phone", header: "Phone", render: (r) => <Cell value={r.phone} /> },
     { key: "phone2", header: "Phone 2", render: (r) => <Cell value={r.phone2} /> },
     { key: "location", header: "Location", render: (r) => <Cell value={r.location} /> },
