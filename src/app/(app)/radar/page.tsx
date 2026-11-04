@@ -207,13 +207,11 @@ export default function RadarPage() {
             <p className="hidden lg:block flex-1 min-w-0 text-[12.5px] text-[var(--hm-text-tertiary)] truncate text-right" title={activeMeta.blurb}>
               {activeMeta.blurb}
             </p>
-            <button
-              onClick={() => setPaletteOpen(true)}
-              className="md:hidden hm-btn hm-btn-secondary flex-shrink-0"
-              aria-label="Jump to section"
-            >
-              <NavIcon id="search" />
-            </button>
+            <div className="md:hidden flex-shrink-0">
+              <button onClick={() => setPaletteOpen(true)} className="hm-btn hm-btn-secondary" aria-label="Jump to section">
+                <NavIcon id="search" />
+              </button>
+            </div>
           </div>
 
           {/* ── Mobile tab strip ─────────────────────────────────── */}
@@ -736,9 +734,9 @@ function RadarDashboard() {
         <KpiTile icon="contacts" label="Total contacts" value={fmt(stats.total_contacts)}
           foot={`${fmt(withEmail)} with an email (${pct(withEmail, stats.total_contacts)}%)`} ratio={withEmail / (stats.total_contacts || 1)} />
         <KpiTile icon="validate" label="Deliverable emails" value={fmt(deliverable)} tone="var(--tag-green-fg)"
-          foot={`Safe to send + Verified · ${pct(deliverable, withEmail)}% of emails`} ratio={deliverable / (withEmail || 1)} />
+          foot={`Safe + Verified · ${pct(deliverable, withEmail)}% of emails`} ratio={deliverable / (withEmail || 1)} />
         <KpiTile icon="icp" label="Account coverage" value={`${pct(covWith, covTotal)}%`}
-          foot={`${fmt(covWith)} of ${fmt(covTotal)} accounts have contacts`} ratio={covWith / (covTotal || 1)} />
+          foot={`${fmt(covWith)} / ${fmt(covTotal)} have contacts`} ratio={covWith / (covTotal || 1)} />
       </div>
 
       {/* Distribution cards */}
@@ -759,7 +757,7 @@ function RadarDashboard() {
           className="lg:col-span-2 2xl:col-span-1"
           title="Email status mix"
           meta={`${fmt(Object.values(statusTotals).reduce((a, b) => a + b, 0))} contacts`}
-          rows={STATUS_META.map((s) => ({ key: s.key, label: s.label, value: statusTotals[s.key] || 0, color: s.key === "unvalidated" ? "var(--tag-gray-bg)" : s.color }))}
+          rows={STATUS_META.map((s) => ({ key: s.key, label: s.label, value: statusTotals[s.key] || 0, color: s.key === "unvalidated" ? "color-mix(in srgb, var(--hm-text-tertiary) 40%, transparent)" : s.color }))}
         />
       </div>
 
@@ -835,7 +833,7 @@ function DistributionCard({ title, meta, rows, className = "" }: {
             <span className="text-[12.5px] font-medium text-[var(--hm-text)] w-16 text-right tabular-nums">{fmt(r.value)}</span>
             <span className="text-[11px] text-[var(--hm-text-tertiary)] w-10 text-right tabular-nums">{Math.round((r.value / total) * 100)}%</span>
             {rows.some((x) => x.note !== undefined) && (
-              <span className="text-[10.5px] text-[var(--tag-red-fg)] w-16 text-right flex-shrink-0 truncate">{r.note}</span>
+              <span className="text-[10.5px] text-[var(--tag-red-fg)] w-[86px] text-right flex-shrink-0 whitespace-nowrap">{r.note}</span>
             )}
           </div>
         ))}
@@ -1412,7 +1410,7 @@ interface AccountRow {
 // Company avatars are neutral tiles (uniform bg + initials) — no per-company colour;
 // colour is reserved for tags/status/legends.
 function initials(name: string): string {
-  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase() || "?";
+  return name.replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase() || "?";
 }
 
 // One tone per vertical, matching VERTICAL_COLORS (bars/dots) so a vertical reads
@@ -5848,7 +5846,7 @@ function ValidateSection() {
                     >
                       {state === "done" ? "✓" : i + 1}
                     </span>
-                    <span className={`text-[12.5px] ${state === "current" ? "font-semibold text-[var(--hm-link)]" : "text-[var(--hm-text-tertiary)]"}`}>{labels[p]}</span>
+                    <span className={`text-[12.5px] ${state === "current" ? "font-semibold text-[var(--hm-text)]" : "text-[var(--hm-text-tertiary)]"}`}>{labels[p]}</span>
                   </div>
                   {i < arr.length - 1 && <span className="w-6 h-px bg-[var(--hm-border)]" />}
                 </div>
@@ -5861,31 +5859,30 @@ function ValidateSection() {
           {phase === "input" && (
             <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] radar-card">
               {/* Prominent mode toggle — matches radar's own Patterns / Retest split */}
-              <div className="flex border-b border-[var(--hm-border)]">
-                <button
-                  onClick={() => setInputMode("patterns")}
-                  className={`flex-1 py-2.5 text-[12.5px] font-semibold transition-colors ${
-                    inputMode === "patterns" ? "text-[var(--hm-link)] bg-[var(--hm-bg-tertiary)]" : "text-[var(--hm-text-tertiary)]"
-                  }`}
-                >
-                  Find Emails
-                </button>
-                <button
-                  onClick={() => setInputMode("retest")}
-                  className={`flex-1 py-2.5 text-[12.5px] font-semibold transition-colors ${
-                    inputMode === "retest" ? "text-[var(--hm-link)] bg-[var(--hm-bg-tertiary)]" : "text-[var(--hm-text-tertiary)]"
-                  }`}
-                >
-                  Risky Email Validation
-                </button>
-                <button
-                  onClick={() => setInputMode("linkedin")}
-                  className={`flex-1 py-2.5 text-[12.5px] font-semibold transition-colors ${
-                    inputMode === "linkedin" ? "text-[var(--hm-link)] bg-[var(--hm-bg-tertiary)]" : "text-[var(--hm-text-tertiary)]"
-                  }`}
-                >
-                  Check LinkedIn
-                </button>
+              <div className="grid grid-cols-1 sm:grid-cols-3 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)]">
+                {([
+                  { id: "patterns", label: "Find Emails", hint: "Anymail person search", icon: "search" },
+                  { id: "retest", label: "Risky Email Validation", hint: "Anymail verifier on a CSV", icon: "validate" },
+                  { id: "linkedin", label: "Check LinkedIn", hint: "Employer / domain drift", icon: "contacts" },
+                ] as const).map((m) => {
+                  const on = inputMode === m.id;
+                  return (
+                    <button
+                      key={m.id}
+                      onClick={() => setInputMode(m.id)}
+                      className={`group relative flex items-center gap-3 px-4 py-3 text-left transition-colors ${on ? "bg-[var(--hm-surface)]" : "hover:bg-[var(--hm-bg-tertiary)]"}`}
+                    >
+                      <span className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors ${on ? "bg-[var(--hm-primary)] text-[var(--hm-bg)]" : "bg-[var(--hm-surface)] border border-[var(--hm-border)] text-[var(--hm-text-tertiary)] group-hover:text-[var(--hm-text)]"}`}>
+                        <NavIcon id={m.icon} size={15} />
+                      </span>
+                      <span className="min-w-0">
+                        <span className={`block text-[13px] font-semibold ${on ? "text-[var(--hm-text)]" : "text-[var(--hm-text-secondary)] group-hover:text-[var(--hm-text)]"}`}>{m.label}</span>
+                        <span className="block text-[11.5px] text-[var(--hm-text-tertiary)] truncate">{m.hint}</span>
+                      </span>
+                      {on && <span className="absolute left-0 right-0 bottom-[-1px] h-[2px] bg-[var(--hm-primary)]" />}
+                    </button>
+                  );
+                })}
               </div>
 
               {inputMode === "linkedin" ? (
@@ -5902,7 +5899,7 @@ function ValidateSection() {
                         <button
                           key={t}
                           onClick={() => { setLinkedinCheckType(t); setLinkedinUrlsText(""); setError(""); }}
-                          className={`text-[12px] px-3 py-1.5 rounded-lg border font-medium transition-colors ${linkedinCheckType === t ? "border-[var(--hm-primary)] bg-[var(--tag-blue-bg)] text-[var(--tag-blue-fg)]" : "border-[var(--hm-border)] text-[var(--hm-text-secondary)]"}`}
+                          className={`text-[12px] px-3 py-1.5 rounded-lg border font-medium transition-colors ${linkedinCheckType === t ? "border-[var(--hm-primary)] bg-[var(--hm-primary)] text-[var(--hm-bg)]" : "border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:border-[var(--hm-text-tertiary)] hover:text-[var(--hm-text)]"}`}
                         >
                           {t === "profile" ? "Contact" : "Company"}
                         </button>
