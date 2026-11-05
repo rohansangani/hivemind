@@ -4345,7 +4345,6 @@ function EnrichV2Section() {
             </select>
           </div>
         </div>
-        </div>
 
         <div className="rounded-xl border border-[var(--hm-border)] p-4">
           <div className="flex items-baseline justify-between mb-2.5">
