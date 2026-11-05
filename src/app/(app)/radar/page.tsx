@@ -8791,7 +8791,7 @@ interface VerifyJobRow {
 interface VerifyResultRow {
   email: string; result_status: string | null; anymail_status: string; in_radar: boolean; added: boolean; vertical: string | null; checked_at: string;
 }
-interface VerifySummary { total: number; valid: number; risky: number; invalid: number; failed: number; existing: number; added: number }
+interface VerifySummary { total: number; valid: number; risky: number; invalid: number; failed: number; existing: number; added: number; skipped?: number }
 
 const fmtChecked = (v: string) => { try { return new Date(v).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" }); } catch { return v; } };
 
@@ -9005,6 +9005,7 @@ function EmailValidationPanel() {
   const [summary, setSummary] = useState<VerifySummary | null>(null);
   const [rows, setRows] = useState<VerifyResultRow[]>([]);
   const [exporting, setExporting] = useState(false);
+  const [skipSafe, setSkipSafe] = useState(true);
   const PAGE = 200;
 
   const post = async (body: Record<string, unknown>) => {
@@ -9047,7 +9048,7 @@ function EmailValidationPanel() {
       )];
       if (!emails.length) { setError("No email column found in that CSV (needs a column with \"email\" in its header)."); return; }
       setStage(`Starting verification of ${emails.length.toLocaleString()} email(s)…`);
-      const d = await post({ action: "retest_job_start", emails, label: label.trim(), vertical, provider: "anymail" });
+      const d = await post({ action: "retest_job_start", emails, label: label.trim(), vertical, provider: "anymail", skipSafe });
       setLabel("");
       J.started(d.jobId ?? null);
     } catch (err) {
@@ -9070,7 +9071,7 @@ function EmailValidationPanel() {
       }
       downloadCSV(all.map((r) => ({
         email: r.email,
-        result: r.anymail_status === "valid" ? "valid" : r.anymail_status === "error" ? "could not verify" : r.anymail_status,
+        result: r.anymail_status === "valid" ? "valid" : r.anymail_status === "error" ? "could not verify" : r.anymail_status === "skipped" ? `skipped — already ${r.result_status}` : r.anymail_status,
         radar_email_status: r.result_status || "",
         already_in_radar: r.in_radar ? "yes" : "no",
         added_to_radar: r.added ? "yes" : "no",
@@ -9116,6 +9117,13 @@ function EmailValidationPanel() {
           </div>
         </div>
 
+        <label className="flex items-start gap-2.5 rounded-lg border border-[var(--hm-border)] px-3 py-2.5 cursor-pointer">
+          <input type="checkbox" checked={skipSafe} onChange={(e) => setSkipSafe(e.target.checked)} className="mt-0.5" />
+          <span>
+            <span className="block text-[12.5px] font-medium text-[var(--hm-text)]">Skip emails Radar already has as safe to send or verified</span>
+            <span className="block text-[11.5px] text-[var(--hm-text-tertiary)]">Saves Anymail credits and keeps a good status from being overwritten by a borderline result. Shown as &quot;skipped&quot; in the results.</span>
+          </span>
+        </label>
         <label className={`hm-btn hm-btn-primary w-full cursor-pointer ${(stage || !label.trim() || !vertical) ? "opacity-50 pointer-events-none" : ""}`} style={{ height: 38, fontSize: 13 }}>
           {stage ? (
             <span className="inline-flex items-center gap-2">
@@ -9149,6 +9157,7 @@ function EmailValidationPanel() {
               { label: "Valid", value: summary?.valid ?? 0, tone: "green" },
               { label: "Risky", value: summary?.risky ?? 0, tone: "yellow" },
               { label: "Invalid", value: summary?.invalid ?? 0, tone: "red" },
+              { label: "Skipped (already safe)", value: summary?.skipped ?? 0, tone: "gray" },
               { label: "Couldn't verify", value: summary?.failed ?? 0, tone: "gray" },
             ]}
             stopping={J.stopping}
