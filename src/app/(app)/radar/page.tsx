@@ -2,6 +2,7 @@
 
 import { explainError } from "@/lib/radar/explainError";
 import { useState, useEffect, useRef, useCallback } from "react";
+import Link from "next/link";
 import { LogoLoader } from "@/components/LogoLoader";
 import { useUser } from "@/lib/UserContext";
 import { hasModuleAccess } from "@/lib/modules";
@@ -166,9 +167,49 @@ export default function RadarPage() {
               </div>
             );
           })}
+          {/* Workspace: the admin pages that used to live in HiveMind's own sidebar. */}
+          {(() => {
+            const links = [
+              { href: "/team", label: "Team", icon: "team", show: hasModuleAccess(modulePermissions, "team", "view") || isAdmin },
+              { href: "/activity", label: "Activity", icon: "activity", show: isAdmin },
+              { href: "/usage", label: "Usage", icon: "usage", show: isAdmin },
+              { href: "/settings", label: "Settings", icon: "settings", show: hasModuleAccess(modulePermissions, "settings", "view") || isAdmin },
+            ].filter((l) => l.show);
+            if (!links.length) return null;
+            return (
+              <div className="mt-4">
+                {!collapsed && <p className="px-2.5 mb-1 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--hm-text-tertiary)]">Workspace</p>}
+                <div className="space-y-0.5">
+                  {links.map((l) => (
+                    <Link key={l.href} href={l.href} title={collapsed ? l.label : undefined} className="radar-nav-item">
+                      <NavIcon id={l.icon} />
+                      {!collapsed && <span className="truncate">{l.label}</span>}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
         </nav>
 
-        <div className={`border-t border-[var(--hm-border)] py-2 ${collapsed ? "px-2" : "px-3"}`}>
+        <div className={`border-t border-[var(--hm-border)] py-2 space-y-0.5 ${collapsed ? "px-2" : "px-3"}`}>
+          {!collapsed && user && (
+            <div className="flex items-center gap-2.5 px-1.5 pb-1.5">
+              <div className="w-7 h-7 rounded-full bg-[var(--hm-primary)] flex items-center justify-center text-[10.5px] font-medium text-white flex-shrink-0">{initials(user.name || "U")}</div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[12px] font-medium text-[var(--hm-text)] truncate">{user.name || "User"}</p>
+                <p className="text-[10px] uppercase tracking-wider text-[var(--hm-text-tertiary)]">{user.role}</p>
+              </div>
+            </div>
+          )}
+          <button
+            onClick={async () => { await fetch("/api/auth/logout", { method: "POST" }); window.location.href = "/login"; }}
+            className="radar-nav-item"
+            title="Sign out"
+          >
+            <NavIcon id="signout" />
+            {!collapsed && <span>Sign out</span>}
+          </button>
           <button
             onClick={toggleCollapsed}
             className="radar-nav-item"
@@ -298,6 +339,11 @@ const NAV_ICON_PATHS: Record<string, React.ReactNode> = {
   logs: <><path d="M8 6h13M8 12h13M8 18h13" /><circle cx="3.5" cy="6" r="1" /><circle cx="3.5" cy="12" r="1" /><circle cx="3.5" cy="18" r="1" /></>,
   apikeys: <><circle cx="8" cy="15" r="4" /><path d="M10.8 12.2L20 3M16 7l3 3M18 5l2 2" /></>,
   search: <><circle cx="11" cy="11" r="6.5" /><path d="M16 16l4.5 4.5" /></>,
+  team: <><circle cx="12" cy="8" r="3.5" /><path d="M5 20a7 7 0 0114 0" /></>,
+  activity: <><path d="M3 12h4l3-7 4 14 3-7h4" /></>,
+  usage: <><path d="M21 12A9 9 0 1112 3v9h9z" /></>,
+  settings: <><circle cx="12" cy="12" r="3" /><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1" /></>,
+  signout: <><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" /><path d="M16 17l5-5-5-5M21 12H9" /></>,
   collapse: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16M15.5 10L13.5 12l2 2" /></>,
   expand: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16M13.5 10l2 2-2 2" /></>,
 };

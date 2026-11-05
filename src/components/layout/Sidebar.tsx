@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useState, useEffect } from "react";
 import { ROLE_DEFAULT_PERMISSIONS, getEffectivePermissions } from "@/lib/modules";
 import { normalizeRole, ROLE_META } from "@/lib/permissions";
+import { RADAR_ONLY } from "@/lib/appMode";
 
 interface SidebarProps {
   userName: string;
@@ -156,6 +157,7 @@ export default function Sidebar({ userName, userRole, customPermissions, orgRole
 
   // Filter nav items based on module access (view or edit)
   const visibleNavItems = MODULE_ROUTES.filter(item => {
+    if (RADAR_ONLY && item.moduleId !== "radar") return false;
     // Coach is opt-in: enrolled users see it even though their role default is "none".
     if (item.moduleId === "coach" && coachEnrolled) return true;
     const level = effectivePerms[item.moduleId] ?? "none";
