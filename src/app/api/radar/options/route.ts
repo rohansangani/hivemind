@@ -40,12 +40,13 @@ export async function GET(req: NextRequest) {
     ]);
     // Clean firmographics: industry tree (categories by size, "Other" last; subcategories by size)
     // and bucket lists with counts, in their natural order.
-    const [tree, emp, rev, mon, plat] = await Promise.all([
+    const [tree, emp, rev, mon, plat, appsRows] = await Promise.all([
       radarSql<{ c: string; s: string; n: number }>(`SELECT industry_category c, industry_subcategory s, count(*)::int n FROM accounts WHERE industry_category IS NOT NULL AND industry_category <> '' AND marked_irrelevant IS NOT TRUE GROUP BY 1,2`),
       radarSql<{ v: string; n: number }>(`SELECT employee_bucket v, count(*)::int n FROM accounts WHERE employee_bucket IS NOT NULL AND marked_irrelevant IS NOT TRUE GROUP BY 1`),
       radarSql<{ v: string; n: number }>(`SELECT revenue_bucket v, count(*)::int n FROM accounts WHERE revenue_bucket IS NOT NULL AND marked_irrelevant IS NOT TRUE GROUP BY 1`),
       radarSql<{ v: string; n: number }>(`SELECT monthly_revenue_bucket v, count(*)::int n FROM accounts WHERE monthly_revenue_bucket IS NOT NULL AND marked_irrelevant IS NOT TRUE GROUP BY 1`),
       radarSql<{ v: string; n: number }>(`SELECT platform v, count(*)::int n FROM accounts WHERE platform IS NOT NULL AND platform <> '' AND marked_irrelevant IS NOT TRUE GROUP BY 1 ORDER BY 2 DESC`),
+      radarSql<{ v: string; n: number }>(`SELECT btrim(app) v, count(*)::int n FROM accounts, unnest(string_to_array(installed_apps, ',')) app WHERE installed_apps IS NOT NULL AND marked_irrelevant IS NOT TRUE AND btrim(app) <> '' GROUP BY 1 ORDER BY 2 DESC LIMIT 500`),
     ]);
     const cats = new Map<string, { n: number; subs: { s: string; n: number }[] }>();
     for (const r of tree) {
@@ -75,6 +76,7 @@ export async function GET(req: NextRequest) {
       employeeBuckets: empB.list, employeeBucketCounts: empB.counts,
       revenueBuckets: revB.list, revenueBucketCounts: revB.counts,
       monthlyRevenueBuckets: monB.list, monthlyRevenueBucketCounts: monB.counts,
+      installedApps: appsRows.map((r) => r.v), installedAppCounts: Object.fromEntries(appsRows.map((r) => [r.v, r.n])),
       platforms: plat.map((r) => r.v), platformCounts: Object.fromEntries(plat.map((r) => [r.v, r.n])),
       accountSizes: accountSizes.filter((v) => /[a-z]/i.test(v)),
     });

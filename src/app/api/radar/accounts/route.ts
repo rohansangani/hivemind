@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 // Streams can run long for "export all matching" (hundreds of thousands of rows).
 export const maxDuration = 280;
-import { selectFrom, requireRadarAccess, updateRow, setMarkedIrrelevant, deleteMarkedIrrelevant, fetchAllIds, firmographicFilters, inFilter } from "@/lib/radar/supabase";
+import { selectFrom, requireRadarAccess, updateRow, setMarkedIrrelevant, deleteMarkedIrrelevant, fetchAllIds, firmographicFilters, inFilter, multiValues } from "@/lib/radar/supabase";
 import { streamFilteredCsv, streamAccountsWithContactsCsv } from "@/lib/radar/csvStream";
 import { logAccountExport } from "@/lib/radar/accountExport";
 import { logRadarActivity } from "@/lib/radar/activityLog";
@@ -14,7 +14,7 @@ const RADAR_ADMIN_ROLES = ["owner", "admin"];
  * acts on exactly the same set the user was looking at. */
 function buildAccountsFilter(body: Record<string, unknown>, role: string): string {
   const { vertical, industry, subIndustry, accountSize, employeeRange, revenueRange, country, search, includeIrrelevant, accountType, customer,
-    state, lifecycleStage, leadStatus, sdrOwner, source, hasLinkedin, hasDomain } = body as Record<string, string | boolean | undefined>;
+    state, lifecycleStage, leadStatus, sdrOwner, source, hasLinkedin, hasDomain, hasApps } = body as Record<string, string | boolean | undefined>;
   let query = "";
   query += firmographicFilters(body);
   query += inFilter("state", state);
@@ -26,6 +26,11 @@ function buildAccountsFilter(body: Record<string, unknown>, role: string): strin
   else if (hasLinkedin === "false") query += `&linkedin_url=is.null`;
   if (hasDomain === "true") query += `&domain=not.is.null&domain=neq.`;
   else if (hasDomain === "false") query += `&domain=is.null`;
+  if (hasApps === "true") query += `&installed_apps=not.is.null&installed_apps=neq.`;
+  else if (hasApps === "false") query += `&installed_apps=is.null`;
+  // Installed app: any of the picked apps (names are matched inside the stored comma-separated list).
+  const apps = multiValues(body.installedApp);
+  if (apps.length) query += `&or=(${apps.map((a) => `installed_apps.ilike.${encodeURIComponent(`"*${a.replace(/[\\"]/g, "")}*"`)}`).join(",")})`;
   query += inFilter("vertical", vertical);
   query += inFilter("account_type", accountType);
   if (customer === "true") query += `&customer=eq.true`;
