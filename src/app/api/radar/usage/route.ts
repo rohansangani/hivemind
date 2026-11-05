@@ -62,7 +62,8 @@ export async function GET(req: NextRequest) {
 
     const dbStats = dbStatsRows[0] || ({} as DbStatsRow);
     const dbBytes = parseInt(String(dbStats.bytes || 0));
-    const DB_LIMIT_BYTES = 500 * 1024 * 1024;
+    // Supabase Pro disk (Project Settings → Compute and Disk): 8 GB provisioned.
+    const DB_LIMIT_BYTES = 8 * 1024 * 1024 * 1024;
 
     const accounts = parseInt(String(dbStats.accounts || 0));
     const contacts = parseInt(String(dbStats.contacts || 0));
@@ -155,7 +156,7 @@ export async function GET(req: NextRequest) {
           db_size_bytes: dbBytes,
           db_size_pretty: dbStats.pretty || "—",
           db_limit_bytes: DB_LIMIT_BYTES,
-          db_limit_pretty: "500 MB",
+          db_limit_pretty: "8 GB",
           db_pct: Math.min(100, Math.round((dbBytes / DB_LIMIT_BYTES) * 100)),
           tables: { accounts, contacts, email_validations: validations },
           row_limit: 500000,

@@ -396,6 +396,7 @@ interface RadarCredential {
 interface RadarUsage {
   supabase?: {
     db_size_pretty: string;
+    db_limit_pretty?: string;
     db_pct: number;
     tables: { accounts: number; contacts: number; email_validations: number };
     row_pct: number;
@@ -457,7 +458,7 @@ function RadarUsageSection() {
             <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-bg)] p-4">
               <p className="text-[11px] uppercase tracking-wider text-[var(--hm-text-tertiary)] font-medium">Database size</p>
               <p className="text-[24px] font-semibold text-[var(--hm-text)] mt-1 leading-tight">{data.supabase?.db_size_pretty ?? "—"}</p>
-              <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-1">{data.supabase?.db_pct ?? 0}% of 500 MB</p>
+              <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-1">{data.supabase?.db_pct ?? 0}% of {data.supabase?.db_limit_pretty ?? "8 GB"}</p>
             </div>
             <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-bg)] p-4">
               <p className="text-[11px] uppercase tracking-wider text-[var(--hm-text-tertiary)] font-medium">Accounts</p>
