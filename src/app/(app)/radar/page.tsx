@@ -1899,6 +1899,8 @@ function DataTable<T extends { id: string }>({
 
 interface AccountRow {
   id: string;
+  installed_apps?: string | null;
+  installed_apps_count?: number | null;
   name: string | null;
   domain: string | null;
   hubspot_lifecycle_stage: string | null;
@@ -2446,6 +2448,9 @@ function AccountsSection() {
     { key: "sdr", header: "SDR Owner", render: (r) => <Cell value={r.sdr_owner} /> },
     { key: "stores", header: "No. of Stores", className: "tabular-nums", render: (r) => <Cell value={r.no_of_stores} /> },
     { key: "platform", header: "Platform", render: (r) => <Cell value={r.platform} /> },
+    { key: "installed_apps", header: "Installed Apps", render: (r) => r.installed_apps
+      ? <span className="block max-w-[320px] truncate" title={r.installed_apps}><span className="text-[var(--hm-text-tertiary)] mr-1.5">{r.installed_apps_count ?? ""}</span>{r.installed_apps}</span>
+      : <span className="text-[var(--hm-text-tertiary)]">—</span> },
     { key: "alt_names", header: "Alt Names", render: (r) => <Cell value={r.alt_names?.length ? r.alt_names.join(", ") : null} /> },
     { key: "source", header: "Source", render: (r) => <Cell value={r.source} /> },
     { key: "created", header: "Created", className: "min-w-[190px] whitespace-nowrap", render: (r) => fmtDateTimeIST(r.created_at) },
