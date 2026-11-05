@@ -569,7 +569,7 @@ async function debounceCheck(email: string, key: string, attempt = 0): Promise<"
  * companies that haven't been searched yet. Returns how many were tried / found / are still waiting.
  */
 export async function retryUnresolvedViaApify(jobId: number, limit = 250): Promise<{ tried: number; found: number; remaining: number }> {
-  const { rows } = await selectFrom("enrich2_companies", `select=id,job_id,domain&job_id=eq.${jobId}&status=in.(unresolved,low)&order=id.asc&limit=${limit}`);
+  const { rows } = await selectFrom("enrich2_companies", `select=id,job_id,domain&job_id=eq.${jobId}&status=in.(unresolved,low)&or=(resolve_method.is.null,resolve_method.neq.apify_miss)&order=id.asc&limit=${limit}`);
   const list = rows as { id: number; job_id: number; domain: string }[];
   if (!list.length) return { tried: 0, found: 0, remaining: 0 };
   const found = await apifyFindLinkedin(list.map((r) => r.domain));
