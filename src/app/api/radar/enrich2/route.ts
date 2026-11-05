@@ -62,6 +62,9 @@ export async function POST(req: NextRequest) {
         anymailVerify: o.anymailVerify !== false,
         phones: o.phones === true,
         excludeSupportHrFinance: o.excludeSupportHrFinance !== false,
+        // Blitz location filter: ISO-2 country codes and city names, max 10 each.
+        countries: (Array.isArray(o.countries) ? o.countries : []).map((c) => String(c).trim().toUpperCase()).filter((c) => /^[A-Z]{2}$/.test(c)).slice(0, 10),
+        cities: (Array.isArray(o.cities) ? o.cities : []).map((c) => String(c).trim()).filter((c) => c && c.length <= 60).slice(0, 10),
       };
       const actor = await db.user.findUnique({ where: { id: access.userId }, select: { email: true } });
       const id = await createEnrichJob(label, vertical, actor?.email || null, companies, options);

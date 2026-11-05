@@ -135,7 +135,7 @@ export async function blitzCompanySearchByName(names: string[], key: string): Pr
   return d?.results || [];
 }
 
-export interface BlitzIcpTier { include_title: string[]; exclude_title?: string[]; include_active_jobs?: boolean; include_past_jobs?: boolean }
+export interface BlitzIcpTier { include_title: string[]; exclude_title?: string[]; include_active_jobs?: boolean; include_past_jobs?: boolean; /** ISO-2 country codes / city names (each list max 10); omit to search worldwide. */ location?: { country_code?: string[]; city?: string[] } }
 export interface BlitzIcpResult { icp: number; ranking?: number; person: BlitzPerson & { connections_count?: number } }
 export async function blitzWaterfallIcp(companyLinkedinUrl: string, cascade: BlitzIcpTier[], maxResults: number, key: string): Promise<BlitzIcpResult[] | null> {
   const d = await blitzPost<{ results?: BlitzIcpResult[] }>("/v2/search/waterfall-icp-keyword", { company_linkedin_url: companyLinkedinUrl, cascade, max_results: maxResults }, key);
