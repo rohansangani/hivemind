@@ -114,7 +114,7 @@ export async function POST(req: NextRequest) {
 
     // Run Apify's LinkedIn finder over a job's "not found" companies (a batch per call), then resume the job.
     if (action === "retry_unresolved") {
-      return NextResponse.json(await retryUnresolvedViaApify(jobId));
+      return NextResponse.json(await retryUnresolvedViaApify(jobId, Math.min(250, Math.max(10, Number(body.limit) || 100))));
     }
 
     if (action === "delete") {
