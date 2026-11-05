@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { requireRadarAccess, radarSql, selectFrom, patchByFilter } from "@/lib/radar/supabase";
 import { logRadarActivity } from "@/lib/radar/activityLog";
 import { streamFilteredCsv } from "@/lib/radar/csvStream";
-import { createEnrichJob, runEnrichTick, refreshCounts, ICP_TIERS, type EnrichOptions, type EnrichCompanyInput } from "@/lib/radar/enrichPipeline";
+import { createEnrichJob, runEnrichTick, refreshCounts, retryUnresolvedViaApify, ICP_TIERS, type EnrichOptions, type EnrichCompanyInput } from "@/lib/radar/enrichPipeline";
 import { blitzKey } from "@/lib/radar/blitz";
 
 /**
@@ -62,6 +62,7 @@ export async function POST(req: NextRequest) {
         anymailVerify: o.anymailVerify !== false,
         phones: o.phones === true,
         excludeSupportHrFinance: o.excludeSupportHrFinance !== false,
+        apifyFallback: o.apifyFallback !== false,
         // Blitz location filter: ISO-2 country codes and city names, max 10 each.
         countries: (Array.isArray(o.countries) ? o.countries : []).map((c) => String(c).trim().toUpperCase()).filter((c) => /^[A-Z]{2}$/.test(c)).slice(0, 10),
         cities: (Array.isArray(o.cities) ? o.cities : []).map((c) => String(c).trim()).filter((c) => c && c.length <= 60).slice(0, 10),
@@ -109,6 +110,11 @@ export async function POST(req: NextRequest) {
     if (action === "retry") {
       await radarSql(`UPDATE enrich2_jobs SET status = 'running', error = NULL, fail_count = 0, locked_until = NULL, stage = 'Resuming…' WHERE id = ${jobId} AND status IN ('error','cancelled')`);
       return NextResponse.json({ ok: true });
+    }
+
+    // Run Apify's LinkedIn finder over a job's "not found" companies (a batch per call), then resume the job.
+    if (action === "retry_unresolved") {
+      return NextResponse.json(await retryUnresolvedViaApify(jobId));
     }
 
     if (action === "delete") {
