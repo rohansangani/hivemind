@@ -1228,9 +1228,12 @@ function DataTable<T extends { id: string }>({
   onRowClick,
   refreshToken,
   extraBody,
+  layoutKey,
 }: {
   endpoint: string;
   columns: Column<T>[];
+  /** Remembers this table's column order + hidden columns per browser (localStorage). */
+  layoutKey?: string;
   searchPlaceholder: string;
   emptyLabel: string;
   /** Renders action buttons (e.g. "Export selected") when rows are checked. Selection is
@@ -1313,6 +1316,52 @@ function DataTable<T extends { id: string }>({
     try { if (localStorage.getItem("radar.filtersOpen") === "0") setFiltersOpen(false); } catch {}
   }, []);
   const toggleFiltersOpen = () => setFiltersOpen((o) => { try { localStorage.setItem("radar.filtersOpen", o ? "0" : "1"); } catch {} return !o; });
+  // Column layout: drag headers or use the Columns menu; saved per browser. `columns` is the default order.
+  const [layout, setLayout] = useState<{ order: string[]; hidden: string[] }>({ order: [], hidden: [] });
+  useEffect(() => {
+    if (!layoutKey) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    try { const v = JSON.parse(localStorage.getItem(layoutKey) || "null"); if (v && Array.isArray(v.order) && Array.isArray(v.hidden)) setLayout(v); } catch {}
+  }, [layoutKey]);
+  const saveLayout = (next: { order: string[]; hidden: string[] }) => {
+    setLayout(next);
+    if (layoutKey) try { localStorage.setItem(layoutKey, JSON.stringify(next)); } catch {}
+  };
+  const PINNED = "edit";
+  const orderedCols = (() => {
+    const byKey = new Map(columns.map((c) => [c.key, c]));
+    const seen = new Set<string>();
+    const out: Column<T>[] = [];
+    for (const k of [PINNED, ...layout.order]) { const c = byKey.get(k); if (c && !seen.has(k)) { seen.add(k); out.push(c); } }
+    for (const c of columns) if (!seen.has(c.key)) out.push(c);
+    return out;
+  })();
+  const visibleCols = orderedCols.filter((c) => c.key === PINNED || !layout.hidden.includes(c.key));
+  const moveCol = (from: string, to: string) => {
+    if (from === to || from === PINNED || to === PINNED) return;
+    const keys = orderedCols.map((c) => c.key).filter((k) => k !== from);
+    keys.splice(keys.indexOf(to) + (orderedCols.findIndex((c) => c.key === from) < orderedCols.findIndex((c) => c.key === to) ? 1 : 0), 0, from);
+    saveLayout({ ...layout, order: keys });
+  };
+  const nudgeCol = (key: string, dir: -1 | 1) => {
+    const keys = orderedCols.map((c) => c.key);
+    const i = keys.indexOf(key), j = i + dir;
+    if (i < 1 || j < 1 || j >= keys.length) return;
+    [keys[i], keys[j]] = [keys[j], keys[i]];
+    saveLayout({ ...layout, order: keys });
+  };
+  const toggleCol = (key: string) => saveLayout({ ...layout, hidden: layout.hidden.includes(key) ? layout.hidden.filter((k) => k !== key) : [...layout.hidden, key] });
+  const resetLayout = () => { setLayout({ order: [], hidden: [] }); if (layoutKey) try { localStorage.removeItem(layoutKey); } catch {} };
+  const [colsOpen, setColsOpen] = useState(false);
+  const colsRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!colsOpen) return;
+    const onDown = (e: MouseEvent) => { if (colsRef.current && !colsRef.current.contains(e.target as Node)) setColsOpen(false); };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [colsOpen]);
+  const [dragKey, setDragKey] = useState<string | null>(null);
+  const [overKey, setOverKey] = useState<string | null>(null);
   const [filterTab, setFilterTab] = useState(filterGroups[0]?.id || "");
   const fieldByKey: Record<string, FilterField> = Object.fromEntries(filterGroups.flatMap((g) => g.fields).map((f) => [f.key, f]));
 
@@ -1450,6 +1499,40 @@ function DataTable<T extends { id: string }>({
             {Object.keys(filters).length > 0 && <span className="min-w-4 h-4 px-1 rounded-full bg-[var(--hm-primary)] text-[var(--hm-bg)] text-[10px] font-semibold flex items-center justify-center">{Object.keys(filters).length}</span>}
             <svg width="11" height="11" viewBox="0 0 20 20" fill="none" aria-hidden="true" className={`transition-transform ${filtersOpen ? "rotate-180" : ""}`}><path d="M6 8l4 4 4-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
           </button>
+          {layoutKey && (
+            <div ref={colsRef} className="relative">
+              <button
+                onClick={() => setColsOpen((o) => !o)}
+                className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border text-[12.5px] font-medium transition-colors ${colsOpen ? "border-[var(--hm-primary)] bg-[var(--hm-bg-tertiary)] text-[var(--hm-text)]" : "border-[var(--hm-border)] bg-[var(--hm-surface)] text-[var(--hm-text-secondary)] hover:border-[var(--hm-text-tertiary)] hover:text-[var(--hm-text)]"}`}
+                aria-expanded={colsOpen}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="M4 5h4v14H4zM10 5h4v14h-4zM16 5h4v14h-4z" /></svg>
+                Columns
+                {layout.hidden.length > 0 && <span className="text-[11px] text-[var(--hm-text-tertiary)] font-normal">{visibleCols.length}/{orderedCols.length}</span>}
+              </button>
+              {colsOpen && (
+                <div className="radar-palette absolute left-0 top-full mt-1 z-40 w-[280px] rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] overflow-hidden">
+                  <div className="px-3 py-2 border-b border-[var(--hm-border)] text-[11.5px] text-[var(--hm-text-tertiary)]">Tick to show, ▲▼ to reorder. You can also drag column headers.</div>
+                  <div className="max-h-[320px] overflow-y-auto py-1">
+                    {orderedCols.filter((c) => c.key !== PINNED).map((c, i, arr) => (
+                      <div key={c.key} className="flex items-center gap-2 px-3 py-1 hover:bg-[var(--hm-bg-tertiary)]">
+                        <label className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer text-[12.5px] text-[var(--hm-text)]">
+                          <input type="checkbox" checked={!layout.hidden.includes(c.key)} onChange={() => toggleCol(c.key)} />
+                          <span className="truncate">{c.header || c.key}</span>
+                        </label>
+                        <button type="button" onClick={() => nudgeCol(c.key, -1)} disabled={i === 0} className="text-[10px] text-[var(--hm-text-tertiary)] hover:text-[var(--hm-text)] disabled:opacity-30 px-1" aria-label={`Move ${c.header} up`}>▲</button>
+                        <button type="button" onClick={() => nudgeCol(c.key, 1)} disabled={i === arr.length - 1} className="text-[10px] text-[var(--hm-text-tertiary)] hover:text-[var(--hm-text)] disabled:opacity-30 px-1" aria-label={`Move ${c.header} down`}>▼</button>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex items-center justify-between px-3 py-2 border-t border-[var(--hm-border)] bg-[var(--hm-bg-secondary)]">
+                    <button type="button" onClick={resetLayout} className="radar-btn-ghost" style={{ height: 24 }}>Reset to default</button>
+                    <button type="button" onClick={() => setColsOpen(false)} className="hm-btn hm-btn-primary" style={{ height: 24, padding: "0 10px", fontSize: 11.5 }}>Done</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           {Object.entries(filters).map(([k, v]) => {
             const f = fieldByKey[k];
             return (
@@ -1564,10 +1647,16 @@ function DataTable<T extends { id: string }>({
                     <input type="checkbox" checked={rows.length > 0 && selected.size === rows.length} onChange={toggleAll} disabled={loading} aria-label="Select page" />
                   </th>
                 )}
-                {columns.map((c) => (
+                {visibleCols.map((c) => (
                   <th
                     key={c.key}
-                    className={`text-left text-[11px] font-semibold uppercase tracking-wide text-[var(--hm-text-tertiary)] px-4 py-2.5 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] whitespace-nowrap ${c.className ?? ""}`}
+                    draggable={!!layoutKey && c.key !== PINNED}
+                    onDragStart={(e) => { setDragKey(c.key); e.dataTransfer.effectAllowed = "move"; }}
+                    onDragOver={(e) => { if (dragKey && c.key !== PINNED) { e.preventDefault(); setOverKey(c.key); } }}
+                    onDrop={(e) => { e.preventDefault(); if (dragKey) moveCol(dragKey, c.key); setDragKey(null); setOverKey(null); }}
+                    onDragEnd={() => { setDragKey(null); setOverKey(null); }}
+                    title={layoutKey && c.key !== PINNED ? "Drag to reorder" : undefined}
+                    className={`text-left text-[11px] font-semibold uppercase tracking-wide text-[var(--hm-text-tertiary)] px-4 py-2.5 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] whitespace-nowrap ${layoutKey && c.key !== PINNED ? "cursor-grab" : ""} ${dragKey === c.key ? "opacity-40" : ""} ${overKey === c.key && dragKey && dragKey !== c.key ? "shadow-[inset_2px_0_0_var(--hm-primary)]" : ""} ${c.className ?? ""}`}
                   >
                     {c.header}
                   </th>
@@ -1579,7 +1668,7 @@ function DataTable<T extends { id: string }>({
                 ? skeletonRows.map((_, i) => (
                     <tr key={`sk-${i}`}>
                       {bulkActions && <td className="radar-sticky-col px-4 py-3.5 border-b border-[var(--hm-border-light)]"><span className="radar-skel" style={{ width: 14, height: 14, borderRadius: 4 }} /></td>}
-                      {columns.map((c, j) => (
+                      {visibleCols.map((c, j) => (
                         <td key={c.key} className="px-4 py-3.5 border-b border-[var(--hm-border-light)]">
                           <span className="radar-skel" style={{ width: [64, 92, 120, 78, 104][(i + j) % 5], opacity: 1 - i * 0.06 }} />
                         </td>
@@ -1597,7 +1686,7 @@ function DataTable<T extends { id: string }>({
                       <input type="checkbox" checked={selected.has(row.id)} onChange={() => toggleRow(row.id)} aria-label="Select row" />
                     </td>
                   )}
-                  {columns.map((c) => (
+                  {visibleCols.map((c) => (
                     <td
                       key={c.key}
                       className={`px-4 py-2.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text)] align-middle ${c.className ?? ""}`}
@@ -2209,6 +2298,7 @@ function AccountsSection() {
       <DataTable<AccountRow>
         endpoint="/api/radar/accounts"
         columns={prioritize(cols, ACCOUNT_COL_ORDER)}
+        layoutKey="radar.cols.accounts.v1"
         searchPlaceholder="Search company or domain…"
         filterGroups={ACCOUNT_FILTER_GROUPS}
         emptyLabel="No accounts match your filters."
@@ -2661,6 +2751,7 @@ function ContactsSection() {
       <DataTable<ContactRow>
         endpoint="/api/radar/contacts"
         columns={prioritize(cols, CONTACT_COL_ORDER)}
+        layoutKey="radar.cols.contacts.v1"
         searchPlaceholder="Search name or email…"
         emptyLabel="No contacts match your filters."
         filterGroups={CONTACT_FILTER_GROUPS}
