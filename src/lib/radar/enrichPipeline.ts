@@ -34,6 +34,18 @@ export interface EnrichOptions {
   phones: boolean;            // step 7
   /** Drop HR & finance titles (junior support is always dropped). */
   excludeSupportHrFinance: boolean;
+  /** Only find people located in these countries (ISO-2, e.g. "IN") and/or cities — applied to every title tier. Max 10 each. */
+  countries?: string[];
+  cities?: string[];
+}
+
+/** The ICP tiers with the job's location filter (if any) added to each. */
+export function tiersFor(o: EnrichOptions): BlitzIcpTier[] {
+  const country_code = (o.countries || []).filter(Boolean).slice(0, 10);
+  const city = (o.cities || []).filter(Boolean).slice(0, 10);
+  if (!country_code.length && !city.length) return ICP_TIERS.map((t) => t.tier);
+  const location = { ...(country_code.length ? { country_code } : {}), ...(city.length ? { city } : {}) };
+  return ICP_TIERS.map((t) => ({ ...t.tier, location }));
 }
 
 export interface EnrichCompanyInput { domain: string; brand?: string; linkedin?: string; altDomains?: string[] }
@@ -272,7 +284,7 @@ async function runPhaseBatch(job: EnrichJobRow, phase: EnrichPhase, left: () => 
     if (!rows.length) return "next";
     await stage(`Step 2 · Blitz ICP search (7 title tiers) — ${rows.length} compan${rows.length === 1 ? "y" : "ies"} in this batch, ${(c.searched || 0)}/${(c.resolved || 0)} done`, true);
     const out = await mapPool(rows as Record<string, unknown>[], BLITZ_RPS, async (co) => {
-      const res = await blitzWaterfallIcp(String(co.company_linkedin_url), ICP_TIERS.map((t) => t.tier), job.options.maxPerCompany, BLITZ);
+      const res = await blitzWaterfallIcp(String(co.company_linkedin_url), tiersFor(job.options), job.options.maxPerCompany, BLITZ);
       return { co, res };
     });
     const people: Record<string, unknown>[] = [];

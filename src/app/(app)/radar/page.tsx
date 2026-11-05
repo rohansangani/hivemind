@@ -4146,6 +4146,8 @@ function EnrichV2Section() {
   const [anymailVerify, setAnymailVerify] = useState(true);
   const [phones, setPhones] = useState(false);
   const [excludeShf, setExcludeShf] = useState(true);
+  const [countriesText, setCountriesText] = useState("");
+  const [citiesText, setCitiesText] = useState("");
   const [showTiers, setShowTiers] = useState(false);
   const [keys, setKeys] = useState<{ blitz: boolean; anymail: boolean; debounce: boolean; tiers: { label: string; include: string[]; exclude: string[] }[] } | null>(null);
   const [starting, setStarting] = useState(false);
@@ -4253,9 +4255,12 @@ function EnrichV2Section() {
     } catch (err) { setError((err as Error).message); } finally { e.target.value = ""; }
   };
 
+  const splitList = (t: string) => t.split(/[,;\n]/).map((x) => x.trim()).filter(Boolean);
   const start = async () => {
     setError("");
     if (!label.trim()) { setError("Give this job a name."); return; }
+    const badCountry = splitList(countriesText).find((c) => !/^[A-Za-z]{2}$/.test(c));
+    if (badCountry) { setError(`"${badCountry}" isn't a 2-letter country code — use codes like IN, US, GB, AE.`); return; }
     if (!vertical) { setError("Pick a vertical — everything found is saved to Radar under it."); return; }
     if (!companies.length) { setError("Add company domains (one per line) or upload a CSV."); return; }
     const credits = companies.length * maxPer;
@@ -4264,7 +4269,7 @@ function EnrichV2Section() {
     try {
       const d = await enrich2Call<{ job: Enrich2Job }>({
         action: "start", label: label.trim(), vertical, companies,
-        options: { maxPerCompany: maxPer, anymailFallback, anymailVerify, phones, excludeSupportHrFinance: excludeShf },
+        options: { maxPerCompany: maxPer, anymailFallback, anymailVerify, phones, excludeSupportHrFinance: excludeShf, countries: splitList(countriesText), cities: splitList(citiesText) },
       });
       setLabel(""); setText(""); setCsvCompanies([]); setCsvName("");
       setJobs((prev) => [d.job, ...prev]);
@@ -4338,6 +4343,14 @@ function EnrichV2Section() {
             <select value={maxPer} onChange={(e) => setMaxPer(Number(e.target.value))}>
               {[10, 25, 50, 100].map((v) => <option key={v} value={v}>{v}</option>)}
             </select>
+          </div>
+          <div style={{ width: 190 }}>
+            <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block" title="Only people located in these countries. 2-letter codes, up to 10 (IN, US, GB, AE…). Blank = worldwide.">Countries (optional)</label>
+            <input value={countriesText} onChange={(e) => setCountriesText(e.target.value)} placeholder="IN, US" style={{ width: "100%" }} />
+          </div>
+          <div style={{ width: 220 }}>
+            <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block" title="Only people in these cities, up to 10. Blank = any city.">Cities (optional)</label>
+            <input value={citiesText} onChange={(e) => setCitiesText(e.target.value)} placeholder="Mumbai, Delhi" style={{ width: "100%" }} />
           </div>
         </div>
 
