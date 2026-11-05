@@ -571,7 +571,7 @@ const STATUS_META: Array<{ key: string; label: string; color: string }> = [
 
 type SegmentKey = "india" | "us" | "crossborder";
 interface SegRow { k: string; v: string | null; n: number }
-interface SegData { accounts: SegRow[]; contacts: SegRow[] }
+interface SegData { accounts: SegRow[] }
 
 const COUNTRY_NAMES: Record<string, string> = {
   IN: "India", US: "United States", GB: "United Kingdom", AE: "United Arab Emirates", CA: "Canada", AU: "Australia", SG: "Singapore", DE: "Germany", FR: "France", NL: "Netherlands",
@@ -598,18 +598,6 @@ const EMPLOYEE_ORDER = ["1-10", "11-50", "51-200", "201-500", "501-1,000", "1,00
 const REVENUE_ORDER = ["Under $1M", "$1M-$10M", "$10M-$50M", "$50M-$100M", "$100M-$500M", "$500M-$1B", "$1B+", "Unknown"];
 const MONTHLY_ORDER = ["Under $10K", "$10K-$25K", "$25K-$50K", "$50K-$100K", "$100K-$250K", "$250K-$500K", "$500K-$1M", "$1M-$5M", "$5M+", "Unknown"];
 const PER_ACCOUNT_ORDER = ["0", "1", "2-3", "4-10", "11+"];
-const SENIORITY_ORDER = ["C-level / Founder / Owner", "VP / Head / Director", "Manager", "Other", "No title"];
-const EMAIL_GROUPS: { key: string; label: string; color: string }[] = [
-  { key: "safe to send", label: "Safe to send", color: "var(--tag-green-fg)" },
-  { key: "verified", label: "Verified", color: "var(--tag-blue-fg)" },
-  { key: "valid (other tools)", label: "Valid (other tools)", color: "color-mix(in srgb, var(--tag-green-fg) 55%, transparent)" },
-  { key: "risky", label: "Risky", color: "var(--tag-yellow-fg)" },
-  { key: "invalid", label: "Invalid", color: "var(--tag-red-fg)" },
-  { key: "bounced / moved", label: "Bounced / moved", color: "var(--tag-orange-fg)" },
-  { key: "unknown / other", label: "Unknown / other", color: "var(--hm-text-tertiary)" },
-  { key: "unvalidated", label: "Unvalidated", color: GREY },
-  { key: "no email", label: "No email", color: "color-mix(in srgb, var(--hm-text-tertiary) 30%, transparent)" },
-];
 
 function RadarDashboardTabs() {
   const [tab, setTab] = useState<"overview" | SegmentKey>("overview");
@@ -659,7 +647,7 @@ function SegmentDashboard({ segment, sub }: { segment: SegmentKey; sub: string }
     );
   }
 
-  const A = data.accounts, C = data.contacts;
+  const A = data.accounts;
   const kpi = (rows: SegRow[], name: string) => rows.find((r) => r.k === "kpi" && r.v === name)?.n || 0;
   const group = (rows: SegRow[], k: string) => rows.filter((r) => r.k === k);
   const pct = (n: number, d: number) => (d ? Math.round((n / d) * 100) : 0);
@@ -687,12 +675,7 @@ function SegmentDashboard({ segment, sub }: { segment: SegmentKey; sub: string }
     return out;
   };
 
-  const nAcc = kpi(A, "accounts"), nCon = kpi(C, "contacts");
-  const emailRows = group(C, "emailStatus");
-  const emailMap = new Map(emailRows.map((r) => [r.v || "", r.n]));
-  const emailCard = EMAIL_GROUPS.map((g) => ({ key: g.key, label: g.label, value: emailMap.get(g.key) || 0, color: g.color })).filter((r) => r.value > 0);
-  const withEmail = kpi(C, "with_email");
-  const deliverable = (emailMap.get("safe to send") || 0) + (emailMap.get("verified") || 0) + (emailMap.get("valid (other tools)") || 0);
+  const nAcc = kpi(A, "accounts");
   const empty = nAcc - kpi(A, "with_contacts");
   const isIndia = segment === "india";
   const title = segment === "india" ? "India" : segment === "us" ? "US" : "Crossborder";
@@ -702,30 +685,16 @@ function SegmentDashboard({ segment, sub }: { segment: SegmentKey; sub: string }
     ["Domain", kpi(A, "with_domain"), nAcc], ["LinkedIn", kpi(A, "with_linkedin"), nAcc], ["Industry", kpi(A, "with_industry"), nAcc],
     ["Employees", kpi(A, "with_employees"), nAcc], ["Annual revenue", kpi(A, "with_revenue"), nAcc], ["Description", kpi(A, "with_description"), nAcc], ["Has contacts", kpi(A, "with_contacts"), nAcc],
   ]);
-  const conComp = completeness([
-    ["Email", withEmail, nCon], ["LinkedIn", kpi(C, "with_linkedin"), nCon], ["Phone", kpi(C, "with_phone"), nCon],
-    ["First name", kpi(C, "with_first"), nCon], ["Last name", kpi(C, "with_last"), nCon], ["Title", kpi(C, "with_title"), nCon],
-  ]);
 
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3.5">
         <KpiTile icon="accounts" label={`${title} accounts`} value={fmt(nAcc)} foot={`${fmt(kpi(A, "with_contacts"))} have contacts (${pct(kpi(A, "with_contacts"), nAcc)}%) · ${fmt(empty)} empty`} ratio={kpi(A, "with_contacts") / (nAcc || 1)} />
-        <KpiTile icon="contacts" label={`${title} contacts`} value={fmt(nCon)} foot={`${fmt(withEmail)} with an email (${pct(withEmail, nCon)}%)`} ratio={withEmail / (nCon || 1)} />
-        <KpiTile icon="validate" label="Deliverable emails" value={fmt(deliverable)} tone="var(--tag-green-fg)" foot={`Safe + Verified + Valid · ${pct(deliverable, withEmail)}% of emails`} ratio={deliverable / (withEmail || 1)} />
-        <KpiTile icon="icp" label="LinkedIn coverage" value={`${pct(kpi(C, "with_linkedin"), nCon)}%`} foot={`contacts · accounts ${pct(kpi(A, "with_linkedin"), nAcc)}%`} ratio={kpi(C, "with_linkedin") / (nCon || 1)} />
+        <KpiTile icon="icp" label="LinkedIn coverage" value={`${pct(kpi(A, "with_linkedin"), nAcc)}%`} foot={`${fmt(kpi(A, "with_linkedin"))} of ${fmt(nAcc)} accounts`} ratio={kpi(A, "with_linkedin") / (nAcc || 1)} />
+        <KpiTile icon="validate" label="Industry known" value={`${pct(kpi(A, "with_industry"), nAcc)}%`} foot={`${fmt(kpi(A, "with_industry"))} accounts categorised`} ratio={kpi(A, "with_industry") / (nAcc || 1)} />
+        <KpiTile icon="dashboard" label="Revenue known" value={`${pct(kpi(A, "with_revenue"), nAcc)}%`} foot={`${fmt(kpi(A, "with_revenue"))} accounts with a revenue band`} ratio={kpi(A, "with_revenue") / (nAcc || 1)} />
       </div>
 
-      <h3 className="text-[11.5px] font-semibold uppercase tracking-[0.06em] text-[var(--hm-text-tertiary)] pt-1">Contacts</h3>
-      <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-3.5">
-        <DistributionCard title="Email status" meta={`${fmt(nCon)} contacts`} rows={emailCard} />
-        <DistributionCard title="Seniority" meta="from job title" rows={ordered(group(C, "seniority"), SENIORITY_ORDER)} />
-        <DistributionCard title="Contact source" meta="top 8" rows={top(group(C, "contactSource"), 8)} />
-        <DistributionCard title="Contact country" meta="top 8" rows={top(group(C, "contactCountry"), 8)} />
-        <CompletenessCard title="Contact data completeness" rows={conComp} />
-      </div>
-
-      <h3 className="text-[11.5px] font-semibold uppercase tracking-[0.06em] text-[var(--hm-text-tertiary)] pt-1">Accounts</h3>
       <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-3.5">
         <DistributionCard title="Industry" meta="top 10" rows={top(group(A, "industry"), 10)} />
         <DistributionCard title="Employees" meta={`${fmt(kpi(A, "with_employees"))} known`} rows={ordered(group(A, "employees"), EMPLOYEE_ORDER)} />
