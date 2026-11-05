@@ -965,8 +965,8 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
 
   // ── RETEST JOB actions ──
   if (action === "retest_job_start") {
-    const { userEmail: bodyUserEmail, label, vertical, emailStatus, emails, provider, people } = reqBody as {
-      userEmail?: string; label?: string; vertical?: string; emailStatus?: string[]; emails?: string[]; provider?: string; people?: FindPerson[];
+    const { userEmail: bodyUserEmail, label, vertical, emailStatus, emails, provider, people, skipSafe } = reqBody as {
+      skipSafe?: boolean; userEmail?: string; label?: string; vertical?: string; emailStatus?: string[]; emails?: string[]; provider?: string; people?: FindPerson[];
     };
     await ensureRetestJobsTable();
     const filters: Record<string, unknown> = {};
@@ -1000,6 +1000,7 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
       if (!["B2B", "D2C", "US", "Crossborder"].includes(vertical || "")) return { status: 400, body: { error: "Pick a vertical (B2B / D2C / US / Crossborder) — emails not already in Radar are added there." } };
       filters.provider = "anymail";
       filters.email_count = new Set(emails || []).size;
+      if (skipSafe) filters.skip_safe = true;
     }
     if (vertical) filters.vertical = vertical;
     if (Array.isArray(emailStatus) && emailStatus.length) filters.emailStatus = emailStatus;
@@ -1075,7 +1076,7 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
     if (!jobId) return { status: 400, body: { error: "No jobId" } };
     const base = `email_verify_results?job_id=eq.${Number(jobId)}`;
     const lim = Math.min(Math.max(Number(limit) || 500, 1), 1000); // PostgREST caps a response at 1000 rows
-    const [total, valid, risky, invalid, failed, existing, added, rowsRes] = await Promise.all([
+    const [total, valid, risky, invalid, failed, existing, added, rowsRes, skipped] = await Promise.all([
       restCount(`${base}&select=id`),
       restCount(`${base}&anymail_status=eq.valid&select=id`),
       restCount(`${base}&anymail_status=eq.risky&select=id`),
@@ -1084,9 +1085,10 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
       restCount(`${base}&in_radar=eq.true&select=id`),
       restCount(`${base}&added=eq.true&select=id`),
       radarFetch(`${base}&select=email,result_status,anymail_status,in_radar,added,vertical,checked_at&order=id.asc&limit=${lim}&offset=${Math.max(Number(offset) || 0, 0)}`),
+      restCount(`${base}&anymail_status=eq.skipped&select=id`),
     ]);
     const rows = rowsRes.ok ? await rowsRes.json() : [];
-    return { status: 200, body: { summary: { total, valid, risky, invalid, failed, existing, added }, rows } };
+    return { status: 200, body: { summary: { total, valid, risky, invalid, failed, existing, added, skipped }, rows } };
   }
 
 

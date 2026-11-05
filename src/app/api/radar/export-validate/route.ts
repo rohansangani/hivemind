@@ -34,6 +34,8 @@ interface RetestFilters {
   // Which verifier a job uses: "anymail" = Anymail Finder (saves a result straight to the contact,
   // nothing is sent); anything else = Debounce (the original behaviour).
   provider?: string;
+  // Anymail CSV jobs: leave emails Radar already has as safe to send / verified untouched (no credits spent).
+  skip_safe?: boolean;
   people?: unknown[];
 }
 
@@ -190,8 +192,8 @@ export async function POST(req: NextRequest) {
       if (useAnymail && allEmails) {
         if (!ANYMAIL_KEY) return NextResponse.json({ error: "Anymail Finder API key isn't configured (set ANYMAIL_FINDER_API_KEY in the environment)" }, { status: 503 });
         const jid = Number((body as { jobId?: number }).jobId) || null;
-        const out = await verifyEmailListChunk(allEmails as string[], offset, jid, Array.isArray(filters.vertical) ? filters.vertical[0] : filters.vertical, ANYMAIL_KEY);
-        return NextResponse.json({ ...out, skippedFresh: 0, gaveUp: 0 });
+        const out = await verifyEmailListChunk(allEmails as string[], offset, jid, Array.isArray(filters.vertical) ? filters.vertical[0] : filters.vertical, ANYMAIL_KEY, !!(filters as RetestFilters).skip_safe);
+        return NextResponse.json({ ...out, skippedFresh: out.skipped, gaveUp: 0 });
       }
       let contacts: ContactRow[];
       let doneAfterThisChunk = false;

@@ -75,12 +75,14 @@ export async function verifyEmailListChunk(
   jobId: number | null,
   vertical: string | undefined,
   key: string,
-): Promise<{ processed: number; validated: number; failed: number; next_offset: number; done: boolean }> {
+  /** Skip emails Radar already has as "safe to send" or "verified" — no Anymail check, no credits, status left alone. */
+  skipSafe = false,
+): Promise<{ processed: number; validated: number; failed: number; skipped: number; next_offset: number; done: boolean }> {
   const slice = allEmails.slice(offset, offset + ANYMAIL_CHUNK);
   const nextOffset = offset + slice.length;
   const done = nextOffset >= allEmails.length;
   const emails = [...new Set(slice.map((e) => String(e).trim().toLowerCase()).filter((e) => EMAIL_RE.test(e)))];
-  if (!emails.length) return { processed: slice.length, validated: 0, failed: 0, next_offset: nextOffset, done };
+  if (!emails.length) return { processed: slice.length, validated: 0, failed: 0, skipped: 0, next_offset: nextOffset, done };
 
   await ensureVerifyResultsTable();
   const nowISO = new Date().toISOString();
@@ -95,11 +97,22 @@ export async function verifyEmailListChunk(
     byEmail.set(k, [...(byEmail.get(k) || []), { id: r.id, email_status: r.email_status }]);
   }
 
-  type Out = { email: string; status: string | null; inRadar: boolean; added: boolean };
+  type Out = { email: string; status: string | null; inRadar: boolean; added: boolean; skipped?: boolean };
   const outs: Out[] = [];
   let fatal: Error | null = null;
-  for (let i = 0; i < emails.length && !fatal; i += CONC) {
-    await Promise.all(emails.slice(i, i + CONC).map(async (email) => {
+  let toCheck = emails;
+  if (skipSafe) {
+    const GOOD = new Set(["safe to send", "verified"]);
+    toCheck = [];
+    for (const email of emails) {
+      const rows = byEmail.get(email) || [];
+      const good = rows.map((r) => (r.email_status || "").toLowerCase()).find((st) => GOOD.has(st));
+      if (good) outs.push({ email, status: good, inRadar: true, added: false, skipped: true });
+      else toCheck.push(email);
+    }
+  }
+  for (let i = 0; i < toCheck.length && !fatal; i += CONC) {
+    await Promise.all(toCheck.slice(i, i + CONC).map(async (email) => {
       try {
         let status = await anymailVerify(email, key);
         if (!status) status = await anymailVerify(email, key); // one quick retry before giving up on it
@@ -126,15 +139,16 @@ export async function verifyEmailListChunk(
     }));
   }
   if (outs.length && jobId) {
-    const values = outs.map((o) => `(${Number(jobId)}, '${esc(o.email)}', ${o.status ? `'${esc(o.status)}'` : "NULL"}, ${o.status ? `'${RAW_OF[o.status]}'` : "'error'"}, ${o.inRadar}, ${o.added}, ${vertical ? `'${esc(vertical)}'` : "NULL"})`).join(",");
+    const values = outs.map((o) => `(${Number(jobId)}, '${esc(o.email)}', ${o.status ? `'${esc(o.status)}'` : "NULL"}, ${o.skipped ? "'skipped'" : o.status ? `'${RAW_OF[o.status]}'` : "'error'"}, ${o.inRadar}, ${o.added}, ${vertical ? `'${esc(vertical)}'` : "NULL"})`).join(",");
     await radarSql(`INSERT INTO email_verify_results (job_id, email, result_status, anymail_status, in_radar, added, vertical) VALUES ${values}
       ON CONFLICT (job_id, email) DO UPDATE SET result_status = EXCLUDED.result_status, anymail_status = EXCLUDED.anymail_status, in_radar = EXCLUDED.in_radar, added = EXCLUDED.added, checked_at = now()`);
   }
   if (fatal) throw fatal;
   return {
     processed: slice.length,
-    validated: outs.filter((o) => o.status).length,
+    validated: outs.filter((o) => o.status && !o.skipped).length,
     failed: outs.filter((o) => !o.status).length,
+    skipped: outs.filter((o) => o.skipped).length,
     next_offset: nextOffset,
     done,
   };
