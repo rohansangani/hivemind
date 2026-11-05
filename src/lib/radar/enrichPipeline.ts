@@ -37,6 +37,8 @@ export interface EnrichOptions {
   /** Only find people located in these countries (ISO-2, e.g. "IN") and/or cities — applied to every title tier. Max 10 each. */
   countries?: string[];
   cities?: string[];
+  /** Step 1 second pass: companies Blitz can't find go to Apify's LinkedIn company finder (~$0.009 per page found). Default on. */
+  apifyFallback?: boolean;
 }
 
 /** The ICP tiers with the job's location filter (if any) added to each. */
@@ -274,6 +276,18 @@ async function runPhaseBatch(job: EnrichJobRow, phase: EnrichPhase, left: () => 
     if (!rows.length) return "next";
     await stage(`Step 1 · Finding company LinkedIn pages — ${rows.length} compan${rows.length === 1 ? "y" : "ies"} in this batch`, true);
     const updates = await mapPool(rows as Record<string, unknown>[], BLITZ_RPS, async (co) => resolveCompany(co, BLITZ));
+    // Second pass: Blitz found nothing (or only a low-confidence name match) → ask Apify's domain-based finder.
+    if (job.options.apifyFallback !== false) {
+      const missing = updates.filter((u) => u.status === "unresolved" || u.status === "low");
+      if (missing.length) {
+        await stage(`Step 1 · Apify LinkedIn finder for ${missing.length} compan${missing.length === 1 ? "y" : "ies"} Blitz couldn't find`, true);
+        const found = await apifyFindLinkedin(missing.map((u) => String(u.domain)));
+        for (const u of missing) {
+          const url = found.get(String(u.domain));
+          if (url) Object.assign(u, { company_linkedin_url: url, resolve_method: "apify", confidence: "medium", status: "resolved" });
+        }
+      }
+    }
     await upsertGrouped("enrich2_companies", updates);
     return "more";
   }
@@ -404,6 +418,37 @@ async function upsertPeople(rows: (Record<string, unknown> | null)[]) {
 
 /* ── Step 1: resolve one company ───────────────────────────────────────── */
 
+/**
+ * Apify "LinkedIn Company Finder" (s-r/free-linkedin-company-finder---linkedin-address-from-any-site): domain in, company
+ * LinkedIn page out; only pages actually found are billed (~$0.009 each). Up to 50 domains per run. Best-effort — any
+ * failure just leaves those companies as Blitz left them.
+ */
+export async function apifyFindLinkedin(domains: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const token = process.env.APIFY_TOKEN;
+  if (!token || !domains.length) return out;
+  const chunks: string[][] = [];
+  for (let i = 0; i < domains.length; i += 50) chunks.push(domains.slice(i, i + 50));
+  await Promise.all(chunks.map(async (chunk) => {
+    try {
+      const r = await fetch(`https://api.apify.com/v2/acts/s-r~free-linkedin-company-finder---linkedin-address-from-any-site/run-sync-get-dataset-items?token=${token}&timeout=150`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ domains: chunk, enrichSocials: false }),
+        signal: AbortSignal.timeout(170000),
+      });
+      if (!r.ok) { console.error(`[enrich2] apify company finder ${r.status}`); return; }
+      const items = (await r.json()) as { domain?: string; linkedin_url?: string }[];
+      for (const it of Array.isArray(items) ? items : []) {
+        const url = normCompanyLinkedin(it.linkedin_url);
+        if (url && it.domain) out.set(cleanDomain(it.domain), url);
+      }
+    } catch (e) {
+      console.error("[enrich2] apify company finder failed:", (e as Error).message);
+    }
+  }));
+  return out;
+}
+
 async function resolveCompany(co: Record<string, unknown>, key: string): Promise<Record<string, unknown>> {
   // domain/job_id ride along: an upsert's NOT NULL columns are checked before ON CONFLICT resolves.
   const base = { id: co.id, job_id: co.job_id, domain: co.domain };
@@ -516,4 +561,30 @@ async function debounceCheck(email: string, key: string, attempt = 0): Promise<"
     if (/Debounce (rejected|is out)/.test((e as Error).message)) throw e;
     return "error";
   }
+}
+
+/**
+ * Re-run the LinkedIn lookup for a finished/stopped job's companies Blitz couldn't find, through Apify's finder
+ * (up to `limit` per call). Newly resolved companies send the job back to the ICP-search step, which only touches
+ * companies that haven't been searched yet. Returns how many were tried / found / are still waiting.
+ */
+export async function retryUnresolvedViaApify(jobId: number, limit = 250): Promise<{ tried: number; found: number; remaining: number }> {
+  const { rows } = await selectFrom("enrich2_companies", `select=id,job_id,domain&job_id=eq.${jobId}&status=in.(unresolved,low)&order=id.asc&limit=${limit}`);
+  const list = rows as { id: number; job_id: number; domain: string }[];
+  if (!list.length) return { tried: 0, found: 0, remaining: 0 };
+  const found = await apifyFindLinkedin(list.map((r) => r.domain));
+  const updates: Record<string, unknown>[] = [];
+  const triedOnly: number[] = [];
+  for (const r of list) {
+    const url = found.get(r.domain);
+    if (url) updates.push({ id: r.id, job_id: r.job_id, domain: r.domain, company_linkedin_url: url, resolve_method: "apify", confidence: "medium", status: "resolved" });
+    else triedOnly.push(r.id);
+  }
+  if (updates.length) await upsertGrouped("enrich2_companies", updates);
+  // Misses are marked so the next call moves on to the following companies instead of re-asking Apify.
+  if (triedOnly.length) await radarSql(`UPDATE enrich2_companies SET resolve_method = 'apify_miss' WHERE id IN (${triedOnly.join(",")}) AND status IN ('unresolved','low')`);
+  if (updates.length) await radarSql(`UPDATE enrich2_jobs SET status = 'running', phase = 'search', error = NULL, fail_count = 0, locked_until = NULL, stage = 'Resuming — searching contacts at newly found companies', updated_at = now() WHERE id = ${jobId}`);
+  const [rest] = await radarSql<{ n: number }>(`SELECT count(*)::int n FROM enrich2_companies WHERE job_id = ${jobId} AND status IN ('unresolved','low') AND resolve_method IS DISTINCT FROM 'apify_miss'`);
+  await refreshCounts(jobId);
+  return { tried: list.length, found: updates.length, remaining: rest?.n || 0 };
 }

@@ -4143,6 +4143,7 @@ function EnrichV2Section() {
   const [anymailFallback, setAnymailFallback] = useState(true);
   const [anymailVerify, setAnymailVerify] = useState(true);
   const [phones, setPhones] = useState(true);
+  const [apifyFallback, setApifyFallback] = useState(true);
   const [excludeShf, setExcludeShf] = useState(true);
   const [countriesText, setCountriesText] = useState("");
   const [citiesText, setCitiesText] = useState("");
@@ -4161,6 +4162,7 @@ function EnrichV2Section() {
   const [advancing, setAdvancing] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [retryingId, setRetryingId] = useState<number | null>(null);
+  const [apifyMsg, setApifyMsg] = useState<string | null>(null);
   const [exporting, setExporting] = useState<number | null>(null);
   const jobIdRef = useRef<number | null>(null);
 
@@ -4268,7 +4270,7 @@ function EnrichV2Section() {
     try {
       const d = await enrich2Call<{ job: Enrich2Job }>({
         action: "start", label: label.trim(), vertical, companies,
-        options: { maxPerCompany: maxPer, anymailFallback, anymailVerify, phones, excludeSupportHrFinance: excludeShf, countries: splitList(countriesText), cities: splitList(citiesText) },
+        options: { maxPerCompany: maxPer, anymailFallback, anymailVerify, phones, excludeSupportHrFinance: excludeShf, apifyFallback, countries: splitList(countriesText), cities: splitList(citiesText) },
       });
       setLabel(""); setText(""); setCsvCompanies([]); setCsvName("");
       setJobs((prev) => [d.job, ...prev]);
@@ -4286,6 +4288,21 @@ function EnrichV2Section() {
     setRetryingId(id);
     try { await enrich2Call({ action: "retry", jobId: id }); await loadJobs(); if (id === jobId) await loadStatus(id); } catch (e) { setError((e as Error).message); }
     setRetryingId(null);
+  };
+  // Apify's LinkedIn finder over a job's "not found" companies, batch by batch, then the job resumes on its own.
+  const apifyRetry = async (id: number, remaining: number) => {
+    if (!confirm(`Ask Apify's LinkedIn finder for the ${remaining.toLocaleString()} companies Blitz couldn't find?\n\nIt costs about $0.009 per page found (nothing for misses). The job then searches contacts at the newly found companies.`)) return;
+    let found = 0, tried = 0;
+    try {
+      for (;;) {
+        setApifyMsg(`Apify: ${tried} tried · ${found} found…`);
+        const r = await enrich2Call<{ tried: number; found: number; remaining: number }>({ action: "retry_unresolved", jobId: id });
+        tried += r.tried; found += r.found;
+        if (!r.tried || r.remaining === 0) break;
+      }
+      setApifyMsg(`Apify found ${found} of ${tried} — job resumed`);
+      await loadJobs(); if (id === jobId) await loadStatus(id);
+    } catch (e) { setError((e as Error).message); setApifyMsg(null); }
   };
   const deleteJob = async (id: number) => {
     if (!confirm("Delete this job and its results from history? Contacts already saved to Radar stay.")) return;
@@ -4388,6 +4405,7 @@ function EnrichV2Section() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
           {toggle(anymailFallback, setAnymailFallback, "Anymail Finder for missing emails", "LinkedIn URL search when Blitz has no email · 1 credit per email found")}
           {toggle(anymailVerify, setAnymailVerify, "Anymail verify Risky / Unknown", "Second pass on everything Debounce didn't call Safe or Invalid · 0.2 credit each")}
+          {toggle(apifyFallback, setApifyFallback, "Apify LinkedIn finder for companies Blitz misses", "Second pass for domains Blitz can't match · ~$0.009 per company page found, nothing for misses")}
           {toggle(excludeShf, setExcludeShf, "Drop HR & finance titles", "Interns, trainees, students and junior support are always dropped")}
           {toggle(phones, setPhones, "Find phone numbers (Blitz)", "Needs a LinkedIn URL · ~12–15% hit on Indian lists, ~30% on US")}
         </div>
@@ -4434,7 +4452,7 @@ function EnrichV2Section() {
               const pct = (a: number, b: number) => (b ? Math.min(100, Math.round((a / b) * 100)) : 0);
               const steps = [
                 { key: "resolve", label: "Company LinkedIn", on: true, value: `${fmt(n("resolved"))} / ${fmt(n("companies"))}`, p: pct(n("companies") - n("pending_resolve"), n("companies")),
-                  sub: `${fmt(n("unresolved"))} not found · ${fmt(n("low"))} low-confidence skipped` },
+                  sub: `${fmt(n("unresolved"))} not found · ${fmt(n("low"))} low-confidence skipped${(job.counts.methods as Record<string, number> | undefined)?.apify ? ` · ${fmt((job.counts.methods as Record<string, number>).apify)} via Apify` : ""}` },
                 { key: "search", label: "Blitz ICP search", on: true, value: `${fmt(n("kept"))} contacts`, p: pct(n("searched"), n("resolved")),
                   sub: `${fmt(n("searched"))}/${fmt(n("resolved"))} companies · P1 ${fmt(n("phase1"))} · P2 ${fmt(n("phase2"))} · ${fmt(n("dropped"))} filtered out` },
                 { key: "email", label: "Blitz emails", on: true, value: `${fmt(n("email_blitz"))} found`, p: pct(n("email_tried"), n("email_eligible")),
@@ -4459,6 +4477,10 @@ function EnrichV2Section() {
                     <span className="ml-auto flex items-center gap-1.5">
                       {running && <button onClick={() => stopJob(job.id)} disabled={stopping} className="radar-btn-ghost text-[var(--tag-red-fg)]!">{stopping ? "Stopping…" : "Stop"}</button>}
                       {(job.status === "error" || job.status === "cancelled") && <button onClick={() => retryJob(job.id)} disabled={retryingId === job.id} className="radar-btn-ghost">{retryingId === job.id ? "Resuming…" : "Resume"}</button>}
+                      {(() => {
+                        const left = n("unresolved") + n("low") - (((job.counts.methods as Record<string, number> | undefined)?.apify_miss) || 0);
+                        return !running && left > 0 && <button onClick={() => apifyRetry(job.id, left)} disabled={apifyMsg !== null && apifyMsg.endsWith("…")} className="radar-btn-ghost" title="Look up the missing company LinkedIn pages with Apify">{apifyMsg ?? `Find ${left.toLocaleString()} missing LinkedIn pages (Apify)`}</button>;
+                      })()}
                       <button onClick={exportJob} disabled={exporting !== null || !n("people")} className="hm-btn hm-btn-secondary" style={{ height: 30, padding: "0 12px", fontSize: 12 }}>
                         {exporting !== null ? <><span className="w-3 h-3 border-2 border-current/30 border-t-current rounded-full animate-spin" />Exporting… {fmt(exporting)}</> : "Export CSV (all columns)"}
                       </button>
