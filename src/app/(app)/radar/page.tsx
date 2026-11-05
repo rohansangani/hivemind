@@ -4344,13 +4344,23 @@ function EnrichV2Section() {
               {[10, 25, 50, 100].map((v) => <option key={v} value={v}>{v}</option>)}
             </select>
           </div>
-          <div style={{ width: 190 }}>
-            <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block" title="Only people located in these countries. 2-letter codes, up to 10 (IN, US, GB, AE…). Blank = worldwide.">Countries (optional)</label>
-            <input value={countriesText} onChange={(e) => setCountriesText(e.target.value)} placeholder="IN, US" style={{ width: "100%" }} />
+        </div>
+        </div>
+
+        <div className="rounded-xl border border-[var(--hm-border)] p-4">
+          <div className="flex items-baseline justify-between mb-2.5">
+            <p className="text-[12.5px] font-semibold text-[var(--hm-text)]">Location filter <span className="font-normal text-[var(--hm-text-tertiary)]">(optional)</span></p>
+            <p className="text-[11.5px] text-[var(--hm-text-tertiary)]">Only find people located here. Leave blank for worldwide.</p>
           </div>
-          <div style={{ width: 220 }}>
-            <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block" title="Only people in these cities, up to 10. Blank = any city.">Cities (optional)</label>
-            <input value={citiesText} onChange={(e) => setCitiesText(e.target.value)} placeholder="Mumbai, Delhi" style={{ width: "100%" }} />
+          <div className="flex gap-3 flex-wrap">
+            <div style={{ width: 260 }}>
+              <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Countries — 2-letter codes</label>
+              <input value={countriesText} onChange={(e) => setCountriesText(e.target.value)} placeholder="IN, US, GB, AE" style={{ width: "100%" }} />
+            </div>
+            <div style={{ width: 320 }}>
+              <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Cities</label>
+              <input value={citiesText} onChange={(e) => setCitiesText(e.target.value)} placeholder="Mumbai, Delhi, Bengaluru" style={{ width: "100%" }} />
+            </div>
           </div>
         </div>
 
