@@ -4295,9 +4295,10 @@ function EnrichV2Section() {
     let found = 0, tried = 0;
     try {
       for (;;) {
-        setApifyMsg(`Apify: ${tried} tried · ${found} found…`);
-        const r = await enrich2Call<{ tried: number; found: number; remaining: number }>({ action: "retry_unresolved", jobId: id });
+        setApifyMsg(tried ? `Apify: ${tried.toLocaleString()} / ${remaining.toLocaleString()} tried · ${found.toLocaleString()} found…` : `Apify: starting — first batch takes about a minute…`);
+        const r = await enrich2Call<{ tried: number; found: number; remaining: number }>({ action: "retry_unresolved", jobId: id, limit: 100 });
         tried += r.tried; found += r.found;
+        if (id === jobId) await loadStatus(id);   // the card's numbers tick up batch by batch
         if (!r.tried || r.remaining === 0) break;
       }
       setApifyMsg(`Apify found ${found} of ${tried} — job resumed`);
