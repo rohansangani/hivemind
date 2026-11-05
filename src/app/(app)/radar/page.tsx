@@ -1871,6 +1871,14 @@ function ErrorNote({ raw, prefix }: { raw: string | null | undefined; prefix?: s
   );
 }
 
+/** Puts the named columns first, in that order; every other column keeps its existing order after them. */
+function prioritize<T>(cols: Column<T>[], first: string[]): Column<T>[] {
+  const rank = (k: string) => { const i = first.indexOf(k); return i === -1 ? first.length : i; };
+  return cols.map((c, i) => ({ c, i })).sort((a, b) => rank(a.c.key) - rank(b.c.key) || a.i - b.i).map((x) => x.c);
+}
+const ACCOUNT_COL_ORDER = ["edit", "vertical", "company", "domain", "linkedin", "industry", "revenue", "employees", "country"];
+const CONTACT_COL_ORDER = ["edit", "vertical", "email", "first_name", "last_name", "company", "phone", "title", "status", "linkedin"];
+
 function fmtDateTimeIST(v: string | null): React.ReactNode {
   if (!v) return <span className="text-[var(--hm-text-tertiary)]">—</span>;
   const d = new Date(v);
@@ -2200,7 +2208,7 @@ function AccountsSection() {
       )}
       <DataTable<AccountRow>
         endpoint="/api/radar/accounts"
-        columns={cols}
+        columns={prioritize(cols, ACCOUNT_COL_ORDER)}
         searchPlaceholder="Search company or domain…"
         filterGroups={ACCOUNT_FILTER_GROUPS}
         emptyLabel="No accounts match your filters."
@@ -2652,7 +2660,7 @@ function ContactsSection() {
       )}
       <DataTable<ContactRow>
         endpoint="/api/radar/contacts"
-        columns={cols}
+        columns={prioritize(cols, CONTACT_COL_ORDER)}
         searchPlaceholder="Search name or email…"
         emptyLabel="No contacts match your filters."
         filterGroups={CONTACT_FILTER_GROUPS}
