@@ -6,6 +6,7 @@ import Sidebar from "@/components/layout/Sidebar";
 import GuidedTour from "@/components/GuidedTour";
 import { LogoLoader } from "@/components/LogoLoader";
 import { UserContext, type AppUser } from "@/lib/UserContext";
+import { RADAR_ONLY, isAllowedInRadarOnly } from "@/lib/appMode";
 import { TOURS, getToursForRole, getPendingTours, type TourDef } from "@/lib/tours";
 
 // Map route segments to human-readable breadcrumb labels
@@ -72,6 +73,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [completedTourIds, setCompletedTourIds] = useState<string[]>([]);
   const [tourLoaded, setTourLoaded] = useState(false);
   const [newFeatureTour, setNewFeatureTour] = useState<TourDef | null>(null);
+
+  // Radar-only mode: every other HiveMind module redirects to Radar.
+  useEffect(() => {
+    if (RADAR_ONLY && !isAllowedInRadarOnly(pathname)) router.replace("/radar");
+  }, [pathname, router]);
 
   // Close mobile sidebar on navigation
   useEffect(() => { setSidebarOpen(false); }, [pathname]);
@@ -146,6 +152,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     );
   }
 
+  if (RADAR_ONLY && !isAllowedInRadarOnly(pathname)) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[var(--hm-bg)]">
+        <LogoLoader size={44} />
+      </div>
+    );
+  }
+
+  // On /radar the app shell steps aside: Radar's own sidebar is the only one (it carries the admin links too).
+  const radarFullScreen = RADAR_ONLY && (pathname === "/radar" || pathname.startsWith("/radar/"));
+
   return (
     <UserContext.Provider value={user}>
       <div className="h-screen flex bg-[var(--hm-bg-tertiary)]">
@@ -160,19 +177,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         )}
 
         {/* ── Sidebar: always visible on md+, slide-in drawer on mobile ── */}
-        <div
+        {!radarFullScreen && <div
           className={`fixed inset-y-0 left-0 z-40 transition-transform duration-200 md:relative md:translate-x-0 md:z-auto md:flex ${
             sidebarOpen ? "translate-x-0" : "-translate-x-full"
           }`}
         >
           <Sidebar userName={user.name || "User"} userRole={user.role} customPermissions={user.customPermissions} orgRolePerms={orgRolePerms} coachEnrolled={user.coachEnrolled} onClose={() => setSidebarOpen(false)} onStartTour={handleStartTour} />
-        </div>
+        </div>}
 
         {/* ── Main content area ── */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
           {/* Mobile top bar with hamburger */}
-          <div className="flex items-center gap-3 px-4 py-3 bg-[var(--hm-bg-secondary)] border-b border-[var(--hm-border)] md:hidden flex-shrink-0">
+          {!radarFullScreen && <div className="flex items-center gap-3 px-4 py-3 bg-[var(--hm-bg-secondary)] border-b border-[var(--hm-border)] md:hidden flex-shrink-0">
             <button
               onClick={() => setSidebarOpen(true)}
               className="w-9 h-9 flex items-center justify-center rounded-lg border border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:text-[var(--hm-text)] hover:bg-[var(--hm-surface-hover)] transition-colors"
@@ -185,7 +202,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               </svg>
             </button>
             <span className="text-[15px] font-semibold text-[var(--hm-text)] tracking-wide">HiveMind</span>
-          </div>
+          </div>}
 
           {/* New feature banner */}
           {newFeatureTour && !activeTour && (
@@ -224,7 +241,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           )}
 
           {/* Desktop breadcrumb header */}
-          <Breadcrumb />
+          {!radarFullScreen && <Breadcrumb />}
 
           {/* Page content */}
           <div className="flex-1 overflow-hidden flex flex-col min-h-0">
