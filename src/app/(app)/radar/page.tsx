@@ -2398,7 +2398,7 @@ function AccountContactsPanel({ account, onClose }: { account: AccountRow; onClo
 }
 
 /** Full read-only contact card — opened from an account's contact list, stacked over it. */
-function ContactDetailPanel({ contact: c, onClose }: { contact: ContactRow; onClose: () => void }) {
+function ContactDetailPanel({ contact: c, onClose, onEdit }: { contact: ContactRow; onClose: () => void; onEdit?: () => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } };
     window.addEventListener("keydown", onKey, true);
@@ -2444,7 +2444,10 @@ function ContactDetailPanel({ contact: c, onClose }: { contact: ContactRow; onCl
               {c.title && <p className="text-[12.5px] text-[var(--hm-text-secondary)] truncate">{c.title}</p>}
             </div>
           </div>
-          <button onClick={onClose} aria-label="Close" className="hm-btn hm-btn-secondary flex-shrink-0" style={{ height: 30, width: 30, padding: 0, fontSize: 14 }}>×</button>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {onEdit && <button onClick={onEdit} className="hm-btn hm-btn-secondary" style={{ height: 30, padding: "0 12px", fontSize: 12 }}>Edit</button>}
+            <button onClick={onClose} aria-label="Close" className="hm-btn hm-btn-secondary" style={{ height: 30, width: 30, padding: 0, fontSize: 14 }}>×</button>
+          </div>
         </div>
         <div className="flex-1 overflow-y-auto">
           {groups.map(([title, items]) => (
@@ -2551,6 +2554,7 @@ function ContactsSection() {
   const user = useUser();
   const isAdmin = user?.role === "owner" || user?.role === "admin";
   const [editContact, setEditContact] = useState<ContactRow | null>(null);
+  const [openContact, setOpenContact] = useState<ContactRow | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
   const [showIrrelevant, setShowIrrelevant] = useState(false);
   const { markIrrelevant, unmark, deleteForever } = useIrrelevantActions("contacts", () => setRefreshToken((t) => t + 1));
@@ -2573,7 +2577,7 @@ function ContactsSection() {
       header: "",
       render: (r) => (
         <button
-          onClick={() => setEditContact(r)}
+          onClick={(e) => { e.stopPropagation(); setEditContact(r); }}
           className="hm-btn hm-btn-secondary"
           style={{ height: 26, padding: "0 10px", fontSize: 11.5 }}
         >
@@ -2630,7 +2634,7 @@ function ContactsSection() {
     { key: "phone2", header: "Phone 2", render: (r) => <Cell value={r.phone2} /> },
     { key: "location", header: "Location", render: (r) => <Cell value={r.location} /> },
     { key: "country", header: "Country", render: (r) => <Cell value={r.country} /> },
-    { key: "linkedin", header: "LinkedIn", render: (r) => r.linkedin_url ? <a href={linkedinHref(r.linkedin_url)} target="_blank" rel="noreferrer" className="text-[var(--hm-link)] whitespace-nowrap">{linkedinHref(r.linkedin_url)}</a> : <span className="text-[var(--hm-text-tertiary)]">—</span> },
+    { key: "linkedin", header: "LinkedIn", render: (r) => r.linkedin_url ? <a href={linkedinHref(r.linkedin_url)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-[var(--hm-link)] whitespace-nowrap">{linkedinHref(r.linkedin_url)}</a> : <span className="text-[var(--hm-text-tertiary)]">—</span> },
     { key: "sdr", header: "SDR Owner", render: (r) => <Cell value={r.sdr_owner} /> },
     { key: "source", header: "Source", render: (r) => <Cell value={r.source} /> },
     { key: "created", header: "Created", className: "min-w-[190px] whitespace-nowrap", render: (r) => fmtDateTimeIST(r.created_at) },
@@ -2652,6 +2656,7 @@ function ContactsSection() {
         searchPlaceholder="Search name or email…"
         emptyLabel="No contacts match your filters."
         filterGroups={CONTACT_FILTER_GROUPS}
+        onRowClick={setOpenContact}
         refreshToken={refreshToken}
         extraBody={{ includeIrrelevant: showIrrelevant }}
         bulkActions={({ selected, clearSelection, allFiltered, totalMatching, queryBody }) => {
@@ -2698,6 +2703,7 @@ function ContactsSection() {
           );
         }}
       />
+      {openContact && <ContactDetailPanel contact={openContact} onClose={() => setOpenContact(null)} onEdit={() => { setEditContact(openContact); setOpenContact(null); }} />}
       {editContact && (
         <EditRecordPanel
           title={`Edit — ${[editContact.first_name, editContact.last_name].filter(Boolean).join(" ") || editContact.email || "Contact"}`}
