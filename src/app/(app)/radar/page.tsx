@@ -573,6 +573,22 @@ type SegmentKey = "india" | "us" | "crossborder";
 interface SegRow { k: string; v: string | null; n: number }
 interface SegData { accounts: SegRow[]; contacts: SegRow[] }
 
+const COUNTRY_NAMES: Record<string, string> = {
+  IN: "India", US: "United States", GB: "United Kingdom", AE: "United Arab Emirates", CA: "Canada", AU: "Australia", SG: "Singapore", DE: "Germany", FR: "France", NL: "Netherlands",
+  SA: "Saudi Arabia", QA: "Qatar", KW: "Kuwait", OM: "Oman", BH: "Bahrain", BD: "Bangladesh", LK: "Sri Lanka", NP: "Nepal", PK: "Pakistan", ID: "Indonesia", MY: "Malaysia",
+  TH: "Thailand", VN: "Vietnam", PH: "Philippines", HK: "Hong Kong", CN: "China", JP: "Japan", KR: "South Korea", NZ: "New Zealand", ZA: "South Africa", NG: "Nigeria", KE: "Kenya",
+  EG: "Egypt", TR: "Turkey", IT: "Italy", ES: "Spain", PT: "Portugal", SE: "Sweden", NO: "Norway", DK: "Denmark", FI: "Finland", CH: "Switzerland", AT: "Austria", BE: "Belgium",
+  IE: "Ireland", PL: "Poland", BR: "Brazil", MX: "Mexico", AR: "Argentina", CL: "Chile", CO: "Colombia", IL: "Israel", RU: "Russia", UA: "Ukraine", PR: "Puerto Rico",
+};
+const COUNTRY_OPTIONS = Object.keys(COUNTRY_NAMES);
+const COUNTRY_LABELS: Record<string, string> = Object.fromEntries(Object.entries(COUNTRY_NAMES).map(([c, n]) => [c, `${n} (${c})`]));
+const CITY_OPTIONS = [
+  "Mumbai", "Delhi", "New Delhi", "Bengaluru", "Hyderabad", "Chennai", "Kolkata", "Pune", "Ahmedabad", "Gurugram", "Gurgaon", "Noida", "Ghaziabad", "Faridabad", "Jaipur", "Surat",
+  "Lucknow", "Kanpur", "Nagpur", "Indore", "Bhopal", "Chandigarh", "Ludhiana", "Coimbatore", "Kochi", "Thiruvananthapuram", "Visakhapatnam", "Vadodara", "Rajkot", "Patna", "Bhubaneswar",
+  "Dubai", "Abu Dhabi", "Singapore", "London", "Manchester", "New York", "San Francisco", "Los Angeles", "Chicago", "Austin", "Boston", "Seattle", "Dallas", "Houston", "Miami", "Atlanta",
+  "Toronto", "Vancouver", "Sydney", "Melbourne", "Dhaka", "Colombo", "Kathmandu", "Karachi", "Jakarta", "Kuala Lumpur", "Bangkok", "Ho Chi Minh City", "Manila", "Hong Kong", "Berlin", "Paris", "Amsterdam",
+];
+
 const SEG_TABS: { id: "overview" | SegmentKey; label: string }[] = [
   { id: "overview", label: "Overview" }, { id: "india", label: "India" }, { id: "us", label: "US" }, { id: "crossborder", label: "Crossborder" },
 ];
@@ -4255,10 +4271,11 @@ function EnrichV2Section() {
     } catch (err) { setError((err as Error).message); } finally { e.target.value = ""; }
   };
 
-  const splitList = (t: string) => t.split(/[,;\n]/).map((x) => x.trim()).filter(Boolean);
+  const splitList = (t: string) => splitMulti(t);
   const start = async () => {
     setError("");
     if (!label.trim()) { setError("Give this job a name."); return; }
+    if (splitList(countriesText).length > 10 || splitList(citiesText).length > 10) { setError("Pick at most 10 countries and 10 cities."); return; }
     const badCountry = splitList(countriesText).find((c) => !/^[A-Za-z]{2}$/.test(c));
     if (badCountry) { setError(`"${badCountry}" isn't a 2-letter country code — use codes like IN, US, GB, AE.`); return; }
     if (!vertical) { setError("Pick a vertical — everything found is saved to Radar under it."); return; }
@@ -4353,12 +4370,12 @@ function EnrichV2Section() {
           </div>
           <div className="flex gap-3 flex-wrap">
             <div style={{ width: 260 }}>
-              <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Countries — 2-letter codes</label>
-              <input value={countriesText} onChange={(e) => setCountriesText(e.target.value)} placeholder="IN, US, GB, AE" style={{ width: "100%" }} />
+              <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Countries (up to 10)</label>
+              <SearchSelect multi label="Countries" value={countriesText} onChange={setCountriesText} options={COUNTRY_OPTIONS} labels={COUNTRY_LABELS} />
             </div>
             <div style={{ width: 320 }}>
-              <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Cities</label>
-              <input value={citiesText} onChange={(e) => setCitiesText(e.target.value)} placeholder="Mumbai, Delhi, Bengaluru" style={{ width: "100%" }} />
+              <label className="text-[12px] font-medium text-[var(--hm-text-secondary)] mb-1.5 block">Cities (up to 10)</label>
+              <SearchSelect multi label="Cities" value={citiesText} onChange={setCitiesText} options={CITY_OPTIONS} />
             </div>
           </div>
         </div>
