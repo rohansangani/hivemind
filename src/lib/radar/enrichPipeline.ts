@@ -18,6 +18,7 @@
  * Spec: docs/RADAR.md "Enrich v2"; tables: docs/sql/2026-11-04_enrich_v2.sql.
  */
 import { radarSql, selectFrom, insertRows, patchByFilter } from "@/lib/radar/supabase";
+import { cleanCity } from "@/lib/radar/cityNames";
 import {
   blitzKey, mapPool, BLITZ_RPS, BlitzUnavailableError, blitzDomainToLinkedin, blitzCompanySearchByName,
   blitzWaterfallIcp, blitzWorkEmail, blitzPhone, type BlitzIcpTier, type BlitzIcpResult,
@@ -447,7 +448,7 @@ function personRow(job: EnrichJobRow, co: Record<string, unknown>, r: BlitzIcpRe
     first_name: p.first_name || null, last_name: p.last_name || null, full_name: full || null,
     title: title || null, headline: p.headline || null,
     linkedin_url: p.linkedin_url || null,
-    city: p.location?.city || null, country_code: p.location?.country_code || null,
+    city: cleanCity(p.location?.city), country_code: p.location?.country_code || null,
     tier: tierNo || null, phase: tierNo === 7 ? 2 : 1, department, dropped_reason: dropped,
     raw: r,
   };
