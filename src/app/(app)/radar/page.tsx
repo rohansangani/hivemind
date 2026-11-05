@@ -1113,7 +1113,7 @@ function SearchSelect({ value, onChange, options, labels, numeric, label, counts
           <div ref={listRef} className="max-h-[260px] overflow-y-auto py-1">
             {items.map((o, i) => (
               <button key={o || "__any"} data-i={i} type="button" onMouseEnter={() => setHi(i)} onClick={() => pick(o)}
-                className={`w-full text-left px-3 py-1.5 text-[12.5px] flex items-center gap-2 ${i === hi ? "bg-[var(--hm-bg-tertiary)]" : ""} ${grouped && o && !isSub(o) && i > 1 && !needle ? "mt-1 border-t border-[var(--hm-border-light)] pt-2" : ""} ${o && isOn(o) ? "font-semibold text-[var(--hm-text)]" : !o ? "text-[var(--hm-text-tertiary)] italic" : grouped && !isSub(o) ? "font-semibold text-[var(--hm-text)]" : "text-[var(--hm-text-secondary)]"}`}>
+                className={`w-full text-left px-3 py-1.5 text-[12.5px] flex items-center gap-2 ${o && counts?.[o] === 0 && !isOn(o) ? "opacity-45" : ""} ${i === hi ? "bg-[var(--hm-bg-tertiary)]" : ""} ${grouped && o && !isSub(o) && i > 1 && !needle ? "mt-1 border-t border-[var(--hm-border-light)] pt-2" : ""} ${o && isOn(o) ? "font-semibold text-[var(--hm-text)]" : !o ? "text-[var(--hm-text-tertiary)] italic" : grouped && !isSub(o) ? "font-semibold text-[var(--hm-text)]" : "text-[var(--hm-text-secondary)]"}`}>
                 {multi && o ? (
                   <span className={`w-3.5 h-3.5 flex-shrink-0 rounded border flex items-center justify-center ${isOn(o) ? "bg-[var(--hm-primary)] border-[var(--hm-primary)] text-[var(--hm-bg)]" : "border-[var(--hm-text-tertiary)]"}`}>
                     {isOn(o) && <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>}
@@ -1365,6 +1365,30 @@ function DataTable<T extends { id: string }>({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [endpoint, term, filtersKey, page, refreshToken, extraBodyKey]);
 
+  // Dropdown counts that follow the other active filters (see lib/radar/facets.ts). Debounced; the
+  // previous counts stay on screen until the new ones arrive.
+  const [facets, setFacets] = useState<Record<string, Record<string, number>> | null>(null);
+  const facetTable = endpoint.includes("contacts") ? "contacts" : "accounts";
+  useEffect(() => {
+    let cancelled = false;
+    const t = setTimeout(() => {
+      fetch("/api/radar/facets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ search: term, ...filters, ...extraBody, table: facetTable }),
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => { if (!cancelled && d?.counts) setFacets(d.counts); })
+        .catch(() => {});
+    }, 300);
+    return () => { cancelled = true; clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [facetTable, term, filtersKey, extraBodyKey]);
+  const countsFor = (f: FilterField, opts: string[]): Record<string, number> | undefined => {
+    const fc = facets?.[f.key];
+    return fc ? Object.fromEntries(opts.map((o) => [o, fc[o] ?? 0])) : f.counts?.(options);
+  };
+
   const from = total === 0 ? 0 : page * PAGE_SIZE + 1;
   const to = Math.min((page + 1) * PAGE_SIZE, total);
   const maxPage = Math.max(0, Math.ceil(total / PAGE_SIZE) - 1);
@@ -1462,7 +1486,7 @@ function DataTable<T extends { id: string }>({
                   <div key={f.key}>
                     <p className="text-[11.5px] text-[var(--hm-text-tertiary)] mb-1">{f.label}</p>
                     {f.kind === "select" ? (
-                      <SearchSelect multi label={f.label} value={filters[f.key] || ""} onChange={(v) => setFilter(f.key, v)} options={f.options?.(options) || []} labels={f.labels} numeric={f.numeric} counts={f.counts?.(options)} grouped={f.grouped} />
+                      <SearchSelect multi label={f.label} value={filters[f.key] || ""} onChange={(v) => setFilter(f.key, v)} options={f.options?.(options) || []} labels={f.labels} numeric={f.numeric} counts={countsFor(f, f.options?.(options) || [])} grouped={f.grouped} />
                     ) : f.kind === "text" ? (
                       <TextFilter label={f.label} value={filters[f.key] || ""} onChange={(v) => setFilter(f.key, v)} placeholder={f.placeholder} />
                     ) : (
