@@ -2175,7 +2175,7 @@ function AccountsSection() {
                   style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}
                   title="Every column of every matching row"
                 >
-                  {exportingAll !== null ? <><span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />Exporting… {fmt(exportingAll)} / {fmt(totalMatching)}</> : `Export all ${fmt(totalMatching)} (CSV)`}
+                  {exportingAll !== null ? <><span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />{includeContacts ? `Exporting ${fmt(totalMatching)} accounts + contacts… ${fmt(exportingAll)} rows` : `Exporting… ${fmt(exportingAll)} / ${fmt(totalMatching)}`}</> : `Export all ${fmt(totalMatching)} (CSV)`}
                 </button>
               ) : (
                 <button
@@ -2622,7 +2622,7 @@ function ContactsSection() {
                   style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}
                   title="Every column of every matching row"
                 >
-                  {exportingAll !== null ? <><span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />Exporting… {fmt(exportingAll)} / {fmt(totalMatching)}</> : `Export all ${fmt(totalMatching)} (CSV)`}
+                  {exportingAll !== null ? <><span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />{includeContacts ? `Exporting ${fmt(totalMatching)} accounts + contacts… ${fmt(exportingAll)} rows` : `Exporting… ${fmt(exportingAll)} / ${fmt(totalMatching)}`}</> : `Export all ${fmt(totalMatching)} (CSV)`}
                 </button>
               ) : (
                 <button
