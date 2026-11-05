@@ -261,7 +261,7 @@ async function runPhaseBatch(job: EnrichJobRow, phase: EnrichPhase, left: () => 
     if (!rows.length) return "next";
     await stage(`Step 1 · Finding company LinkedIn pages — ${rows.length} compan${rows.length === 1 ? "y" : "ies"} in this batch`, true);
     const updates = await mapPool(rows as Record<string, unknown>[], BLITZ_RPS, async (co) => resolveCompany(co, BLITZ));
-    await insertRows("enrich2_companies", updates, { onConflict: "id", merge: true, returnMinimal: true });
+    await upsertGrouped("enrich2_companies", updates);
     return "more";
   }
 
@@ -283,7 +283,7 @@ async function runPhaseBatch(job: EnrichJobRow, phase: EnrichPhase, left: () => 
     for (let i = 0; i < people.length; i += 500) {
       await insertRows("enrich2_people", people.slice(i, i + 500), { onConflict: "job_id,linkedin_url", ignoreDuplicates: true, returnMinimal: true });
     }
-    await insertRows("enrich2_companies", companyUpdates, { onConflict: "id", merge: true, returnMinimal: true });
+    await upsertGrouped("enrich2_companies", companyUpdates);
     return "more";
   }
 
@@ -368,6 +368,16 @@ async function runPhaseBatch(job: EnrichJobRow, phase: EnrichPhase, left: () => 
     return "next";
   }
   return "next";
+}
+
+/** PostgREST bulk upsert needs one key set per request — group rows by shape (rows that skip a
+ * column mustn't overwrite it with null, so they can't be padded either). */
+async function upsertGrouped(table: string, rows: Record<string, unknown>[]) {
+  const groups = new Map<string, Record<string, unknown>[]>();
+  for (const r of rows) { const k = Object.keys(r).sort().join(","); groups.set(k, [...(groups.get(k) || []), r]); }
+  for (const g of groups.values()) {
+    for (let i = 0; i < g.length; i += 500) await insertRows(table, g.slice(i, i + 500), { onConflict: "id", merge: true, returnMinimal: true });
+  }
 }
 
 async function upsertPeople(rows: (Record<string, unknown> | null)[]) {

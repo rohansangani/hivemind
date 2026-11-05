@@ -1,5 +1,6 @@
 "use client";
 
+import { explainError } from "@/lib/radar/explainError";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { LogoLoader } from "@/components/LogoLoader";
 import { useUser } from "@/lib/UserContext";
@@ -1848,6 +1849,26 @@ function downloadCSV<T extends object>(rows: T[], filename: string) {
 function linkedinHref(url: string | null): string {
   if (!url) return "#";
   return /^https?:\/\//i.test(url) ? url : `https://${url.replace(/^\/+/, "")}`;
+}
+
+/** A failed job's error in plain language, with what to do next and the raw text behind a toggle. */
+function ErrorNote({ raw, prefix }: { raw: string | null | undefined; prefix?: string }) {
+  const [open, setOpen] = useState(false);
+  const e = explainError(raw);
+  return (
+    <span className="block w-full">
+      <span className="block text-[var(--tag-red-fg)] font-medium">{prefix}{e.title}</span>
+      <span className="block mt-1 text-[var(--hm-text)]"><b className="font-semibold">What to do:</b> {e.fix}</span>
+      {e.raw && (
+        <>
+          <button type="button" onClick={() => setOpen((o) => !o)} className="mt-1 text-[11.5px] text-[var(--hm-text-tertiary)] hover:text-[var(--hm-text)] underline underline-offset-2">
+            {open ? "Hide" : "Show"} technical details
+          </button>
+          {open && <code className="block mt-1 text-[11px] text-[var(--hm-text-secondary)] break-all whitespace-pre-wrap">{e.raw}</code>}
+        </>
+      )}
+    </span>
+  );
 }
 
 function fmtDateTimeIST(v: string | null): React.ReactNode {
@@ -4136,8 +4157,8 @@ function EnrichV2Section() {
                     </span>
                   </div>
                   <p className="px-4 pt-3 text-[12.5px] flex items-center gap-2 min-h-[20px]">
-                    {running ? (<><span className="w-3 h-3 border-2 border-[var(--hm-border)] border-t-[var(--hm-text)] rounded-full animate-spin flex-shrink-0" /><span className="text-[var(--hm-text)] truncate">{job.stage || "Waiting for the next step…"}</span></>)
-                      : job.status === "error" ? <span className="text-[var(--tag-red-fg)]">Stopped on error: {job.error}</span>
+                    {running ? (<><span className="w-3 h-3 border-2 border-[var(--hm-border)] border-t-[var(--hm-text)] rounded-full animate-spin flex-shrink-0" /><span className="text-[var(--hm-text)] truncate">{job.stage?.startsWith("Retrying after an error:") ? `Hit a snag — retrying automatically (${explainError(job.stage.slice(24)).title})` : job.stage || "Waiting for the next step…"}</span></>)
+                      : job.status === "error" ? <ErrorNote raw={job.error} />
                       : job.status === "cancelled" ? <span className="text-[var(--hm-text-tertiary)]">Stopped by you — results so far are kept (not saved to Radar). Resume to finish.</span>
                       : <span className="text-[var(--tag-green-fg)]">Finished — {fmt(n("saved"))} contacts saved to Radar ({job.vertical}).</span>}
                   </p>
@@ -5674,7 +5695,7 @@ function LinkedinPipeline({ job, results, checkType, refreshing, cancelling, onR
               <span className="text-[var(--hm-text)] truncate">{stage || "Waiting for the next batch…"}</span>
             </>
           ) : job.status === "error" ? (
-            <span className="text-[var(--tag-red-fg)]">Stopped on error: {job.error}</span>
+            <ErrorNote raw={job.error} />
           ) : job.status === "cancelled" ? (
             <span className="text-[var(--hm-text-tertiary)]">Stopped by you — everything checked so far is saved.</span>
           ) : (
@@ -8420,7 +8441,7 @@ function JobProgressPanel({ title, status, processed, total, noun, liveText, don
           {running ? (
             <><span className="w-3 h-3 border-2 border-[var(--hm-border)] border-t-[var(--hm-text)] rounded-full animate-spin flex-shrink-0" /><span className="text-[var(--hm-text)] truncate">{liveText}</span></>
           ) : status === "error" ? (
-            <span className="text-[var(--tag-red-fg)]">Stopped on error{error ? `: ${error}` : ""}</span>
+            <ErrorNote raw={error} />
           ) : status === "cancelled" ? (
             <span className="text-[var(--hm-text-tertiary)]">Stopped by you — everything checked so far is saved.</span>
           ) : (
