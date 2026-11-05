@@ -1099,6 +1099,8 @@ interface RadarOptions {
   monthlyRevenueBucketCounts?: Record<string, number>;
   platforms?: string[];
   platformCounts?: Record<string, number>;
+  installedApps?: string[];
+  installedAppCounts?: Record<string, number>;
 }
 const INDUSTRY_SEP = " › ";
 /** Multi-select filter values travel as one string joined with this (server splits it — see multiValues()). */
@@ -1178,7 +1180,7 @@ const CRM_FIELDS = (sources: (o: RadarOptions | null) => string[]): FilterField[
 
 const ACCOUNT_FILTER_GROUPS: FilterGroup[] = [
   { id: "segment", label: "Segment", icon: "icp", fields: SEGMENT_FIELDS },
-  { id: "firmo", label: "Firmographics", icon: "accounts", fields: [...FIRMO_FIELDS, { key: "accountSize", label: "Account size", kind: "select", options: (o) => o?.accountSizes || [] }] },
+  { id: "firmo", label: "Firmographics", icon: "accounts", fields: [...FIRMO_FIELDS, { key: "installedApp", label: "Installed app", kind: "select", options: (o) => o?.installedApps || [], counts: (o) => o?.installedAppCounts }, { key: "accountSize", label: "Account size", kind: "select", options: (o) => o?.accountSizes || [] }] },
   { id: "location", label: "Location", icon: "dashboard", fields: [
     { key: "country", label: "Country", kind: "select", options: (o) => o?.countries || [] },
     { key: "state", label: "State / region", kind: "select", options: (o) => o?.states || [] },
@@ -1187,6 +1189,7 @@ const ACCOUNT_FILTER_GROUPS: FilterGroup[] = [
   { id: "data", label: "Data quality", icon: "validate", fields: [
     { key: "hasDomain", label: "Has domain", kind: "yesno" },
     { key: "hasLinkedin", label: "Has LinkedIn", kind: "yesno" },
+    { key: "hasApps", label: "Has installed apps", kind: "yesno" },
   ] },
 ];
 

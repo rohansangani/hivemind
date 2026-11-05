@@ -45,6 +45,9 @@ export async function facetCounts(table: "accounts" | "contacts", body: Body, in
   yn(body.hasLinkedin, ...has("linkedin_url"));
   if (isAcc) {
     yn(body.hasDomain, ...has("domain"));
+    yn(body.hasApps, ...has("installed_apps"));
+    const apps = multiValues(body.installedApp);
+    if (apps.length) fixed.push(`(${apps.map((a) => `installed_apps ILIKE ${esc(`%${a}%`)}`).join(" OR ")})`);
     if (str(body.search)) fixed.push(`(${like("name", body.search)} OR ${like("domain", body.search)})`);
   } else {
     yn(body.hasPhone, ...has("phone"));
