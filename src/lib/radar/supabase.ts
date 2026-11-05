@@ -151,13 +151,15 @@ export async function selectFrom(
   query: string,
   range?: { from: number; to: number },
   attempt = 0,
+  /** Use the service key: no 3-second anon statement timeout, which exact counts over 300k+ accounts can exceed. Callers are already access-checked. */
+  useService = false,
 ): Promise<{ rows: unknown[]; total: number }> {
   if (!RADAR_SUPABASE_URL || !RADAR_SUPABASE_ANON_KEY) {
     throw new Error("Radar Supabase env vars are not configured");
   }
   const extra: Record<string, string> = { Prefer: "count=exact" };
   if (range) extra.Range = `${range.from}-${range.to}`;
-  const r = await fetch(`${RADAR_SUPABASE_URL}/rest/v1/${table}?${query}`, { headers: anonHeaders(extra) });
+  const r = await fetch(`${RADAR_SUPABASE_URL}/rest/v1/${table}?${query}`, { headers: useService && RADAR_SUPABASE_SERVICE_KEY ? serviceHeaders(extra) : anonHeaders(extra) });
   if (!r.ok) {
     // Temporary — surfacing PostgREST's actual error body (was previously swallowed) to diagnose
     // the check-db 500 on large LinkedIn-URL OR'd-ILIKE queries. Remove once root-caused.
@@ -170,7 +172,7 @@ export async function selectFrom(
     // request problem (bad filter, bad table) and retrying it would just fail identically.
     if (r.status >= 500 && attempt < 2) {
       await new Promise((res) => setTimeout(res, 500 + Math.random() * 500));
-      return selectFrom(table, query, range, attempt + 1);
+      return selectFrom(table, query, range, attempt + 1, useService);
     }
     throw new Error(`Radar Supabase select failed (${r.status}) for ${table}`);
   }

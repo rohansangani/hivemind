@@ -126,7 +126,7 @@ export async function POST(req: NextRequest) {
     const query = `select=*&order=name.asc${buildAccountsFilter(body, access.role)}`;
 
     const offset = page * limit;
-    const { rows, total } = await selectFrom("accounts", query, { from: offset, to: offset + limit - 1 });
+    const { rows, total } = await selectFrom("accounts", query, { from: offset, to: offset + limit - 1 }, 0, true);
     return NextResponse.json({ data: rows, total });
   } catch (err) {
     console.error("Radar accounts error:", err);
