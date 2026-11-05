@@ -4299,7 +4299,7 @@ function EnrichV2Section() {
         const r = await enrich2Call<{ tried: number; found: number; remaining: number }>({ action: "retry_unresolved", jobId: id, limit: 100 });
         tried += r.tried; found += r.found;
         if (id === jobId) await loadStatus(id);   // the card's numbers tick up batch by batch
-        if (!r.tried || r.remaining === 0) break;
+        if (!r.tried || r.remaining === 0 || tried >= remaining + 200) break;
       }
       setApifyMsg(`Apify found ${found} of ${tried} — job resumed`);
       await loadJobs(); if (id === jobId) await loadStatus(id);
