@@ -2559,18 +2559,23 @@ function AccountContactsPanel({ account, onClose }: { account: AccountRow; onClo
     let cancelled = false;
     setLoading(true);
     setError("");
-    fetch("/api/radar/contacts", {
+    const post = (body: Record<string, unknown>) => fetch("/api/radar/contacts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      // Crossborder accounts don't own contacts — show everyone at the domain (one row each, any vertical).
-      body: JSON.stringify(account.vertical === OVERLAY_VERTICAL && account.domain ? { matchDomain: account.domain, limit: 200 } : { accountId: account.id, limit: 200 }),
-    })
-      .then(async (r) => {
-        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Request failed");
-        return r.json();
-      })
-      .then((d: { data: ContactRow[]; total: number }) => {
-        if (!cancelled) { setRows(d.data || []); setTotal(d.total || 0); }
+      body: JSON.stringify(body),
+    }).then(async (r) => {
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Request failed");
+      return r.json() as Promise<{ data: ContactRow[]; total: number }>;
+    });
+    // Crossborder accounts don't own contacts — show everyone at the domain (one row each, any vertical).
+    // A B2B account also lists people who live under D2C with a B2B tag (one contact, two verticals).
+    const reqs = account.vertical === OVERLAY_VERTICAL && account.domain ? [post({ matchDomain: account.domain, limit: 200 })]
+      : [post({ accountId: account.id, limit: 200 }), ...(account.vertical === "B2B" && account.domain ? [post({ matchDomain: account.domain, vertical: "B2B", limit: 200 })] : [])];
+    Promise.all(reqs)
+      .then((res) => {
+        const seen = new Set<string>(); const merged: ContactRow[] = [];
+        for (const d of res) for (const c of d.data || []) if (!seen.has(c.id)) { seen.add(c.id); merged.push(c); }
+        if (!cancelled) { setRows(merged); setTotal(Math.max(merged.length, ...res.map((d) => d.total || 0))); }
       })
       .catch((e) => { if (!cancelled) setError(e.message); })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -2856,9 +2861,9 @@ function ContactsSection() {
       render: (r) => (
         <span className="inline-flex items-center gap-1">
           <VerticalBadge v={r.vertical} />
-          {r.vertical !== OVERLAY_VERTICAL && r.verticals?.includes(OVERLAY_VERTICAL) && (
-            <span title="Their company is also a Crossborder account"><VerticalBadge v={OVERLAY_VERTICAL} /></span>
-          )}
+          {(r.verticals || []).filter((v) => v !== r.vertical).map((v) => (
+            <span key={v} title={v === OVERLAY_VERTICAL ? "Their company is also a Crossborder account" : `Also in ${v} — one contact, several verticals`}><VerticalBadge v={v} /></span>
+          ))}
         </span>
       ),
     },
