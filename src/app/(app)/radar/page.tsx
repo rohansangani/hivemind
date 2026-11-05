@@ -4142,7 +4142,7 @@ function EnrichV2Section() {
   const [maxPer, setMaxPer] = useState(25);
   const [anymailFallback, setAnymailFallback] = useState(true);
   const [anymailVerify, setAnymailVerify] = useState(true);
-  const [phones, setPhones] = useState(false);
+  const [phones, setPhones] = useState(true);
   const [excludeShf, setExcludeShf] = useState(true);
   const [countriesText, setCountriesText] = useState("");
   const [citiesText, setCitiesText] = useState("");
