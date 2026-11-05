@@ -128,7 +128,7 @@ export async function POST(req: NextRequest) {
     const query = `select=*&order=name_rank.asc,first_name.asc.nullslast,id.asc${buildContactsFilter(body, access.role)}`;
 
     const offset = page * limit;
-    const { rows, total } = await selectFrom("contacts_view", query, { from: offset, to: offset + limit - 1 });
+    const { rows, total } = await selectFrom("contacts_view", query, { from: offset, to: offset + limit - 1 }, 0, true);
     return NextResponse.json({ data: rows, total });
   } catch (err) {
     console.error("Radar contacts error:", err);
