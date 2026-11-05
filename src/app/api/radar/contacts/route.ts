@@ -125,7 +125,7 @@ export async function POST(req: NextRequest) {
     }
 
     const { page = 0, limit = 50 } = body;
-    const query = `select=*&order=first_name.asc${buildContactsFilter(body, access.role)}`;
+    const query = `select=*&order=name_rank.asc,first_name.asc.nullslast,id.asc${buildContactsFilter(body, access.role)}`;
 
     const offset = page * limit;
     const { rows, total } = await selectFrom("contacts_view", query, { from: offset, to: offset + limit - 1 });
