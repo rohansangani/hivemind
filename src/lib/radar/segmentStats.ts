@@ -17,11 +17,15 @@ export async function segmentStats(segment: Segment, sub: string): Promise<{ acc
 
   const countsCte = overlay
     ? `cc AS (SELECT a.id, count(c.id)::int n FROM a JOIN contacts c ON c.match_domain = radar_norm_domain(a.domain) AND 'Crossborder' = ANY(c.verticals) AND c.marked_irrelevant IS NOT TRUE GROUP BY a.id)`
-    : `cc AS (SELECT c.account_id id, count(*)::int n FROM contacts c WHERE c.account_id IN (SELECT id FROM a) AND c.marked_irrelevant IS NOT TRUE GROUP BY 1)`;
+    : `cc AS (SELECT id, count(*)::int n FROM (
+        SELECT c.account_id id FROM contacts c WHERE c.account_id IN (SELECT id FROM a) AND c.marked_irrelevant IS NOT TRUE
+        UNION ALL
+        SELECT a.id FROM a JOIN contacts c ON c.match_domain = radar_norm_domain(a.domain) AND c.marked_irrelevant IS NOT TRUE AND a.vertical = ANY(c.extra_verticals)
+      ) u GROUP BY id)`;
 
   const accountsQ = `
 WITH a AS MATERIALIZED (
-  SELECT id, domain, linkedin_url, industry_category, employee_bucket, revenue_bucket, monthly_revenue_bucket, platform, country, state, source,
+  SELECT id, vertical, domain, linkedin_url, industry_category, employee_bucket, revenue_bucket, monthly_revenue_bucket, platform, country, state, source,
          account_type, customer, hubspot_lifecycle_stage, description
   FROM accounts WHERE vertical IN (${vlist}) AND marked_irrelevant IS NOT TRUE),
 ${countsCte},
