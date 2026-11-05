@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 // Streams can run long for "export all matching" (hundreds of thousands of rows).
 export const maxDuration = 280;
 import { selectFrom, requireRadarAccess, updateRow, setMarkedIrrelevant, deleteMarkedIrrelevant, fetchAllIds, firmographicFilters, inFilter } from "@/lib/radar/supabase";
-import { streamFilteredCsv } from "@/lib/radar/csvStream";
+import { streamFilteredCsv, streamAccountsWithContactsCsv } from "@/lib/radar/csvStream";
 import { logAccountExport } from "@/lib/radar/accountExport";
 import { logRadarActivity } from "@/lib/radar/activityLog";
 
@@ -75,6 +75,18 @@ export async function POST(req: NextRequest) {
     // "All N matching selected → Export CSV": every column of every matching row, streamed.
     if (body.action === "export_csv") {
       const userId = access.userId;
+      // "Include contacts": one row per contact under each account (selected ids, or everything matching the filters).
+      if (body.includeContacts) {
+        const ids = Array.isArray(body.ids) ? (body.ids as unknown[]).map(String).filter((i) => /^[0-9a-f-]{36}$/i.test(i)) : null;
+        const filters = ids
+          ? Array.from({ length: Math.ceil(ids.length / 100) }, (_, i) => `&id=in.(${ids.slice(i * 100, i * 100 + 100).join(",")})`)
+          : [buildAccountsFilter(body, access.role)];
+        const stream = streamAccountsWithContactsCsv(filters, "Crossborder", async (n) => {
+          await logAccountExport(userId, n);
+          await logRadarActivity(userId, "export_accounts", `Exported ${n} account(s) with their contacts to CSV`);
+        });
+        return new NextResponse(stream, { headers: { "Content-Type": "text/csv; charset=utf-8", "Cache-Control": "no-store" } });
+      }
       const stream = streamFilteredCsv("accounts", buildAccountsFilter(body, access.role), async (n) => {
         await logAccountExport(userId, n);
         await logRadarActivity(userId, "export_accounts", `Exported ${n} account(s) to CSV (all matching filters, all columns)`);

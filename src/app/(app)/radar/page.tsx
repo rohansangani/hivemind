@@ -2068,11 +2068,13 @@ function AccountsSection() {
   const { markIrrelevant, unmark, deleteForever } = useIrrelevantActions("accounts", () => setRefreshToken((t) => t + 1));
   // "All N matching selected" → stream every column of every matching row from the server.
   const [exportingAll, setExportingAll] = useState<number | null>(null);
+  // Add each account's contacts to the export (one row per contact, account columns repeated).
+  const [includeContacts, setIncludeContacts] = useState(true);
   const exportAllMatching = async (queryBody: Record<string, unknown>, total: number) => {
-    if (total > 50000 && !confirm(`Export all ${total.toLocaleString()} accounts with every column? This can take a few minutes.`)) return;
+    if (total > 50000 && !confirm(`Export all ${total.toLocaleString()} accounts with every column${includeContacts ? " and their contacts" : ""}? This can take a few minutes.`)) return;
     setExportingAll(0);
     try {
-      await streamDownloadCsv("/api/radar/accounts", { ...queryBody, action: "export_csv" }, `radar_accounts_all_${today()}.csv`, setExportingAll);
+      await streamDownloadCsv("/api/radar/accounts", { ...queryBody, action: "export_csv", includeContacts }, `radar_accounts_all_${today()}.csv`, setExportingAll);
     } catch (e) {
       alert((e as Error).message);
     } finally {
@@ -2177,13 +2179,29 @@ function AccountsSection() {
                 </button>
               ) : (
                 <button
-                  onClick={() => { downloadCSV(selected, `radar_accounts_${today()}.csv`); clearSelection(); }}
+                  onClick={async () => {
+                    if (!includeContacts) { downloadCSV(selected, `radar_accounts_${today()}.csv`); clearSelection(); return; }
+                    setExportingAll(0);
+                    try {
+                      await streamDownloadCsv("/api/radar/accounts", { action: "export_csv", includeContacts: true, ids: selected.map((r) => r.id) }, `radar_accounts_${today()}.csv`, setExportingAll);
+                      clearSelection();
+                    } catch (e) {
+                      alert((e as Error).message);
+                    } finally {
+                      setExportingAll(null);
+                    }
+                  }}
+                  disabled={exportingAll !== null}
                   className="hm-btn hm-btn-primary"
                   style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}
                 >
-                  Export CSV
+                  {exportingAll !== null ? "Exporting…" : "Export CSV"}
                 </button>
               )}
+              <label className="flex items-center gap-1.5 text-[11.5px] text-[var(--hm-text-secondary)] cursor-pointer select-none" title="One row per contact, with the account's columns repeated">
+                <input type="checkbox" checked={includeContacts} onChange={(e) => setIncludeContacts(e.target.checked)} />
+                Include contacts
+              </label>
               {showIrrelevant ? (
                 <>
                   <button onClick={() => unmark(sel, clearSelection)} className="hm-btn hm-btn-secondary" style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}>
@@ -2221,6 +2239,7 @@ function AccountsSection() {
 
 /** Slide-over showing an account's contacts — view-only, opened by clicking an Accounts row. */
 function AccountContactsPanel({ account, onClose }: { account: AccountRow; onClose: () => void }) {
+  const [openContact, setOpenContact] = useState<ContactRow | null>(null);
   const [rows, setRows] = useState<ContactRow[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -2302,7 +2321,9 @@ function AccountContactsPanel({ account, onClose }: { account: AccountRow; onClo
               {rows.map((c) => {
                 const nm = [c.first_name, c.last_name].filter(Boolean).join(" ") || c.full_name || "—";
                 return (
-                  <div key={c.id} className="px-5 py-3 flex gap-3 hover:bg-[var(--hm-bg-secondary)] transition-colors">
+                  <div key={c.id} onClick={() => setOpenContact(c)} role="button" tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === "Enter") setOpenContact(c); }}
+                    className="px-5 py-3 flex gap-3 hover:bg-[var(--hm-bg-secondary)] transition-colors cursor-pointer">
                     <div className="w-8 h-8 rounded-full bg-[var(--hm-bg-tertiary)] text-[var(--hm-text-secondary)] text-[11px] font-semibold flex items-center justify-center flex-shrink-0">
                       {initials(nm)}
                     </div>
@@ -2315,7 +2336,7 @@ function AccountContactsPanel({ account, onClose }: { account: AccountRow; onClo
                       <div className="flex items-center gap-2 mt-1 text-[12px] text-[var(--hm-text-secondary)] min-w-0">
                         {c.email && <span className="truncate">{c.email}</span>}
                         {c.linkedin_url && (
-                          <a href={linkedinHref(c.linkedin_url)} target="_blank" rel="noreferrer" className="text-[var(--hm-link)] hover:underline flex-shrink-0">LinkedIn ↗</a>
+                          <a href={linkedinHref(c.linkedin_url)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-[var(--hm-link)] hover:underline flex-shrink-0">LinkedIn ↗</a>
                         )}
                       </div>
                     </div>
@@ -2324,6 +2345,78 @@ function AccountContactsPanel({ account, onClose }: { account: AccountRow; onClo
               })}
             </div>
           )}
+        </div>
+      </div>
+      {openContact && <ContactDetailPanel contact={openContact} onClose={() => setOpenContact(null)} />}
+    </div>
+  );
+}
+
+/** Full read-only contact card — opened from an account's contact list, stacked over it. */
+function ContactDetailPanel({ contact: c, onClose }: { contact: ContactRow; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onClose]);
+  const nm = [c.first_name, c.last_name].filter(Boolean).join(" ") || c.full_name || c.email || "—";
+  const fmtDt = (v: string | null) => (v ? new Date(v).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" }) : null);
+  const link = (url: string | null) => url ? <a href={linkedinHref(url)} target="_blank" rel="noreferrer" className="text-[var(--hm-link)] hover:underline break-all">{url.replace(/^https?:\/\/(www\.)?/, "")}</a> : null;
+  const groups: [string, [string, React.ReactNode][]][] = [
+    ["Contact", [
+      ["Email", c.email ? <a href={`mailto:${c.email}`} className="text-[var(--hm-link)] hover:underline break-all">{c.email}</a> : null],
+      ["Email status", <EmailStatusPill key="s" status={c.email_status} />],
+      ["Validated at", fmtDt(c.validated_at)],
+      ["Phone", c.phone], ["Phone 2", c.phone2],
+      ["LinkedIn", link(c.linkedin_url)],
+      ["Location", c.location], ["Country", c.country],
+    ]],
+    ["Company", [
+      ["Company", c.account_name || c.company_name],
+      ["Domain", c.account_domain || c.domain],
+      ["Parent company", c.parent_company],
+      ["Industry", c.industry_category || c.industry], ["Sub-industry", c.industry_subcategory || c.sub_industry],
+      ["Employees", c.employee_bucket || c.employee_range], ["Revenue", c.revenue_bucket || c.revenue_range],
+    ]],
+    ["CRM", [
+      ["Vertical", (c.verticals?.length ? c.verticals : c.vertical ? [c.vertical] : []).join(", ")],
+      ["Account type", c.account_type], ["Customer", c.customer == null ? null : c.customer ? "Yes" : "No"],
+      ["HubSpot lifecycle stage", c.hubspot_lifecycle_stage], ["HubSpot lead status", c.hubspot_lead_status],
+      ["HubSpot excluded", c.hubspot_excluded == null ? null : c.hubspot_excluded ? "Yes" : "No"],
+      ["SDR owner", c.sdr_owner],
+    ]],
+    ["Record", [["Source", c.source], ["Created", fmtDt(c.created_at)], ["Updated", fmtDt(c.updated_at)]]],
+  ];
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal="true">
+      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
+      <div className="relative w-full max-w-md h-full bg-[var(--hm-surface)] flex flex-col border-l border-[var(--hm-border)]">
+        <div className="px-5 pt-5 pb-4 border-b border-[var(--hm-border)] flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-11 h-11 rounded-full bg-[var(--hm-bg-tertiary)] text-[var(--hm-text-secondary)] text-[13px] font-semibold flex items-center justify-center flex-shrink-0">{initials(nm)}</div>
+            <div className="min-w-0">
+              <h2 className="text-[16px] font-semibold text-[var(--hm-text)] truncate tracking-[-0.01em]">{nm}</h2>
+              {c.title && <p className="text-[12.5px] text-[var(--hm-text-secondary)] truncate">{c.title}</p>}
+            </div>
+          </div>
+          <button onClick={onClose} aria-label="Close" className="hm-btn hm-btn-secondary flex-shrink-0" style={{ height: 30, width: 30, padding: 0, fontSize: 14 }}>×</button>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          {groups.map(([title, items]) => (
+            <div key={title}>
+              <div className="px-5 py-2 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)]">
+                <p className="text-[11.5px] font-semibold uppercase tracking-[0.06em] text-[var(--hm-text-tertiary)]">{title}</p>
+              </div>
+              <dl className="divide-y divide-[var(--hm-border-light)]">
+                {items.map(([k, v]) => (
+                  <div key={k} className="px-5 py-2.5 grid grid-cols-[130px_1fr] gap-3">
+                    <dt className="text-[12px] text-[var(--hm-text-tertiary)]">{k}</dt>
+                    <dd className="text-[12.5px] text-[var(--hm-text)] min-w-0">{v || <span className="text-[var(--hm-text-tertiary)]">—</span>}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          ))}
         </div>
       </div>
     </div>

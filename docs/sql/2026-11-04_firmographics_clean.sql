@@ -196,3 +196,4 @@ CREATE INDEX IF NOT EXISTS idx_accounts_monthly_revenue_bucket ON accounts (mont
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS platform text;
 CREATE INDEX IF NOT EXISTS idx_accounts_platform ON accounts (platform);
 -- contacts_view: appended a.platform
+ALTER TABLE accounts DROP COLUMN IF EXISTS shopify; -- replaced by platform (2026-11-04)
