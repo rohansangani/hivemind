@@ -6129,6 +6129,29 @@ interface ValidateJob {
 }
 interface InstantlyTag { id: string; label: string; }
 
+/** Anymail Finder credits left, with a refresh — shown on the Validate tools that spend them. */
+function AnymailCredits() {
+  const [state, setState] = useState<{ left: number | null; err: string; loading: boolean }>({ left: null, err: "", loading: true });
+  const load = useCallback(() => {
+    setState((s) => ({ ...s, loading: true }));
+    fetch("/api/radar/anymail-credits")
+      .then(async (r) => { const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.error || "Couldn't load credits"); return d; })
+      .then((d: { creditsLeft: number | null }) => setState({ left: d.creditsLeft, err: "", loading: false }))
+      .catch((e) => setState({ left: null, err: e.message, loading: false }));
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  const low = state.left != null && state.left < 1000;
+  return (
+    <div className="flex items-center justify-end gap-2 px-5 py-2 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] text-[12px]">
+      <span className="text-[var(--hm-text-tertiary)]">Anymail Finder credits left</span>
+      {state.err ? <span className="text-[var(--tag-red-fg)]" title={state.err}>unavailable</span>
+        : <b className={`tabular-nums font-semibold ${low ? "text-[var(--tag-red-fg)]" : "text-[var(--hm-text)]"}`}>{state.loading && state.left == null ? "…" : state.left == null ? "—" : state.left.toLocaleString()}</b>}
+      {low && <span className="text-[var(--tag-red-fg)]">· running low</span>}
+      <button onClick={load} disabled={state.loading} className="radar-btn-ghost" style={{ height: 22, padding: "0 8px" }} title="Refresh">{state.loading ? "…" : "↻"}</button>
+    </div>
+  );
+}
+
 function ValidateSection() {
   const [view, setView] = useState<"current" | "history">("current");
   const emptyPerson = (): PersonInput => ({ first_name: "", middle_name: "", last_name: "", domain: "" });
@@ -7338,6 +7361,8 @@ function ValidateSection() {
                   );
                 })}
               </div>
+
+              {(inputMode === "patterns" || inputMode === "retest") && <AnymailCredits />}
 
               {inputMode === "linkedin" ? (
                 <>
