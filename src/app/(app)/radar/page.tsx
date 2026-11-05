@@ -228,7 +228,7 @@ export default function RadarPage() {
             mounted at all, so this adds no upfront cost for tabs the user never opens. */}
         {SECTIONS.filter((s) => visited.has(s.id)).map((s) => (
           <div key={s.id} className={active === s.id ? "radar-enter" : undefined} style={{ display: active === s.id ? "block" : "none" }}>
-            {s.id === "dashboard" ? <RadarDashboard />
+            {s.id === "dashboard" ? <RadarDashboardTabs />
               : s.id === "accounts" ? <AccountsSection />
               : s.id === "contacts" ? <ContactsSection />
               : s.id === "icp" ? <IcpBaseSection />
@@ -566,6 +566,188 @@ const STATUS_META: Array<{ key: string; label: string; color: string }> = [
   { key: "unknown", label: "Unknown", color: "var(--hm-text-tertiary)" },
   { key: "unvalidated", label: "Unvalidated", color: "var(--hm-text-tertiary)" },
 ];
+
+/* ── Dashboard tabs: Overview · India · US · Crossborder ───────────────── */
+
+type SegmentKey = "india" | "us" | "crossborder";
+interface SegRow { k: string; v: string | null; n: number }
+interface SegData { accounts: SegRow[]; contacts: SegRow[] }
+
+const SEG_TABS: { id: "overview" | SegmentKey; label: string }[] = [
+  { id: "overview", label: "Overview" }, { id: "india", label: "India" }, { id: "us", label: "US" }, { id: "crossborder", label: "Crossborder" },
+];
+const SEG_PALETTE = ["var(--tag-blue-fg)", "var(--tag-purple-fg)", "var(--tag-orange-fg)", "var(--tag-green-fg)", "var(--tag-pink-fg)", "var(--tag-yellow-fg)", "var(--tag-red-fg)"];
+const GREY = "color-mix(in srgb, var(--hm-text-tertiary) 55%, transparent)";
+const EMPLOYEE_ORDER = ["1-10", "11-50", "51-200", "201-500", "501-1,000", "1,001-5,000", "5,001-10,000", "10,001+"];
+const REVENUE_ORDER = ["Under $1M", "$1M-$10M", "$10M-$50M", "$50M-$100M", "$100M-$500M", "$500M-$1B", "$1B+", "Unknown"];
+const MONTHLY_ORDER = ["Under $10K", "$10K-$25K", "$25K-$50K", "$50K-$100K", "$100K-$250K", "$250K-$500K", "$500K-$1M", "$1M-$5M", "$5M+", "Unknown"];
+const PER_ACCOUNT_ORDER = ["0", "1", "2-3", "4-10", "11+"];
+const SENIORITY_ORDER = ["C-level / Founder / Owner", "VP / Head / Director", "Manager", "Other", "No title"];
+const EMAIL_GROUPS: { key: string; label: string; color: string }[] = [
+  { key: "safe to send", label: "Safe to send", color: "var(--tag-green-fg)" },
+  { key: "verified", label: "Verified", color: "var(--tag-blue-fg)" },
+  { key: "valid (other tools)", label: "Valid (other tools)", color: "color-mix(in srgb, var(--tag-green-fg) 55%, transparent)" },
+  { key: "risky", label: "Risky", color: "var(--tag-yellow-fg)" },
+  { key: "invalid", label: "Invalid", color: "var(--tag-red-fg)" },
+  { key: "bounced / moved", label: "Bounced / moved", color: "var(--tag-orange-fg)" },
+  { key: "unknown / other", label: "Unknown / other", color: "var(--hm-text-tertiary)" },
+  { key: "unvalidated", label: "Unvalidated", color: GREY },
+  { key: "no email", label: "No email", color: "color-mix(in srgb, var(--hm-text-tertiary) 30%, transparent)" },
+];
+
+function RadarDashboardTabs() {
+  const [tab, setTab] = useState<"overview" | SegmentKey>("overview");
+  const [sub, setSub] = useState<"all" | "D2C" | "B2B">("all");
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-1" role="tablist">
+          {SEG_TABS.map((t) => (
+            <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)} className={`radar-tab ${tab === t.id ? "active" : ""}`}>{t.label}</button>
+          ))}
+        </div>
+        {tab === "india" && (
+          <div className="flex items-center gap-1 ml-2">
+            {(["all", "D2C", "B2B"] as const).map((o) => (
+              <button key={o} onClick={() => setSub(o)} className={`h-7 px-2.5 rounded-full border text-[12px] font-medium transition-colors ${sub === o ? "border-[var(--hm-primary)] bg-[var(--hm-bg-tertiary)] text-[var(--hm-text)]" : "border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:text-[var(--hm-text)]"}`}>
+                {o === "all" ? "D2C + B2B" : o}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      {tab === "overview" ? <RadarDashboard /> : <SegmentDashboard key={tab === "india" ? `india-${sub}` : tab} segment={tab} sub={sub} />}
+    </div>
+  );
+}
+
+function SegmentDashboard({ segment, sub }: { segment: SegmentKey; sub: string }) {
+  const [data, setData] = useState<SegData | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/radar/segment-stats?segment=${segment}&sub=${sub}`)
+      .then(async (r) => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to load"); return r.json(); })
+      .then((d: SegData) => { if (!cancelled) setData(d); })
+      .catch((e) => { if (!cancelled) setError(e.message); });
+    return () => { cancelled = true; };
+  }, [segment, sub]);
+
+  if (error) return <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--tag-red-bg)] p-5 text-[13px] text-[var(--tag-red-fg)]">Couldn&apos;t load this segment: {error}</div>;
+  if (!data) {
+    return (
+      <div className="space-y-5" aria-busy="true">
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-3.5">{[0, 1, 2, 3].map((i) => <div key={i} className="radar-card px-5 py-4 space-y-3"><span className="radar-skel" style={{ width: 90 }} /><span className="radar-skel" style={{ width: 130, height: 22 }} /></div>)}</div>
+        <div className="flex justify-center py-10"><LogoLoader size={34} /></div>
+      </div>
+    );
+  }
+
+  const A = data.accounts, C = data.contacts;
+  const kpi = (rows: SegRow[], name: string) => rows.find((r) => r.k === "kpi" && r.v === name)?.n || 0;
+  const group = (rows: SegRow[], k: string) => rows.filter((r) => r.k === k);
+  const pct = (n: number, d: number) => (d ? Math.round((n / d) * 100) : 0);
+  const label = (v: string | null) => (v == null || v === "" ? "Unknown" : v);
+
+  /** Ordered buckets (fixed order, blanks as "Unknown"). */
+  const ordered = (rows: SegRow[], order: string[], colorOf?: (i: number) => string) => {
+    const m = new Map<string, number>();
+    for (const r of rows) m.set(label(r.v), (m.get(label(r.v)) || 0) + r.n);
+    const keys = [...order.filter((o) => m.has(o)), ...[...m.keys()].filter((k) => !order.includes(k))];
+    return keys.map((k, i) => ({ key: k, label: k, value: m.get(k) || 0, color: k === "Unknown" || k === "No title" || k === "0" ? GREY : (colorOf ? colorOf(i) : SEG_PALETTE[i % SEG_PALETTE.length]) }));
+  };
+  /** Biggest N categories + an "Other" roll-up; blanks as "Unknown" (greyed). */
+  const top = (rows: SegRow[], n: number) => {
+    const m = new Map<string, number>();
+    for (const r of rows) m.set(label(r.v), (m.get(label(r.v)) || 0) + r.n);
+    const all = [...m.entries()].sort((a, b) => b[1] - a[1]);
+    const named = all.filter(([k]) => k !== "Unknown");
+    const unknown = m.get("Unknown") || 0;
+    const head = named.slice(0, n);
+    const rest = named.slice(n).reduce((s, [, v]) => s + v, 0);
+    const out = head.map(([k, v], i) => ({ key: k, label: k, value: v, color: SEG_PALETTE[i % SEG_PALETTE.length] }));
+    if (rest) out.push({ key: "__other", label: `Other (${named.length - n})`, value: rest, color: "var(--hm-text-tertiary)" });
+    if (unknown) out.push({ key: "__unknown", label: "Unknown", value: unknown, color: GREY });
+    return out;
+  };
+
+  const nAcc = kpi(A, "accounts"), nCon = kpi(C, "contacts");
+  const emailRows = group(C, "emailStatus");
+  const emailMap = new Map(emailRows.map((r) => [r.v || "", r.n]));
+  const emailCard = EMAIL_GROUPS.map((g) => ({ key: g.key, label: g.label, value: emailMap.get(g.key) || 0, color: g.color })).filter((r) => r.value > 0);
+  const withEmail = kpi(C, "with_email");
+  const deliverable = (emailMap.get("safe to send") || 0) + (emailMap.get("verified") || 0) + (emailMap.get("valid (other tools)") || 0);
+  const empty = nAcc - kpi(A, "with_contacts");
+  const isIndia = segment === "india";
+  const title = segment === "india" ? "India" : segment === "us" ? "US" : "Crossborder";
+
+  const completeness = (items: [string, number, number][]) => items.map(([k, n, d]) => ({ k, n, p: pct(n, d) }));
+  const accComp = completeness([
+    ["Domain", kpi(A, "with_domain"), nAcc], ["LinkedIn", kpi(A, "with_linkedin"), nAcc], ["Industry", kpi(A, "with_industry"), nAcc],
+    ["Employees", kpi(A, "with_employees"), nAcc], ["Annual revenue", kpi(A, "with_revenue"), nAcc], ["Description", kpi(A, "with_description"), nAcc], ["Has contacts", kpi(A, "with_contacts"), nAcc],
+  ]);
+  const conComp = completeness([
+    ["Email", withEmail, nCon], ["LinkedIn", kpi(C, "with_linkedin"), nCon], ["Phone", kpi(C, "with_phone"), nCon],
+    ["First name", kpi(C, "with_first"), nCon], ["Last name", kpi(C, "with_last"), nCon], ["Title", kpi(C, "with_title"), nCon],
+  ]);
+
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3.5">
+        <KpiTile icon="accounts" label={`${title} accounts`} value={fmt(nAcc)} foot={`${fmt(kpi(A, "with_contacts"))} have contacts (${pct(kpi(A, "with_contacts"), nAcc)}%) · ${fmt(empty)} empty`} ratio={kpi(A, "with_contacts") / (nAcc || 1)} />
+        <KpiTile icon="contacts" label={`${title} contacts`} value={fmt(nCon)} foot={`${fmt(withEmail)} with an email (${pct(withEmail, nCon)}%)`} ratio={withEmail / (nCon || 1)} />
+        <KpiTile icon="validate" label="Deliverable emails" value={fmt(deliverable)} tone="var(--tag-green-fg)" foot={`Safe + Verified + Valid · ${pct(deliverable, withEmail)}% of emails`} ratio={deliverable / (withEmail || 1)} />
+        <KpiTile icon="icp" label="LinkedIn coverage" value={`${pct(kpi(C, "with_linkedin"), nCon)}%`} foot={`contacts · accounts ${pct(kpi(A, "with_linkedin"), nAcc)}%`} ratio={kpi(C, "with_linkedin") / (nCon || 1)} />
+      </div>
+
+      <h3 className="text-[11.5px] font-semibold uppercase tracking-[0.06em] text-[var(--hm-text-tertiary)] pt-1">Contacts</h3>
+      <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-3.5">
+        <DistributionCard title="Email status" meta={`${fmt(nCon)} contacts`} rows={emailCard} />
+        <DistributionCard title="Seniority" meta="from job title" rows={ordered(group(C, "seniority"), SENIORITY_ORDER)} />
+        <DistributionCard title="Contact source" meta="top 8" rows={top(group(C, "contactSource"), 8)} />
+        <DistributionCard title="Contact country" meta="top 8" rows={top(group(C, "contactCountry"), 8)} />
+        <CompletenessCard title="Contact data completeness" rows={conComp} />
+      </div>
+
+      <h3 className="text-[11.5px] font-semibold uppercase tracking-[0.06em] text-[var(--hm-text-tertiary)] pt-1">Accounts</h3>
+      <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-3.5">
+        <DistributionCard title="Industry" meta="top 10" rows={top(group(A, "industry"), 10)} />
+        <DistributionCard title="Employees" meta={`${fmt(kpi(A, "with_employees"))} known`} rows={ordered(group(A, "employees"), EMPLOYEE_ORDER)} />
+        <DistributionCard title="Annual revenue (USD)" meta={`${fmt(kpi(A, "with_revenue"))} known`} rows={ordered(group(A, "revenue"), REVENUE_ORDER)} />
+        <DistributionCard title="Monthly revenue (USD)" meta="" rows={ordered(group(A, "monthly"), MONTHLY_ORDER)} />
+        <DistributionCard title="Platform" meta="top 8" rows={top(group(A, "platform"), 8)} />
+        <DistributionCard title="Country" meta="top 8" rows={top(group(A, "country"), 8)} />
+        {isIndia && <DistributionCard title="State" meta="top 10" rows={top(group(A, "state"), 10)} />}
+        <DistributionCard title="Account source" meta="top 8" rows={top(group(A, "source"), 8)} />
+        <DistributionCard title="Contacts per account" meta="how many contacts each account has" rows={ordered(group(A, "perAccount"), PER_ACCOUNT_ORDER)} />
+        <DistributionCard title="HubSpot lifecycle stage" meta="top 8" rows={top(group(A, "lifecycle"), 8)} />
+        <DistributionCard title="Customers" meta="" rows={top(group(A, "customer"), 2)} />
+        <DistributionCard title="Account type" meta="" rows={top(group(A, "accountType"), 6)} />
+        <CompletenessCard title="Account data completeness" rows={accComp} />
+      </div>
+    </div>
+  );
+}
+
+function CompletenessCard({ title, rows }: { title: string; rows: { k: string; n: number; p: number }[] }) {
+  return (
+    <div className="radar-card">
+      <div className="px-5 py-3.5 border-b border-[var(--hm-border)]"><h2 className="text-[13px] font-semibold text-[var(--hm-text)]">{title}</h2></div>
+      <div className="px-2 py-3">
+        {rows.map((r) => (
+          <div key={r.k} className="flex items-center gap-3 px-3 py-1.5">
+            <span className="text-[12.5px] text-[var(--hm-text-secondary)] w-28 flex-shrink-0 truncate">{r.k}</span>
+            <div className="flex-1 h-1.5 rounded-full bg-[var(--hm-bg-tertiary)] overflow-hidden">
+              <div className="radar-grow h-full rounded-full" style={{ width: `${r.p}%`, background: r.p >= 80 ? "var(--tag-green-fg)" : r.p >= 40 ? "var(--tag-yellow-fg)" : "var(--tag-red-fg)" }} />
+            </div>
+            <span className="text-[12.5px] font-medium text-[var(--hm-text)] w-16 text-right tabular-nums">{fmt(r.n)}</span>
+            <span className="text-[11px] text-[var(--hm-text-tertiary)] w-10 text-right tabular-nums">{r.p}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function RadarDashboard() {
   const [stats, setStats] = useState<RadarStats | null>(null);
