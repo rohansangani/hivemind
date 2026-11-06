@@ -7922,7 +7922,7 @@ const CHECK_DB_COLUMNS: Record<"contacts" | "accounts", Array<{ id: string; labe
 // set of keys the API sends back instead of this list, so the CSV gets every column.
 const PREVIEW_COLS: Record<"contacts" | "accounts", string[]> = {
   contacts: ["first_name", "last_name", "email", "title", "company_name", "account_name", "domain", "industry", "country", "email_status", "validated_at", "vertical", "phone", "linkedin_url"],
-  accounts: ["name", "domain", "vertical", "industry", "sub_industry", "employee_range", "revenue_range", "country", "linkedin_url", "sdr_owner"],
+  accounts: ["name", "domain", "industry", "sub_industry", "employee_range", "revenue_range", "country", "linkedin_url", "sdr_owner"],
 };
 
 function CheckDbSection() {
@@ -8050,7 +8050,7 @@ function CheckDbSection() {
 
   const markIrrelevantFound = async () => {
     if (!result?.data.length) return;
-    const ids = result.data.map((r) => r.id).filter(Boolean) as (string | number)[];
+    const ids = result.data.flatMap((r) => (Array.isArray(r._all_ids) ? r._all_ids : [r.id])).filter(Boolean) as (string | number)[];
     if (!ids.length) return;
     if (!confirm(`Mark ${ids.length} matched ${table} as irrelevant?`)) return;
     setMarking(true);
@@ -8089,7 +8089,7 @@ function CheckDbSection() {
     // Accounts + contacts: one row per contact with every account column then every contact column
     // (accounts with no contacts get one row with the contact columns blank).
     if (table === "accounts" && result.contacts) {
-      const accCols = [...new Set(result.data.flatMap((r) => Object.keys(r)))].filter((c) => c !== "id");
+      const accCols = [...new Set(result.data.flatMap((r) => Object.keys(r)))].filter((c) => c !== "id" && !c.startsWith("_"));
       const conCols = [...new Set(result.contacts.flatMap((r) => Object.keys(r)))].filter((c) => c !== "id" && c !== "_account_id");
       const byAcc = new Map<string, Record<string, unknown>[]>();
       for (const c of result.contacts) (byAcc.get(String(c._account_id)) ?? byAcc.set(String(c._account_id), []).get(String(c._account_id))!).push(c);
@@ -8103,7 +8103,7 @@ function CheckDbSection() {
       download(lines, "check-db-accounts-with-contacts");
       return;
     }
-    const cols = [...new Set(result.data.flatMap((r) => Object.keys(r)))].filter((c) => c !== "id");
+    const cols = [...new Set(result.data.flatMap((r) => Object.keys(r)))].filter((c) => c !== "id" && !c.startsWith("_"));
     download([cols.join(","), ...result.data.map((r) => cols.map((c) => esc(r[c])).join(","))], "check-db-results");
   };
 
@@ -8203,7 +8203,6 @@ function CheckDbSection() {
             <span className="text-[12.5px] text-[var(--hm-text-secondary)]">
               Found <strong className="text-[var(--hm-text)]">{result.checked - result.notFound.length}</strong> of <strong className="text-[var(--hm-text)]">{result.checked}</strong>
               {result.notFound.length > 0 && ` · ${result.notFound.length} not found`}
-              {result.found !== result.checked - result.notFound.length && ` · ${result.found} ${table === "accounts" ? "account rows (one per vertical)" : "rows"}`}
               {result.contacts && ` · ${new Set(result.contacts.map((c) => c.id)).size.toLocaleString()} associated contact${result.contacts.length === 1 ? "" : "s"}`}
             </span>
             {result.notFound.length > 0 && (
