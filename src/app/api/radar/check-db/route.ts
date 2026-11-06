@@ -111,6 +111,7 @@ async function fetchContactsForAccounts(accounts: Record<string, unknown>[]): Pr
   const byId = new Map<string, Record<string, unknown>>();
   for (const c of fetched) byId.set(String(c.id), c);
   const byAccount = new Map(accounts.map((a) => [String(a.id), a]));
+  const realDomains = new Set(accounts.filter((a) => a.vertical !== "Crossborder" && a.domain).map((a) => String(a.domain).toLowerCase()));
   const out: Record<string, unknown>[] = [];
   const seen = new Set<string>();
   for (const c of byId.values()) {
@@ -120,7 +121,9 @@ async function fetchContactsForAccounts(accounts: Record<string, unknown>[]): Pr
     for (const a of accounts) {
       const ad = String(a.domain ?? "").toLowerCase();
       if (!ad || ad !== dom) continue;
-      if (a.vertical === "Crossborder") targets.add(String(a.id));
+      // Crossborder only mirrors people who live under the other verticals — when the domain also has
+      // a real (non-Crossborder) account in this result, list them there once, not twice.
+      if (a.vertical === "Crossborder") { if (!realDomains.has(ad)) targets.add(String(a.id)); }
       else if (a.vertical === "B2B" && Array.isArray(c.verticals) && (c.verticals as string[]).includes("B2B")) targets.add(String(a.id));
     }
     for (const t of targets) {
