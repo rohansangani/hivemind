@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse, after } from "next/server";
+import { canonicalCountry } from "@/lib/radar/countryNames";
 import { requireRadarAccess, radarSql, selectFrom, insertRows } from "@/lib/radar/supabase";
 import { logRadarActivity } from "@/lib/radar/activityLog";
 import { db } from "@/lib/db";
@@ -57,6 +58,8 @@ function normalizeCountry(raw: string | null | undefined): string | null {
   if (!raw) return raw ?? null;
   const v = raw.trim();
   if (!v) return null;
+  const canon = canonicalCountry(v);
+  if (canon !== v) return canon;
   const l = v.toLowerCase();
 
   const indiaPatterns = [
