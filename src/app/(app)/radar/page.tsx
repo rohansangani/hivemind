@@ -7890,6 +7890,8 @@ function ValidateSection() {
 
 interface CheckDbResult {
   data: Record<string, unknown>[];
+  /** Accounts lookups with "include contacts": every associated contact, tagged with `_account_id`. */
+  contacts?: Record<string, unknown>[];
   checked: number;
   found: number;
   notFound: string[];
@@ -7941,6 +7943,7 @@ function CheckDbSection() {
   const [csvColumn, setCsvColumn] = useState("");
   const [marking, setMarking] = useState(false);
   const [marked, setMarked] = useState(false);
+  const [withContacts, setWithContacts] = useState(true);
 
   const columnOptions = CHECK_DB_COLUMNS[table];
   const activeColumn = columnOptions.find((c) => c.id === column) || columnOptions[0];
@@ -8022,14 +8025,22 @@ function CheckDbSection() {
     setResult(null);
     setMarked(false);
     try {
-      const r = await fetch("/api/radar/check-db", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ values, column, table }),
-      });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error || "Check failed");
-      setResult(d);
+      // Big lists go in batches so each request stays inside the server time limit.
+      const BATCH = 300;
+      const merged: CheckDbResult = { data: [], contacts: table === "accounts" && withContacts ? [] : undefined, checked: 0, found: 0, notFound: [] };
+      for (let i = 0; i < values.length; i += BATCH) {
+        const r = await fetch("/api/radar/check-db", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ values: values.slice(i, i + BATCH), column, table, includeContacts: table === "accounts" && withContacts }),
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || "Check failed");
+        merged.data.push(...d.data);
+        if (merged.contacts && d.contacts) merged.contacts.push(...d.contacts);
+        merged.checked += d.checked; merged.found += d.found; merged.notFound.push(...d.notFound);
+      }
+      setResult(merged);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -8062,19 +8073,43 @@ function CheckDbSection() {
     }
   };
 
-  const exportFound = () => {
-    if (!result?.data.length) return;
-    const cols = Object.keys(result.data[0]).filter((c) => c !== "id");
-    const esc = (v: unknown) => `"${(v ?? "").toString().replace(/"/g, '""')}"`;
-    const lines = [cols.join(",")];
-    result.data.forEach((r) => lines.push(cols.map((c) => esc(r[c])).join(",")));
+  const download = (lines: string[], name: string) => {
     const blob = new Blob([lines.join("\n")], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `check-db-results-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `${name}-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+  const esc = (v: unknown) => `"${(v == null ? "" : typeof v === "object" ? JSON.stringify(v) : String(v)).replace(/"/g, '""')}"`;
+
+  const exportFound = () => {
+    if (!result?.data.length) return;
+    // Accounts + contacts: one row per contact with every account column then every contact column
+    // (accounts with no contacts get one row with the contact columns blank).
+    if (table === "accounts" && result.contacts) {
+      const accCols = [...new Set(result.data.flatMap((r) => Object.keys(r)))].filter((c) => c !== "id");
+      const conCols = [...new Set(result.contacts.flatMap((r) => Object.keys(r)))].filter((c) => c !== "id" && c !== "_account_id");
+      const byAcc = new Map<string, Record<string, unknown>[]>();
+      for (const c of result.contacts) (byAcc.get(String(c._account_id)) ?? byAcc.set(String(c._account_id), []).get(String(c._account_id))!).push(c);
+      const lines = [[...accCols.map((c) => `account_${c}`), ...conCols.map((c) => `contact_${c}`)].join(",")];
+      for (const a of result.data) {
+        const accPart = accCols.map((c) => esc(a[c]));
+        const cs = byAcc.get(String(a.id)) || [];
+        if (!cs.length) lines.push([...accPart, ...conCols.map(() => '""')].join(","));
+        for (const c of cs) lines.push([...accPart, ...conCols.map((k) => esc(c[k]))].join(","));
+      }
+      download(lines, "check-db-accounts-with-contacts");
+      return;
+    }
+    const cols = [...new Set(result.data.flatMap((r) => Object.keys(r)))].filter((c) => c !== "id");
+    download([cols.join(","), ...result.data.map((r) => cols.map((c) => esc(r[c])).join(","))], "check-db-results");
+  };
+
+  const exportNotFound = () => {
+    if (!result?.notFound.length) return;
+    download(["value", ...result.notFound.map((v) => esc(v))], "check-db-not-found");
   };
 
   // Preview table only ever shows this curated subset (filtered to columns actually present, in
@@ -8108,6 +8143,12 @@ function CheckDbSection() {
             >
               {columnOptions.map((c) => <option key={c.id} value={c.id}>Check by {c.label}</option>)}
             </select>
+            {table === "accounts" && (
+              <label className="flex items-center gap-1.5 text-[12.5px] text-[var(--hm-text-secondary)] cursor-pointer select-none">
+                <input type="checkbox" checked={withContacts} onChange={(e) => { setWithContacts(e.target.checked); setResult(null); }} />
+                Include associated contacts (all info)
+              </label>
+            )}
           </div>
 
           {csvHeaders.length > 1 ? (
@@ -8162,10 +8203,14 @@ function CheckDbSection() {
             <span className="text-[12.5px] text-[var(--hm-text-secondary)]">
               Found <strong className="text-[var(--hm-text)]">{result.found}</strong> of <strong className="text-[var(--hm-text)]">{result.checked}</strong>
               {result.notFound.length > 0 && ` · ${result.notFound.length} not found`}
+              {result.contacts && ` · ${result.contacts.length.toLocaleString()} associated contact${result.contacts.length === 1 ? "" : "s"}`}
             </span>
+            {result.notFound.length > 0 && (
+              <button onClick={exportNotFound} className="hm-btn hm-btn-secondary" style={{ height: 30, padding: "0 12px", fontSize: 12 }}>Download not found</button>
+            )}
             {result.data.length > 0 && (
               <div className="flex items-center gap-2">
-                <button onClick={exportFound} className="hm-btn hm-btn-secondary" style={{ height: 30, padding: "0 12px", fontSize: 12 }}>Export found</button>
+                <button onClick={exportFound} className="hm-btn hm-btn-secondary" style={{ height: 30, padding: "0 12px", fontSize: 12 }}>{result.contacts ? "Export accounts + contacts" : "Export found"}</button>
                 <button
                   onClick={markIrrelevantFound}
                   disabled={marking || marked}

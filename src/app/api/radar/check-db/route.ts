@@ -89,6 +89,50 @@ async function fetchAllLinkedinRows(table: string): Promise<{ id: unknown; linke
   return rows;
 }
 
+/**
+ * Contacts belonging to each account, same rules as the account panel: a Crossborder account owns
+ * nobody itself, so it shows everyone at its domain (any vertical); every other account owns the
+ * contacts linked by account_id, and a B2B account also lists D2C-homed people tagged B2B.
+ * A contact that belongs to several matched accounts is returned once per account (`_account_id`).
+ */
+async function fetchContactsForAccounts(accounts: Record<string, unknown>[]): Promise<Record<string, unknown>[]> {
+  const CHUNK = 100;
+  const chunked = <T,>(xs: T[]) => Array.from({ length: Math.ceil(xs.length / CHUNK) }, (_, i) => xs.slice(i * CHUNK, i * CHUNK + CHUNK));
+  const enc = (v: unknown) => encodeURIComponent(String(v));
+  const ownIds = accounts.filter((a) => a.vertical !== "Crossborder").map((a) => a.id);
+  const xbDomains = [...new Set(accounts.filter((a) => a.vertical === "Crossborder" && a.domain).map((a) => String(a.domain).toLowerCase()))];
+  const b2bDomains = [...new Set(accounts.filter((a) => a.vertical === "B2B" && a.domain).map((a) => String(a.domain).toLowerCase()))];
+  const queries: string[] = [
+    ...chunked(ownIds).map((c) => `select=*&account_id=in.(${c.map(enc).join(",")})`),
+    ...chunked(xbDomains).map((c) => `select=*&domain=in.(${c.map((d) => encodeFilterValue(d)).join(",")})`),
+    ...chunked(b2bDomains).map((c) => `select=*&verticals=cs.%7BB2B%7D&domain=in.(${c.map((d) => encodeFilterValue(d)).join(",")})`),
+  ];
+  const fetched = (await Promise.all(queries.map((q) => selectFrom("contacts", q)))).flatMap((r) => r.rows as Record<string, unknown>[]);
+  const byId = new Map<string, Record<string, unknown>>();
+  for (const c of fetched) byId.set(String(c.id), c);
+  const byAccount = new Map(accounts.map((a) => [String(a.id), a]));
+  const out: Record<string, unknown>[] = [];
+  const seen = new Set<string>();
+  for (const c of byId.values()) {
+    const dom = String(c.domain ?? "").toLowerCase();
+    const targets = new Set<string>();
+    if (c.account_id != null && byAccount.has(String(c.account_id)) && byAccount.get(String(c.account_id))!.vertical !== "Crossborder") targets.add(String(c.account_id));
+    for (const a of accounts) {
+      const ad = String(a.domain ?? "").toLowerCase();
+      if (!ad || ad !== dom) continue;
+      if (a.vertical === "Crossborder") targets.add(String(a.id));
+      else if (a.vertical === "B2B" && Array.isArray(c.verticals) && (c.verticals as string[]).includes("B2B")) targets.add(String(a.id));
+    }
+    for (const t of targets) {
+      const k = `${t}|${c.id}`;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push({ ...c, _account_id: t });
+    }
+  }
+  return out;
+}
+
 export async function POST(req: NextRequest) {
   const access = await requireRadarAccess(req);
   if (access instanceof NextResponse) return access;
@@ -175,7 +219,19 @@ export async function POST(req: NextRequest) {
       data = fullResults.flatMap((r) => r.rows as Record<string, unknown>[]);
     }
 
-    return NextResponse.json({ data, checked: values.length, found: matchedRows.length, notFound, column: columnKey, table });
+    // Accounts: tag each row with the uploaded value that matched it, and (optionally) attach every
+    // associated contact with all columns, so the export is "account + its people" in one go.
+    let contacts: Record<string, unknown>[] | undefined;
+    if (table === "accounts") {
+      const slugToValue = new Map(values.map((v) => [linkedinSlug(v), v]));
+      for (const r of data) {
+        const stored = String(r[col] ?? "");
+        r.matched_input = isLinkedin ? slugToValue.get(linkedinSlug(stored)) ?? stored : normalize(stored);
+      }
+      if (body.includeContacts) contacts = await fetchContactsForAccounts(data);
+    }
+
+    return NextResponse.json({ data, contacts, checked: values.length, found: matchedRows.length, notFound, column: columnKey, table });
   } catch (err) {
     console.error("Radar check-db error:", err);
     return NextResponse.json({ error: "Failed to check values" }, { status: 502 });
