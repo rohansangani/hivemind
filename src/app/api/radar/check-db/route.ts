@@ -231,10 +231,44 @@ export async function POST(req: NextRequest) {
         const stored = String(r[col] ?? "");
         r.matched_input = isLinkedin ? slugToValue.get(linkedinSlug(stored)) ?? stored : normalize(stored);
       }
-      if (body.includeContacts) contacts = await fetchContactsForAccounts(data);
+      // Radar keeps one account row per vertical; the user wants one result per company, so collapse
+      // them: the richest row (D2C → B2B → US → Crossborder on ties) is the base, blanks are filled
+      // from its siblings, and every contact across the siblings is listed once under it.
+      const rank = (v: unknown) => ["D2C", "B2B", "US", "Crossborder"].indexOf(String(v)) + 1 || 9;
+      const filled = (r: Record<string, unknown>) => Object.values(r).filter((x) => x != null && x !== "").length;
+      const groups = new Map<string, Record<string, unknown>[]>();
+      for (const r of data) {
+        const k = `${r.matched_input}|${String(r.domain ?? "").toLowerCase()}`;
+        (groups.get(k) ?? groups.set(k, []).get(k)!).push(r);
+      }
+      const merged: Record<string, unknown>[] = [];
+      const primaryOf = new Map<string, string>();
+      for (const rows of groups.values()) {
+        rows.sort((x, y) => filled(y) - filled(x) || rank(x.vertical) - rank(y.vertical));
+        const base = { ...rows[0] };
+        for (const sib of rows.slice(1)) for (const [k, v] of Object.entries(sib)) if ((base[k] == null || base[k] === "") && v != null && v !== "") base[k] = v;
+        base._all_ids = rows.map((x) => x.id);
+        for (const x of rows) primaryOf.set(String(x.id), String(base.id));
+        merged.push(base);
+      }
+      if (body.includeContacts) {
+        const perRow = await fetchContactsForAccounts(data);
+        const seen = new Set<string>();
+        contacts = [];
+        for (const c of perRow) {
+          const target = primaryOf.get(String(c._account_id));
+          const key = `${target}|${c.id}`;
+          if (!target || seen.has(key)) continue;
+          seen.add(key);
+          contacts.push({ ...c, _account_id: target });
+        }
+        for (const c of contacts) { delete c.vertical; delete c.verticals; delete c.extra_verticals; }
+      }
+      for (const r of merged) { delete r.vertical; delete r.verticals; }
+      data = merged;
     }
 
-    return NextResponse.json({ data, contacts, checked: values.length, found: matchedRows.length, notFound, column: columnKey, table });
+    return NextResponse.json({ data, contacts, checked: values.length, found: data.length, notFound, column: columnKey, table });
   } catch (err) {
     console.error("Radar check-db error:", err);
     return NextResponse.json({ error: "Failed to check values" }, { status: 502 });
