@@ -1285,7 +1285,11 @@ function SearchSelect({ value, onChange, options, labels, numeric, label, counts
   }, [open]);
   const text = (o: string) => labels?.[o] || o;
   const isSub = (o: string) => grouped && o.includes(INDUSTRY_SEP);
-  const sorted = numeric ? options.slice().sort((a, b) => firstNum(a) - firstNum(b)) : options;
+  // Ranges stay in natural order and grouped (industry tree) keeps its hierarchy; everything else
+  // with live counts lists highest → lowest, so zero-count options sink to the bottom.
+  const sorted = numeric ? options.slice().sort((a, b) => firstNum(a) - firstNum(b))
+    : counts && !grouped ? options.map((o, i) => [o, i] as const).sort((a, b) => (counts[b[0]] ?? 0) - (counts[a[0]] ?? 0) || a[1] - b[1]).map((x) => x[0])
+    : options;
   const needle = q.trim().toLowerCase();
   const matches = needle ? sorted.filter((o) => text(o).toLowerCase().includes(needle)) : sorted;
   const shown = matches.slice(0, 300);
