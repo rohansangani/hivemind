@@ -1205,9 +1205,10 @@ interface FilterGroup { id: string; label: string; icon: string; fields: FilterF
 
 const YES_NO = { true: "Yes", false: "No" };
 const VERTICAL_FILTER: FilterField = { key: "vertical", label: "Vertical", kind: "select", options: () => ["B2B", "D2C", "US", "Crossborder"] };
-const SEGMENT_FIELDS: FilterField[] = [
+// Account type filter is hidden for now (ACCOUNT_TYPE_OPTIONS kept for the API / dashboard).
+const SEGMENT_FIELDS = (sources: (o: RadarOptions | null) => string[]): FilterField[] => [
   VERTICAL_FILTER,
-  { key: "accountType", label: "Account type", kind: "select", options: () => ACCOUNT_TYPE_OPTIONS },
+  { key: "source", label: "Source", kind: "select", options: sources },
   { key: "customer", label: "Customer", kind: "yesno" },
 ];
 // Clean, categorised firmographics (generated columns — raw values stay untouched in the DB).
@@ -1218,21 +1219,20 @@ const FIRMO_FIELDS: FilterField[] = [
   { key: "monthlyRevenueBucket", label: "Monthly revenue (USD)", kind: "select", options: (o) => o?.monthlyRevenueBuckets || [], counts: (o) => o?.monthlyRevenueBucketCounts },
   { key: "platform", label: "Platform", kind: "select", options: (o) => o?.platforms || [], counts: (o) => o?.platformCounts },
 ];
-const CRM_FIELDS = (sources: (o: RadarOptions | null) => string[]): FilterField[] => [
+const CRM_FIELDS = (): FilterField[] => [
   { key: "lifecycleStage", label: "HubSpot lifecycle stage", kind: "select", options: (o) => o?.lifecycleStages || [] },
   { key: "leadStatus", label: "HubSpot lead status", kind: "select", options: (o) => o?.leadStatuses || [] },
   { key: "sdrOwner", label: "SDR owner", kind: "select", options: (o) => o?.sdrOwners || [] },
-  { key: "source", label: "Source", kind: "select", options: sources },
 ];
 
 const ACCOUNT_FILTER_GROUPS: FilterGroup[] = [
-  { id: "segment", label: "Segment", icon: "icp", fields: SEGMENT_FIELDS },
+  { id: "segment", label: "Segment", icon: "icp", fields: SEGMENT_FIELDS((o) => o?.accountSources || []) },
   { id: "firmo", label: "Firmographics", icon: "accounts", fields: [...FIRMO_FIELDS, { key: "installedApp", label: "Installed app", kind: "select", options: (o) => o?.installedApps || [], counts: (o) => o?.installedAppCounts }, { key: "accountSize", label: "Account size", kind: "select", options: (o) => o?.accountSizes || [] }] },
   { id: "location", label: "Location", icon: "dashboard", fields: [
     { key: "country", label: "Country", kind: "select", options: (o) => o?.countries || [] },
     { key: "state", label: "State / region", kind: "select", options: (o) => o?.states || [] },
   ] },
-  { id: "crm", label: "CRM & ownership", icon: "contacts", fields: CRM_FIELDS((o) => o?.accountSources || []) },
+  { id: "crm", label: "CRM & ownership", icon: "contacts", fields: CRM_FIELDS() },
   { id: "data", label: "Data quality", icon: "validate", fields: [
     { key: "hasDomain", label: "Has domain", kind: "yesno" },
     { key: "hasLinkedin", label: "Has LinkedIn", kind: "yesno" },
@@ -1241,7 +1241,7 @@ const ACCOUNT_FILTER_GROUPS: FilterGroup[] = [
 ];
 
 const CONTACT_FILTER_GROUPS: FilterGroup[] = [
-  { id: "segment", label: "Segment", icon: "icp", fields: SEGMENT_FIELDS },
+  { id: "segment", label: "Segment", icon: "icp", fields: SEGMENT_FIELDS((o) => o?.contactSources || []) },
   { id: "person", label: "Contact", icon: "contacts", fields: [
     { key: "title", label: "Job title contains", kind: "text", placeholder: "e.g. founder, head of ops" },
     { key: "company", label: "Company contains", kind: "text", placeholder: "e.g. acme" },
@@ -1253,7 +1253,7 @@ const CONTACT_FILTER_GROUPS: FilterGroup[] = [
     { key: "country", label: "Country", kind: "select", options: (o) => o?.contactCountries || o?.countries || [] },
   ] },
   { id: "crm", label: "CRM & ownership", icon: "logs", fields: [
-    ...CRM_FIELDS((o) => o?.contactSources || []),
+    ...CRM_FIELDS(),
     { key: "hubspotExcluded", label: "HubSpot excluded", kind: "yesno" },
   ] },
   { id: "data", label: "Data quality", icon: "validate", fields: [
