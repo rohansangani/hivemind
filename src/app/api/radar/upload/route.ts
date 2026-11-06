@@ -81,7 +81,7 @@ function normalizeCountry(raw: string | null | undefined): string | null {
     "pennsylvania", "colorado", "iowa", "irvine", "alpharetta", "norwood",
     "sugar land", "charleston", "denver", "los angeles", "newport beach",
   ];
-  if (usaPatterns.some((p) => l.includes(p))) return "USA";
+  if (usaPatterns.some((p) => l.includes(p))) return "United States";
 
   const ukPatterns = ["united kingdom", "england", "u.k.", "berkshire", "london", "luton", "slough"];
   if (ukPatterns.some((p) => l.includes(p))) return "UK";
