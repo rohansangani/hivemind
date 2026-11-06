@@ -8201,9 +8201,10 @@ function CheckDbSection() {
         <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] radar-card">
           <div className="px-5 py-3 border-b border-[var(--hm-border)] flex items-center justify-between flex-wrap gap-2">
             <span className="text-[12.5px] text-[var(--hm-text-secondary)]">
-              Found <strong className="text-[var(--hm-text)]">{result.found}</strong> of <strong className="text-[var(--hm-text)]">{result.checked}</strong>
+              Found <strong className="text-[var(--hm-text)]">{result.checked - result.notFound.length}</strong> of <strong className="text-[var(--hm-text)]">{result.checked}</strong>
               {result.notFound.length > 0 && ` · ${result.notFound.length} not found`}
-              {result.contacts && ` · ${result.contacts.length.toLocaleString()} associated contact${result.contacts.length === 1 ? "" : "s"}`}
+              {result.found !== result.checked - result.notFound.length && ` · ${result.found} ${table === "accounts" ? "account rows (one per vertical)" : "rows"}`}
+              {result.contacts && ` · ${new Set(result.contacts.map((c) => c.id)).size.toLocaleString()} associated contact${result.contacts.length === 1 ? "" : "s"}`}
             </span>
             {result.notFound.length > 0 && (
               <button onClick={exportNotFound} className="hm-btn hm-btn-secondary" style={{ height: 30, padding: "0 12px", fontSize: 12 }}>Download not found</button>
