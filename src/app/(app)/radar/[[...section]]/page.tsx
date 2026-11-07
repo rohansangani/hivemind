@@ -7,7 +7,8 @@ import { LogoLoader } from "@/components/LogoLoader";
 import { useUser } from "@/lib/UserContext";
 import { hasModuleAccess } from "@/lib/modules";
 import { APIFY_LEADS_FINDER_LOCATIONS } from "@/lib/radar/apifyLocations";
-import "./radar.css";
+import "../radar.css";
+import { useParams } from "next/navigation";
 
 /**
  * Radar — prospecting module (accounts, contacts, enrichment, email validation).
@@ -47,16 +48,35 @@ const SECTIONS: Array<{ id: SectionId; label: string; blurb: string }> = [
 
 export default function RadarPage() {
   const user = useUser();
-  const [active, setActive] = useState<SectionId>("dashboard");
+  // Each tab has its own URL (/radar/accounts, /radar/contacts, …). The tab is still switched client-side
+  // with history.pushState so every opened tab keeps its in-progress state — only the address bar follows.
+  const params = useParams<{ section?: string[] }>();
+  const sectionFromPath = (seg?: string | null): SectionId => (SECTIONS.some((s) => s.id === seg) ? (seg as SectionId) : "dashboard");
+  const [active, setActive] = useState<SectionId>(() => sectionFromPath(params?.section?.[0]));
   // Sections keep their local state (in-progress searches, uploads, filters, results) once
   // opened — switching tabs hides them via CSS instead of unmounting, so e.g. a Check LinkedIn
   // result isn't lost just from clicking over to Accounts and back. Tabs never opened still
   // aren't mounted at all, so this doesn't add any upfront fetch cost for unvisited tabs.
-  const [visited, setVisited] = useState<Set<SectionId>>(() => new Set(["dashboard"]));
+  const [visited, setVisited] = useState<Set<SectionId>>(() => new Set(["dashboard", sectionFromPath(params?.section?.[0])]));
   const goTo = (id: SectionId) => {
     setActive(id);
     setVisited((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
+    const path = id === "dashboard" ? "/radar" : `/radar/${id}`;
+    if (typeof window !== "undefined" && window.location.pathname !== path) window.history.pushState(null, "", path);
   };
+  // Back / forward buttons move between tabs.
+  useEffect(() => {
+    const onPop = () => {
+      const m = window.location.pathname.match(/^\/radar(?:\/([^/]+))?/);
+      if (!m) return;
+      const id = sectionFromPath(m[1]);
+      setActive(id);
+      setVisited((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Shell-only UI state: collapsible sidebar (remembered per browser) + ⌘K section switcher.
   const [collapsed, setCollapsed] = useState(false);
@@ -94,8 +114,8 @@ export default function RadarPage() {
     .filter((s) => s.id !== "icp"); // ICP Base hidden from nav (section code kept)
 
   useEffect(() => {
-    if (viewOnly && active !== "dashboard" && active !== "export") setActive("dashboard");
-    if ((active === "logs" || active === "apikeys") && !isAdmin) setActive("dashboard");
+    const blocked = (viewOnly && active !== "dashboard" && active !== "export") || ((active === "logs" || active === "apikeys") && !isAdmin);
+    if (blocked) { setActive("dashboard"); window.history.replaceState(null, "", "/radar"); }
   }, [viewOnly, active, isAdmin]);
 
   if (!canAccess) {
