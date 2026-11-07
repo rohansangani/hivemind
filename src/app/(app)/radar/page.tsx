@@ -113,7 +113,7 @@ export default function RadarPage() {
   }
 
   const activeMeta = SECTIONS.find((s) => s.id === active) ?? SECTIONS[0];
-  const activeGroup = NAV_GROUPS.find((g) => g.ids.includes(active))?.label ?? "ClickPost Database";
+  const activeGroup = NAV_GROUPS.find((g) => g.ids.includes(active))?.label ?? "Radar";
 
   return (
     <div className="radar-ui flex-1 flex min-w-0 overflow-hidden">
@@ -126,8 +126,8 @@ export default function RadarPage() {
           <RadarMark />
           {!collapsed && (
             <div className="min-w-0">
-              <p className="text-[14px] font-semibold leading-tight text-[var(--hm-text)] tracking-[-0.01em]">ClickPost Database</p>
-              <p className="text-[11px] text-[var(--hm-text-tertiary)] leading-tight">Prospecting workspace</p>
+              <p className="text-[14px] font-semibold leading-tight text-[var(--hm-text)] tracking-[-0.01em]">Radar</p>
+              <p className="text-[11px] text-[var(--hm-text-tertiary)] leading-tight">ClickPost Database</p>
             </div>
           )}
         </div>
@@ -232,7 +232,7 @@ export default function RadarPage() {
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5 text-[11.5px] text-[var(--hm-text-tertiary)] leading-tight">
-                  <span>ClickPost Database</span>
+                  <span>Radar</span>
                   <svg width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
                   <span>{activeGroup}</span>
                 </div>

@@ -37,7 +37,7 @@ export const MODULES: ModuleDef[] = [
   // Knowledge — marketing and above (with sub-tab level control)
   { id: "knowledge_base",     label: "Knowledge Base",     description: "Products, personas, competitors, skills",      icon: "knowledge", group: "knowledge" },
   // Prospecting — owner/admin only
-  { id: "radar",              label: "ClickPost Database",              description: "Accounts, contacts, enrichment & email validation", icon: "radar", group: "prospecting" },
+  { id: "radar",              label: "Radar",              description: "Accounts, contacts, enrichment & email validation", icon: "radar", group: "prospecting" },
   { id: "signals",            label: "Signals",            description: "Account expansion scoring, plays & call intelligence (ClickPost Signal)", icon: "signals", group: "prospecting" },
   // Admin — admin/owner only
   { id: "team",               label: "Team",               description: "Invite and manage team members",               icon: "team",      group: "admin" },

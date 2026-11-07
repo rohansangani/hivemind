@@ -20,7 +20,7 @@ const ROUTE_LABELS: Record<string, string> = {
   "email-sequences":    "Email Sequences",
   "design-brief":       "Design Brief",
   "knowledge-base":     "Knowledge Base",
-  "radar":              "ClickPost Database",
+  "radar":              "Radar",
   "signals":            "Signals",
   "team":               "Team",
   "activity":           "Activity",
