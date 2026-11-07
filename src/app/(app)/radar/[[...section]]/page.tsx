@@ -816,15 +816,25 @@ function RadarDashboard() {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
     setError("");
+    // Show the last numbers straight away (remembered in this browser), then swap in the fresh ones.
+    let hadCache = false;
+    try {
+      const raw = localStorage.getItem("radar.stats.v1");
+      if (raw) { setStats(JSON.parse(raw) as RadarStats); setLoading(false); hadCache = true; }
+    } catch {}
+    if (!hadCache) setLoading(true);
     fetch("/api/radar/stats")
       .then(async (r) => {
         if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Failed to load stats");
         return r.json();
       })
-      .then((d: RadarStats) => { if (!cancelled) setStats(d); })
-      .catch((e) => { if (!cancelled) setError(e.message); })
+      .then((d: RadarStats) => {
+        if (cancelled) return;
+        setStats(d);
+        try { localStorage.setItem("radar.stats.v1", JSON.stringify(d)); } catch {}
+      })
+      .catch((e) => { if (!cancelled && !hadCache) setError(e.message); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, []);

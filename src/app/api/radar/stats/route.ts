@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { countOfService, rpc, requireRadarAccess } from "@/lib/radar/supabase";
 
 /**
@@ -22,11 +22,8 @@ interface GrowthRow {
   out_total_accounts: number;
 }
 
-export async function GET(req: NextRequest) {
-  const access = await requireRadarAccess(req);
-  if (access instanceof NextResponse) return access;
-
-  try {
+/** Builds the whole dashboard payload (about 3 s of aggregation — coverage / growth / domain stats dominate). */
+async function computeStats() {
     const NOT_EXCLUDED = "&or=(hubspot_excluded.is.null,hubspot_excluded.eq.false)";
     const BLANK_AND_NOT_EXCLUDED =
       "&and=(or(email.is.null,email.eq.),or(hubspot_excluded.is.null,hubspot_excluded.eq.false))";
@@ -71,7 +68,7 @@ export async function GET(req: NextRequest) {
       total_accounts: r.out_total_accounts,
     }));
 
-    return NextResponse.json({
+    return {
       growth,
       account_coverage: accountCoverage,
       total_accounts: totalAccounts,
@@ -82,7 +79,38 @@ export async function GET(req: NextRequest) {
       contact_verticals: { B2B: b2bContacts, D2C: d2cContacts, US: usContacts, Crossborder: cbContacts },
       contact_status_matrix: statusMatrix,
       contact_domain_stats: domainStats,
-    });
+    };
+}
+
+// The aggregation is heavy and the numbers barely move minute to minute, so each server instance keeps the
+// last result: fresh for 2 min, then served stale (up to 20 min) while a refresh runs in the background.
+const FRESH_MS = 2 * 60_000;
+const STALE_MS = 20 * 60_000;
+let cache: { at: number; data: Awaited<ReturnType<typeof computeStats>> } | null = null;
+let inflight: Promise<void> | null = null;
+function refresh(): Promise<void> {
+  if (!inflight) {
+    inflight = computeStats()
+      .then((data) => { cache = { at: Date.now(), data }; })
+      .finally(() => { inflight = null; });
+  }
+  return inflight;
+}
+
+export async function GET(req: NextRequest) {
+  const access = await requireRadarAccess(req);
+  if (access instanceof NextResponse) return access;
+
+  try {
+    const headers = { "Cache-Control": "private, max-age=30" };
+    const age = cache ? Date.now() - cache.at : Infinity;
+    if (cache && age < FRESH_MS) return NextResponse.json(cache.data, { headers });
+    if (cache && age < STALE_MS) {
+      after(() => refresh().catch(() => {}));
+      return NextResponse.json(cache.data, { headers });
+    }
+    await refresh();
+    return NextResponse.json(cache!.data, { headers });
   } catch (err) {
     console.error("Radar stats error:", err);
     return NextResponse.json({ error: "Failed to load radar stats" }, { status: 502 });
