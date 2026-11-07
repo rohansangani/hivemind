@@ -29,7 +29,7 @@ const MODULE_ROUTES: Array<{ moduleId: string; href: string; label: string; icon
   { moduleId: "email_sequences",   href: "/email-sequences",   label: "Email Sequences",    icon: "email" },
   { moduleId: "design_brief",       href: "/design-brief",      label: "Design Brief",       icon: "design" },
   { moduleId: "knowledge_base",     href: "/knowledge-base",    label: "Knowledge Base",     icon: "knowledge" },
-  { moduleId: "radar",              href: "/radar",             label: "Radar",              icon: "radar" },
+  { moduleId: "radar",              href: "/radar",             label: "ClickPost Database",              icon: "radar" },
   { moduleId: "signals",            href: "/signals",           label: "Signals",            icon: "signals" },
 ];
 
