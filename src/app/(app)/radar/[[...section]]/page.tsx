@@ -8812,7 +8812,7 @@ function RadarApiKeysSection() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={8} className="px-3 py-6 text-center text-[var(--hm-text-tertiary)]">Loading…</td></tr>
+                <tr><td colSpan={8}><div className="flex items-center justify-center py-12"><LogoLoader size={34} /></div></td></tr>
               ) : !keys.length ? (
                 <tr><td colSpan={8} className="px-3 py-6 text-center text-[var(--hm-text-tertiary)]">No keys yet.</td></tr>
               ) : keys.map((k) => {
