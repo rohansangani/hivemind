@@ -64,6 +64,13 @@ export default function RadarPage() {
     const path = id === "dashboard" ? "/radar" : `/radar/${id}`;
     if (typeof window !== "undefined" && window.location.pathname !== path) window.history.pushState(null, "", path);
   };
+  // Real links, so right-click → "Open in new tab" and ⌘/Ctrl-click work; a plain click still switches in place.
+  const sectionHref = (id: SectionId) => (id === "dashboard" ? "/radar" : `/radar/${id}`);
+  const navClick = (e: React.MouseEvent, id: SectionId) => {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    goTo(id);
+  };
   // Back / forward buttons move between tabs.
   useEffect(() => {
     const onPop = () => {
@@ -174,15 +181,16 @@ export default function RadarPage() {
                 )}
                 <div className="space-y-0.5">
                   {items.map((s) => (
-                    <button
+                    <a
                       key={s.id}
-                      onClick={() => goTo(s.id)}
+                      href={sectionHref(s.id)}
+                      onClick={(e) => navClick(e, s.id)}
                       title={collapsed ? s.label : s.blurb}
                       className={`radar-nav-item ${active === s.id ? "active" : ""}`}
                     >
                       <NavIcon id={s.id} />
                       {!collapsed && <span className="truncate">{s.label}</span>}
-                    </button>
+                    </a>
                   ))}
                 </div>
               </div>
@@ -272,10 +280,10 @@ export default function RadarPage() {
           {/* ── Mobile tab strip ─────────────────────────────────── */}
           <div className="md:hidden flex gap-1 px-3 pb-2.5 overflow-x-auto">
             {visibleSections.map((s) => (
-              <button key={s.id} onClick={() => goTo(s.id)} className={`radar-tab ${active === s.id ? "active" : ""}`}>
+              <a key={s.id} href={sectionHref(s.id)} onClick={(e) => navClick(e, s.id)} className={`radar-tab ${active === s.id ? "active" : ""}`}>
                 <NavIcon id={s.id} size={14} />
                 {s.label}
-              </button>
+              </a>
             ))}
           </div>
         </header>

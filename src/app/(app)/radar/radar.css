@@ -185,7 +185,7 @@
 .radar-ui .radar-collapsed .radar-nav-item { justify-content: center; padding: 0; }
 
 /* Mobile tab strip */
-.radar-ui .radar-tab {
+.radar-ui .radar-tab { text-decoration: none;
   height: 32px; padding: 0 12px; border-radius: 8px; font-size: 13px; white-space: nowrap;
   color: var(--hm-text-secondary); display: inline-flex; align-items: center; gap: 6px;
 }
