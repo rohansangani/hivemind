@@ -7921,9 +7921,6 @@ const CHECK_DB_TABLES = [
 const CHECK_DB_COLUMNS: Record<"contacts" | "accounts", Array<{ id: string; label: string; placeholder: string }>> = {
   contacts: [
     { id: "email", label: "Email", placeholder: "jane@company.com\njohn@company.com" },
-    { id: "domain", label: "Domain", placeholder: "company.com\nanothercompany.com" },
-    { id: "company_name", label: "Company Name", placeholder: "Acme Inc\nOther Co" },
-    { id: "phone", label: "Phone", placeholder: "+1 555 123 4567" },
     { id: "linkedin_url", label: "LinkedIn URL", placeholder: "linkedin.com/in/janedoe" },
   ],
   accounts: [
