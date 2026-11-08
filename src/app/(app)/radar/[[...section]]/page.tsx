@@ -1626,9 +1626,11 @@ function DataTable<T extends { id: string }>({
 
   // Load filter dropdown options once.
   useEffect(() => {
+    // Last options are remembered in this browser so the dropdowns are filled instantly; fresh ones replace them.
+    try { const raw = localStorage.getItem("radar.options.v1"); if (raw) setOptions(JSON.parse(raw)); } catch {}
     fetch("/api/radar/options")
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (d) setOptions(d); })
+      .then((d) => { if (d) { setOptions(d); try { localStorage.setItem("radar.options.v1", JSON.stringify(d)); } catch {} } })
       .catch(() => {});
   }, []);
 
@@ -3164,9 +3166,11 @@ function ExportSection() {
   const [exportRefreshToken, setExportRefreshToken] = useState(0);
 
   useEffect(() => {
+    // Last options are remembered in this browser so the dropdowns are filled instantly; fresh ones replace them.
+    try { const raw = localStorage.getItem("radar.options.v1"); if (raw) setOptions(JSON.parse(raw)); } catch {}
     fetch("/api/radar/options")
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (d) setOptions(d); })
+      .then((d) => { if (d) { setOptions(d); try { localStorage.setItem("radar.options.v1", JSON.stringify(d)); } catch {} } })
       .catch(() => {});
   }, []);
 
