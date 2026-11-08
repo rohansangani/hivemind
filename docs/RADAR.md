@@ -104,6 +104,13 @@ untouched; STORED generated columns on `accounts` (also on `contacts_view`) give
 
 ## Enrich v2 — Blitz → Anymail → Debounce → Anymail verify (2026-11-04)
 
+**Step 0 · "Use what's already in Radar first" (2026-11-08, default on, `options.useRadarFirst`).** Before any credits are spent, each input domain is
+looked up in Radar. A domain with usable contacts (not intern/student/junior-support, not `marked_irrelevant`) is marked `from_radar`: its contacts are
+copied into `enrich2_people` (`from_radar = true`, `contact_id` = the existing contact) with their email status / phone / LinkedIn, so they are never
+re-searched or re-verified; only a missing email (Blitz → Anymail) or phone is still looked up. A domain Radar knows only as an account with a company
+LinkedIn page skips step 1. Everything else runs normally. `save_enrich2_job` updates the exact `contact_id` (never re-dates an existing status) and does
+not create a new account for `from_radar` companies. SQL: `docs/sql/2026-11-08_enrich_use_radar_first.sql` (also adds `country_name()` so ISO codes are saved as names).
+
 Replaces the Apify leads-finder Enrich (old `EnrichSection`/`api/radar/enrich` left in place but not shown).
 Code: `lib/radar/enrichPipeline.ts`, route `api/radar/enrich2` (cron every minute), tables
 `docs/sql/2026-11-04_enrich_v2.sql` (`enrich2_jobs/companies/people`, `save_enrich2_job()`).

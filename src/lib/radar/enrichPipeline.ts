@@ -1,6 +1,9 @@
 /**
  * Enrich v2 — end-to-end, resumable enrichment pipeline (replaces the Apify leads-finder Enrich).
  *
+ *   0 reuse     (optional, default on) domains already in Radar: their existing contacts are copied into the job as-is
+ *               (nothing re-searched, nothing re-verified), and a known company LinkedIn page skips step 1 — only the
+ *               blanks (no email / no phone) and domains Radar has nothing for go through the steps below
  *   1 resolve   company domain → company LinkedIn page (sheet URL → Blitz domain→LinkedIn → parent
  *               domain → alt domains → Blitz brand-name search; low-confidence name matches skipped)
  *   2 search    Blitz Waterfall ICP search per company, 7 title tiers (phase 1 = tiers 1-6 ICP titles,
@@ -24,8 +27,8 @@ import {
   blitzWaterfallIcp, blitzWorkEmail, blitzPhone, type BlitzIcpTier, type BlitzIcpResult,
 } from "@/lib/radar/blitz";
 
-export type EnrichPhase = "resolve" | "search" | "email" | "anymail" | "debounce" | "verify" | "phone" | "save" | "done";
-export const PHASES: EnrichPhase[] = ["resolve", "search", "email", "anymail", "debounce", "verify", "phone", "save", "done"];
+export type EnrichPhase = "reuse" | "resolve" | "search" | "email" | "anymail" | "debounce" | "verify" | "phone" | "save" | "done";
+export const PHASES: EnrichPhase[] = ["reuse", "resolve", "search", "email", "anymail", "debounce", "verify", "phone", "save", "done"];
 
 export interface EnrichOptions {
   maxPerCompany: number;      // Waterfall max_results (1-100)
@@ -39,6 +42,8 @@ export interface EnrichOptions {
   cities?: string[];
   /** Step 1 second pass: companies Blitz can't find go to Apify's LinkedIn company finder (~$0.009 per page found). Default on. */
   apifyFallback?: boolean;
+  /** Step 0: take what Radar already has for each domain before spending any credits. Default on. */
+  useRadarFirst?: boolean;
 }
 
 /** The ICP tiers with the job's location filter (if any) added to each. */
@@ -132,8 +137,9 @@ export interface EnrichJobRow {
 export async function createEnrichJob(label: string, vertical: string, createdBy: string | null, companies: EnrichCompanyInput[], options: EnrichOptions): Promise<number> {
   await ensureTables();
   const [job] = await radarSql<{ id: number }>(`
-    INSERT INTO enrich2_jobs (label, vertical, created_by, options, stage)
-    VALUES ('${esc(label)}', '${esc(vertical)}', ${createdBy ? `'${esc(createdBy)}'` : "NULL"}, '${esc(JSON.stringify(options))}'::jsonb, 'Queued — resolving company LinkedIn pages')
+    INSERT INTO enrich2_jobs (label, vertical, created_by, options, phase, stage)
+    VALUES ('${esc(label)}', '${esc(vertical)}', ${createdBy ? `'${esc(createdBy)}'` : "NULL"}, '${esc(JSON.stringify(options))}'::jsonb,
+            '${options.useRadarFirst === false ? "resolve" : "reuse"}', '${options.useRadarFirst === false ? "Queued — resolving company LinkedIn pages" : "Queued — checking what Radar already has"}')
     RETURNING id`);
   const seen = new Set<string>();
   const rows = companies
@@ -156,12 +162,13 @@ export async function refreshCounts(jobId: number): Promise<Record<string, unkno
     SELECT jsonb_build_object(
       'companies', (SELECT count(*) FROM enrich2_companies WHERE job_id = ${jobId}),
       'pending_resolve', (SELECT count(*) FROM enrich2_companies WHERE job_id = ${jobId} AND status = 'pending'),
-      'resolved', (SELECT count(*) FROM enrich2_companies WHERE job_id = ${jobId} AND status IN ('resolved','searched','search_failed')),
+      'resolved', (SELECT count(*) FROM enrich2_companies WHERE job_id = ${jobId} AND status IN ('resolved','searched','search_failed','from_radar')),
+      'from_radar_companies', (SELECT count(*) FROM enrich2_companies WHERE job_id = ${jobId} AND status = 'from_radar'),
       'unresolved', (SELECT count(*) FROM enrich2_companies WHERE job_id = ${jobId} AND status = 'unresolved'),
       'low', (SELECT count(*) FROM enrich2_companies WHERE job_id = ${jobId} AND status = 'low'),
-      'searched', (SELECT count(*) FROM enrich2_companies WHERE job_id = ${jobId} AND status IN ('searched','search_failed')),
-      'methods', (SELECT COALESCE(jsonb_object_agg(m, n), '{}'::jsonb) FROM (SELECT resolve_method m, count(*) n FROM enrich2_companies WHERE job_id = ${jobId} AND resolve_method IS NOT NULL GROUP BY 1) x),
-      'people', p.total, 'kept', p.kept, 'dropped', p.dropped, 'phase1', p.p1, 'phase2', p.p2,
+      'searched', (SELECT count(*) FROM enrich2_companies WHERE job_id = ${jobId} AND status IN ('searched','search_failed','from_radar')),
+      'methods', (SELECT COALESCE(jsonb_object_agg(m, n), '{}'::jsonb) FROM (SELECT resolve_method m, count(*) n FROM enrich2_companies WHERE job_id = ${jobId} AND resolve_method IS NOT NULL AND resolve_method <> 'radar_checked' GROUP BY 1) x),
+      'people', p.total, 'from_radar_people', p.from_radar, 'kept', p.kept, 'dropped', p.dropped, 'phase1', p.p1, 'phase2', p.p2,
       'email_eligible', p.email_eligible, 'email_tried', p.email_tried, 'email_blitz', p.email_blitz,
       'anymail_tried', p.anymail_tried, 'email_anymail', p.email_anymail, 'with_email', p.with_email,
       'debounced', p.debounced, 'db_safe', p.db_safe, 'db_risky', p.db_risky, 'db_invalid', p.db_invalid, 'db_unknown', p.db_unknown,
@@ -171,6 +178,7 @@ export async function refreshCounts(jobId: number): Promise<Record<string, unkno
     ) AS c
     FROM (SELECT
       count(*) total,
+      count(*) FILTER (WHERE from_radar) from_radar,
       count(*) FILTER (WHERE dropped_reason IS NULL) kept,
       count(*) FILTER (WHERE dropped_reason IS NOT NULL) dropped,
       count(*) FILTER (WHERE dropped_reason IS NULL AND phase = 1) p1,
@@ -269,6 +277,15 @@ async function runPhaseBatch(job: EnrichJobRow, phase: EnrichPhase, left: () => 
   const ANYMAIL = process.env.ANYMAIL_FINDER_API_KEY?.trim();
   const DEBOUNCE = (process.env.DEBOUNCE_API_KEY || process.env.RADAR_DEBOUNCE_API_KEY || "").trim();
   const c = job.counts as Record<string, number>;
+
+  if (phase === "reuse") {
+    if (job.options.useRadarFirst === false) return "next";
+    const { rows } = await selectFrom("enrich2_companies", `select=id,job_id,domain,input_linkedin&job_id=eq.${id}&status=eq.pending&resolve_method=is.null&order=id.asc&limit=150`);
+    if (!rows.length) return "next";
+    await stage(`Step 0 · Checking what Radar already has — ${rows.length} compan${rows.length === 1 ? "y" : "ies"} in this batch`, true);
+    await reuseFromRadar(job, rows as { id: number; job_id: number; domain: string; input_linkedin: string | null }[]);
+    return "more";
+  }
 
   if (phase === "resolve") {
     if (!BLITZ) throw new Error("BLITZ_API_KEY is not set in Vercel");
@@ -395,6 +412,92 @@ async function runPhaseBatch(job: EnrichJobRow, phase: EnrichPhase, left: () => 
     return "next";
   }
   return "next";
+}
+
+/** Radar's email_status → the Debounce-style call the pipeline understands (blank = never checked). */
+const RADAR_STATUS_TO_CALL: Record<string, "safe to send" | "risky" | "invalid" | "unknown"> = {
+  "safe to send": "safe to send", verified: "safe to send", risky: "risky", invalid: "invalid", unknown: "unknown",
+};
+
+/**
+ * Step 0. For each domain: if Radar already holds usable contacts there, copy them into the job (flagged from_radar, tied to
+ * their own contact row) — their email status, phone and LinkedIn ride along and are never re-checked; only a missing email or
+ * phone is looked up later. A domain Radar knows only as an account with a company LinkedIn page skips the LinkedIn lookup.
+ * Everything else is left pending for step 1. Companies handled here never reach resolve/search.
+ */
+async function reuseFromRadar(job: EnrichJobRow, companies: { id: number; job_id: number; domain: string; input_linkedin: string | null }[]) {
+  const doms = [...new Set(companies.map((c) => c.domain.toLowerCase()))];
+  const list = doms.map((d) => `'${esc(d)}'`).join(",");
+  const [accounts, contacts] = await Promise.all([
+    radarSql<{ d: string; name: string | null; linkedin_url: string | null }>(`
+      SELECT lower(domain) d, name, linkedin_url FROM accounts WHERE lower(domain) = ANY(ARRAY[${list}])
+      ORDER BY (linkedin_url IS NOT NULL) DESC, (vertical = 'D2C') DESC`),
+    radarSql<Record<string, string | null>>(`
+      SELECT id, lower(domain) d, first_name, last_name, full_name, title, email, email_status, linkedin_url, phone, company_name, country, location
+      FROM contacts WHERE lower(domain) = ANY(ARRAY[${list}]) AND COALESCE(marked_irrelevant, false) = false
+      ORDER BY (email IS NOT NULL) DESC, (email_status IN ('safe to send','verified')) DESC, validated_at DESC NULLS LAST`),
+  ]);
+  const acc = new Map<string, { name: string | null; linkedin_url: string | null }>();
+  for (const a of accounts) {
+    const cur = acc.get(a.d);
+    if (!cur) acc.set(a.d, { name: a.name, linkedin_url: a.linkedin_url });
+    else { cur.name = cur.name || a.name; cur.linkedin_url = cur.linkedin_url || a.linkedin_url; }
+  }
+  const usable = (t: string | null) => !(t && (ALWAYS_DROP.test(t) || JUNIOR_SUPPORT.test(t)));
+  const byDomain = new Map<string, Record<string, string | null>[]>();
+  for (const c of contacts) {
+    if (!usable(c.title)) continue;
+    byDomain.set(String(c.d), [...(byDomain.get(String(c.d)) || []), c]);
+  }
+
+  const people: Record<string, unknown>[] = [];
+  const companyUpdates: Record<string, unknown>[] = [];
+  for (const co of companies) {
+    const d = co.domain.toLowerCase();
+    const a = acc.get(d);
+    const cs = byDomain.get(d) || [];
+    const seenKey = new Set<string>();
+    const mine: Record<string, unknown>[] = [];
+    for (const c of cs) {
+      const li = c.linkedin_url ? String(c.linkedin_url) : null;
+      const key = li ? `li:${li.toLowerCase()}` : c.email ? `em:${String(c.email).toLowerCase()}` : `id:${c.id}`;
+      if (seenKey.has(key)) continue;
+      seenKey.add(key);
+      const call = c.email && c.email_status ? RADAR_STATUS_TO_CALL[String(c.email_status).toLowerCase()] : undefined;
+      const hasEmail = !!c.email;
+      mine.push({
+        job_id: job.id, company_id: co.id, domain: co.domain,
+        company_name: c.company_name || a?.name || null, company_linkedin_url: a?.linkedin_url || null,
+        first_name: c.first_name, last_name: c.last_name, full_name: c.full_name || [c.first_name, c.last_name].filter(Boolean).join(" ") || null,
+        title: c.title, linkedin_url: li, city: c.location, country_code: c.country,
+        phase: 1, dropped_reason: null,
+        email: c.email, email_source: hasEmail ? "radar" : null,
+        email_tried: hasEmail, anymail_tried: hasEmail,
+        // Known status → carried over and never re-checked; an email with no status still gets Debounced.
+        debounce_result: call ?? null, verify_result: call === "risky" || call === "unknown" ? "radar" : null, final_status: call ?? null,
+        phone: c.phone, phone_tried: !!c.phone,
+        from_radar: true, contact_id: c.id,
+      });
+    }
+    if (mine.length) {
+      people.push(...mine);
+      companyUpdates.push({ id: co.id, job_id: co.job_id, domain: co.domain, status: "from_radar", people_found: mine.length,
+        company_linkedin_url: a?.linkedin_url || null, company_name: a?.name || null, resolve_method: "radar", confidence: "high" });
+    } else if (a?.linkedin_url && !co.input_linkedin) {
+      companyUpdates.push({ id: co.id, job_id: co.job_id, domain: co.domain, status: "resolved", company_linkedin_url: a.linkedin_url,
+        company_name: a.name || null, resolve_method: "radar", confidence: "high" });
+    } else {
+      companyUpdates.push({ id: co.id, job_id: co.job_id, domain: co.domain, resolve_method: "radar_checked" }); // nothing usable — falls through to step 1
+    }
+  }
+  // Same person may exist under two LinkedIn forms across domains — the unique key (job, linkedin) just skips repeats.
+  for (let i = 0; i < people.length; i += 400) {
+    const chunk = people.slice(i, i + 400);
+    const groups = new Map<string, Record<string, unknown>[]>();
+    for (const r of chunk) { const k = Object.keys(r).sort().join(","); groups.set(k, [...(groups.get(k) || []), r]); }
+    for (const g of groups.values()) await insertRows("enrich2_people", g, { onConflict: "job_id,linkedin_url", ignoreDuplicates: true, returnMinimal: true });
+  }
+  await upsertGrouped("enrich2_companies", companyUpdates);
 }
 
 /** PostgREST bulk upsert needs one key set per request — group rows by shape (rows that skip a

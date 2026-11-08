@@ -4172,7 +4172,7 @@ interface EnrichJobRow {
 
 interface Enrich2Job {
   id: number; label: string; vertical: string; created_by: string | null; status: string; phase: string; stage: string | null;
-  options: { maxPerCompany: number; anymailFallback: boolean; anymailVerify: boolean; phones: boolean; excludeSupportHrFinance: boolean };
+  options: { maxPerCompany: number; anymailFallback: boolean; anymailVerify: boolean; phones: boolean; excludeSupportHrFinance: boolean; useRadarFirst?: boolean };
   counts: Record<string, number | Record<string, number>>; error: string | null; created_at: string; updated_at: string;
 }
 interface Enrich2Person {
@@ -4182,7 +4182,7 @@ interface Enrich2Person {
 }
 interface Enrich2Input { domain: string; brand?: string; linkedin?: string; altDomains?: string[] }
 
-const ENRICH2_PHASES = ["resolve", "search", "email", "anymail", "debounce", "verify", "phone", "save", "done"];
+const ENRICH2_PHASES = ["reuse", "resolve", "search", "email", "anymail", "debounce", "verify", "phone", "save", "done"];
 
 async function enrich2Call<T = Record<string, unknown>>(body: Record<string, unknown>): Promise<T> {
   const r = await fetch("/api/radar/enrich2", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -4211,6 +4211,7 @@ function EnrichV2Section() {
   const [anymailVerify, setAnymailVerify] = useState(true);
   const [phones, setPhones] = useState(true);
   const [apifyFallback, setApifyFallback] = useState(true);
+  const [useRadarFirst, setUseRadarFirst] = useState(true);
   const [excludeShf, setExcludeShf] = useState(true);
   const [countriesText, setCountriesText] = useState("");
   const [citiesText, setCitiesText] = useState("");
@@ -4337,7 +4338,7 @@ function EnrichV2Section() {
     try {
       const d = await enrich2Call<{ job: Enrich2Job }>({
         action: "start", label: label.trim(), vertical, companies,
-        options: { maxPerCompany: maxPer, anymailFallback, anymailVerify, phones, excludeSupportHrFinance: excludeShf, apifyFallback, countries: splitList(countriesText), cities: splitList(citiesText) },
+        options: { maxPerCompany: maxPer, anymailFallback, anymailVerify, phones, excludeSupportHrFinance: excludeShf, apifyFallback, useRadarFirst, countries: splitList(countriesText), cities: splitList(citiesText) },
       });
       setLabel(""); setText(""); setCsvCompanies([]); setCsvName("");
       setJobs((prev) => [d.job, ...prev]);
@@ -4471,6 +4472,7 @@ function EnrichV2Section() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          {toggle(useRadarFirst, setUseRadarFirst, "Use what's already in Radar first", "Domains Radar already has contacts for are taken as-is (status, phone, LinkedIn) — only the gaps and unknown domains are enriched")}
           {toggle(anymailFallback, setAnymailFallback, "Anymail Finder for missing emails", "LinkedIn URL search when Blitz has no email · 1 credit per email found")}
           {toggle(anymailVerify, setAnymailVerify, "Anymail verify Risky / Unknown", "Second pass on everything Debounce didn't call Safe or Invalid · 0.2 credit each")}
           {toggle(apifyFallback, setApifyFallback, "Apify LinkedIn finder for companies Blitz misses", "Second pass for domains Blitz can't match · ~$0.009 per company page found, nothing for misses")}
@@ -4519,6 +4521,8 @@ function EnrichV2Section() {
               const o = job.options;
               const pct = (a: number, b: number) => (b ? Math.min(100, Math.round((a / b) * 100)) : 0);
               const steps = [
+                { key: "reuse", label: "Already in Radar", on: o.useRadarFirst !== false, value: `${fmt(n("from_radar_people"))} contacts`, p: phaseIdx > 0 || job.status === "done" ? 100 : 0,
+                  sub: `${fmt(n("from_radar_companies"))} companies covered from Radar — no credits used` },
                 { key: "resolve", label: "Company LinkedIn", on: true, value: `${fmt(n("resolved"))} / ${fmt(n("companies"))}`, p: pct(n("companies") - n("pending_resolve"), n("companies")),
                   sub: `${fmt(n("unresolved"))} not found · ${fmt(n("low"))} low-confidence skipped${(job.counts.methods as Record<string, number> | undefined)?.apify ? ` · ${fmt((job.counts.methods as Record<string, number>).apify)} via Apify` : ""}` },
                 { key: "search", label: "Blitz ICP search", on: true, value: `${fmt(n("kept"))} contacts`, p: pct(n("searched"), n("resolved")),
