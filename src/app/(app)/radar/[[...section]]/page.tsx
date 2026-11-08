@@ -2429,35 +2429,72 @@ type IrrelevantSelector = { ids: string[] } | { allMatching: true; [key: string]
  */
 function useIrrelevantActions(table: "accounts" | "contacts", onDone: () => void) {
   const [busy, setBusy] = useState(false);
-  const call = async (action: "mark_irrelevant" | "delete_irrelevant", body: Record<string, unknown>) => {
+  const [progress, setProgress] = useState<{ verb: string; done: number; total: number; finished: boolean; error?: string } | null>(null);
+  const post = async (body: Record<string, unknown>) => {
+    const r = await fetch(`/api/radar/${table}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || "Action failed");
+    return d as { updated?: number; deleted?: number };
+  };
+  // Works through the records in slices so the counter moves as they're processed (a selection by ids goes
+  // 300 at a time; "all N matching" goes 500 at a time until nothing matching is left).
+  const run = async (action: "mark_irrelevant" | "delete_irrelevant", sel: IrrelevantSelector, extra: Record<string, unknown>, total: number, verb: string) => {
     setBusy(true);
+    let done = 0;
+    setProgress({ verb, done, total, finished: false });
     try {
-      const r = await fetch(`/api/radar/${table}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, ...body }),
-      });
-      if (!r.ok) {
-        const d = await r.json().catch(() => ({}));
-        alert(d.error || "Action failed");
-        return;
+      const idList = (sel as { ids?: string[] }).ids;
+      if (idList) {
+        for (let i = 0; i < idList.length; i += 300) {
+          const d = await post({ action, ids: idList.slice(i, i + 300), ...extra });
+          done += d.updated ?? d.deleted ?? 0;
+          setProgress({ verb, done, total: idList.length, finished: false });
+        }
+      } else {
+        for (let guard = 0; guard < 2000; guard++) {
+          const d = await post({ action, ...sel, ...extra, batch: 500 });
+          const n = d.updated ?? d.deleted ?? 0;
+          if (!n) break;
+          done += n;
+          setProgress({ verb, done, total: Math.max(total, done), finished: false });
+        }
       }
+      setProgress({ verb, done, total: Math.max(total, done), finished: true });
       onDone();
-    } catch {
-      alert("Action failed");
+    } catch (e) {
+      setProgress({ verb, done, total: Math.max(total, done), finished: true, error: (e as Error).message });
+      onDone();
     } finally {
       setBusy(false);
     }
   };
+  const progressUi = progress ? (
+    <div className="fixed bottom-5 right-5 z-50 w-[320px] rounded-xl border border-[var(--hm-border)] bg-[var(--hm-surface)] p-4" role="status" aria-live="polite">
+      <div className="flex items-center gap-2 text-[12.5px] font-semibold text-[var(--hm-text)]">
+        {!progress.finished && <span className="w-3.5 h-3.5 border-2 border-[var(--hm-border)] border-t-[var(--hm-text)] rounded-full animate-spin" />}
+        <span className="truncate">{progress.error ? "Stopped with an error" : progress.finished ? `${progress.verb} ${progress.done.toLocaleString()} ${table} ✓` : `${progress.verb}…`}</span>
+        {progress.finished && <button onClick={() => setProgress(null)} className="ml-auto text-[var(--hm-text-tertiary)] hover:text-[var(--hm-text)]" aria-label="Dismiss">×</button>}
+      </div>
+      <p className="mt-1 text-[12px] tabular-nums text-[var(--hm-text-secondary)]">
+        {progress.done.toLocaleString()} of {progress.total.toLocaleString()}
+        {progress.total > 0 && ` · ${Math.min(100, Math.round((progress.done / progress.total) * 100))}%`}
+      </p>
+      <div className="mt-2 h-1.5 rounded-full bg-[var(--hm-bg-tertiary)] overflow-hidden">
+        <div className="h-full rounded-full transition-[width] duration-300" style={{ width: `${progress.total ? Math.min(100, (progress.done / progress.total) * 100) : 0}%`, background: progress.error ? "var(--tag-red-fg)" : progress.finished ? "var(--tag-green-fg)" : "var(--hm-primary)" }} />
+      </div>
+      {progress.error && <p className="mt-2 text-[11.5px] text-[var(--tag-red-fg)]">{progress.error}</p>}
+    </div>
+  ) : null;
   return {
     busy,
-    markIrrelevant: (sel: IrrelevantSelector, clear: () => void) =>
-      call("mark_irrelevant", { ...sel, irrelevant: true }).then(clear),
-    unmark: (sel: IrrelevantSelector, clear: () => void) =>
-      call("mark_irrelevant", { ...sel, irrelevant: false }).then(clear),
+    progressUi,
+    markIrrelevant: (sel: IrrelevantSelector, clear: () => void, count = 0) =>
+      run("mark_irrelevant", sel, { irrelevant: true }, count, "Marking irrelevant").then(clear),
+    unmark: (sel: IrrelevantSelector, clear: () => void, count = 0) =>
+      run("mark_irrelevant", sel, { irrelevant: false }, count, "Unmarking").then(clear),
     deleteForever: (sel: IrrelevantSelector, clear: () => void, count: number) => {
       if (!confirm(`Permanently delete ${count} record(s)? This cannot be undone.`)) return Promise.resolve();
-      return call("delete_irrelevant", sel).then(clear);
+      return run("delete_irrelevant", sel, {}, count, "Deleting").then(clear);
     },
   };
 }
@@ -2468,7 +2505,7 @@ function AccountsSection() {
   const [editAccount, setEditAccount] = useState<AccountRow | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
   const [showIrrelevant, setShowIrrelevant] = useState(false);
-  const { markIrrelevant, unmark, deleteForever } = useIrrelevantActions("accounts", () => setRefreshToken((t) => t + 1));
+  const { markIrrelevant, unmark, deleteForever, progressUi } = useIrrelevantActions("accounts", () => setRefreshToken((t) => t + 1));
   // "All N matching selected" → stream every column of every matching row from the server.
   const [exportingAll, setExportingAll] = useState<number | null>(null);
   // Add each account's contacts to the export (one row per contact, account columns repeated).
@@ -2611,7 +2648,7 @@ function AccountsSection() {
               </label>
               {showIrrelevant ? (
                 <>
-                  <button onClick={() => unmark(sel, clearSelection)} className="hm-btn hm-btn-secondary" style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}>
+                  <button onClick={() => unmark(sel, clearSelection, count)} className="hm-btn hm-btn-secondary" style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}>
                     Unmark
                   </button>
                   {isAdmin && (
@@ -2621,7 +2658,7 @@ function AccountsSection() {
                   )}
                 </>
               ) : (
-                <button onClick={() => markIrrelevant(sel, clearSelection)} className="hm-btn hm-btn-secondary" style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}>
+                <button onClick={() => markIrrelevant(sel, clearSelection, count)} className="hm-btn hm-btn-secondary" style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}>
                   Mark irrelevant
                 </button>
               )}
@@ -2629,6 +2666,7 @@ function AccountsSection() {
           );
         }}
       />
+      {progressUi}
       {openAccount && <AccountContactsPanel account={openAccount} onClose={() => setOpenAccount(null)} />}
       {editAccount && (
         <EditRecordPanel
@@ -2924,7 +2962,7 @@ function ContactsSection() {
   const [openContact, setOpenContact] = useState<ContactRow | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
   const [showIrrelevant, setShowIrrelevant] = useState(false);
-  const { markIrrelevant, unmark, deleteForever } = useIrrelevantActions("contacts", () => setRefreshToken((t) => t + 1));
+  const { markIrrelevant, unmark, deleteForever, progressUi } = useIrrelevantActions("contacts", () => setRefreshToken((t) => t + 1));
   // "All N matching selected" → stream every column of every matching row from the server.
   const [exportingAll, setExportingAll] = useState<number | null>(null);
   const exportAllMatching = async (queryBody: Record<string, unknown>, total: number) => {
@@ -3053,7 +3091,7 @@ function ContactsSection() {
               )}
               {showIrrelevant ? (
                 <>
-                  <button onClick={() => unmark(sel, clearSelection)} className="hm-btn hm-btn-secondary" style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}>
+                  <button onClick={() => unmark(sel, clearSelection, count)} className="hm-btn hm-btn-secondary" style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}>
                     Unmark
                   </button>
                   {isAdmin && (
@@ -3063,7 +3101,7 @@ function ContactsSection() {
                   )}
                 </>
               ) : (
-                <button onClick={() => markIrrelevant(sel, clearSelection)} className="hm-btn hm-btn-secondary" style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}>
+                <button onClick={() => markIrrelevant(sel, clearSelection, count)} className="hm-btn hm-btn-secondary" style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}>
                   Mark irrelevant
                 </button>
               )}
@@ -3071,6 +3109,7 @@ function ContactsSection() {
           );
         }}
       />
+      {progressUi}
       {openContact && <ContactDetailPanel contact={openContact} onClose={() => setOpenContact(null)} onEdit={() => { setEditContact(openContact); setOpenContact(null); }} />}
       {editContact && (
         <EditRecordPanel

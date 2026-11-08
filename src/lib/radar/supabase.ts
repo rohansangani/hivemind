@@ -604,9 +604,9 @@ export async function setMarkedIrrelevant(
  * the correct writable table via the existing id-based functions. Capped at
  * 20,000 ids as a sanity backstop.
  */
-export async function fetchAllIds(table: string, filterQuery: string): Promise<string[]> {
-  const pageSize = 1000;
-  const maxPages = 20;
+export async function fetchAllIds(table: string, filterQuery: string, max = 20000): Promise<string[]> {
+  const pageSize = Math.min(1000, max);
+  const maxPages = Math.ceil(max / pageSize);
   const ids: string[] = [];
   for (let page = 0; page < maxPages; page++) {
     const offset = page * pageSize;
