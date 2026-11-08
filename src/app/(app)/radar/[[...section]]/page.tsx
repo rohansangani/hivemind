@@ -7949,8 +7949,8 @@ const CHECK_DB_COLUMNS: Record<"contacts" | "accounts", Array<{ id: string; labe
     { id: "linkedin_url", label: "LinkedIn URL", placeholder: "linkedin.com/in/janedoe" },
   ],
   accounts: [
-    { id: "name", label: "Company Name", placeholder: "Acme Inc\nOther Co" },
     { id: "domain", label: "Domain", placeholder: "company.com\nanothercompany.com" },
+    { id: "name", label: "Company Name", placeholder: "Acme Inc\nOther Co" },
     { id: "linkedin_url", label: "LinkedIn URL", placeholder: "linkedin.com/company/acme" },
   ],
 };
