@@ -63,6 +63,7 @@ export async function POST(req: NextRequest) {
         phones: o.phones === true,
         excludeSupportHrFinance: o.excludeSupportHrFinance !== false,
         apifyFallback: o.apifyFallback !== false,
+        useRadarFirst: o.useRadarFirst !== false,
         // Blitz location filter: ISO-2 country codes and city names, max 10 each.
         countries: (Array.isArray(o.countries) ? o.countries : []).map((c) => String(c).trim().toUpperCase()).filter((c) => /^[A-Z]{2}$/.test(c)).slice(0, 10),
         cities: (Array.isArray(o.cities) ? o.cities : []).map((c) => String(c).trim()).filter((c) => c && c.length <= 60).slice(0, 10),
