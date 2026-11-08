@@ -1,3 +1,4 @@
+-- (2026-11-08 later: contacts created by Enrich are sourced 'BlitzAPI'.)
 -- Radar DB — Enrich "use Radar first": people reused from existing Radar contacts + ISO country codes saved as names. Applied 2026-11-08.
 -- Pipeline code: src/lib/radar/enrichPipeline.ts (phase "reuse").
 
@@ -315,7 +316,7 @@ BEGIN
                               company_name, domain, country, location, vertical, account_id, source)
         VALUES (r.first_name, r.last_name, r.full_name, v_email, CASE WHEN v_email IS NOT NULL THEN r.final_status END,
                 CASE WHEN v_email IS NOT NULL AND r.final_status IS NOT NULL THEN now() END, r.title, v_li, r.phone,
-                r.company_name, r.domain, public.country_name(r.country_code), r.city, v_vert, v_acc, 'Blitz Enrich')
+                r.company_name, r.domain, public.country_name(r.country_code), r.city, v_vert, v_acc, 'BlitzAPI')
         RETURNING id INTO v_id;
       EXCEPTION WHEN unique_violation THEN
         SELECT id INTO v_id FROM contacts WHERE (v_email IS NOT NULL AND email = v_email AND vertical = v_vert)
