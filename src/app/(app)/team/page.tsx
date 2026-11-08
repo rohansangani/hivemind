@@ -145,7 +145,7 @@ function PermissionEditor({
 
       <p className="text-[10px] mt-3 px-1" style={{ color: "var(--hm-text-tertiary)" }}>
         <strong style={{ color: "var(--hm-text-secondary)" }}>None</strong> — hidden from nav &nbsp;·&nbsp;
-        <strong style={{ color: "var(--tag-blue-fg)" }}>View</strong> — read only (Radar: Dashboard + Export tabs only) &nbsp;·&nbsp;
+        <strong style={{ color: "var(--tag-blue-fg)" }}>View</strong> — read only (Radar: Dashboard + Check DB tabs only) &nbsp;·&nbsp;
         <strong style={{ color: "var(--tag-green-fg)" }}>Edit</strong> — full create/edit access
       </p>
     </div>
