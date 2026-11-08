@@ -104,9 +104,11 @@ export async function POST(req: NextRequest) {
     if (body.action === "mark_irrelevant") {
       const actor = await getActorEmail(access.userId);
       const irrelevant = body.irrelevant !== false;
+      // `batch` = process one slice of the matching rows per call (the client loops, so it can show live progress).
       const ids = body.allMatching
-        ? await fetchAllIds("contacts_view", buildContactsFilter(body, access.role).replace(/^&/, ""))
+        ? await fetchAllIds("contacts_view", buildContactsFilter(body, access.role).replace(/^&/, ""), Number(body.batch) > 0 ? Math.min(1000, Number(body.batch)) : undefined)
         : body.ids;
+      if (body.allMatching && Number(body.batch) > 0 && !ids.length) return NextResponse.json({ updated: 0 });
       const count = await setMarkedIrrelevant("contacts", ids, irrelevant, actor ?? "unknown");
       await logRadarActivity(access.userId, irrelevant ? "mark_irrelevant_contacts" : "unmark_irrelevant_contacts", `${irrelevant ? "Marked" : "Unmarked"} ${count} contact(s) as irrelevant`);
       return NextResponse.json({ updated: count });
@@ -116,9 +118,11 @@ export async function POST(req: NextRequest) {
       if (!RADAR_ADMIN_ROLES.includes(access.role)) {
         return NextResponse.json({ error: "Only an owner or admin can permanently delete records" }, { status: 403 });
       }
+      // `batch` = process one slice of the matching rows per call (the client loops, so it can show live progress).
       const ids = body.allMatching
-        ? await fetchAllIds("contacts_view", buildContactsFilter(body, access.role).replace(/^&/, ""))
+        ? await fetchAllIds("contacts_view", buildContactsFilter(body, access.role).replace(/^&/, ""), Number(body.batch) > 0 ? Math.min(1000, Number(body.batch)) : undefined)
         : body.ids;
+      if (body.allMatching && Number(body.batch) > 0 && !ids.length) return NextResponse.json({ deleted: 0 });
       const count = await deleteMarkedIrrelevant("contacts", ids);
       await logRadarActivity(access.userId, "delete_contacts", `Permanently deleted ${count} contact(s)`);
       return NextResponse.json({ deleted: count });
