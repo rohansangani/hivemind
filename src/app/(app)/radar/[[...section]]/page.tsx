@@ -29,7 +29,7 @@ type SectionId =
   | "upload"
   | "enrich"
   | "validate"
-  | "export"
+  | "checkdb"
   | "logs"
   | "apikeys";
 
@@ -41,7 +41,7 @@ const SECTIONS: Array<{ id: SectionId; label: string; blurb: string }> = [
   { id: "icp",       label: "ICP Base",  blurb: "Define Ideal Customer Profiles to auto-fill Enrich searches." },
   { id: "enrich",    label: "Enrich",    blurb: "Blitz → Anymail → Debounce → Anymail verify: find ICP contacts + emails for company domains." },
   { id: "validate",  label: "Validate",  blurb: "Generate email patterns, test deliverability, save confirmed emails." },
-  { id: "export",    label: "Export",    blurb: "Download validated contact lists, or check a list of emails against the database." },
+  { id: "checkdb",   label: "Check DB",  blurb: "Paste or upload domains, company names or LinkedIn URLs to see what already exists — with full account and contact details." },
   { id: "logs",      label: "Logs",      blurb: "Admin-only audit trail of edits, deletes, uploads, exports, and validate/enrich runs." },
   { id: "apikeys",   label: "API Keys",  blurb: "Admin-only: create/revoke keys that let a script or integration use every Radar feature." },
 ];
@@ -51,7 +51,7 @@ export default function RadarPage() {
   // Each tab has its own URL (/radar/accounts, /radar/contacts, …). The tab is still switched client-side
   // with history.pushState so every opened tab keeps its in-progress state — only the address bar follows.
   const params = useParams<{ section?: string[] }>();
-  const sectionFromPath = (seg?: string | null): SectionId => (SECTIONS.some((s) => s.id === seg) ? (seg as SectionId) : "dashboard");
+  const sectionFromPath = (seg?: string | null): SectionId => (seg === "export" ? "checkdb" : SECTIONS.some((s) => s.id === seg) ? (seg as SectionId) : "dashboard");
   const [active, setActive] = useState<SectionId>(() => sectionFromPath(params?.section?.[0]));
   // Sections keep their local state (in-progress searches, uploads, filters, results) once
   // opened — switching tabs hides them via CSS instead of unmounting, so e.g. a Check LinkedIn
@@ -116,12 +116,12 @@ export default function RadarPage() {
   // "view"-level grant is restricted to Dashboard + Export only — no browse/edit
   // of Accounts, Contacts, Validate, Upload, ICP, or Enrich. "edit" sees everything.
   const viewOnly = modulePermissions.radar === "view";
-  const visibleSections = (viewOnly ? SECTIONS.filter((s) => s.id === "dashboard" || s.id === "export") : SECTIONS)
+  const visibleSections = (viewOnly ? SECTIONS.filter((s) => s.id === "dashboard" || s.id === "checkdb") : SECTIONS)
     .filter((s) => (s.id !== "logs" && s.id !== "apikeys") || isAdmin)
     .filter((s) => s.id !== "icp"); // ICP Base hidden from nav (section code kept)
 
   useEffect(() => {
-    const blocked = (viewOnly && active !== "dashboard" && active !== "export") || ((active === "logs" || active === "apikeys") && !isAdmin);
+    const blocked = (viewOnly && active !== "dashboard" && active !== "checkdb") || ((active === "logs" || active === "apikeys") && !isAdmin);
     if (blocked) { setActive("dashboard"); window.history.replaceState(null, "", "/radar"); }
   }, [viewOnly, active, isAdmin]);
 
@@ -302,7 +302,7 @@ export default function RadarPage() {
               : s.id === "accounts" ? <AccountsSection />
               : s.id === "contacts" ? <ContactsSection />
               : s.id === "icp" ? <IcpBaseSection />
-              : s.id === "export" ? <ExportAndCheckSection />
+              : s.id === "checkdb" ? <ExportAndCheckSection />
               : s.id === "upload" ? <UploadSection />
               : s.id === "enrich" ? <EnrichV2Section />
               : s.id === "validate" ? <ValidateSection />
@@ -350,9 +350,8 @@ export default function RadarPage() {
 
 const NAV_GROUPS: Array<{ label: string; ids: SectionId[] }> = [
   { label: "Overview",  ids: ["dashboard"] },
-  { label: "Database",  ids: ["accounts", "contacts", "upload"] },
+  { label: "Database",  ids: ["accounts", "contacts", "upload", "checkdb"] },
   { label: "Prospect",  ids: ["enrich", "validate"] },
-  { label: "Outbound",  ids: ["export"] },
   { label: "Admin",     ids: ["logs", "apikeys"] },
 ];
 
@@ -364,6 +363,7 @@ const NAV_ICON_PATHS: Record<string, React.ReactNode> = {
   icp: <><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1.2" /></>,
   enrich: <><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z" /><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z" /></>,
   validate: <><path d="M12 3l7.5 3v5.5c0 4.6-3.2 8.3-7.5 9.5-4.3-1.2-7.5-4.9-7.5-9.5V6z" /><path d="M8.5 12l2.5 2.5 4.5-5" /></>,
+  checkdb: <><circle cx="11" cy="11" r="6.5" /><path d="M16 16l4.5 4.5M8.5 11l2 2 3.5-4" /></>,
   export: <><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5" /><path d="M4 15v3a2 2 0 002 2h12a2 2 0 002-2v-3" /></>,
   logs: <><path d="M8 6h13M8 12h13M8 18h13" /><circle cx="3.5" cy="6" r="1" /><circle cx="3.5" cy="12" r="1" /><circle cx="3.5" cy="18" r="1" /></>,
   apikeys: <><circle cx="8" cy="15" r="4" /><path d="M10.8 12.2L20 3M16 7l3 3M18 5l2 2" /></>,
@@ -3088,36 +3088,14 @@ function ContactsSection() {
 
 /* ── Export ────────────────────────────────────────────────────────────── */
 
+// Downloading already lives on the Accounts and Contacts tabs, so this tab is just Check DB.
+// ExportSection stays in the file behind this flag in case the standalone download is ever wanted back.
+const SHOW_STANDALONE_DOWNLOAD = false;
 function ExportAndCheckSection() {
-  const [mode, setMode] = useState<"download" | "check">("download");
   return (
     <div className="space-y-4">
-      {/* Mode cards — same pattern as Validate's Find Emails / Risky / Check LinkedIn switcher. */}
-      <div className="radar-card overflow-hidden grid grid-cols-1 sm:grid-cols-2 bg-[var(--hm-bg-secondary)]">
-        {([
-          { id: "download", label: "Download", hint: "Export accounts or contacts matching your filters as CSV", icon: "export" },
-          { id: "check", label: "Check DB", hint: "Paste or upload a list to see which values already exist in Radar", icon: "search" },
-        ] as const).map((m) => {
-          const on = mode === m.id;
-          return (
-            <button
-              key={m.id}
-              onClick={() => setMode(m.id)}
-              className={`group relative flex items-center gap-3 px-4 py-3.5 text-left transition-colors ${on ? "bg-[var(--hm-surface)]" : "hover:bg-[var(--hm-bg-tertiary)]"} sm:[&:not(:first-child)]:border-l border-[var(--hm-border)]`}
-            >
-              <span className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors ${on ? "bg-[var(--hm-primary)] text-[var(--hm-bg)]" : "bg-[var(--hm-surface)] border border-[var(--hm-border)] text-[var(--hm-text-tertiary)] group-hover:text-[var(--hm-text)]"}`}>
-                <NavIcon id={m.icon} size={16} />
-              </span>
-              <span className="min-w-0">
-                <span className={`block text-[13.5px] font-semibold ${on ? "text-[var(--hm-text)]" : "text-[var(--hm-text-secondary)] group-hover:text-[var(--hm-text)]"}`}>{m.label}</span>
-                <span className="block text-[11.5px] text-[var(--hm-text-tertiary)] truncate">{m.hint}</span>
-              </span>
-              {on && <span className="absolute left-0 right-0 bottom-0 h-[2px] bg-[var(--hm-primary)]" />}
-            </button>
-          );
-        })}
-      </div>
-      {mode === "download" ? <ExportSection /> : <CheckDbSection />}
+      <CheckDbSection />
+      {SHOW_STANDALONE_DOWNLOAD && <ExportSection />}
     </div>
   );
 }
