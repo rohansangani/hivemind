@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { distinctValues, requireRadarAccess, radarSql, INDUSTRY_SEP } from "@/lib/radar/supabase";
 
 // Canonical order for the clean buckets (docs/sql/2026-11-04_firmographics_clean.sql).
@@ -14,11 +14,8 @@ const MONTHLY_ORDER = ["Under $10K", "$10K-$25K", "$25K-$50K", "$50K-$100K", "$1
  */
 export const maxDuration = 30;
 
-export async function GET(req: NextRequest) {
-  const access = await requireRadarAccess(req);
-  if (access instanceof NextResponse) return access;
-
-  try {
+/** Builds every filter option (16 distinct scans + the industry/apps aggregates — several seconds on the full database). */
+async function computeOptions() {
     const [industries, subIndustries, accountSizes, employeeRanges, revenueRanges, countries,
       states, accLifecycle, conLifecycle, accLead, conLead, accSdr, conSdr, accSources, conSources, contactCountries] = await Promise.all([
       distinctValues("accounts", "industry"),
@@ -66,7 +63,7 @@ export async function GET(req: NextRequest) {
     };
     const empB = ordered(emp, EMPLOYEE_ORDER), revB = ordered(rev, REVENUE_ORDER), monB = ordered(mon, MONTHLY_ORDER);
     const union = (...lists: string[][]) => [...new Set(lists.flat())].sort((a, b) => a.localeCompare(b));
-    return NextResponse.json({
+    return {
       industries, subIndustries, employeeRanges, revenueRanges, countries, states,
       lifecycleStages: union(accLifecycle, conLifecycle),
       leadStatuses: union(accLead, conLead),
@@ -79,7 +76,38 @@ export async function GET(req: NextRequest) {
       installedApps: appsRows.map((r) => r.v), installedAppCounts: Object.fromEntries(appsRows.map((r) => [r.v, r.n])),
       platforms: plat.map((r) => r.v), platformCounts: Object.fromEntries(plat.map((r) => [r.v, r.n])),
       accountSizes: accountSizes.filter((v) => /[a-z]/i.test(v)),
-    });
+    };
+}
+
+// These lists barely change, so each server instance keeps the last result: fresh for 5 min, then served
+// stale (up to 1 h) while a refresh runs in the background — filters no longer wait on the scans.
+const FRESH_MS = 5 * 60_000;
+const STALE_MS = 60 * 60_000;
+let cache: { at: number; data: Awaited<ReturnType<typeof computeOptions>> } | null = null;
+let inflight: Promise<void> | null = null;
+function refresh(): Promise<void> {
+  if (!inflight) {
+    inflight = computeOptions()
+      .then((data) => { cache = { at: Date.now(), data }; })
+      .finally(() => { inflight = null; });
+  }
+  return inflight;
+}
+
+export async function GET(req: NextRequest) {
+  const access = await requireRadarAccess(req);
+  if (access instanceof NextResponse) return access;
+
+  try {
+    const headers = { "Cache-Control": "private, max-age=60" };
+    const age = cache ? Date.now() - cache.at : Infinity;
+    if (cache && age < FRESH_MS) return NextResponse.json(cache.data, { headers });
+    if (cache && age < STALE_MS) {
+      after(() => refresh().catch(() => {}));
+      return NextResponse.json(cache.data, { headers });
+    }
+    await refresh();
+    return NextResponse.json(cache!.data, { headers });
   } catch (err) {
     console.error("Radar options error:", err);
     return NextResponse.json({ error: "Failed to load filter options" }, { status: 502 });
