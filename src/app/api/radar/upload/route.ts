@@ -158,8 +158,9 @@ async function handleUpload(body: UploadBody): Promise<{ status: number; body: R
 
   // Columns that were dropped from the schema — strip them so stale mappings can't break inserts.
   const DROPPED = ["city", "track_order_page", "edd", "ebo", "mbo"];
-  const stripDropped = (o: Row) => {
-    for (const k of DROPPED) delete o[k];
+  // contacts have their own city/state columns (2026-11-09), so contacts keep `city`; accounts still drop it.
+  const stripDropped = (o: Row, keepCity = false) => {
+    for (const k of DROPPED) { if (keepCity && k === "city") continue; delete o[k]; }
     // employee_count is an integer column — "970", "970+", "1,200" → 970/1200; anything else → null
     // (one bad cell must not fail the whole chunk's insert).
     // platform replaced the old shopify yes/no column: a legacy "Shopify: true" (or a platform cell that's
@@ -180,7 +181,7 @@ async function handleUpload(body: UploadBody): Promise<{ status: number; body: R
   // value wins when non-blank.
   const cleanRows: Row[] = table === "contacts"
     ? rows.map((r) => {
-        const out: Row = stripDropped({ ...r, domain: r.domain ? toDomain(String(r.domain)) : r.domain, country: normalizeCountry(r.country ? String(r.country) : null), source: (r.source ? String(r.source).trim() : "") || "CSV Upload", vertical: canonVertical(r.vertical) || fallbackVertical });
+        const out: Row = stripDropped({ ...r, domain: r.domain ? toDomain(String(r.domain)) : r.domain, country: normalizeCountry(r.country ? String(r.country) : null), source: (r.source ? String(r.source).trim() : "") || "CSV Upload", vertical: canonVertical(r.vertical) || fallbackVertical }, true);
         if (r.email_status && r.email) {
           out.email_status = String(r.email_status).toLowerCase().trim();
           out.validated_at = new Date().toISOString();
@@ -243,7 +244,7 @@ async function handleUpload(body: UploadBody): Promise<{ status: number; body: R
             );
             for (const f of found) existingByKey.set(`${f.linkedin_url}::${(f.vertical || "").toUpperCase()}`, { id: f.id, email: f.email });
           }
-          const UPDATABLE = ["first_name", "last_name", "full_name", "title", "company_name", "phone", "phone2", "country", "location", "domain", "personal_email", "seniority_level", "functional_level", "headline", "parent_company", "sdr_owner"];
+          const UPDATABLE = ["first_name", "last_name", "full_name", "title", "company_name", "phone", "phone2", "country", "location", "city", "state", "domain", "personal_email", "seniority_level", "functional_level", "headline", "parent_company", "sdr_owner"];
           const matched = new Set<Row>();
           const stmts: string[] = [];
           for (const r of withLi) {

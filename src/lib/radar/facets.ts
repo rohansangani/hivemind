@@ -34,7 +34,7 @@ export async function facetCounts(table: "accounts" | "contacts", body: Body, in
   const facets: Facet[] = [
     { key: "vertical", expr: isAcc ? "ARRAY[vertical]" : "verticals", array: true },
     ...COMMON,
-    ...(isAcc ? [{ key: "state", expr: "state" }] : [{ key: "emailStatus", expr: "COALESCE(email_status, 'unvalidated')" }]),
+    ...(isAcc ? [{ key: "state", expr: "state" }, { key: "city", expr: "city" }] : [{ key: "emailStatus", expr: "COALESCE(email_status, 'unvalidated')" }]),
   ];
 
   // Always-on predicates (not facets): yes/no switches, text boxes, the irrelevant flag.
