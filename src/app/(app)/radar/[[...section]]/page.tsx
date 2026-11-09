@@ -1313,9 +1313,11 @@ const CONTACT_FILTER_GROUPS: FilterGroup[] = [
 const firstNum = (v: string) => { const m = v.replace(/,/g, "").match(/\d+(\.\d+)?/); return m ? parseFloat(m[0]) * (/b/i.test(v.slice(0, 12)) ? 1e9 : /m/i.test(v.slice(0, 12)) ? 1e6 : /k/i.test(v.slice(0, 12)) ? 1e3 : 1) : Number.MAX_VALUE; };
 
 /** Dropdown with a search box — long lists (industries, countries, owners) stay usable. */
-function SearchSelect({ value, onChange, options, labels, numeric, label, counts, grouped, multi }: {
+function SearchSelect({ value, onChange, options, labels, numeric, label, counts, countsLoading, grouped, multi }: {
   value: string; onChange: (v: string) => void; options: string[]; labels?: Record<string, string>; numeric?: boolean; label: string;
   counts?: Record<string, number>; grouped?: boolean;
+  /** Counts for the current filters are still being computed: show a shimmer instead of numbers. */
+  countsLoading?: boolean;
   /** Pick several values (stored joined with MULTI_SEP); the list stays open while you tick. */
   multi?: boolean;
 }) {
@@ -1398,7 +1400,8 @@ function SearchSelect({ value, onChange, options, labels, numeric, label, counts
                 ) : (
                   <span className="truncate">{o ? text(o) : "Any"}{grouped && o && !needle && <span className="ml-1 text-[10.5px] font-normal text-[var(--hm-text-tertiary)]">(all)</span>}</span>
                 )}
-                {o && counts?.[o] != null && <span className="ml-auto pl-2 text-[11px] font-normal tabular-nums text-[var(--hm-text-tertiary)]">{counts[o].toLocaleString()}</span>}
+                {o && countsLoading && <span className="radar-skel ml-auto h-3 w-9 rounded" aria-label="Calculating count" />}
+                {o && !countsLoading && counts?.[o] != null && <span className="ml-auto pl-2 text-[11px] font-normal tabular-nums text-[var(--hm-text-tertiary)]">{counts[o].toLocaleString()}</span>}
               </button>
             ))}
             {!matches.length && <p className="px-3 py-3 text-[12px] text-[var(--hm-text-tertiary)]">No match for “{q}”.</p>}
@@ -1713,8 +1716,9 @@ function DataTable<T extends { id: string }>({
     return () => { cancelled = true; clearTimeout(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [facetTable, term, filtersKey, extraBodyKey]);
+  const countsStale = facetsPending && (!!term || Object.keys(filters).length > 0);
   const countsFor = (f: FilterField, opts: string[]): Record<string, number> | undefined => {
-    if (facetsPending && (term || Object.keys(filters).length > 0)) return undefined; // don't show counts from a previous filter state
+    if (countsStale) return undefined; // never show counts from a previous filter state
     const fc = facets?.[f.key];
     return fc ? Object.fromEntries(opts.map((o) => [o, fc[o] ?? 0])) : f.counts?.(options);
   };
@@ -1850,7 +1854,7 @@ function DataTable<T extends { id: string }>({
                   <div key={f.key}>
                     <p className="text-[11.5px] text-[var(--hm-text-tertiary)] mb-1">{f.label}</p>
                     {f.kind === "select" ? (
-                      <SearchSelect multi label={f.label} value={filters[f.key] || ""} onChange={(v) => setFilter(f.key, v)} options={f.options?.(options) || []} labels={f.labels} numeric={f.numeric} counts={countsFor(f, f.options?.(options) || [])} grouped={f.grouped} />
+                      <SearchSelect multi label={f.label} value={filters[f.key] || ""} onChange={(v) => setFilter(f.key, v)} options={f.options?.(options) || []} labels={f.labels} numeric={f.numeric} counts={countsFor(f, f.options?.(options) || [])} countsLoading={countsStale} grouped={f.grouped} />
                     ) : f.kind === "text" ? (
                       <TextFilter label={f.label} value={filters[f.key] || ""} onChange={(v) => setFilter(f.key, v)} placeholder={f.placeholder} />
                     ) : (
