@@ -1292,6 +1292,8 @@ const CONTACT_FILTER_GROUPS: FilterGroup[] = [
   { id: "firmo", label: "Firmographics", icon: "accounts", fields: FIRMO_FIELDS },
   { id: "location", label: "Location", icon: "dashboard", fields: [
     { key: "country", label: "Country", kind: "select", options: (o) => o?.contactCountries || o?.countries || [] },
+    { key: "state", label: "State / region", kind: "select", options: (o) => o?.states || [] },
+    { key: "city", label: "City", kind: "select", options: (o) => o?.cities || [], counts: (o) => o?.cityCounts },
   ] },
   { id: "crm", label: "CRM & ownership", icon: "logs", fields: [
     ...CRM_FIELDS(),
@@ -2300,6 +2302,8 @@ const CONTACT_EDIT_FIELDS: EditField[] = [
   { key: "phone2", label: "Phone 2" },
   { key: "location", label: "Location" },
   { key: "country", label: "Country" },
+  { key: "state", label: "State" },
+  { key: "city", label: "City" },
   { key: "linkedin_url", label: "LinkedIn URL" },
   { key: "vertical", label: "Vertical", type: "vertical" },
   { key: "domain", label: "Domain" },
@@ -3046,6 +3050,8 @@ function ContactsSection() {
     { key: "phone2", header: "Phone 2", render: (r) => <Cell value={r.phone2} /> },
     { key: "location", header: "Location", render: (r) => <Cell value={r.location} /> },
     { key: "country", header: "Country", render: (r) => <Cell value={r.country} /> },
+    { key: "state", header: "State", render: (r) => <Cell value={r.state} /> },
+    { key: "city", header: "City", render: (r) => <Cell value={r.city} /> },
     { key: "linkedin", header: "LinkedIn", render: (r) => r.linkedin_url ? <a href={linkedinHref(r.linkedin_url)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-[var(--hm-link)] whitespace-nowrap">{linkedinHref(r.linkedin_url)}</a> : <span className="text-[var(--hm-text-tertiary)]">—</span> },
     { key: "sdr", header: "SDR Owner", render: (r) => <Cell value={r.sdr_owner} /> },
     { key: "source", header: "Source", render: (r) => <Cell value={r.source} /> },

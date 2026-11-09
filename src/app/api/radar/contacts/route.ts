@@ -16,7 +16,7 @@ const RADAR_ADMIN_ROLES = ["owner", "admin"];
  * base table with those ids — never write straight through this filter. */
 function buildContactsFilter(body: Record<string, unknown>, role: string): string {
   const { vertical, industry, subIndustry, employeeRange, revenueRange, company, title, emailStatus, country, search, hasEmail, accountId, matchDomain, includeIrrelevant, accountType, customer,
-    lifecycleStage, leadStatus, sdrOwner, source, hubspotExcluded, hasLinkedin, hasPhone } = body as Record<string, string | boolean | undefined>;
+    lifecycleStage, leadStatus, sdrOwner, source, hubspotExcluded, hasLinkedin, hasPhone, state, city } = body as Record<string, string | boolean | undefined>;
   let query = "";
   query += firmographicFilters(body);
   query += inFilter("hubspot_lifecycle_stage", lifecycleStage);
@@ -46,6 +46,8 @@ function buildContactsFilter(body: Record<string, unknown>, role: string): strin
   if (company) query += `&company_name=ilike.*${encodeURIComponent(String(company))}*`;
   if (title) query += `&title=ilike.*${encodeURIComponent(String(title))}*`;
   query += inFilter("country", country);
+  query += inFilter("state", state);
+  query += inFilter("city", city);
   // Email status: "unvalidated" = NULL; any mix of statuses is OR'd.
   const st = multiValues(emailStatus);
   if (st.length) {
