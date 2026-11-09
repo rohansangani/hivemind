@@ -1174,6 +1174,10 @@ interface RadarOptions {
   sdrOwners?: string[];
   accountSources?: string[];
   contactSources?: string[];
+  accountSourceCounts?: Record<string, number>;
+  contactSourceCounts?: Record<string, number>;
+  accountVerticalCounts?: Record<string, number>;
+  contactVerticalCounts?: Record<string, number>;
   contactCountries?: string[];
   /** Clean taxonomy: "Category" and "Category › Subcategory", ordered, with account counts. */
   industryGroups?: string[];
@@ -1246,9 +1250,9 @@ interface FilterGroup { id: string; label: string; icon: string; fields: FilterF
 const YES_NO = { true: "Yes", false: "No" };
 const VERTICAL_FILTER: FilterField = { key: "vertical", label: "Vertical", kind: "select", options: () => ["B2B", "D2C", "US", "Crossborder"] };
 // Account type filter is hidden for now (ACCOUNT_TYPE_OPTIONS kept for the API / dashboard).
-const SEGMENT_FIELDS = (sources: (o: RadarOptions | null) => string[]): FilterField[] => [
-  VERTICAL_FILTER,
-  { key: "source", label: "Source", kind: "select", options: sources },
+const SEGMENT_FIELDS = (sources: (o: RadarOptions | null) => string[], sourceCounts: (o: RadarOptions | null) => Record<string, number> | undefined, vertCounts: (o: RadarOptions | null) => Record<string, number> | undefined): FilterField[] => [
+  { ...VERTICAL_FILTER, counts: vertCounts },
+  { key: "source", label: "Source", kind: "select", options: sources, counts: sourceCounts },
   { key: "customer", label: "Customer", kind: "yesno" },
 ];
 // Clean, categorised firmographics (generated columns — raw values stay untouched in the DB).
@@ -1266,7 +1270,7 @@ const CRM_FIELDS = (): FilterField[] => [
 ];
 
 const ACCOUNT_FILTER_GROUPS: FilterGroup[] = [
-  { id: "segment", label: "Segment", icon: "icp", fields: SEGMENT_FIELDS((o) => o?.accountSources || []) },
+  { id: "segment", label: "Segment", icon: "icp", fields: SEGMENT_FIELDS((o) => o?.accountSources || [], (o) => o?.accountSourceCounts, (o) => o?.accountVerticalCounts) },
   { id: "firmo", label: "Firmographics", icon: "accounts", fields: [...FIRMO_FIELDS, { key: "installedApp", label: "Installed app", kind: "select", options: (o) => o?.installedApps || [], counts: (o) => o?.installedAppCounts }, { key: "accountSize", label: "Account size", kind: "select", options: (o) => o?.accountSizes || [] }] },
   { id: "location", label: "Location", icon: "dashboard", fields: [
     { key: "country", label: "Country", kind: "select", options: (o) => o?.countries || [] },
@@ -1282,7 +1286,7 @@ const ACCOUNT_FILTER_GROUPS: FilterGroup[] = [
 ];
 
 const CONTACT_FILTER_GROUPS: FilterGroup[] = [
-  { id: "segment", label: "Segment", icon: "icp", fields: SEGMENT_FIELDS((o) => o?.contactSources || []) },
+  { id: "segment", label: "Segment", icon: "icp", fields: SEGMENT_FIELDS((o) => o?.contactSources || [], (o) => o?.contactSourceCounts, (o) => o?.contactVerticalCounts) },
   { id: "person", label: "Contact", icon: "contacts", fields: [
     { key: "title", label: "Job title contains", kind: "text", placeholder: "e.g. founder, head of ops" },
     { key: "company", label: "Company contains", kind: "text", placeholder: "e.g. acme" },
