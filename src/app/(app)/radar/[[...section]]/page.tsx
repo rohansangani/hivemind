@@ -1695,8 +1695,11 @@ function DataTable<T extends { id: string }>({
   // previous counts stay on screen until the new ones arrive.
   const [facets, setFacets] = useState<Record<string, Record<string, number>> | null>(null);
   const facetTable = endpoint.includes("contacts") ? "contacts" : "accounts";
+  // True while counts for the *current* filters are still being computed — stale numbers are hidden meanwhile.
+  const [facetsPending, setFacetsPending] = useState(false);
   useEffect(() => {
     let cancelled = false;
+    setFacetsPending(true);
     const t = setTimeout(() => {
       fetch("/api/radar/facets", {
         method: "POST",
@@ -1704,13 +1707,14 @@ function DataTable<T extends { id: string }>({
         body: JSON.stringify({ search: term, ...filters, ...extraBody, table: facetTable }),
       })
         .then((r) => (r.ok ? r.json() : null))
-        .then((d) => { if (!cancelled && d?.counts) setFacets(d.counts); })
-        .catch(() => {});
+        .then((d) => { if (!cancelled) { if (d?.counts) setFacets(d.counts); setFacetsPending(false); } })
+        .catch(() => { if (!cancelled) setFacetsPending(false); });
     }, 300);
     return () => { cancelled = true; clearTimeout(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [facetTable, term, filtersKey, extraBodyKey]);
   const countsFor = (f: FilterField, opts: string[]): Record<string, number> | undefined => {
+    if (facetsPending && (term || Object.keys(filters).length > 0)) return undefined; // don't show counts from a previous filter state
     const fc = facets?.[f.key];
     return fc ? Object.fromEntries(opts.map((o) => [o, fc[o] ?? 0])) : f.counts?.(options);
   };
