@@ -452,13 +452,13 @@ export async function resolveRadarActor(req: NextRequest): Promise<{ userId: str
 export async function requireRadarAccess(
   req: NextRequest,
   minLevel: "view" | "edit" = "view",
-): Promise<{ userId: string; orgId: string; role: string; via: "session" | "api_key" } | NextResponse> {
+): Promise<{ userId: string; orgId: string; role: string; via: "session" | "api_key"; isReviewer: boolean } | NextResponse> {
   const who = await resolveRadarActor(req);
   if (who instanceof NextResponse) return who;
 
   const actor = await db.user.findUnique({
     where: { id: who.userId },
-    select: { role: true, organizationId: true },
+    select: { role: true, organizationId: true, email: true },
   });
   if (!actor) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
@@ -468,7 +468,8 @@ export async function requireRadarAccess(
     return NextResponse.json({ error: "You don't have access to Radar" }, { status: 403 });
   }
 
-  return { userId: who.userId, orgId, role: actor.role, via: who.via };
+  // Reviewer = the one person who sees irrelevant records, the Logs / API Keys tabs, and can delete permanently.
+  return { userId: who.userId, orgId, role: actor.role, via: who.via, isReviewer: (actor.email || "").toLowerCase() === RADAR_DELETE_EMAIL };
 }
 
 /**

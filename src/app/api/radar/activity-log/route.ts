@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRadarAccess } from "@/lib/radar/supabase";
 
-const RADAR_ADMIN_ROLES = ["owner", "admin"];
 
 /**
  * Admin-only read of the Radar activity log (src/lib/radar/activityLog.ts writes to it).
@@ -11,7 +10,7 @@ const RADAR_ADMIN_ROLES = ["owner", "admin"];
 export async function POST(req: NextRequest) {
   const access = await requireRadarAccess(req);
   if (access instanceof NextResponse) return access;
-  if (!RADAR_ADMIN_ROLES.includes(access.role)) {
+  if (!access.isReviewer) {
     return NextResponse.json({ error: "Only an owner or admin can view the activity log" }, { status: 403 });
   }
 

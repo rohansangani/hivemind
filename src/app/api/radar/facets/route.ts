@@ -3,7 +3,6 @@ import { requireRadarAccess } from "@/lib/radar/supabase";
 import { facetCounts } from "@/lib/radar/facets";
 
 export const maxDuration = 60;
-const ADMIN_ROLES = ["owner", "admin"];
 
 /** Filter-dropdown counts that follow the other active filters — see lib/radar/facets.ts. */
 export async function POST(req: NextRequest) {
@@ -12,7 +11,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
     const table = body.table === "contacts" ? "contacts" : "accounts";
-    const includeIrrelevant = !!body.includeIrrelevant && ADMIN_ROLES.includes(access.role);
+    const includeIrrelevant = !!body.includeIrrelevant && access.isReviewer;
     return NextResponse.json({ counts: await facetCounts(table, body, includeIrrelevant) });
   } catch (err) {
     console.error("Radar facets error:", err);

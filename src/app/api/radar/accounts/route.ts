@@ -2,17 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 
 // Streams can run long for "export all matching" (hundreds of thousands of rows).
 export const maxDuration = 280;
-import { selectFrom, requireRadarAccess, updateRow, setMarkedIrrelevant, deleteMarkedIrrelevant, canDeleteIrrelevant, fetchAllIds, firmographicFilters, inFilter, multiValues } from "@/lib/radar/supabase";
+import { selectFrom, requireRadarAccess, updateRow, setMarkedIrrelevant, deleteMarkedIrrelevant, fetchAllIds, firmographicFilters, inFilter, multiValues } from "@/lib/radar/supabase";
 import { streamFilteredCsv, streamAccountsWithContactsCsv } from "@/lib/radar/csvStream";
 import { logAccountExport } from "@/lib/radar/accountExport";
 import { logRadarActivity } from "@/lib/radar/activityLog";
 
-const RADAR_ADMIN_ROLES = ["owner", "admin"];
 
 /** Builds the filter fragment (no `select=`/`order=`/pagination) shared by the list query and
  * the "act on everything matching my filters" bulk actions below — so "select all N matching"
  * acts on exactly the same set the user was looking at. */
-function buildAccountsFilter(body: Record<string, unknown>, role: string): string {
+function buildAccountsFilter(body: Record<string, unknown>, canReview: boolean): string {
   const { vertical, industry, subIndustry, accountSize, employeeRange, revenueRange, country, search, includeIrrelevant, accountType, customer,
     state, city, lifecycleStage, leadStatus, sdrOwner, source, hasLinkedin, hasDomain, hasApps } = body as Record<string, string | boolean | undefined>;
   let query = "";
@@ -48,7 +47,7 @@ function buildAccountsFilter(body: Record<string, unknown>, role: string): strin
   }
   // Irrelevant-flagged rows are hidden from every normal browse — only an
   // owner/admin reviewing the flagged set explicitly asks to see them.
-  if (includeIrrelevant && RADAR_ADMIN_ROLES.includes(role)) {
+  if (includeIrrelevant && canReview) {
     query += `&marked_irrelevant=eq.true`;
   } else {
     query += `&marked_irrelevant=eq.false`;
@@ -86,14 +85,14 @@ export async function POST(req: NextRequest) {
         const ids = Array.isArray(body.ids) ? (body.ids as unknown[]).map(String).filter((i) => /^[0-9a-f-]{36}$/i.test(i)) : null;
         const filters = ids
           ? Array.from({ length: Math.ceil(ids.length / 100) }, (_, i) => `&id=in.(${ids.slice(i * 100, i * 100 + 100).join(",")})`)
-          : [buildAccountsFilter(body, access.role)];
+          : [buildAccountsFilter(body, access.isReviewer)];
         const stream = streamAccountsWithContactsCsv(filters, "Crossborder", async (n) => {
           await logAccountExport(userId, n);
           await logRadarActivity(userId, "export_accounts", `Exported ${n} account(s) with their contacts to CSV`);
         });
         return new NextResponse(stream, { headers: { "Content-Type": "text/csv; charset=utf-8", "Cache-Control": "no-store" } });
       }
-      const stream = streamFilteredCsv("accounts", buildAccountsFilter(body, access.role), async (n) => {
+      const stream = streamFilteredCsv("accounts", buildAccountsFilter(body, access.isReviewer), async (n) => {
         await logAccountExport(userId, n);
         await logRadarActivity(userId, "export_accounts", `Exported ${n} account(s) to CSV (all matching filters, all columns)`);
       });
@@ -105,7 +104,7 @@ export async function POST(req: NextRequest) {
       const irrelevant = body.irrelevant !== false;
       // `batch` = process one slice of the matching rows per call (the client loops, so it can show live progress).
       const ids = body.allMatching
-        ? await fetchAllIds("accounts", buildAccountsFilter(body, access.role).replace(/^&/, ""), Number(body.batch) > 0 ? Math.min(1000, Number(body.batch)) : undefined)
+        ? await fetchAllIds("accounts", buildAccountsFilter(body, access.isReviewer).replace(/^&/, ""), Number(body.batch) > 0 ? Math.min(1000, Number(body.batch)) : undefined)
         : body.ids;
       if (body.allMatching && Number(body.batch) > 0 && !ids.length) return NextResponse.json({ updated: 0 });
       const count = await setMarkedIrrelevant("accounts", ids, irrelevant, actor ?? "unknown");
@@ -114,12 +113,12 @@ export async function POST(req: NextRequest) {
     }
 
     if (body.action === "delete_irrelevant") {
-      if (!(await canDeleteIrrelevant(access.userId))) {
+      if (!access.isReviewer) {
         return NextResponse.json({ error: "Only Sushant can permanently delete records — mark them irrelevant and he will review" }, { status: 403 });
       }
       // `batch` = process one slice of the matching rows per call (the client loops, so it can show live progress).
       const ids = body.allMatching
-        ? await fetchAllIds("accounts", buildAccountsFilter(body, access.role).replace(/^&/, ""), Number(body.batch) > 0 ? Math.min(1000, Number(body.batch)) : undefined)
+        ? await fetchAllIds("accounts", buildAccountsFilter(body, access.isReviewer).replace(/^&/, ""), Number(body.batch) > 0 ? Math.min(1000, Number(body.batch)) : undefined)
         : body.ids;
       if (body.allMatching && Number(body.batch) > 0 && !ids.length) return NextResponse.json({ deleted: 0 });
       const count = await deleteMarkedIrrelevant("accounts", ids);
@@ -128,7 +127,7 @@ export async function POST(req: NextRequest) {
     }
 
     const { page = 0, limit = 50 } = body;
-    const query = `select=*&order=name.asc${buildAccountsFilter(body, access.role)}`;
+    const query = `select=*&order=name.asc${buildAccountsFilter(body, access.isReviewer)}`;
 
     const offset = page * limit;
     const { rows, total } = await selectFrom("accounts", query, { from: offset, to: offset + limit - 1 }, 0, true);

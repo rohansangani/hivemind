@@ -16,7 +16,6 @@ import { logRadarActivity } from "@/lib/radar/activityLog";
  *   POST   { name, expiresInDays? } -> create; plaintext returned ONCE
  *   DELETE { id } -> revoke
  */
-const ADMIN_ROLES = ["owner", "admin"];
 const esc = (s: string) => s.replace(/'/g, "''");
 
 async function requireKeyAdmin(req: NextRequest) {
@@ -25,7 +24,7 @@ async function requireKeyAdmin(req: NextRequest) {
   if (access.via !== "session") {
     return NextResponse.json({ error: "API keys can only be managed from a logged-in browser session" }, { status: 403 });
   }
-  if (!ADMIN_ROLES.includes(access.role)) {
+  if (!access.isReviewer) {
     return NextResponse.json({ error: "Only an owner or admin can manage Radar API keys" }, { status: 403 });
   }
   return access;

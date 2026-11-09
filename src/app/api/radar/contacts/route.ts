@@ -2,19 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 
 // Streams can run long for "export all matching" (hundreds of thousands of rows).
 export const maxDuration = 280;
-import { verticalsFilter, selectFrom, requireRadarAccess, updateRow, setMarkedIrrelevant, deleteMarkedIrrelevant, canDeleteIrrelevant, fetchAllIds, firmographicFilters, inFilter, multiValues } from "@/lib/radar/supabase";
+import { verticalsFilter, selectFrom, requireRadarAccess, updateRow, setMarkedIrrelevant, deleteMarkedIrrelevant, fetchAllIds, firmographicFilters, inFilter, multiValues } from "@/lib/radar/supabase";
 import { streamFilteredCsv } from "@/lib/radar/csvStream";
 import { logContactExport } from "@/lib/radar/contactExport";
 import { logRadarActivity } from "@/lib/radar/activityLog";
 
-const RADAR_ADMIN_ROLES = ["owner", "admin"];
 
 /** Builds the filter fragment (no `select=`/`order=`/pagination) shared by the list query and
  * the "act on everything matching my filters" bulk actions below. Note this is evaluated
  * against `contacts_view` (industry/employee_range/etc. are joined-in account fields that don't
  * exist on the base `contacts` table), so mark/delete resolve ids via the view, then mutate the
  * base table with those ids — never write straight through this filter. */
-function buildContactsFilter(body: Record<string, unknown>, role: string): string {
+function buildContactsFilter(body: Record<string, unknown>, canReview: boolean): string {
   const { vertical, industry, subIndustry, employeeRange, revenueRange, company, title, emailStatus, country, search, hasEmail, accountId, matchDomain, includeIrrelevant, accountType, customer,
     lifecycleStage, leadStatus, sdrOwner, source, hubspotExcluded, hasLinkedin, hasPhone, state, city } = body as Record<string, string | boolean | undefined>;
   let query = "";
@@ -62,7 +61,7 @@ function buildContactsFilter(body: Record<string, unknown>, role: string): strin
   }
   // Irrelevant-flagged rows are hidden from every normal browse — only an
   // owner/admin reviewing the flagged set explicitly asks to see them.
-  if (includeIrrelevant && RADAR_ADMIN_ROLES.includes(role)) {
+  if (includeIrrelevant && canReview) {
     query += `&marked_irrelevant=eq.true`;
   } else {
     query += `&marked_irrelevant=eq.false`;
@@ -96,7 +95,7 @@ export async function POST(req: NextRequest) {
     // "All N matching selected → Export CSV": every column of every matching row, streamed.
     if (body.action === "export_csv") {
       const userId = access.userId;
-      const stream = streamFilteredCsv("contacts_view", buildContactsFilter(body, access.role), async (n) => {
+      const stream = streamFilteredCsv("contacts_view", buildContactsFilter(body, access.isReviewer), async (n) => {
         await logContactExport(userId, n);
         await logRadarActivity(userId, "export_contacts", `Exported ${n} contact(s) to CSV (all matching filters, all columns)`);
       });
@@ -108,7 +107,7 @@ export async function POST(req: NextRequest) {
       const irrelevant = body.irrelevant !== false;
       // `batch` = process one slice of the matching rows per call (the client loops, so it can show live progress).
       const ids = body.allMatching
-        ? await fetchAllIds("contacts_view", buildContactsFilter(body, access.role).replace(/^&/, ""), Number(body.batch) > 0 ? Math.min(1000, Number(body.batch)) : undefined)
+        ? await fetchAllIds("contacts_view", buildContactsFilter(body, access.isReviewer).replace(/^&/, ""), Number(body.batch) > 0 ? Math.min(1000, Number(body.batch)) : undefined)
         : body.ids;
       if (body.allMatching && Number(body.batch) > 0 && !ids.length) return NextResponse.json({ updated: 0 });
       const count = await setMarkedIrrelevant("contacts", ids, irrelevant, actor ?? "unknown");
@@ -117,12 +116,12 @@ export async function POST(req: NextRequest) {
     }
 
     if (body.action === "delete_irrelevant") {
-      if (!(await canDeleteIrrelevant(access.userId))) {
+      if (!access.isReviewer) {
         return NextResponse.json({ error: "Only Sushant can permanently delete records — mark them irrelevant and he will review" }, { status: 403 });
       }
       // `batch` = process one slice of the matching rows per call (the client loops, so it can show live progress).
       const ids = body.allMatching
-        ? await fetchAllIds("contacts_view", buildContactsFilter(body, access.role).replace(/^&/, ""), Number(body.batch) > 0 ? Math.min(1000, Number(body.batch)) : undefined)
+        ? await fetchAllIds("contacts_view", buildContactsFilter(body, access.isReviewer).replace(/^&/, ""), Number(body.batch) > 0 ? Math.min(1000, Number(body.batch)) : undefined)
         : body.ids;
       if (body.allMatching && Number(body.batch) > 0 && !ids.length) return NextResponse.json({ deleted: 0 });
       const count = await deleteMarkedIrrelevant("contacts", ids);
@@ -131,7 +130,7 @@ export async function POST(req: NextRequest) {
     }
 
     const { page = 0, limit = 50 } = body;
-    const query = `select=*&order=name_rank.asc,first_name.asc.nullslast,id.asc${buildContactsFilter(body, access.role)}`;
+    const query = `select=*&order=name_rank.asc,first_name.asc.nullslast,id.asc${buildContactsFilter(body, access.isReviewer)}`;
 
     const offset = page * limit;
     const { rows, total } = await selectFrom("contacts_view", query, { from: offset, to: offset + limit - 1 }, 0, true);
