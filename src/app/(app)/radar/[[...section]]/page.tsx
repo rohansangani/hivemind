@@ -1167,6 +1167,8 @@ interface RadarOptions {
   revenueRanges: string[];
   countries: string[];
   states?: string[];
+  cities?: string[];
+  cityCounts?: Record<string, number>;
   lifecycleStages?: string[];
   leadStatuses?: string[];
   sdrOwners?: string[];
@@ -1269,6 +1271,7 @@ const ACCOUNT_FILTER_GROUPS: FilterGroup[] = [
   { id: "location", label: "Location", icon: "dashboard", fields: [
     { key: "country", label: "Country", kind: "select", options: (o) => o?.countries || [] },
     { key: "state", label: "State / region", kind: "select", options: (o) => o?.states || [] },
+    { key: "city", label: "City", kind: "select", options: (o) => o?.cities || [], counts: (o) => o?.cityCounts },
   ] },
   { id: "crm", label: "CRM & ownership", icon: "contacts", fields: CRM_FIELDS() },
   { id: "data", label: "Data quality", icon: "validate", fields: [
@@ -1993,6 +1996,7 @@ function DataTable<T extends { id: string }>({
 
 interface AccountRow {
   id: string;
+  city?: string | null;
   installed_apps?: string | null;
   installed_apps_count?: number | null;
   name: string | null;
@@ -2228,7 +2232,7 @@ function prioritize<T>(cols: Column<T>[], first: string[]): Column<T>[] {
   const rank = (k: string) => { const i = first.indexOf(k); return i === -1 ? first.length : i; };
   return cols.map((c, i) => ({ c, i })).sort((a, b) => rank(a.c.key) - rank(b.c.key) || a.i - b.i).map((x) => x.c);
 }
-const ACCOUNT_COL_ORDER = ["edit", "vertical", "company", "domain", "linkedin", "industry", "revenue", "employees", "country"];
+const ACCOUNT_COL_ORDER = ["edit", "vertical", "company", "domain", "linkedin", "industry", "revenue", "employees", "country", "city"];
 const CONTACT_COL_ORDER = ["edit", "vertical", "email", "first_name", "last_name", "company", "phone", "title", "status", "linkedin"];
 
 function fmtDateTimeIST(v: string | null): React.ReactNode {
@@ -2575,6 +2579,7 @@ function AccountsSection() {
     { key: "monthly_revenue", header: "Monthly Revenue", className: "tabular-nums whitespace-nowrap", render: (r) => <CleanCell clean={r.monthly_revenue_bucket} raw={r.revenue_range} /> },
     { key: "location", header: "Company Location", render: (r) => <Cell value={r.company_location} /> },
     { key: "country", header: "Country", render: (r) => <Cell value={r.country} /> },
+    { key: "city", header: "City", render: (r) => <Cell value={r.city} /> },
     { key: "linkedin", header: "LinkedIn", render: (r) => r.linkedin_url ? <a href={linkedinHref(r.linkedin_url)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-[var(--hm-link)] whitespace-nowrap">{linkedinHref(r.linkedin_url)}</a> : <span className="text-[var(--hm-text-tertiary)]">—</span> },
     { key: "sdr", header: "SDR Owner", render: (r) => <Cell value={r.sdr_owner} /> },
     { key: "stores", header: "No. of Stores", className: "tabular-nums", render: (r) => <Cell value={r.no_of_stores} /> },
@@ -9181,7 +9186,7 @@ function EmailValidationPanel() {
       }
       downloadCSV(all.map((r) => ({
         email: r.email,
-        result: r.anymail_status === "valid" ? "valid" : r.anymail_status === "error" ? "could not verify" : r.anymail_status === "skipped" ? `skipped — already ${r.result_status}` : r.anymail_status,
+        result: r.anymail_status === "valid" ? "valid" : r.anymail_status === "error" ? "could not verify" : r.anymail_status === "skipped" ? (r.result_status || "safe to send") : r.anymail_status,
         radar_email_status: r.result_status || "",
         already_in_radar: r.in_radar ? "yes" : "no",
         added_to_radar: r.added ? "yes" : "no",
@@ -9231,7 +9236,7 @@ function EmailValidationPanel() {
           <input type="checkbox" checked={skipSafe} onChange={(e) => setSkipSafe(e.target.checked)} className="mt-0.5" />
           <span>
             <span className="block text-[12.5px] font-medium text-[var(--hm-text)]">Skip emails Radar already has as safe to send or verified</span>
-            <span className="block text-[11.5px] text-[var(--hm-text-tertiary)]">Saves Anymail credits and keeps a good status from being overwritten by a borderline result. Shown as &quot;skipped&quot; in the results.</span>
+            <span className="block text-[11.5px] text-[var(--hm-text-tertiary)]">Saves Anymail credits and keeps a good status from being overwritten by a borderline result. Those show the status Radar already has (Safe to send / Verified) in the results.</span>
           </span>
         </label>
         <label className={`hm-btn hm-btn-primary w-full cursor-pointer ${(stage || !label.trim() || !vertical) ? "opacity-50 pointer-events-none" : ""}`} style={{ height: 38, fontSize: 13 }}>
@@ -9306,7 +9311,7 @@ function EmailValidationPanel() {
                       {rows.map((r) => (
                         <tr key={r.email}>
                           <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)] font-mono text-[12px] text-[var(--hm-text)]">{r.email}</td>
-                          <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)]"><span className={`text-[11px] px-2 py-0.5 rounded-md font-medium ${tone(r.anymail_status)}`}>{r.anymail_status === "error" ? "couldn't verify" : r.anymail_status}</span></td>
+                          <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)]"><span className={`text-[11px] px-2 py-0.5 rounded-md font-medium ${tone(r.anymail_status === "skipped" ? "valid" : r.anymail_status)}`}>{r.anymail_status === "error" ? "couldn't verify" : r.anymail_status === "skipped" ? (r.result_status || "safe to send") : r.anymail_status}</span></td>
                           <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text-secondary)]">{r.added ? "added (new)" : r.in_radar ? "updated" : "—"}</td>
                           <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text-secondary)]">{r.vertical || "—"}</td>
                           <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text-tertiary)] whitespace-nowrap">{fmtChecked(r.checked_at)}</td>

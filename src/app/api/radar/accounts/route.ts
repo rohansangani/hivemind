@@ -14,10 +14,11 @@ const RADAR_ADMIN_ROLES = ["owner", "admin"];
  * acts on exactly the same set the user was looking at. */
 function buildAccountsFilter(body: Record<string, unknown>, role: string): string {
   const { vertical, industry, subIndustry, accountSize, employeeRange, revenueRange, country, search, includeIrrelevant, accountType, customer,
-    state, lifecycleStage, leadStatus, sdrOwner, source, hasLinkedin, hasDomain, hasApps } = body as Record<string, string | boolean | undefined>;
+    state, city, lifecycleStage, leadStatus, sdrOwner, source, hasLinkedin, hasDomain, hasApps } = body as Record<string, string | boolean | undefined>;
   let query = "";
   query += firmographicFilters(body);
   query += inFilter("state", state);
+  query += inFilter("city", city);
   query += inFilter("hubspot_lifecycle_stage", lifecycleStage);
   query += inFilter("hubspot_lead_status", leadStatus);
   query += inFilter("sdr_owner", sdrOwner);
