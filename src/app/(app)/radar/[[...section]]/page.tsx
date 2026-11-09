@@ -2680,7 +2680,7 @@ function AccountsSection() {
                   <button onClick={() => unmark(sel, clearSelection, count)} className="hm-btn hm-btn-secondary" style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}>
                     Unmark
                   </button>
-                  {isAdmin && (
+                  {user?.email?.toLowerCase() === "sushant.mohan@clickpost.ai" && (
                     <button onClick={() => deleteForever(sel, clearSelection, count)} className="hm-btn radar-btn-danger" style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}>
                       Delete permanently
                     </button>
@@ -3127,7 +3127,7 @@ function ContactsSection() {
                   <button onClick={() => unmark(sel, clearSelection, count)} className="hm-btn hm-btn-secondary" style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}>
                     Unmark
                   </button>
-                  {isAdmin && (
+                  {user?.email?.toLowerCase() === "sushant.mohan@clickpost.ai" && (
                     <button onClick={() => deleteForever(sel, clearSelection, count)} className="hm-btn radar-btn-danger" style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}>
                       Delete permanently
                     </button>
