@@ -174,7 +174,7 @@ function buildAccountPatch(item: ApifyCompanyItem, domain: string | null, accoun
 function buildNewAccount(item: ApifyCompanyItem, domain: string | null, name: string, vertical: string): Record<string, unknown> {
   const hq = item.locations?.find((l) => l.headquarter) || item.locations?.[0];
   const row: Record<string, unknown> = {
-    name, domain, vertical, source: "Check LinkedIn Company",
+    name, domain, vertical, source: "CSV Upload by MRTeam",
     linkedin_url: item.linkedinUrl || null,
     linkedin_uid: item.id || null,
     employee_count: item.employeeCount ?? null,
@@ -314,9 +314,9 @@ export async function runLinkedInCompanyCheck(urls: string[], vertical: string, 
         // domain+vertical (same uniqueness rule every other account-creation path in radar uses).
         try {
           const newAccount = buildNewAccount(item, domain, item.name || domain || slug, vertical);
-          const insRows = domain
-            ? await insertRows("accounts", [newAccount], { onConflict: "domain,vertical", merge: true })
-            : await insertRows("accounts", [newAccount]);
+          // Never overwrite an existing account's source/fields: reuse it if domain+vertical already exists.
+          const existing = domain ? (await selectFrom("accounts", `select=id&domain=eq.${encodeURIComponent(domain)}&vertical=eq.${encodeURIComponent(vertical)}`)).rows[0] as { id?: string } | undefined : undefined;
+          const insRows = existing?.id ? [existing] : await insertRows("accounts", [newAccount]);
           row.dbAccountId = (insRows[0] as { id?: string } | undefined)?.id ?? null;
           row.created = true;
           created++;
