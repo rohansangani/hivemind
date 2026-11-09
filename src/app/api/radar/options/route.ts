@@ -101,15 +101,13 @@ export async function GET(req: NextRequest) {
   if (access instanceof NextResponse) return access;
 
   try {
-    const headers = { "Cache-Control": "private, max-age=60" };
+    const headers = { "Cache-Control": "private, no-cache" };
     const age = cache ? Date.now() - cache.at : Infinity;
-    if (cache && age < FRESH_MS) return NextResponse.json(cache.data, { headers });
-    if (cache && age < STALE_MS) {
-      after(() => refresh().catch(() => {}));
-      return NextResponse.json(cache.data, { headers });
-    }
-    await refresh();
-    return NextResponse.json(cache!.data, { headers });
+    if (!cache || age >= STALE_MS) await refresh();
+    else if (age >= FRESH_MS) after(() => refresh().catch(() => {}));
+    // Source lists are tiny and get relabelled/merged by SQL — always read them live so they're never stale.
+    const [accountSources, contactSources] = await Promise.all([distinctValues("accounts", "source"), distinctValues("contacts", "source")]);
+    return NextResponse.json({ ...cache!.data, accountSources, contactSources }, { headers });
   } catch (err) {
     console.error("Radar options error:", err);
     return NextResponse.json({ error: "Failed to load filter options" }, { status: 502 });
