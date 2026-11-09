@@ -68,7 +68,7 @@ CREATE OR REPLACE FUNCTION radar_ensure_crossborder_account(p_domain text, p_nam
 BEGIN
   IF p_domain IS NULL THEN RETURN; END IF;
   IF EXISTS (SELECT 1 FROM accounts WHERE vertical = 'Crossborder' AND lower(domain) = p_domain) THEN RETURN; END IF;
-  INSERT INTO accounts (name, domain, vertical, source) VALUES (COALESCE(NULLIF(btrim(p_name), ''), p_domain), p_domain, 'Crossborder', 'Crossborder link')
+  INSERT INTO accounts (name, domain, vertical, source) VALUES (COALESCE(NULLIF(btrim(p_name), ''), p_domain), p_domain, 'Crossborder', 'StoreLeadsIndia')
   ON CONFLICT (domain, vertical) DO NOTHING;
 END $$;
 
