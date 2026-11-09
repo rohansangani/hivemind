@@ -270,7 +270,7 @@ BEGIN
   IF v_vert NOT IN ('B2B','D2C','US','Crossborder') THEN RAISE EXCEPTION 'job % has no valid vertical', p_job; END IF;
 
   INSERT INTO accounts (name, domain, vertical, linkedin_url, source)
-  SELECT DISTINCT ON (c.domain) COALESCE(NULLIF(c.company_name,''), NULLIF(c.brand,''), c.domain), c.domain, v_vert, c.company_linkedin_url, 'Blitz Enrich'
+  SELECT DISTINCT ON (c.domain) COALESCE(NULLIF(c.company_name,''), NULLIF(c.brand,''), c.domain), c.domain, v_vert, c.company_linkedin_url, 'CSV Upload by MRTeam'
   FROM enrich2_companies c
   WHERE c.job_id = p_job AND c.status <> 'from_radar' AND EXISTS (SELECT 1 FROM enrich2_people p WHERE p.company_id = c.id AND p.dropped_reason IS NULL)
   ON CONFLICT (domain, vertical) DO UPDATE SET
