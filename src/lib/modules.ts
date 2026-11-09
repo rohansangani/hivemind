@@ -87,7 +87,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, ModulePermissions> = {
     dashboard: "edit", industry_insights: "edit",
     content_library: "edit", ai_assistant: "edit", content_generator: "edit", content_review: "edit", email_sequences: "edit", design_brief: "edit", knowledge_base: "edit",
     coach: "none",
-    radar: "none",
+    radar: "edit",
     signals: "view",
     team: "none", settings: "none",
   },
@@ -95,7 +95,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, ModulePermissions> = {
     dashboard: "edit", industry_insights: "view",
     content_library: "edit", ai_assistant: "edit", content_generator: "none", content_review: "edit", email_sequences: "edit", design_brief: "none", knowledge_base: "none",
     coach: "none",
-    radar: "none",
+    radar: "edit",
     signals: "edit",
     team: "none", settings: "none",
   },
@@ -103,7 +103,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, ModulePermissions> = {
     dashboard: "edit", industry_insights: "view",
     content_library: "edit", ai_assistant: "edit", content_generator: "none", content_review: "edit", email_sequences: "none", design_brief: "none", knowledge_base: "none",
     coach: "none",
-    radar: "none",
+    radar: "edit",
     signals: "none",
     team: "none", settings: "none",
   },
@@ -112,7 +112,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, ModulePermissions> = {
     dashboard: "edit", industry_insights: "edit",
     content_library: "edit", ai_assistant: "edit", content_generator: "edit", content_review: "edit", email_sequences: "edit", design_brief: "edit", knowledge_base: "edit",
     coach: "none",
-    radar: "none",
+    radar: "edit",
     signals: "none",
     team: "none", settings: "none",
   },
@@ -120,7 +120,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, ModulePermissions> = {
     dashboard: "edit", industry_insights: "edit",
     content_library: "edit", ai_assistant: "edit", content_generator: "edit", content_review: "edit", email_sequences: "edit", design_brief: "edit", knowledge_base: "edit",
     coach: "none",
-    radar: "none",
+    radar: "edit",
     signals: "none",
     team: "none", settings: "none",
   },
@@ -128,7 +128,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, ModulePermissions> = {
     dashboard: "view", industry_insights: "view",
     content_library: "view", ai_assistant: "view", content_generator: "none", content_review: "none", email_sequences: "none", design_brief: "none", knowledge_base: "none",
     coach: "none",
-    radar: "none",
+    radar: "edit",
     signals: "none",
     team: "none", settings: "none",
   },
@@ -159,7 +159,9 @@ export const KB_TAB_PERMISSIONS: Record<string, Record<string, AccessLevel>> = {
 };
 
 export function getEffectivePermissions(role: string, custom: Record<string, string> | null, orgRolePerms?: Record<string, Record<string, string>>): ModulePermissions {
-  const defaults = (orgRolePerms?.[role] ?? ROLE_DEFAULT_PERMISSIONS[role] ?? ROLE_DEFAULT_PERMISSIONS.others) as ModulePermissions;
+  // Radar is open to every logged-in user (full access) regardless of role — including custom org roles whose
+  // saved permissions predate it. Only an explicit per-person override (Team page) can change a user's level.
+  const defaults = { ...(orgRolePerms?.[role] ?? ROLE_DEFAULT_PERMISSIONS[role] ?? ROLE_DEFAULT_PERMISSIONS.others), radar: "edit" } as ModulePermissions;
   if (!custom || Object.keys(custom).length === 0) return defaults;
   return { ...defaults, ...custom } as ModulePermissions;
 }
