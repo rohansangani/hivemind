@@ -644,3 +644,9 @@ export async function deleteMarkedIrrelevant(table: "accounts" | "contacts", ids
   return rows.length;
 }
 
+/** Only this person may PERMANENTLY delete irrelevant records. Everyone with Radar access can mark/unmark them. */
+export const RADAR_DELETE_EMAIL = "sushant.mohan@clickpost.ai";
+export async function canDeleteIrrelevant(userId: string): Promise<boolean> {
+  const u = await db.user.findUnique({ where: { id: userId }, select: { email: true } });
+  return (u?.email || "").toLowerCase() === RADAR_DELETE_EMAIL;
+}

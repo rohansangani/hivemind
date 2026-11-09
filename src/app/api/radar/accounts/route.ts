@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 // Streams can run long for "export all matching" (hundreds of thousands of rows).
 export const maxDuration = 280;
-import { selectFrom, requireRadarAccess, updateRow, setMarkedIrrelevant, deleteMarkedIrrelevant, fetchAllIds, firmographicFilters, inFilter, multiValues } from "@/lib/radar/supabase";
+import { selectFrom, requireRadarAccess, updateRow, setMarkedIrrelevant, deleteMarkedIrrelevant, canDeleteIrrelevant, fetchAllIds, firmographicFilters, inFilter, multiValues } from "@/lib/radar/supabase";
 import { streamFilteredCsv, streamAccountsWithContactsCsv } from "@/lib/radar/csvStream";
 import { logAccountExport } from "@/lib/radar/accountExport";
 import { logRadarActivity } from "@/lib/radar/activityLog";
@@ -66,7 +66,7 @@ function buildAccountsFilter(body: Record<string, unknown>, role: string): strin
  *    excluded from this list by default. Pass either `ids` (explicit
  *    selection) or `allMatching: true` (act on every row matching the same
  *    filters/search as the list query — "select all N matching filters").
- *  - "delete_irrelevant": owner/admin only — permanently removes rows
+ *  - "delete_irrelevant": Sushant only — permanently removes rows
  *    already flagged irrelevant. Same `ids` / `allMatching` shape.
  */
 export async function POST(req: NextRequest) {
@@ -114,8 +114,8 @@ export async function POST(req: NextRequest) {
     }
 
     if (body.action === "delete_irrelevant") {
-      if (!RADAR_ADMIN_ROLES.includes(access.role)) {
-        return NextResponse.json({ error: "Only an owner or admin can permanently delete records" }, { status: 403 });
+      if (!(await canDeleteIrrelevant(access.userId))) {
+        return NextResponse.json({ error: "Only Sushant can permanently delete records — mark them irrelevant and he will review" }, { status: 403 });
       }
       // `batch` = process one slice of the matching rows per call (the client loops, so it can show live progress).
       const ids = body.allMatching
