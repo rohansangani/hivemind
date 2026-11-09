@@ -22,6 +22,8 @@ const esc = (s: unknown) => (s == null ? "" : String(s).replace(/'/g, "''"));
 
 // Canonical LinkedIn URL — MUST stay identical to the Postgres norm_li() function (and its
 // triggers on contacts/accounts, which re-normalize on every write regardless). Lower-case, drop
+const UPLOAD_SOURCE = "CSV Upload by MRTeam";
+
 // http(s)://, www. and country subdomains (in./uk./…), drop ?query / #fragment and trailing "/":
 // "https://www.linkedin.com/in/Jane/?utm=1" -> "linkedin.com/in/jane". LinkedIn is the dedupe /
 // reference key for contacts (not every contact has an email, but every one has a profile).
@@ -177,11 +179,11 @@ async function handleUpload(body: UploadBody): Promise<{ status: number; body: R
   };
 
   // For contacts: set validated_at when email_status provided; normalize country for both tables.
-  // `source` defaults to "CSV Upload" but a user can map their own CSV column to it — their mapped
-  // value wins when non-blank.
+  // Every UI upload is tagged UPLOAD_SOURCE — a mapped CSV "source" column is ignored on purpose, so uploads never
+  // invent new source names (the filter list stays clean).
   const cleanRows: Row[] = table === "contacts"
     ? rows.map((r) => {
-        const out: Row = stripDropped({ ...r, domain: r.domain ? toDomain(String(r.domain)) : r.domain, country: normalizeCountry(r.country ? String(r.country) : null), source: (r.source ? String(r.source).trim() : "") || "CSV Upload", vertical: canonVertical(r.vertical) || fallbackVertical }, true);
+        const out: Row = stripDropped({ ...r, domain: r.domain ? toDomain(String(r.domain)) : r.domain, country: normalizeCountry(r.country ? String(r.country) : null), source: UPLOAD_SOURCE, vertical: canonVertical(r.vertical) || fallbackVertical }, true);
         if (r.email_status && r.email) {
           out.email_status = String(r.email_status).toLowerCase().trim();
           out.validated_at = new Date().toISOString();
@@ -193,7 +195,7 @@ async function handleUpload(body: UploadBody): Promise<{ status: number; body: R
       }).filter((r) => r.email || r.first_name || r.last_name || r.company_name || r.linkedin_url)
     : rows.map((r) => {
         const domain = r.domain ? toDomain(String(r.domain)) : r.domain;
-        return stripDropped({ ...r, domain, name: r.name || domain || null, country: normalizeCountry(r.country ? String(r.country) : null), source: (r.source ? String(r.source).trim() : "") || "CSV Upload", vertical: canonVertical(r.vertical) || fallbackVertical });
+        return stripDropped({ ...r, domain, name: r.name || domain || null, country: normalizeCountry(r.country ? String(r.country) : null), source: UPLOAD_SOURCE, vertical: canonVertical(r.vertical) || fallbackVertical });
       }).filter((r) => r.name);
 
   // Deduplicate rows (used in both upload and post-processing)
@@ -639,7 +641,7 @@ async function handleUpload(body: UploadBody): Promise<{ status: number; body: R
           name: c.name,
           domain: toDomain(c.website),
           vertical: c.vertical,
-          source: "CSV Upload",
+          source: UPLOAD_SOURCE,
         }));
         const ACHUNK = 200;
         for (let i = 0; i < newAccounts.length; i += ACHUNK) {
