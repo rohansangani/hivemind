@@ -1637,10 +1637,16 @@ function DataTable<T extends { id: string }>({
   useEffect(() => {
     // Last options are remembered in this browser so the dropdowns are filled instantly; fresh ones replace them.
     try { const raw = localStorage.getItem("radar.options.v2"); if (raw) setOptions(JSON.parse(raw)); } catch {}
-    fetch("/api/radar/options")
+    const load = () => fetch("/api/radar/options")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => { if (d) { setOptions(d); try { localStorage.setItem("radar.options.v2", JSON.stringify(d)); } catch {} } })
       .catch(() => {});
+    load();
+    // Long-open tabs: refresh the lists (sources, counts…) whenever the tab is focused again, at most once a minute.
+    let last = Date.now();
+    const onVis = () => { if (document.visibilityState === "visible" && Date.now() - last > 60_000) { last = Date.now(); load(); } };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
   }, []);
 
   const setFilter = (key: string, value: string) => {
@@ -3185,10 +3191,16 @@ function ExportSection() {
   useEffect(() => {
     // Last options are remembered in this browser so the dropdowns are filled instantly; fresh ones replace them.
     try { const raw = localStorage.getItem("radar.options.v2"); if (raw) setOptions(JSON.parse(raw)); } catch {}
-    fetch("/api/radar/options")
+    const load = () => fetch("/api/radar/options")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => { if (d) { setOptions(d); try { localStorage.setItem("radar.options.v2", JSON.stringify(d)); } catch {} } })
       .catch(() => {});
+    load();
+    // Long-open tabs: refresh the lists (sources, counts…) whenever the tab is focused again, at most once a minute.
+    let last = Date.now();
+    const onVis = () => { if (document.visibilityState === "visible" && Date.now() - last > 60_000) { last = Date.now(); load(); } };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
   }, []);
 
   const filters = () => ({
