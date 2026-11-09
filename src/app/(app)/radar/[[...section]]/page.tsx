@@ -113,17 +113,19 @@ export default function RadarPage() {
   const modulePermissions = (user?.modulePermissions ?? {}) as Record<string, "none" | "view" | "edit">;
   const canAccess = hasModuleAccess(modulePermissions, "radar", "view");
   const isAdmin = user?.role === "owner" || user?.role === "admin";
+  // The single reviewer (Sushant): sees irrelevant records, Logs, API Keys, and can delete permanently.
+  const isReviewer = user?.email?.toLowerCase() === "sushant.mohan@clickpost.ai";
   // "view"-level grant is restricted to Dashboard + Export only — no browse/edit
   // of Accounts, Contacts, Validate, Upload, ICP, or Enrich. "edit" sees everything.
   const viewOnly = modulePermissions.radar === "view";
   const visibleSections = (viewOnly ? SECTIONS.filter((s) => s.id === "dashboard" || s.id === "checkdb") : SECTIONS)
-    .filter((s) => (s.id !== "logs" && s.id !== "apikeys") || isAdmin)
+    .filter((s) => (s.id !== "logs" && s.id !== "apikeys") || isReviewer)
     .filter((s) => s.id !== "icp"); // ICP Base hidden from nav (section code kept)
 
   useEffect(() => {
-    const blocked = (viewOnly && active !== "dashboard" && active !== "checkdb") || ((active === "logs" || active === "apikeys") && !isAdmin);
+    const blocked = (viewOnly && active !== "dashboard" && active !== "checkdb") || ((active === "logs" || active === "apikeys") && !isReviewer);
     if (blocked) { setActive("dashboard"); window.history.replaceState(null, "", "/radar"); }
-  }, [viewOnly, active, isAdmin]);
+  }, [viewOnly, active, isReviewer]);
 
   if (!canAccess) {
     return (
@@ -2529,7 +2531,7 @@ function useIrrelevantActions(table: "accounts" | "contacts", onDone: () => void
 
 function AccountsSection() {
   const user = useUser();
-  const isAdmin = user?.role === "owner" || user?.role === "admin";
+  const isReviewer = user?.email?.toLowerCase() === "sushant.mohan@clickpost.ai";
   const [editAccount, setEditAccount] = useState<AccountRow | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
   const [showIrrelevant, setShowIrrelevant] = useState(false);
@@ -2617,7 +2619,7 @@ function AccountsSection() {
   const [openAccount, setOpenAccount] = useState<AccountRow | null>(null);
   return (
     <>
-      {isAdmin && (
+      {isReviewer && (
         <div className="flex justify-end mb-3">
           <label className={`radar-chip-toggle ${showIrrelevant ? "on" : ""}`}>
             <input type="checkbox" checked={showIrrelevant} onChange={(e) => setShowIrrelevant(e.target.checked)} />
@@ -2680,7 +2682,7 @@ function AccountsSection() {
                   <button onClick={() => unmark(sel, clearSelection, count)} className="hm-btn hm-btn-secondary" style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}>
                     Unmark
                   </button>
-                  {user?.email?.toLowerCase() === "sushant.mohan@clickpost.ai" && (
+                  {isReviewer && (
                     <button onClick={() => deleteForever(sel, clearSelection, count)} className="hm-btn radar-btn-danger" style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}>
                       Delete permanently
                     </button>
@@ -2988,7 +2990,7 @@ function HubspotBadge({ v }: { v: string | null }) {
 
 function ContactsSection() {
   const user = useUser();
-  const isAdmin = user?.role === "owner" || user?.role === "admin";
+  const isReviewer = user?.email?.toLowerCase() === "sushant.mohan@clickpost.ai";
   const [editContact, setEditContact] = useState<ContactRow | null>(null);
   const [openContact, setOpenContact] = useState<ContactRow | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
@@ -3080,7 +3082,7 @@ function ContactsSection() {
   ];
   return (
     <>
-      {isAdmin && (
+      {isReviewer && (
         <div className="flex justify-end mb-3">
           <label className={`radar-chip-toggle ${showIrrelevant ? "on" : ""}`}>
             <input type="checkbox" checked={showIrrelevant} onChange={(e) => setShowIrrelevant(e.target.checked)} />
@@ -3127,7 +3129,7 @@ function ContactsSection() {
                   <button onClick={() => unmark(sel, clearSelection, count)} className="hm-btn hm-btn-secondary" style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}>
                     Unmark
                   </button>
-                  {user?.email?.toLowerCase() === "sushant.mohan@clickpost.ai" && (
+                  {isReviewer && (
                     <button onClick={() => deleteForever(sel, clearSelection, count)} className="hm-btn radar-btn-danger" style={{ height: 28, padding: "0 10px", fontSize: 11.5 }}>
                       Delete permanently
                     </button>
