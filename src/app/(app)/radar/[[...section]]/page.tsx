@@ -2891,6 +2891,8 @@ function ContactDetailPanel({ contact: c, onClose, onEdit }: { contact: ContactR
 
 interface ContactRow {
   id: string;
+  state?: string | null;
+  city?: string | null;
   first_name: string | null;
   last_name: string | null;
   full_name: string | null;
