@@ -105,9 +105,21 @@ export async function GET(req: NextRequest) {
     const age = cache ? Date.now() - cache.at : Infinity;
     if (!cache || age >= STALE_MS) await refresh();
     else if (age >= FRESH_MS) after(() => refresh().catch(() => {}));
-    // Source lists are tiny and get relabelled/merged by SQL — always read them live so they're never stale.
-    const [accountSources, contactSources] = await Promise.all([distinctValues("accounts", "source"), distinctValues("contacts", "source")]);
-    return NextResponse.json({ ...cache!.data, accountSources, contactSources }, { headers });
+    // Source + vertical lists (with counts) get relabelled/merged by SQL — always read them live so they're never stale.
+    const grp = (sql: string) => radarSql<{ v: string; n: number }>(sql);
+    const [aSrc, cSrc, aVert, cVert] = await Promise.all([
+      grp(`SELECT source v, count(*)::int n FROM accounts WHERE source IS NOT NULL AND source <> '' AND marked_irrelevant IS NOT TRUE GROUP BY 1 ORDER BY 2 DESC`),
+      grp(`SELECT source v, count(*)::int n FROM contacts WHERE source IS NOT NULL AND source <> '' AND marked_irrelevant IS NOT TRUE GROUP BY 1 ORDER BY 2 DESC`),
+      grp(`SELECT vertical v, count(*)::int n FROM accounts WHERE vertical IS NOT NULL AND marked_irrelevant IS NOT TRUE GROUP BY 1`),
+      grp(`SELECT v, count(*)::int n FROM contacts, unnest(verticals) v WHERE marked_irrelevant IS NOT TRUE GROUP BY 1`),
+    ]);
+    const obj = (rows: { v: string; n: number }[]) => Object.fromEntries(rows.map((r) => [r.v, r.n]));
+    return NextResponse.json({
+      ...cache!.data,
+      accountSources: aSrc.map((r) => r.v), accountSourceCounts: obj(aSrc),
+      contactSources: cSrc.map((r) => r.v), contactSourceCounts: obj(cSrc),
+      accountVerticalCounts: obj(aVert), contactVerticalCounts: obj(cVert),
+    }, { headers });
   } catch (err) {
     console.error("Radar options error:", err);
     return NextResponse.json({ error: "Failed to load filter options" }, { status: 502 });
