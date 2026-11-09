@@ -410,8 +410,13 @@ export async function runLinkedInCheck(urls: string[], _mode: string | undefined
         let accountId: string | null = null;
         if (domain) {
           try {
-            const acctRows = await insertRows("accounts", [{ name: company || domain, domain, vertical, source: "Check LinkedIn" }], { onConflict: "domain,vertical", merge: true });
-            accountId = (acctRows[0] as { id?: string } | undefined)?.id ?? null;
+            // Reuse an existing account as-is (never overwrite its source); new ones are tagged like every other UI-created account.
+            const { rows: exRows } = await selectFrom("accounts", `select=id&domain=eq.${encodeURIComponent(domain)}&vertical=eq.${encodeURIComponent(vertical)}`);
+            accountId = (exRows[0] as { id?: string } | undefined)?.id ?? null;
+            if (!accountId) {
+              const acctRows = await insertRows("accounts", [{ name: company || domain, domain, vertical, source: "CSV Upload by MRTeam" }]);
+              accountId = (acctRows[0] as { id?: string } | undefined)?.id ?? null;
+            }
           } catch { /* non-fatal — contact still gets created, just account-less */ }
         } else if (company) {
           try {
@@ -421,7 +426,7 @@ export async function runLinkedInCheck(urls: string[], _mode: string | undefined
             const { rows: findRows } = await selectFrom("accounts", `select=id&name=ilike.${encodeURIComponent(company)}&vertical=eq.${encodeURIComponent(vertical)}`);
             accountId = (findRows[0] as { id?: string } | undefined)?.id ?? null;
             if (!accountId) {
-              const acctRows = await insertRows("accounts", [{ name: company, domain: null, vertical, source: "Check LinkedIn" }]);
+              const acctRows = await insertRows("accounts", [{ name: company, domain: null, vertical, source: "CSV Upload by MRTeam" }]);
               accountId = (acctRows[0] as { id?: string } | undefined)?.id ?? null;
             }
           } catch { /* non-fatal */ }
