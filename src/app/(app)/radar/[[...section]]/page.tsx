@@ -4278,6 +4278,7 @@ interface Enrich2Input { domain: string; brand?: string; linkedin?: string; altD
 
 const ENRICH2_PHASES = ["reuse", "resolve", "search", "email", "anymail", "debounce", "verify", "phone", "save", "done"];
 
+const ENRICH_MAX_PER_JOB = 5000; // keep in step with the cap in api/radar/enrich2/route.ts
 async function enrich2Call<T = Record<string, unknown>>(body: Record<string, unknown>): Promise<T> {
   const r = await fetch("/api/radar/enrich2", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const d = await r.json().catch(() => ({}));
@@ -4427,16 +4428,25 @@ function EnrichV2Section() {
     if (!vertical) { setError("Pick a vertical — everything found is saved to Radar under it."); return; }
     if (!companies.length) { setError("Add company domains (one per line) or upload a CSV."); return; }
     const credits = companies.length * maxPer;
-    if (!confirm(`Enrich ${companies.length.toLocaleString()} compan${companies.length === 1 ? "y" : "ies"}?\n\nUp to ${maxPer} contacts each → up to ~${credits.toLocaleString()} Blitz records for people, plus 1 per email found. Debounce and Anymail charges apply per email.`)) return;
+    // The server caps a job at ENRICH_MAX_PER_JOB companies — a bigger list is split into equal jobs automatically.
+    const parts = Math.ceil(companies.length / ENRICH_MAX_PER_JOB);
+    const splitNote = parts > 1 ? `\n\nThis list is over ${ENRICH_MAX_PER_JOB.toLocaleString()}, so it will run as ${parts} separate jobs ("${label.trim()} (1/${parts})" …).` : "";
+    if (!confirm(`Enrich ${companies.length.toLocaleString()} compan${companies.length === 1 ? "y" : "ies"}?${splitNote}\n\nUp to ${maxPer} contacts each → up to ~${credits.toLocaleString()} Blitz records for people, plus 1 per email found. Debounce and Anymail charges apply per email.`)) return;
     setStarting(true);
     try {
-      const d = await enrich2Call<{ job: Enrich2Job }>({
-        action: "start", label: label.trim(), vertical, companies,
-        options: { maxPerCompany: maxPer, anymailFallback, anymailVerify, phones, excludeSupportHrFinance: excludeShf, apifyFallback, useRadarFirst, countries: splitList(countriesText), cities: splitList(citiesText) },
-      });
+      const options = { maxPerCompany: maxPer, anymailFallback, anymailVerify, phones, excludeSupportHrFinance: excludeShf, apifyFallback, useRadarFirst, countries: splitList(countriesText), cities: splitList(citiesText) };
+      const size = Math.ceil(companies.length / parts);
+      const started: Enrich2Job[] = [];
+      for (let i = 0; i < parts; i++) {
+        const d = await enrich2Call<{ job: Enrich2Job }>({
+          action: "start", label: parts > 1 ? `${label.trim()} (${i + 1}/${parts})` : label.trim(), vertical,
+          companies: companies.slice(i * size, (i + 1) * size), options,
+        });
+        started.push(d.job);
+        setJobs((prev) => [d.job, ...prev]);
+      }
       setLabel(""); setText(""); setCsvCompanies([]); setCsvName("");
-      setJobs((prev) => [d.job, ...prev]);
-      await open(d.job.id);
+      await open(started[0].id);
     } catch (e) { setError((e as Error).message); } finally { setStarting(false); }
   };
 
@@ -4561,7 +4571,7 @@ function EnrichV2Section() {
           )}
           <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-1">
             {companies.length ? `${companies.length.toLocaleString()} compan${companies.length === 1 ? "y" : "ies"} ready. ` : ""}
-            CSV columns: domain / website (required), brand / company name, company LinkedIn URL, alt domains. Max 5,000 per job.
+            CSV columns: domain / website (required), brand / company name, company LinkedIn URL, alt domains. Lists over 5,000 are split into several jobs automatically.
           </p>
         </div>
 
