@@ -4656,7 +4656,8 @@ function EnrichV2Section() {
                       {(job.status === "error" || job.status === "cancelled") && <button onClick={() => retryJob(job.id)} disabled={retryingId === job.id} className="radar-btn-ghost">{retryingId === job.id ? "Resuming…" : "Resume"}</button>}
                       {(() => {
                         const left = n("unresolved") + n("low") - (((job.counts.methods as Record<string, number> | undefined)?.apify_miss) || 0);
-                        return !running && left > 0 && <button onClick={() => apifyRetry(job.id, left)} disabled={apifyMsg !== null && apifyMsg.endsWith("…")} className="radar-btn-ghost" title="Look up the missing company LinkedIn pages with Apify">{apifyMsg ?? `Find ${left.toLocaleString()} missing LinkedIn pages (Apify)`}</button>;
+                        // Only useful when the automatic Apify pass was switched off — otherwise Step 1 already tried Apify on every Blitz miss.
+                        return !running && left > 0 && o.apifyFallback === false && <button onClick={() => apifyRetry(job.id, left)} disabled={apifyMsg !== null && apifyMsg.endsWith("…")} className="radar-btn-ghost" title="Look up the missing company LinkedIn pages with Apify">{apifyMsg ?? `Find ${left.toLocaleString()} missing LinkedIn pages (Apify)`}</button>;
                       })()}
                       <button onClick={exportJob} disabled={exporting !== null || !n("people")} className="hm-btn hm-btn-secondary" style={{ height: 30, padding: "0 12px", fontSize: 12 }}>
                         {exporting !== null ? <><span className="w-3 h-3 border-2 border-current/30 border-t-current rounded-full animate-spin" />Exporting… {fmt(exporting)}</> : "Export CSV (all columns)"}
