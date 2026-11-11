@@ -44,8 +44,8 @@ async function computeStats() {
     const c = conRows[0] || {};
     const totalContacts = c.total ?? 0, blankEmailContacts = c.blank ?? 0, blankUnassigned = c.blank_unassigned ?? 0;
     const [b2bAccounts, d2cAccounts, usAccounts, cbAccounts] = V.map(accBy);
-    const [b2bContacts, d2cContacts, usContacts, cbContacts] = V.map((v) => c[`c_${v}`] ?? 0);
-    const [blankB2B, blankD2C, blankUS, blankCB] = V.map((v) => c[`b_${v}`] ?? 0);
+    const [b2bContacts, d2cContacts, usContacts, cbContacts] = V.map((v) => c[`c_${v.toLowerCase()}`] ?? 0);
+    const [blankB2B, blankD2C, blankUS, blankCB] = V.map((v) => c[`b_${v.toLowerCase()}`] ?? 0);
 
     const growth = growthRaw.map((r) => ({
       snapshot_date: r.out_snapshot_date,
