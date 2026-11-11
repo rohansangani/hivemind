@@ -197,6 +197,8 @@ export async function refreshCounts(jobId: number): Promise<Record<string, unkno
       count(*) FILTER (WHERE dropped_reason IS NULL AND debounce_result IN ('risky','unknown','error')) verify_eligible,
       count(*) FILTER (WHERE dropped_reason IS NULL AND verify_result IS NOT NULL) verified,
       count(*) FILTER (WHERE dropped_reason IS NULL AND verify_result = 'valid') verify_valid,
+      count(*) FILTER (WHERE dropped_reason IS NULL AND verify_result = 'invalid') verify_invalid,
+      count(*) FILTER (WHERE dropped_reason IS NULL AND verify_result = 'risky') verify_risky,
       count(*) FILTER (WHERE dropped_reason IS NULL AND final_status = 'safe to send') final_safe,
       count(*) FILTER (WHERE dropped_reason IS NULL AND final_status = 'risky') final_risky,
       count(*) FILTER (WHERE dropped_reason IS NULL AND final_status = 'invalid') final_invalid,

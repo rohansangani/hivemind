@@ -4637,8 +4637,9 @@ function EnrichV2Section() {
                   sub: `${fmt(n("anymail_tried"))} searched (Blitz misses)` },
                 { key: "debounce", label: "Debounce", on: true, value: `${fmt(n("debounced"))} / ${fmt(n("with_email"))}`, p: pct(n("debounced"), n("with_email")),
                   sub: `${fmt(n("db_safe"))} safe · ${fmt(n("db_risky"))} risky · ${fmt(n("db_invalid"))} invalid · ${fmt(n("db_unknown"))} unknown` },
-                { key: "verify", label: "Anymail verify", on: o.anymailVerify, value: `${fmt(n("verify_valid"))} valid`, p: pct(n("verified"), n("verify_eligible")),
-                  sub: `${fmt(n("verified"))}/${fmt(n("verify_eligible"))} Risky/Unknown re-checked` },
+                // Stays visible when the step was switched off / cut short (e.g. Anymail out of credits) but already produced results.
+                { key: "verify", label: "Anymail verify", on: o.anymailVerify || n("verified") > 0, value: `${fmt(n("verify_valid"))} valid`, p: pct(n("verified"), n("verify_eligible")), wrap: true,
+                  sub: `${fmt(n("verified"))}/${fmt(n("verify_eligible"))} Risky/Unknown re-checked · ${fmt(n("verify_valid"))} valid → safe · ${fmt(n("verify_invalid"))} invalid · ${fmt(n("verify_risky"))} still risky${n("verify_eligible") > n("verified") ? ` · ${fmt(n("verify_eligible") - n("verified"))} not checked (keep Debounce's result)` : ""}` },
                 { key: "phone", label: "Phones", on: o.phones, value: `${fmt(n("phones"))} found`, p: pct(n("phone_tried"), n("email_eligible")),
                   sub: `${fmt(n("phone_tried"))}/${fmt(n("email_eligible"))} looked up` },
                 { key: "save", label: "Saved to Radar", on: true, value: `${fmt(n("saved"))} / ${fmt(n("kept"))}`, p: pct(n("saved"), n("kept")), sub: `${job.vertical} vertical` },
@@ -4685,7 +4686,7 @@ function EnrichV2Section() {
                           <div className="mt-1.5 h-1 rounded-full bg-[var(--hm-bg-tertiary)] overflow-hidden">
                             <div className="h-full rounded-full transition-[width] duration-700" style={{ width: `${st.on ? (doneStep ? 100 : st.p) : 0}%`, background: doneStep ? "var(--tag-green-fg)" : "var(--hm-primary)" }} />
                           </div>
-                          <p className="mt-1 text-[10.5px] text-[var(--hm-text-tertiary)] truncate" title={st.sub}>{st.on ? st.sub : "Skipped for this job"}</p>
+                          <p className={`mt-1 text-[10.5px] text-[var(--hm-text-tertiary)] ${"wrap" in st && st.wrap ? "" : "truncate"}`} title={st.sub}>{st.on ? st.sub : "Skipped for this job"}</p>
                         </div>
                       );
                     })}
