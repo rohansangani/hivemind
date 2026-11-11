@@ -4266,7 +4266,7 @@ interface EnrichJobRow {
 
 interface Enrich2Job {
   id: number; label: string; vertical: string; created_by: string | null; status: string; phase: string; stage: string | null;
-  options: { maxPerCompany: number; anymailFallback: boolean; anymailVerify: boolean; phones: boolean; excludeSupportHrFinance: boolean; useRadarFirst?: boolean };
+  options: { maxPerCompany: number; anymailFallback: boolean; anymailVerify: boolean; phones: boolean; excludeSupportHrFinance: boolean; useRadarFirst?: boolean; apifyFallback?: boolean };
   counts: Record<string, number | Record<string, number>>; error: string | null; created_at: string; updated_at: string;
 }
 interface Enrich2Person {
