@@ -12,7 +12,8 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const table = body.table === "contacts" ? "contacts" : "accounts";
     const includeIrrelevant = !!body.includeIrrelevant && access.isReviewer;
-    return NextResponse.json({ counts: await facetCounts(table, body, includeIrrelevant) });
+    const only = Array.isArray(body.only) ? (body.only as unknown[]).filter((k): k is string => typeof k === "string").slice(0, 20) : undefined;
+    return NextResponse.json({ counts: await facetCounts(table, body, includeIrrelevant, only) });
   } catch (err) {
     console.error("Radar facets error:", err);
     return NextResponse.json({ error: "Failed to load filter counts" }, { status: 502 });
