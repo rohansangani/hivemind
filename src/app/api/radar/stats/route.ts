@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse, after } from "next/server";
-import { countOfService, rpc, requireRadarAccess } from "@/lib/radar/supabase";
+import { radarSql, rpc, requireRadarAccess } from "@/lib/radar/supabase";
 
 /**
  * Radar dashboard stats — matches radar's own /api/stats response shape
@@ -9,7 +9,7 @@ import { countOfService, rpc, requireRadarAccess } from "@/lib/radar/supabase";
  * hubspot_excluded OR-filters and the RPC-based aggregations). Owner/admin
  * gated.
  */
-export const maxDuration = 20;
+export const maxDuration = 60;
 
 interface GrowthRow {
   out_snapshot_date: string;
@@ -24,38 +24,28 @@ interface GrowthRow {
 
 /** Builds the whole dashboard payload (about 3 s of aggregation — coverage / growth / domain stats dominate). */
 async function computeStats() {
-    const NOT_EXCLUDED = "&or=(hubspot_excluded.is.null,hubspot_excluded.eq.false)";
-    const BLANK_AND_NOT_EXCLUDED =
-      "&and=(or(email.is.null,email.eq.),or(hubspot_excluded.is.null,hubspot_excluded.eq.false))";
-
-    const [
-      totalAccounts, totalContacts,
-      b2bAccounts, d2cAccounts, usAccounts, cbAccounts,
-      b2bContacts, d2cContacts, usContacts, cbContacts,
-      blankEmailContacts, blankB2B, blankD2C, blankUS, blankCB, blankUnassigned,
-      statusMatrix, domainStats, accountCoverage, growthRaw,
-    ] = await Promise.all([
-      countOfService("accounts", "id"),
-      countOfService("contacts", "id", NOT_EXCLUDED),
-      countOfService("accounts", "id", "&vertical=eq.B2B"),
-      countOfService("accounts", "id", "&vertical=eq.D2C"),
-      countOfService("accounts", "id", "&vertical=eq.US"),
-      countOfService("accounts", "id", "&vertical=eq.Crossborder"),
-      countOfService("contacts", "id", `&verticals=cs.%7BB2B%7D${NOT_EXCLUDED}`),
-      countOfService("contacts", "id", `&verticals=cs.%7BD2C%7D${NOT_EXCLUDED}`),
-      countOfService("contacts", "id", `&verticals=cs.%7BUS%7D${NOT_EXCLUDED}`),
-      countOfService("contacts", "id", `&verticals=cs.%7BCrossborder%7D${NOT_EXCLUDED}`),
-      countOfService("contacts", "id", BLANK_AND_NOT_EXCLUDED),
-      countOfService("contacts", "id", `&verticals=cs.%7BB2B%7D${BLANK_AND_NOT_EXCLUDED}`),
-      countOfService("contacts", "id", `&verticals=cs.%7BD2C%7D${BLANK_AND_NOT_EXCLUDED}`),
-      countOfService("contacts", "id", `&verticals=cs.%7BUS%7D${BLANK_AND_NOT_EXCLUDED}`),
-      countOfService("contacts", "id", `&verticals=cs.%7BCrossborder%7D${BLANK_AND_NOT_EXCLUDED}`),
-      countOfService("contacts", "id", `&vertical=is.null${BLANK_AND_NOT_EXCLUDED}`),
+    // Counts: ONE accounts scan and ONE contacts scan (was 16 separate PostgREST counts fired in parallel, which
+    // contended with each other and pushed the whole dashboard past its time limit).
+    const V = ["B2B", "D2C", "US", "Crossborder"];
+    const ne = "hubspot_excluded IS NOT TRUE";
+    const blank = `(email IS NULL OR email = '') AND ${ne}`;
+    const [accRows, conRows, statusMatrix, domainStats, accountCoverage, growthRaw] = await Promise.all([
+      radarSql<{ vertical: string | null; n: number }>("SELECT vertical, count(*)::int n FROM accounts GROUP BY vertical"),
+      radarSql<Record<string, number>>(`SELECT count(*) FILTER (WHERE ${ne})::int total, count(*) FILTER (WHERE ${blank})::int blank, count(*) FILTER (WHERE vertical IS NULL AND ${blank})::int blank_unassigned, ${
+        V.map((v) => `count(*) FILTER (WHERE '${v}' = ANY(verticals) AND ${ne})::int c_${v}, count(*) FILTER (WHERE '${v}' = ANY(verticals) AND ${blank})::int b_${v}`).join(", ")
+      } FROM contacts`),
       rpc("get_contact_status_matrix"),
       rpc("get_contact_domain_stats"),
       rpc("get_account_coverage"),
       rpc<GrowthRow>("read_growth_snapshots"),
     ]);
+    const accBy = (v: string) => accRows.find((r) => r.vertical === v)?.n ?? 0;
+    const totalAccounts = accRows.reduce((t, r) => t + r.n, 0);
+    const c = conRows[0] || {};
+    const totalContacts = c.total ?? 0, blankEmailContacts = c.blank ?? 0, blankUnassigned = c.blank_unassigned ?? 0;
+    const [b2bAccounts, d2cAccounts, usAccounts, cbAccounts] = V.map(accBy);
+    const [b2bContacts, d2cContacts, usContacts, cbContacts] = V.map((v) => c[`c_${v}`] ?? 0);
+    const [blankB2B, blankD2C, blankUS, blankCB] = V.map((v) => c[`b_${v}`] ?? 0);
 
     const growth = growthRaw.map((r) => ({
       snapshot_date: r.out_snapshot_date,
