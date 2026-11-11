@@ -1315,11 +1315,13 @@ const CONTACT_FILTER_GROUPS: FilterGroup[] = [
 const firstNum = (v: string) => { const m = v.replace(/,/g, "").match(/\d+(\.\d+)?/); return m ? parseFloat(m[0]) * (/b/i.test(v.slice(0, 12)) ? 1e9 : /m/i.test(v.slice(0, 12)) ? 1e6 : /k/i.test(v.slice(0, 12)) ? 1e3 : 1) : Number.MAX_VALUE; };
 
 /** Dropdown with a search box — long lists (industries, countries, owners) stay usable. */
-function SearchSelect({ value, onChange, options, labels, numeric, label, counts, countsLoading, grouped, multi }: {
+function SearchSelect({ value, onChange, options, labels, numeric, label, counts, countsLoading, onNeedCounts, countsSig, grouped, multi }: {
   value: string; onChange: (v: string) => void; options: string[]; labels?: Record<string, string>; numeric?: boolean; label: string;
   counts?: Record<string, number>; grouped?: boolean;
   /** Counts for the current filters are still being computed: show a shimmer instead of numbers. */
   countsLoading?: boolean;
+  /** Called when the list is open and its counts (for `countsSig`) aren't loaded yet — the parent fetches just this dropdown's counts. */
+  onNeedCounts?: () => void; countsSig?: string;
   /** Pick several values (stored joined with MULTI_SEP); the list stays open while you tick. */
   multi?: boolean;
 }) {
@@ -1328,6 +1330,8 @@ function SearchSelect({ value, onChange, options, labels, numeric, label, counts
   const [hi, setHi] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (open && countsLoading) onNeedCounts?.(); }, [open, countsSig, countsLoading]);
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
@@ -1696,33 +1700,41 @@ function DataTable<T extends { id: string }>({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [endpoint, term, filtersKey, page, refreshToken, extraBodyKey]);
 
-  // Dropdown counts that follow the other active filters (see lib/radar/facets.ts). Debounced; the
-  // previous counts stay on screen until the new ones arrive.
-  const [facets, setFacets] = useState<Record<string, Record<string, number>> | null>(null);
+  // Dropdown counts that follow the other active filters (see lib/radar/facets.ts). Fetched lazily, one dropdown at a
+  // time (only the one being opened), and keyed by the filters that facet depends on (its own selection excluded), so
+  // ticking more values in the same dropdown never refetches. Stale numbers are never shown — a shimmer is.
   const facetTable = endpoint.includes("contacts") ? "contacts" : "accounts";
-  // True while counts for the *current* filters are still being computed — stale numbers are hidden meanwhile.
-  const [facetsPending, setFacetsPending] = useState(false);
-  useEffect(() => {
-    let cancelled = false;
-    setFacetsPending(true);
-    const t = setTimeout(() => {
-      fetch("/api/radar/facets", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ search: term, ...filters, ...extraBody, table: facetTable }),
-      })
-        .then((r) => (r.ok ? r.json() : null))
-        .then((d) => { if (!cancelled) { if (d?.counts) setFacets(d.counts); setFacetsPending(false); } })
-        .catch(() => { if (!cancelled) setFacetsPending(false); });
-    }, 300);
-    return () => { cancelled = true; clearTimeout(t); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [facetTable, term, filtersKey, extraBodyKey]);
-  const countsStale = facetsPending && (!!term || Object.keys(filters).length > 0);
+  const [facetData, setFacetData] = useState<Record<string, { sig: string; counts: Record<string, number> }>>({});
+  const inflight = useRef<Set<string>>(new Set());
+  const hasFilters = !!term || Object.keys(filters).length > 0;
+  const sigFor = (key: string) => {
+    const { [key]: _own, ...others } = filters as Record<string, string>;
+    void _own;
+    return JSON.stringify([facetTable, term, others, extraBody]);
+  };
+  const ensureFacet = (key: string) => {
+    if (!hasFilters) return; // unfiltered counts come from the cached options
+    const sig = sigFor(key);
+    if (facetData[key]?.sig === sig || inflight.current.has(key + sig)) return;
+    inflight.current.add(key + sig);
+    const { [key]: _own, ...others } = filters as Record<string, string>;
+    void _own;
+    fetch("/api/radar/facets", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ search: term, ...others, ...extraBody, table: facetTable, only: [key], ...(filters[key] ? {} : {}) }),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d?.counts?.[key]) setFacetData((m) => ({ ...m, [key]: { sig, counts: d.counts[key] } })); })
+      .catch(() => {})
+      .finally(() => { inflight.current.delete(key + sig); });
+  };
+  const countsReady = (f: FilterField) => !hasFilters || facetData[f.key]?.sig === sigFor(f.key);
   const countsFor = (f: FilterField, opts: string[]): Record<string, number> | undefined => {
-    if (countsStale) return undefined; // never show counts from a previous filter state
-    const fc = facets?.[f.key];
-    return fc ? Object.fromEntries(opts.map((o) => [o, fc[o] ?? 0])) : f.counts?.(options);
+    if (!hasFilters) return f.counts?.(options);
+    const fc = facetData[f.key];
+    if (!fc || fc.sig !== sigFor(f.key)) return undefined; // never show counts from a previous filter state
+    return Object.fromEntries(opts.map((o) => [o, fc.counts[o] ?? 0]));
   };
 
   const from = total === 0 ? 0 : page * PAGE_SIZE + 1;
@@ -1856,7 +1868,7 @@ function DataTable<T extends { id: string }>({
                   <div key={f.key}>
                     <p className="text-[11.5px] text-[var(--hm-text-tertiary)] mb-1">{f.label}</p>
                     {f.kind === "select" ? (
-                      <SearchSelect multi label={f.label} value={filters[f.key] || ""} onChange={(v) => setFilter(f.key, v)} options={f.options?.(options) || []} labels={f.labels} numeric={f.numeric} counts={countsFor(f, f.options?.(options) || [])} countsLoading={countsStale} grouped={f.grouped} />
+                      <SearchSelect multi label={f.label} value={filters[f.key] || ""} onChange={(v) => setFilter(f.key, v)} options={f.options?.(options) || []} labels={f.labels} numeric={f.numeric} counts={countsFor(f, f.options?.(options) || [])} countsLoading={!countsReady(f)} onNeedCounts={() => ensureFacet(f.key)} countsSig={sigFor(f.key)} grouped={f.grouped} />
                     ) : f.kind === "text" ? (
                       <TextFilter label={f.label} value={filters[f.key] || ""} onChange={(v) => setFilter(f.key, v)} placeholder={f.placeholder} />
                     ) : (

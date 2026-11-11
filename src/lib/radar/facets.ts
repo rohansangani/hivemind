@@ -28,7 +28,24 @@ const COMMON: Facet[] = [
   { key: "source", expr: "source" },
 ];
 
-export async function facetCounts(table: "accounts" | "contacts", body: Body, includeIrrelevant: boolean): Promise<Record<string, Record<string, number>>> {
+// Same filters + same facet list = same answer for a while, so repeat opens are instant (per server instance).
+const CACHE_MS = 2 * 60_000;
+const cache = new Map<string, { at: number; data: Record<string, Record<string, number>> }>();
+
+/** `only` = just those facet keys (the dropdown being opened) — one GROUP BY instead of one per facet. */
+export async function facetCounts(table: "accounts" | "contacts", body: Body, includeIrrelevant: boolean, only?: string[]): Promise<Record<string, Record<string, number>>> {
+  const { only: _o, ...rest } = body as Body & { only?: unknown };
+  void _o;
+  const ck = JSON.stringify([table, rest, includeIrrelevant, only ?? null]);
+  const hit = cache.get(ck);
+  if (hit && Date.now() - hit.at < CACHE_MS) return hit.data;
+  const data = await computeFacets(table, rest, includeIrrelevant, only);
+  if (cache.size > 300) cache.delete(cache.keys().next().value as string);
+  cache.set(ck, { at: Date.now(), data });
+  return data;
+}
+
+async function computeFacets(table: "accounts" | "contacts", body: Body, includeIrrelevant: boolean, only?: string[]): Promise<Record<string, Record<string, number>>> {
   const isAcc = table === "accounts";
   const from = isAcc ? "accounts" : "contacts_view";
   const facets: Facet[] = [
@@ -79,15 +96,23 @@ export async function facetCounts(table: "accounts" | "contacts", body: Body, in
     return p.length ? p.join(" AND ") : "true";
   };
 
-  const cols = [...facets.map((f) => `${f.expr} AS ${colOf(f)}`), "industry_category AS c_cat", "industry_subcategory AS c_sub"].join(", ");
+  const want = (key: string) => !only || only.includes(key);
+  // Only materialise the columns something reads: the requested facets plus every active filter's column.
+  const needCol = (f: Facet) => want(f.key) || !!pred[f.key];
+  const needInd = want("industryGroup") || !!pred.industryGroup;
+  const cols = [...facets.filter(needCol).map((f) => `${f.expr} AS ${colOf(f)}`), ...(needInd ? ["industry_category AS c_cat", "industry_subcategory AS c_sub"] : [])].join(", ") || "1 AS c_none";
   const branches: string[] = [];
   for (const f of facets) {
+    if (!want(f.key)) continue;
     branches.push(f.array
       ? `SELECT '${f.key}' k, v, count(*)::int n FROM t, unnest(${colOf(f)}) v WHERE ${others(f.key)} GROUP BY v`
       : `SELECT '${f.key}' k, ${colOf(f)}::text v, count(*)::int n FROM t WHERE ${colOf(f)} IS NOT NULL AND ${colOf(f)} <> '' AND ${others(f.key)} GROUP BY 2`);
   }
-  branches.push(`SELECT 'industryGroup' k, c_cat v, count(*)::int n FROM t WHERE c_cat IS NOT NULL AND c_cat <> '' AND ${others("industryGroup")} GROUP BY 2`);
-  branches.push(`SELECT 'industryGroup' k, c_cat || ${esc(INDUSTRY_SEP)} || c_sub v, count(*)::int n FROM t WHERE c_cat IS NOT NULL AND c_cat <> '' AND c_sub IS NOT NULL AND c_sub <> '' AND ${others("industryGroup")} GROUP BY 2`);
+  if (want("industryGroup")) {
+    branches.push(`SELECT 'industryGroup' k, c_cat v, count(*)::int n FROM t WHERE c_cat IS NOT NULL AND c_cat <> '' AND ${others("industryGroup")} GROUP BY 2`);
+    branches.push(`SELECT 'industryGroup' k, c_cat || ${esc(INDUSTRY_SEP)} || c_sub v, count(*)::int n FROM t WHERE c_cat IS NOT NULL AND c_cat <> '' AND c_sub IS NOT NULL AND c_sub <> '' AND ${others("industryGroup")} GROUP BY 2`);
+  }
+  if (!branches.length) return {};
 
   const rows = await radarSql<{ k: string; v: string; n: number }>(
     `WITH t AS MATERIALIZED (SELECT ${cols} FROM ${from} WHERE ${fixed.join(" AND ")}) ${branches.join(" UNION ALL ")}`,
