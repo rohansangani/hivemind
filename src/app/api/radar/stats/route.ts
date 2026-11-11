@@ -54,7 +54,7 @@ async function computeStats() {
       rpc("get_contact_status_matrix"),
       rpc("get_contact_domain_stats"),
       rpc("get_account_coverage"),
-      rpc<GrowthRow>("get_growth_snapshots"),
+      rpc<GrowthRow>("read_growth_snapshots"),
     ]);
 
     const growth = growthRaw.map((r) => ({
@@ -97,11 +97,21 @@ function refresh(): Promise<void> {
   return inflight;
 }
 
+// get_growth_snapshots() recomputes + upserts today's row (slow — tens of seconds), so it never runs on the request path:
+// the dashboard reads rows via read_growth_snapshots() and today's row is refreshed in the background, at most every 30 min.
+let lastGrowthRefresh = 0;
+async function refreshGrowthSnapshot() {
+  if (Date.now() - lastGrowthRefresh < 30 * 60_000) return;
+  lastGrowthRefresh = Date.now();
+  try { await rpc("get_growth_snapshots"); } catch { lastGrowthRefresh = 0; }
+}
+
 export async function GET(req: NextRequest) {
   const access = await requireRadarAccess(req);
   if (access instanceof NextResponse) return access;
 
   try {
+    after(() => refreshGrowthSnapshot());
     const headers = { "Cache-Control": "private, max-age=30" };
     const age = cache ? Date.now() - cache.at : Infinity;
     if (cache && age < FRESH_MS) return NextResponse.json(cache.data, { headers });
