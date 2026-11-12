@@ -646,7 +646,7 @@ const STATUS_META: Array<{ key: string; label: string; color: string }> = [
 
 /* ── Dashboard tabs: Overview · India · US · Crossborder ───────────────── */
 
-type SegmentKey = "india" | "us" | "crossborder" | "tam" | "dtc";
+type SegmentKey = "india" | "us" | "crossborder" | "tam" | "dtc" | "slus" | "slca";
 interface SegRow { k: string; v: string | null; n: number }
 interface SegData { accounts: SegRow[] }
 
@@ -680,6 +680,8 @@ function RadarDashboardTabs() {
   const [tab, setTab] = useState<"overview" | SegmentKey>("overview");
   // StoreLeads India (the ₹10 lakh+ monthly-sales file accounts) lives under India (a second view next to the India accounts).
   const [indiaView, setIndiaView] = useState<"accounts" | "tam" | "dtc">("accounts");
+  // StoreLeadsUS / StoreLeadsCanada live under US.
+  const [usView, setUsView] = useState<"accounts" | "slus" | "slca">("accounts");
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3 flex-wrap">
@@ -695,8 +697,15 @@ function RadarDashboardTabs() {
             ))}
           </div>
         )}
+        {tab === "us" && (
+          <div className="flex items-center gap-1 ml-2">
+            {([["accounts", "US accounts"], ["slus", "StoreLeadsUS"], ["slca", "StoreLeadsCanada"]] as const).map(([id, label]) => (
+              <button key={id} onClick={() => setUsView(id)} className={`h-7 px-2.5 rounded-full border text-[12px] font-medium transition-colors ${usView === id ? "border-[var(--hm-primary)] bg-[var(--hm-bg-tertiary)] text-[var(--hm-text)]" : "border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:bg-[var(--hm-bg-secondary)]"}`}>{label}</button>
+            ))}
+          </div>
+        )}
       </div>
-      {tab === "overview" ? <RadarDashboard /> : <SegmentDashboard key={tab === "india" ? `india-${indiaView}` : tab} segment={tab === "india" && indiaView !== "accounts" ? indiaView : tab} sub="all" />}
+      {tab === "overview" ? <RadarDashboard /> : <SegmentDashboard key={tab === "india" ? `india-${indiaView}` : tab === "us" ? `us-${usView}` : tab} segment={tab === "india" && indiaView !== "accounts" ? indiaView : tab === "us" && usView !== "accounts" ? usView : tab} sub="all" />}
     </div>
   );
 }
@@ -753,8 +762,8 @@ function SegmentDashboard({ segment, sub }: { segment: SegmentKey; sub: string }
 
   const nAcc = kpi(A, "accounts");
   const empty = nAcc - kpi(A, "with_contacts");
-  const isIndia = segment === "india" || segment === "tam" || segment === "dtc";
-  const title = segment === "india" ? "India" : segment === "us" ? "US" : segment === "tam" ? "StoreLeads India" : segment === "dtc" ? "DTCConnect" : "Crossborder";
+  const isIndia = segment === "india" || segment === "tam" || segment === "dtc" || segment === "slus" || segment === "slca"; // shows the State / province card
+  const title = segment === "india" ? "India" : segment === "us" ? "US" : segment === "tam" ? "StoreLeads India" : segment === "dtc" ? "DTCConnect" : segment === "slus" ? "StoreLeadsUS" : segment === "slca" ? "StoreLeadsCanada" : "Crossborder";
 
   const completeness = (items: [string, number, number][]) => items.map(([k, n, d]) => ({ k, n, p: pct(n, d) }));
   const accComp = completeness([
