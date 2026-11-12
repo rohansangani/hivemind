@@ -4,7 +4,7 @@ import { segmentStats, type Segment } from "@/lib/radar/segmentStats";
 
 export const maxDuration = 60;
 
-/** Dashboard tab data: ?segment=india|us|crossborder (india also takes &sub=all|D2C|B2B). */
+/** Dashboard tab data: ?segment=india|us|crossborder (india also takes &sub=all|D2C|B2B|Crossborder). */
 export async function GET(req: NextRequest) {
   const access = await requireRadarAccess(req);
   if (access instanceof NextResponse) return access;
