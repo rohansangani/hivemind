@@ -604,6 +604,7 @@ interface AccountCoverageRow { vertical: string; total: number; with_contacts: n
 
 interface RadarStats {
   total_accounts: number;
+  accounts_assigned?: number;
   total_contacts: number;
   blank_email_contacts: number;
   blank_email_verticals: { B2B: number; D2C: number; US: number; Crossborder?: number; EU?: number; unassigned: number };
@@ -892,7 +893,8 @@ function RadarDashboard() {
   if (!stats) return null;
 
   const v = stats.verticals;
-  const acctAssigned = v.B2B + v.D2C + v.US + (v.Crossborder || 0) + (v.EU || 0);
+  // Distinct accounts with a vertical — NOT the sum of the vertical counts, which overlap (one account can be in several).
+  const acctAssigned = stats.accounts_assigned ?? Math.min(stats.total_accounts, v.B2B + v.D2C + v.US + (v.Crossborder || 0) + (v.EU || 0));
   const acctUnassigned = Math.max(0, stats.total_accounts - acctAssigned);
 
   const cv = stats.contact_verticals;

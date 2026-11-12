@@ -32,7 +32,7 @@ async function computeStats() {
     const [accRows, accTotalRows, conRows, statusMatrix, domainStats, accountCoverage, growthRaw] = await Promise.all([
       // An account counts under every vertical on its list (one row can carry several).
       radarSql<{ vertical: string | null; n: number }>("SELECT v AS vertical, count(*)::int n FROM accounts, LATERAL unnest(CASE WHEN verticals IS NULL OR cardinality(verticals) = 0 THEN ARRAY[vertical] ELSE verticals END) v GROUP BY v"),
-      radarSql<{ n: number }>("SELECT count(*)::int n FROM accounts"),
+      radarSql<{ n: number; assigned: number }>("SELECT count(*)::int n, count(*) FILTER (WHERE cardinality(verticals) > 0)::int assigned FROM accounts"),
       radarSql<Record<string, number>>(`SELECT count(*) FILTER (WHERE ${ne})::int total, count(*) FILTER (WHERE ${blank})::int blank, count(*) FILTER (WHERE vertical IS NULL AND ${blank})::int blank_unassigned, ${
         V.map((v) => `count(*) FILTER (WHERE '${v}' = ANY(verticals) AND ${ne})::int c_${v}, count(*) FILTER (WHERE '${v}' = ANY(verticals) AND ${blank})::int b_${v}`).join(", ")
       } FROM contacts`),
@@ -64,6 +64,8 @@ async function computeStats() {
       growth,
       account_coverage: accountCoverage,
       total_accounts: totalAccounts,
+      // Distinct accounts with at least one vertical (the per-vertical counts overlap: one row can carry several).
+      accounts_assigned: accTotalRows[0]?.assigned ?? 0,
       total_contacts: totalContacts,
       blank_email_contacts: blankEmailContacts,
       blank_email_verticals: { B2B: blankB2B, D2C: blankD2C, US: blankUS, Crossborder: blankCB, EU: blankEU, unassigned: blankUnassigned },
