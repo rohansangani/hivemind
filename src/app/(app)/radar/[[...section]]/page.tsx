@@ -8978,7 +8978,7 @@ interface VerifyJobRow {
 interface VerifyResultRow {
   email: string; result_status: string | null; anymail_status: string; in_radar: boolean; added: boolean; vertical: string | null; checked_by?: string | null; checked_at: string;
 }
-interface VerifySummary { total: number; valid: number; risky: number; invalid: number; failed: number; existing: number; added: number; skipped?: number }
+interface VerifySummary { total: number; valid: number; risky: number; invalid: number; failed: number; existing: number; added: number; skipped?: number; snov?: number; snovValid?: number; snovInvalid?: number; saved?: number }
 
 const fmtChecked = (v: string) => { try { return new Date(v).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" }); } catch { return v; } };
 
@@ -8988,6 +8988,24 @@ const JOB_TONE: Record<string, string> = {
 
 /** Live job card shared by Find Emails / Risky Email Validation — same look as Check LinkedIn's
  * pipeline panel: status, progress bar, what's happening right now, running counts. */
+/** Where a Validate job's results came from — started with / Snov.io / Anymail / saved to Radar (same card style as Enrich). */
+function SourceCards({ cards, running }: { cards: Array<{ label: string; value: string; sub: string; p: number; tone?: "green" | "red" }>; running: boolean }) {
+  return (
+    <div data-job-keep className="grid gap-2 grid-cols-2 lg:grid-cols-4">
+      {cards.map((c) => (
+        <div key={c.label} className="rounded-lg border border-[var(--hm-border)] px-3 py-2.5">
+          <div className="text-[11px] font-medium text-[var(--hm-text-secondary)] truncate">{c.label}</div>
+          <p className="mt-1 text-[16px] font-semibold tabular-nums text-[var(--hm-text)] leading-tight">{c.value}</p>
+          <div className="mt-1.5 h-1 rounded-full bg-[var(--hm-bg-tertiary)] overflow-hidden">
+            <div className="h-full rounded-full transition-[width] duration-700" style={{ width: `${Math.max(0, Math.min(100, c.p))}%`, background: running ? "var(--hm-primary)" : c.tone === "red" ? "var(--tag-red-fg)" : "var(--tag-green-fg)" }} />
+          </div>
+          <p className="mt-1 text-[10.5px] text-[var(--hm-text-tertiary)]">{c.sub}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function JobProgressPanel({ title, status, processed, total, noun, liveText, doneText, error, stats, stopping, onStop, exporting, canExport, onExport }: {
   title: string; status: string; processed: number; total: number; noun: string;
   liveText: string; doneText: string; error?: string | null;
@@ -9356,6 +9374,24 @@ function EmailValidationPanel() {
           />
         )}
 
+        {job && summary && (() => {
+          const f = (n: number) => n.toLocaleString();
+          const pc = (a: number, b: number) => (b ? Math.round((a / b) * 100) : 0);
+          const snov = summary.snov ?? 0, snovValid = summary.snovValid ?? 0, snovInvalid = summary.snovInvalid ?? 0, skipped = summary.skipped ?? 0;
+          const settled = summary.valid + summary.risky + summary.invalid;      // got a real result (Snov or Anymail)
+          const anymail = Math.max(0, settled - snov);
+          const anyValid = Math.max(0, summary.valid - snovValid), anyInvalid = Math.max(0, summary.invalid - snovInvalid);
+          const saved = summary.saved ?? summary.existing + summary.added;
+          return (
+            <SourceCards running={job.status === "running"} cards={[
+              { label: "Started with", value: `${f(totalEmails)} emails`, p: pc(job.processed || 0, totalEmails), sub: `${f(job.processed || 0)} processed${skipped ? ` · ${f(skipped)} skipped (already safe)` : ""}` },
+              { label: "Snov.io (1st pass)", value: `${f(snov)} settled`, p: pc(snov, totalEmails), sub: `${f(snovValid)} valid · ${f(snovInvalid)} invalid · ${f(Math.max(0, totalEmails - skipped - snov))} passed to Anymail` },
+              { label: "Anymail (2nd pass)", value: `${f(anymail)} checked`, p: pc(anymail, Math.max(1, totalEmails - skipped - snov)), sub: `${f(anyValid)} valid · ${f(summary.risky)} risky · ${f(anyInvalid)} invalid${summary.failed ? ` · ${f(summary.failed)} couldn't verify` : ""}` },
+              { label: "Saved to Radar", value: `${f(saved)} / ${f(totalEmails)}`, p: pc(saved, totalEmails), sub: `${f(summary.existing)} existing updated · ${f(summary.added)} new added` },
+            ]} />
+          );
+        })()}
+
         <RecentJobsList
           jobs={J.jobs} tag="EV" activeId={jobId} openingId={J.openingId} retryingId={J.retryingId} loading={J.jobsLoading}
           emptyText="No jobs yet — upload a CSV above."
@@ -9411,7 +9447,7 @@ interface FindResultRow {
   idx: number; first_name: string | null; last_name: string | null; company: string | null; domain: string | null; linkedin_url: string | null;
   found_email: string | null; anymail_status: string; saved: string; vertical: string | null; found_by?: string | null; checked_at: string;
 }
-interface FindSummary { total: number; found: number; notFound: number; failed: number; added: number; updated: number }
+interface FindSummary { total: number; found: number; notFound: number; failed: number; added: number; updated: number; snov?: number }
 
 function EmailFinderPanel() {
   const [label, setLabel] = useState("");
@@ -9620,6 +9656,23 @@ function EmailFinderPanel() {
             onExport={exportAll}
           />
         )}
+
+        {job && summary && (() => {
+          const f = (n: number) => n.toLocaleString();
+          const pc = (a: number, b: number) => (b ? Math.round((a / b) * 100) : 0);
+          const snov = summary.snov ?? 0;
+          const anyFound = Math.max(0, summary.found - snov);
+          const toAnymail = Math.max(0, total - snov);
+          const saved = summary.added + summary.updated;
+          return (
+            <SourceCards running={job.status === "running"} cards={[
+              { label: "Started with", value: `${f(total)} people`, p: pc(job.processed || 0, total), sub: `${f(job.processed || 0)} searched so far` },
+              { label: "Snov.io (1st pass)", value: `${f(snov)} found`, p: pc(snov, total), sub: `${f(toAnymail)} not found → passed to Anymail` },
+              { label: "Anymail (2nd pass)", value: `${f(anyFound)} found`, p: pc(anyFound, Math.max(1, toAnymail)), sub: `${f(summary.notFound)} not found by either${summary.failed ? ` · ${f(summary.failed)} couldn't search` : ""}` },
+              { label: "Saved to Radar", value: `${f(saved)} / ${f(summary.found)}`, p: pc(saved, summary.found), sub: `${f(summary.added)} new added · ${f(summary.updated)} existing updated` },
+            ]} />
+          );
+        })()}
 
         <RecentJobsList
           jobs={J.jobs} tag="FE" activeId={jobId} openingId={J.openingId} retryingId={J.retryingId} loading={J.jobsLoading}
