@@ -678,7 +678,6 @@ const PER_ACCOUNT_ORDER = ["0", "1", "2-3", "4-10", "11+"];
 
 function RadarDashboardTabs() {
   const [tab, setTab] = useState<"overview" | SegmentKey>("overview");
-  const [sub, setSub] = useState<"all" | "D2C" | "B2B" | "Crossborder">("all");
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3 flex-wrap">
@@ -687,17 +686,8 @@ function RadarDashboardTabs() {
             <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)} className={`radar-tab ${tab === t.id ? "active" : ""}`}>{t.label}</button>
           ))}
         </div>
-        {tab === "india" && (
-          <div className="flex items-center gap-1 ml-2">
-            {(["all", "D2C", "B2B", "Crossborder"] as const).map((o) => (
-              <button key={o} onClick={() => setSub(o)} className={`h-7 px-2.5 rounded-full border text-[12px] font-medium transition-colors ${sub === o ? "border-[var(--hm-primary)] bg-[var(--hm-bg-tertiary)] text-[var(--hm-text)]" : "border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:text-[var(--hm-text)]"}`}>
-                {o === "all" ? "D2C + B2B + Crossborder" : o}
-              </button>
-            ))}
-          </div>
-        )}
       </div>
-      {tab === "overview" ? <RadarDashboard /> : <SegmentDashboard key={tab === "india" ? `india-${sub}` : tab} segment={tab} sub={sub} />}
+      {tab === "overview" ? <RadarDashboard /> : <SegmentDashboard key={tab} segment={tab} sub="all" />}
     </div>
   );
 }
