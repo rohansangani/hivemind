@@ -678,7 +678,7 @@ const PER_ACCOUNT_ORDER = ["0", "1", "2-3", "4-10", "11+"];
 
 function RadarDashboardTabs() {
   const [tab, setTab] = useState<"overview" | SegmentKey>("overview");
-  // ClickPost TAM lives under India (a second view next to the India accounts).
+  // StoreLeads India (the ₹10 lakh+ monthly-sales file accounts) lives under India (a second view next to the India accounts).
   const [indiaView, setIndiaView] = useState<"accounts" | "tam">("accounts");
   return (
     <div className="space-y-4">
@@ -690,7 +690,7 @@ function RadarDashboardTabs() {
         </div>
         {tab === "india" && (
           <div className="flex items-center gap-1 ml-2">
-            {([["accounts", "India accounts"], ["tam", "ClickPost TAM"]] as const).map(([id, label]) => (
+            {([["accounts", "India accounts"], ["tam", "StoreLeads India"]] as const).map(([id, label]) => (
               <button key={id} onClick={() => setIndiaView(id)} className={`h-7 px-2.5 rounded-full border text-[12px] font-medium transition-colors ${indiaView === id ? "border-[var(--hm-primary)] bg-[var(--hm-bg-tertiary)] text-[var(--hm-text)]" : "border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:bg-[var(--hm-bg-secondary)]"}`}>{label}</button>
             ))}
           </div>
@@ -754,7 +754,7 @@ function SegmentDashboard({ segment, sub }: { segment: SegmentKey; sub: string }
   const nAcc = kpi(A, "accounts");
   const empty = nAcc - kpi(A, "with_contacts");
   const isIndia = segment === "india" || segment === "tam";
-  const title = segment === "india" ? "India" : segment === "us" ? "US" : segment === "tam" ? "TAM" : "Crossborder";
+  const title = segment === "india" ? "India" : segment === "us" ? "US" : segment === "tam" ? "StoreLeads India" : "Crossborder";
 
   const completeness = (items: [string, number, number][]) => items.map(([k, n, d]) => ({ k, n, p: pct(n, d) }));
   const accComp = completeness([
@@ -766,7 +766,7 @@ function SegmentDashboard({ segment, sub }: { segment: SegmentKey; sub: string }
     <div className="space-y-5">
       {segment === "tam" && (
         <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] px-4 py-3 text-[12.5px] text-[var(--hm-text-secondary)]">
-          <b className="text-[var(--hm-text)]">ClickPost TAM</b> — every India StoreLeads account with estimated monthly sales of <b>₹10 lakh or more</b> (≈ $11,364/month at ₹88 per USD; StoreLeads&apos; estimates, Oct 2026 file).
+          <b className="text-[var(--hm-text)]">StoreLeads India</b> — every account in the India StoreLeads file with estimated monthly sales of <b>₹10 lakh or more</b> (≈ $11,364/month at ₹88 per USD; StoreLeads&apos; estimates, Oct 2026 file).
           Firmographics come from the file; Radar fills what it lacks. &ldquo;Have contacts&rdquo; counts the people Radar holds at the same company domain.
         </div>
       )}
