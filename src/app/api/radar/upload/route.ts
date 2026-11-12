@@ -530,8 +530,9 @@ async function handleUpload(body: UploadBody): Promise<{ status: number; body: R
     if (jobId && withDomain.length) {
       try {
         const doms = [...new Set(withDomain.map((r) => String(r.domain).trim().toLowerCase()))].map((d) => `'${esc(d)}'`).join(",");
-        const existingRows = await radarSql<{ domain: string; vertical: string }>(`SELECT LOWER(domain) AS domain, vertical FROM accounts WHERE LOWER(domain) IN (${doms})`);
-        const existingSet = new Set(existingRows.map((r) => pairKey(r.domain, r.vertical)));
+        const existingRows = await radarSql<{ domain: string; vertical: string; verticals: string[] | null }>(`SELECT LOWER(domain) AS domain, vertical, verticals FROM accounts WHERE LOWER(domain) IN (${doms})`);
+        // A row can carry several verticals — every one on its list counts as already existing.
+        const existingSet = new Set(existingRows.flatMap((r) => [r.vertical, ...(r.verticals || [])].map((v) => pairKey(r.domain, v))));
         const seen = new Set<string>();
         for (const r of withDomain) {
           const key = pairKey(String(r.domain), r.vertical ? String(r.vertical) : null);

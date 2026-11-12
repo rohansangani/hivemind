@@ -15,7 +15,7 @@
  * the last funding round, not a cumulative total, so mapping it to total_funding would be
  * misleading), phone (no column on accounts).
  */
-import { selectFrom, patchByFilter, insertRows } from "@/lib/radar/supabase";
+import { selectFrom, patchByFilter, insertRows, verticalsFilter } from "@/lib/radar/supabase";
 import { blitzKey, blitzCompany, BlitzUnavailableError, mapPool, BLITZ_RPS, type BlitzCompany } from "@/lib/radar/blitz";
 import type { LinkedInStageFn } from "@/lib/radar/checkLinkedin";
 
@@ -315,9 +315,11 @@ export async function runLinkedInCompanyCheck(urls: string[], vertical: string, 
         try {
           const newAccount = buildNewAccount(item, domain, item.name || domain || slug, vertical);
           // Never overwrite an existing account's source/fields: reuse it if domain+vertical already exists.
-          const existing = domain ? (await selectFrom("accounts", `select=id&domain=eq.${encodeURIComponent(domain)}&vertical=eq.${encodeURIComponent(vertical)}`)).rows[0] as { id?: string } | undefined : undefined;
+          const existing = domain ? (await selectFrom("accounts", `select=id&domain=eq.${encodeURIComponent(domain)}${verticalsFilter(vertical)}`)).rows[0] as { id?: string } | undefined : undefined;
           const insRows = existing?.id ? [existing] : await insertRows("accounts", [newAccount]);
           row.dbAccountId = (insRows[0] as { id?: string } | undefined)?.id ?? null;
+          // An insert for a domain that already has an account (another vertical) is folded into that account by the DB and returns no row — use that account.
+          if (!row.dbAccountId && domain) row.dbAccountId = ((await selectFrom("accounts", `select=id&domain=eq.${encodeURIComponent(domain)}&limit=1`)).rows[0] as { id?: string } | undefined)?.id ?? null;
           row.created = true;
           created++;
         } catch { notFound++; }
