@@ -2020,6 +2020,7 @@ function DataTable<T extends { id: string }>({
 
 interface AccountRow {
   id: string;
+  verticals?: string[] | null;
   city?: string | null;
   installed_apps?: string | null;
   installed_apps_count?: number | null;
@@ -2567,7 +2568,7 @@ function AccountsSection() {
         </button>
       ),
     },
-    { key: "vertical", header: "Vertical", render: (r) => <VerticalBadge v={r.vertical} /> },
+    { key: "vertical", header: "Vertical", render: (r) => <span className="inline-flex gap-1 flex-wrap">{(r.verticals && r.verticals.length ? r.verticals : [r.vertical]).map((v) => <VerticalBadge key={v} v={v} />)}</span> },
     { key: "account_type", header: "Account Type", render: (r) => <Cell value={r.account_type} /> },
     { key: "customer", header: "Customer", render: (r) => r.customer ? <span className="text-[11px] px-2 py-0.5 rounded-md font-medium bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]">Yes</span> : <span className="text-[var(--hm-text-tertiary)]">—</span> },
     {
@@ -2737,8 +2738,12 @@ function AccountContactsPanel({ account, onClose }: { account: AccountRow; onClo
     });
     // Crossborder accounts don't own contacts — show everyone at the domain (one row each, any vertical).
     // A B2B account also lists people who live under D2C with a B2B tag (one contact, two verticals).
+    // One account row can carry several verticals (account.verticals; `vertical` is the main one).
+    const vs = account.verticals && account.verticals.length ? account.verticals : [account.vertical];
     const reqs = account.vertical === OVERLAY_VERTICAL && account.domain ? [post({ matchDomain: account.domain, limit: 200 })]
-      : [post({ accountId: account.id, limit: 200 }), ...(account.vertical === "B2B" && account.domain ? [post({ matchDomain: account.domain, vertical: "B2B", limit: 200 })] : [])];
+      : [post({ accountId: account.id, limit: 200 }),
+         ...(vs.includes(OVERLAY_VERTICAL) && account.domain ? [post({ matchDomain: account.domain, limit: 200 })] : []),
+         ...(vs.includes("B2B") && account.domain ? [post({ matchDomain: account.domain, vertical: "B2B", limit: 200 })] : [])];
     Promise.all(reqs)
       .then((res) => {
         const seen = new Set<string>(); const merged: ContactRow[] = [];
@@ -2770,7 +2775,7 @@ function AccountContactsPanel({ account, onClose }: { account: AccountRow; onClo
             <button onClick={onClose} aria-label="Close" className="hm-btn hm-btn-secondary flex-shrink-0" style={{ height: 30, width: 30, padding: 0, fontSize: 14 }}>×</button>
           </div>
           <div className="flex items-center gap-1.5 flex-wrap mt-3">
-            <VerticalBadge v={account.vertical} />
+            {(account.verticals && account.verticals.length ? account.verticals : [account.vertical]).map((v) => <VerticalBadge key={v} v={v} />)}
             {account.account_type && <span className="text-[11px] px-2 py-0.5 rounded-md font-medium bg-[var(--tag-gray-bg)] text-[var(--tag-gray-fg)]">{account.account_type}</span>}
             {account.customer && <span className="text-[11px] px-2 py-0.5 rounded-md font-medium bg-[var(--tag-green-bg)] text-[var(--tag-green-fg)]">Customer</span>}
             {account.hubspot_lifecycle_stage && <HubspotBadge v={account.hubspot_lifecycle_stage} />}

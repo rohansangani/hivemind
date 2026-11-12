@@ -8,7 +8,7 @@
  * (src/app/api/radar/linkedin-jobs/route.ts), which used to reach this same logic via an HTTP
  * round-trip to radar-clickpost — now an in-process call instead.
  */
-import { selectFrom, patchByFilter, insertRows } from "@/lib/radar/supabase";
+import { selectFrom, patchByFilter, insertRows, verticalsFilter } from "@/lib/radar/supabase";
 import { blitzKey, blitzPerson, BlitzUnavailableError, mapPool, BLITZ_RPS, type BlitzPerson } from "@/lib/radar/blitz";
 
 /** Which provider in the waterfall answered for a profile (Blitz → Anymail Finder → Apify). */
@@ -411,11 +411,13 @@ export async function runLinkedInCheck(urls: string[], _mode: string | undefined
         if (domain) {
           try {
             // Reuse an existing account as-is (never overwrite its source); new ones are tagged like every other UI-created account.
-            const { rows: exRows } = await selectFrom("accounts", `select=id&domain=eq.${encodeURIComponent(domain)}&vertical=eq.${encodeURIComponent(vertical)}`);
+            const { rows: exRows } = await selectFrom("accounts", `select=id&domain=eq.${encodeURIComponent(domain)}${verticalsFilter(vertical)}`);
             accountId = (exRows[0] as { id?: string } | undefined)?.id ?? null;
             if (!accountId) {
               const acctRows = await insertRows("accounts", [{ name: company || domain, domain, vertical, source: "CSV Upload by MRTeam" }]);
               accountId = (acctRows[0] as { id?: string } | undefined)?.id ?? null;
+              // The DB folds an insert for a domain that already has an account (another vertical) into that account's vertical list and returns no row — pick that account up.
+              if (!accountId) accountId = ((await selectFrom("accounts", `select=id&domain=eq.${encodeURIComponent(domain)}&limit=1`)).rows[0] as { id?: string } | undefined)?.id ?? null;
             }
           } catch { /* non-fatal — contact still gets created, just account-less */ }
         } else if (company) {
@@ -423,7 +425,7 @@ export async function runLinkedInCheck(urls: string[], _mode: string | undefined
             // No domain to key off — look for an existing account by name+vertical first
             // (case-insensitive) so repeated checks for the same company don't pile up duplicate
             // no-domain rows; only create a new one if nothing matches.
-            const { rows: findRows } = await selectFrom("accounts", `select=id&name=ilike.${encodeURIComponent(company)}&vertical=eq.${encodeURIComponent(vertical)}`);
+            const { rows: findRows } = await selectFrom("accounts", `select=id&name=ilike.${encodeURIComponent(company)}${verticalsFilter(vertical)}`);
             accountId = (findRows[0] as { id?: string } | undefined)?.id ?? null;
             if (!accountId) {
               const acctRows = await insertRows("accounts", [{ name: company, domain: null, vertical, source: "CSV Upload by MRTeam" }]);
