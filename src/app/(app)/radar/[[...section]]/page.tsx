@@ -7483,7 +7483,7 @@ function ValidateSection() {
               {/* Prominent mode toggle — matches radar's own Patterns / Retest split */}
               <div className="grid grid-cols-1 sm:grid-cols-3 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)]">
                 {([
-                  { id: "patterns", label: "Find Emails", hint: "Anymail + Snov.io person search", icon: "search" },
+                  { id: "patterns", label: "Find Emails", hint: "Snov.io then Anymail person search", icon: "search" },
                   { id: "retest", label: "Risky Email Validation", hint: "Snov.io then Anymail verifier on a CSV", icon: "validate" },
                   { id: "linkedin", label: "Check LinkedIn", hint: "Employer / domain drift", icon: "contacts" },
                 ] as const).map((m) => {
@@ -9525,7 +9525,7 @@ function EmailFinderPanel() {
       <div className="px-5 py-4 border-b border-[var(--hm-border)]">
         <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Find Emails</h2>
         <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">
-          Give a person&apos;s name and company domain (type them in, or upload a CSV) — <strong>Anymail Finder</strong> finds and verifies their email, and anyone it can&apos;t find is retried with <strong>Snov.io</strong>
+          Give a person&apos;s name and company domain (type them in, or upload a CSV) — <strong>Snov.io</strong> looks for their email first, and anyone it can&apos;t find goes to <strong>Anymail Finder</strong>
           (nothing is sent to anyone). Found emails are saved to Radar automatically: filled onto a matching contact, or added as a new one in the vertical you pick.
         </p>
       </div>
@@ -9589,7 +9589,7 @@ function EmailFinderPanel() {
           ) : `Find emails${people.length ? ` for ${people.length.toLocaleString()} person(s)` : ""}`}
         </button>
         <p className="text-[11.5px] text-[var(--hm-text-tertiary)] -mt-2">
-          Costs 1 Anymail credit only when a verified email is found — free when nothing is found, and repeat searches within 30 days are free. Not found by Anymail → Snov.io tries (1 Snov credit per email found).
+          Snov.io tries first (1 Snov credit per email found); anyone it misses goes to Anymail (1 credit only when a verified email is found — free when nothing is found, and repeat searches within 30 days are free).
           Each lookup takes ~5–15 seconds; it runs in the background, so you can close this page and come back under Recent jobs.
         </p>
 
