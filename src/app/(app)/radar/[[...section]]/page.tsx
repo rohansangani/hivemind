@@ -673,7 +673,7 @@ const SEG_PALETTE = ["var(--tag-blue-fg)", "var(--tag-purple-fg)", "var(--tag-or
 const GREY = "color-mix(in srgb, var(--hm-text-tertiary) 55%, transparent)";
 const EMPLOYEE_ORDER = ["1-10", "11-50", "51-200", "201-500", "501-1,000", "1,001-5,000", "5,001-10,000", "10,001+"];
 const REVENUE_ORDER = ["Under $1M", "$1M-$10M", "$10M-$50M", "$50M-$100M", "$100M-$500M", "$500M-$1B", "$1B+", "Unknown"];
-const MONTHLY_ORDER = ["Under $10K", "$10K-$25K", "$25K-$50K", "$50K-$100K", "$100K-$250K", "$250K-$500K", "$500K-$1M", "$1M-$5M", "$5M+", "Unknown"];
+const MONTHLY_ORDER = ["Under $5K", "$5K-$10K", "$10K-$25K", "$25K-$50K", "$50K-$100K", "$100K-$250K", "$250K-$500K", "$500K-$1M", "$1M-$5M", "$5M+", "Unknown"];
 const PER_ACCOUNT_ORDER = ["0", "1", "2-3", "4-10", "11+"];
 
 function RadarDashboardTabs() {
