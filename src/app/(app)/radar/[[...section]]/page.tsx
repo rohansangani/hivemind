@@ -6260,25 +6260,39 @@ interface ValidateJob {
 }
 interface InstantlyTag { id: string; label: string; }
 
-/** Anymail Finder credits left, with a refresh — shown on the Validate tools that spend them. */
+/** Anymail Finder + Snov.io credits left, with a refresh — shown on the Validate tools that spend them. */
 function AnymailCredits() {
-  const [state, setState] = useState<{ left: number | null; err: string; loading: boolean }>({ left: null, err: "", loading: true });
+  type CS = { left: number | null; err: string; loading: boolean };
+  const [any, setAny] = useState<CS>({ left: null, err: "", loading: true });
+  const [snov, setSnov] = useState<CS>({ left: null, err: "", loading: true });
   const load = useCallback(() => {
-    setState((s) => ({ ...s, loading: true }));
-    fetch("/api/radar/anymail-credits")
-      .then(async (r) => { const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.error || "Couldn't load credits"); return d; })
-      .then((d: { creditsLeft: number | null }) => setState({ left: d.creditsLeft, err: "", loading: false }))
-      .catch((e) => setState({ left: null, err: e.message, loading: false }));
+    const go = (url: string, set: (s: CS | ((p: CS) => CS)) => void) => {
+      set((s) => ({ ...s, loading: true }));
+      fetch(url)
+        .then(async (r) => { const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.error || "Couldn't load credits"); return d; })
+        .then((d: { creditsLeft: number | null }) => set({ left: d.creditsLeft, err: "", loading: false }))
+        .catch((e) => set({ left: null, err: e.message, loading: false }));
+    };
+    go("/api/radar/anymail-credits", setAny);
+    go("/api/radar/snov-credits", setSnov);
   }, []);
   useEffect(() => { load(); }, [load]);
-  const low = state.left != null && state.left < 1000;
+  const item = (label: string, st: CS) => {
+    const low = st.left != null && st.left < 1000;
+    return (
+      <span className="inline-flex items-center gap-1.5">
+        <span className="text-[var(--hm-text-tertiary)]">{label}</span>
+        {st.err ? <span className="text-[var(--tag-red-fg)]" title={st.err}>unavailable</span>
+          : <b className={`tabular-nums font-semibold ${low ? "text-[var(--tag-red-fg)]" : "text-[var(--hm-text)]"}`}>{st.loading && st.left == null ? "…" : st.left == null ? "—" : st.left.toLocaleString()}</b>}
+        {low && <span className="text-[var(--tag-red-fg)]">· low</span>}
+      </span>
+    );
+  };
   return (
-    <div className="flex items-center justify-end gap-2 px-5 py-2 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] text-[12px]">
-      <span className="text-[var(--hm-text-tertiary)]">Anymail Finder credits left</span>
-      {state.err ? <span className="text-[var(--tag-red-fg)]" title={state.err}>unavailable</span>
-        : <b className={`tabular-nums font-semibold ${low ? "text-[var(--tag-red-fg)]" : "text-[var(--hm-text)]"}`}>{state.loading && state.left == null ? "…" : state.left == null ? "—" : state.left.toLocaleString()}</b>}
-      {low && <span className="text-[var(--tag-red-fg)]">· running low</span>}
-      <button onClick={load} disabled={state.loading} className="radar-btn-ghost" style={{ height: 22, padding: "0 8px" }} title="Refresh">{state.loading ? "…" : "↻"}</button>
+    <div className="flex items-center justify-end gap-5 px-5 py-2 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] text-[12px]">
+      {item("Snov.io credits left", snov)}
+      {item("Anymail Finder credits left", any)}
+      <button onClick={load} disabled={any.loading || snov.loading} className="radar-btn-ghost" style={{ height: 22, padding: "0 8px" }} title="Refresh">{any.loading || snov.loading ? "…" : "↻"}</button>
     </div>
   );
 }
@@ -7469,8 +7483,8 @@ function ValidateSection() {
               {/* Prominent mode toggle — matches radar's own Patterns / Retest split */}
               <div className="grid grid-cols-1 sm:grid-cols-3 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)]">
                 {([
-                  { id: "patterns", label: "Find Emails", hint: "Anymail person search", icon: "search" },
-                  { id: "retest", label: "Risky Email Validation", hint: "Anymail verifier on a CSV", icon: "validate" },
+                  { id: "patterns", label: "Find Emails", hint: "Anymail + Snov.io person search", icon: "search" },
+                  { id: "retest", label: "Risky Email Validation", hint: "Snov.io then Anymail verifier on a CSV", icon: "validate" },
                   { id: "linkedin", label: "Check LinkedIn", hint: "Employer / domain drift", icon: "contacts" },
                 ] as const).map((m) => {
                   const on = inputMode === m.id;
@@ -8962,7 +8976,7 @@ interface VerifyJobRow {
   filters?: { provider?: string; vertical?: string; email_count?: number } | null; created_at?: string;
 }
 interface VerifyResultRow {
-  email: string; result_status: string | null; anymail_status: string; in_radar: boolean; added: boolean; vertical: string | null; checked_at: string;
+  email: string; result_status: string | null; anymail_status: string; in_radar: boolean; added: boolean; vertical: string | null; checked_by?: string | null; checked_at: string;
 }
 interface VerifySummary { total: number; valid: number; risky: number; invalid: number; failed: number; existing: number; added: number; skipped?: number }
 
@@ -9244,6 +9258,7 @@ function EmailValidationPanel() {
       }
       downloadCSV(all.map((r) => ({
         email: r.email,
+        checked_by: r.checked_by === "snov" ? "Snov.io" : r.checked_by === "anymail" ? "Anymail" : "",
         result: r.anymail_status === "valid" ? "valid" : r.anymail_status === "error" ? "could not verify" : r.anymail_status === "skipped" ? (r.result_status || "safe to send") : r.anymail_status,
         radar_email_status: r.result_status || "",
         already_in_radar: r.in_radar ? "yes" : "no",
@@ -9266,7 +9281,7 @@ function EmailValidationPanel() {
       <div className="px-5 py-4 border-b border-[var(--hm-border)]">
         <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Risky Email Validation</h2>
         <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">
-          Upload a CSV of emails — each one is checked with <strong>Anymail Finder</strong> (nothing is sent to anyone). Results are saved to Radar
+          Upload a CSV of emails — each one is checked with <strong>Snov.io</strong> first, and anything Snov can&apos;t settle (catch-all / unknown) is then checked with <strong>Anymail Finder</strong> (nothing is sent to anyone). Results are saved to Radar
           automatically: existing contacts get their email status updated, and emails not in Radar yet are added to the vertical you pick.
         </p>
       </div>
@@ -9360,7 +9375,7 @@ function EmailValidationPanel() {
                   <table className="w-full border-collapse text-[12.5px]">
                     <thead>
                       <tr>
-                        {["Email", "Result", "In Radar", "Vertical", "Checked"].map((h) => (
+                        {["Email", "Result", "Checked by", "In Radar", "Vertical", "Checked"].map((h) => (
                           <th key={h} className="text-left text-[10.5px] font-semibold uppercase tracking-wide text-[var(--hm-text-tertiary)] px-3 py-2 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] sticky top-0">{h}</th>
                         ))}
                       </tr>
@@ -9370,6 +9385,7 @@ function EmailValidationPanel() {
                         <tr key={r.email}>
                           <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)] font-mono text-[12px] text-[var(--hm-text)]">{r.email}</td>
                           <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)]"><span className={`text-[11px] px-2 py-0.5 rounded-md font-medium ${tone(r.anymail_status === "skipped" ? "valid" : r.anymail_status)}`}>{r.anymail_status === "error" ? "couldn't verify" : r.anymail_status === "skipped" ? (r.result_status || "safe to send") : r.anymail_status}</span></td>
+                          <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text-secondary)]">{r.checked_by === "snov" ? "Snov.io" : r.checked_by === "anymail" ? "Anymail" : "—"}</td>
                           <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text-secondary)]">{r.added ? "added (new)" : r.in_radar ? "updated" : "—"}</td>
                           <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text-secondary)]">{r.vertical || "—"}</td>
                           <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text-tertiary)] whitespace-nowrap">{fmtChecked(r.checked_at)}</td>
@@ -9393,7 +9409,7 @@ function EmailValidationPanel() {
 interface FindPersonInput { first_name?: string; last_name?: string; full_name?: string; domain?: string; company?: string; linkedin_url?: string; title?: string }
 interface FindResultRow {
   idx: number; first_name: string | null; last_name: string | null; company: string | null; domain: string | null; linkedin_url: string | null;
-  found_email: string | null; anymail_status: string; saved: string; vertical: string | null; checked_at: string;
+  found_email: string | null; anymail_status: string; saved: string; vertical: string | null; found_by?: string | null; checked_at: string;
 }
 interface FindSummary { total: number; found: number; notFound: number; failed: number; added: number; updated: number }
 
@@ -9490,6 +9506,7 @@ function EmailFinderPanel() {
       downloadCSV(all.map((r) => ({
         first_name: r.first_name || "", last_name: r.last_name || "", company: r.company || "", domain: r.domain || "", linkedin_url: r.linkedin_url || "",
         email_found: r.found_email || "",
+        found_by: r.found_by === "snov" ? "Snov.io" : r.found_by === "anymail" ? "Anymail" : "",
         result: r.anymail_status === "valid" ? "found (verified)" : r.anymail_status === "error" ? "couldn't search" : r.anymail_status.replace("_", " "),
         saved_to_radar: r.saved === "added" ? "added as new contact" : r.saved === "updated" ? "updated existing contact" : r.saved === "exists" ? "contact already had a different email" : "no",
         vertical: r.vertical || "", checked_at: fmtChecked(r.checked_at),
@@ -9508,7 +9525,7 @@ function EmailFinderPanel() {
       <div className="px-5 py-4 border-b border-[var(--hm-border)]">
         <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Find Emails</h2>
         <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">
-          Give a person&apos;s name and company domain (type them in, or upload a CSV) — <strong>Anymail Finder</strong> finds and verifies their email
+          Give a person&apos;s name and company domain (type them in, or upload a CSV) — <strong>Anymail Finder</strong> finds and verifies their email, and anyone it can&apos;t find is retried with <strong>Snov.io</strong>
           (nothing is sent to anyone). Found emails are saved to Radar automatically: filled onto a matching contact, or added as a new one in the vertical you pick.
         </p>
       </div>
@@ -9572,7 +9589,7 @@ function EmailFinderPanel() {
           ) : `Find emails${people.length ? ` for ${people.length.toLocaleString()} person(s)` : ""}`}
         </button>
         <p className="text-[11.5px] text-[var(--hm-text-tertiary)] -mt-2">
-          Costs 1 Anymail credit only when a verified email is found — free when nothing is found, and repeat searches within 30 days are free.
+          Costs 1 Anymail credit only when a verified email is found — free when nothing is found, and repeat searches within 30 days are free. Not found by Anymail → Snov.io tries (1 Snov credit per email found).
           Each lookup takes ~5–15 seconds; it runs in the background, so you can close this page and come back under Recent jobs.
         </p>
 
@@ -9622,7 +9639,7 @@ function EmailFinderPanel() {
                   <table className="w-full border-collapse text-[12.5px]">
                     <thead>
                       <tr>
-                        {["Person", "Company / domain", "Email found", "Result", "Saved to Radar"].map((h) => (
+                        {["Person", "Company / domain", "Email found", "Result", "Found by", "Saved to Radar"].map((h) => (
                           <th key={h} className="text-left text-[10.5px] font-semibold uppercase tracking-wide text-[var(--hm-text-tertiary)] px-3 py-2 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] sticky top-0">{h}</th>
                         ))}
                       </tr>
@@ -9634,6 +9651,7 @@ function EmailFinderPanel() {
                           <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text-secondary)]">{r.company || r.domain || r.linkedin_url || "—"}</td>
                           <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)] font-mono text-[12px] text-[var(--hm-text)]">{r.found_email || "—"}</td>
                           <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)]"><span className={`text-[11px] px-2 py-0.5 rounded-md font-medium ${tone(r.anymail_status)}`}>{r.anymail_status === "valid" ? "found" : r.anymail_status === "error" ? "couldn't search" : r.anymail_status.replace("_", " ")}</span></td>
+                          <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text-secondary)]">{r.found_by === "snov" ? "Snov.io" : r.found_by === "anymail" ? "Anymail" : "—"}</td>
                           <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text-secondary)]">{r.saved === "added" ? "added (new)" : r.saved === "updated" ? "updated" : r.saved === "exists" ? "has other email" : "—"}</td>
                         </tr>
                       ))}
