@@ -1050,14 +1050,15 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
       const r = await radarFetch(path, { headers: { Prefer: "count=exact", Range: "0-0" } });
       return r.ok ? (parseInt((r.headers.get("content-range") || "").split("/")[1] || "0", 10) || 0) : 0;
     };
-    const [total, found, notFound, failed, added, updated, rowsRes] = await Promise.all([
+    const [total, found, notFound, failed, added, updated, rowsRes, snov] = await Promise.all([
       cnt(`${base}&select=id`), cnt(`${base}&anymail_status=eq.valid&select=id`),
       cnt(`${base}&anymail_status=in.(not_found,blacklisted)&select=id`), cnt(`${base}&anymail_status=eq.error&select=id`),
       cnt(`${base}&saved=eq.added&select=id`), cnt(`${base}&saved=eq.updated&select=id`),
       radarFetch(`${base}&select=idx,first_name,last_name,company,domain,linkedin_url,found_email,anymail_status,saved,vertical,found_by,checked_at&order=idx.asc&limit=${lim}&offset=${Math.max(Number(offset) || 0, 0)}`),
+      cnt(`${base}&found_by=eq.snov&select=id`),
     ]);
     const rows = rowsRes.ok ? await rowsRes.json() : [];
-    return { status: 200, body: { summary: { total, found, notFound, failed, added, updated }, rows } };
+    return { status: 200, body: { summary: { total, found, notFound, failed, added, updated, snov }, rows } };
   }
 
   if (action === "retest_job_status") {
@@ -1076,7 +1077,7 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
     if (!jobId) return { status: 400, body: { error: "No jobId" } };
     const base = `email_verify_results?job_id=eq.${Number(jobId)}`;
     const lim = Math.min(Math.max(Number(limit) || 500, 1), 1000); // PostgREST caps a response at 1000 rows
-    const [total, valid, risky, invalid, failed, existing, added, rowsRes, skipped] = await Promise.all([
+    const [total, valid, risky, invalid, failed, existing, added, rowsRes, skipped, snov, snovValid, snovInvalid, saved] = await Promise.all([
       restCount(`${base}&select=id`),
       restCount(`${base}&anymail_status=eq.valid&select=id`),
       restCount(`${base}&anymail_status=eq.risky&select=id`),
@@ -1086,9 +1087,14 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
       restCount(`${base}&added=eq.true&select=id`),
       radarFetch(`${base}&select=email,result_status,anymail_status,in_radar,added,vertical,checked_by,checked_at&order=id.asc&limit=${lim}&offset=${Math.max(Number(offset) || 0, 0)}`),
       restCount(`${base}&anymail_status=eq.skipped&select=id`),
+      restCount(`${base}&checked_by=eq.snov&select=id`),
+      restCount(`${base}&checked_by=eq.snov&anymail_status=eq.valid&select=id`),
+      restCount(`${base}&checked_by=eq.snov&anymail_status=eq.invalid&select=id`),
+      // Results actually written to a Radar contact (updated or newly added) — skipped / couldn't-verify rows aren't.
+      restCount(`${base}&anymail_status=in.(valid,risky,invalid)&or=(in_radar.is.true,added.is.true)&select=id`),
     ]);
     const rows = rowsRes.ok ? await rowsRes.json() : [];
-    return { status: 200, body: { summary: { total, valid, risky, invalid, failed, existing, added, skipped }, rows } };
+    return { status: 200, body: { summary: { total, valid, risky, invalid, failed, existing, added, skipped, snov, snovValid, snovInvalid, saved }, rows } };
   }
 
 
