@@ -7,6 +7,7 @@ import { logRadarActivity } from "@/lib/radar/activityLog";
 import { streamFilteredCsv } from "@/lib/radar/csvStream";
 import { createEnrichJob, runEnrichTick, refreshCounts, retryUnresolvedViaApify, ICP_TIERS, type EnrichOptions, type EnrichCompanyInput } from "@/lib/radar/enrichPipeline";
 import { blitzKey } from "@/lib/radar/blitz";
+import { snovConfigured } from "@/lib/radar/snov";
 
 /**
  * Enrich v2 — Blitz → Anymail → Debounce → Anymail-verify pipeline (see lib/radar/enrichPipeline.ts).
@@ -41,7 +42,7 @@ export async function POST(req: NextRequest) {
   try {
     if (action === "check_keys") {
       return NextResponse.json({
-        blitz: !!blitzKey(), anymail: !!process.env.ANYMAIL_FINDER_API_KEY?.trim(),
+        blitz: !!blitzKey(), snov: snovConfigured(), anymail: !!process.env.ANYMAIL_FINDER_API_KEY?.trim(),
         debounce: !!(process.env.DEBOUNCE_API_KEY || process.env.RADAR_DEBOUNCE_API_KEY || "").trim(),
         tiers: ICP_TIERS.map((t) => ({ label: t.label, include: t.tier.include_title, exclude: t.tier.exclude_title })),
       });
@@ -58,6 +59,7 @@ export async function POST(req: NextRequest) {
       const o = (body.options || {}) as Partial<EnrichOptions>;
       const options: EnrichOptions = {
         maxPerCompany: Math.min(100, Math.max(1, Number(o.maxPerCompany) || 25)),
+        snovFallback: o.snovFallback !== false,
         anymailFallback: o.anymailFallback !== false,
         anymailVerify: o.anymailVerify !== false,
         phones: o.phones === true,

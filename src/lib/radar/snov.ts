@@ -50,12 +50,27 @@ export async function snovBalance(): Promise<{ left: number | null; error?: stri
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// Snov allows 60 requests / minute — space every request out (per server instance) so parallel callers share the budget.
+const GAP_MS = 1150;
+let paceChain: Promise<void> = Promise.resolve();
+function pace(): Promise<void> {
+  const mine: Promise<void> = paceChain.then(() => sleep(GAP_MS)).then(() => undefined);
+  paceChain = mine;
+  return mine;
+}
+async function snovFetch(url: string, init: RequestInit): Promise<Response> {
+  await pace();
+  let r = await fetch(url, init);
+  if (r.status === 429) { await sleep(8000); await pace(); r = await fetch(url, init); }
+  return r;
+}
+
 /** POST start (form-encoded) then poll result until completed (or ~50 s). Returns the `data` array or null. */
 async function snovTask<T>(startPath: string, resultPath: string, form: URLSearchParams): Promise<T[] | null> {
   const t = await snovToken();
   if (!t) return null;
   try {
-    const s = await fetch(`${BASE}${startPath}`, {
+    const s = await snovFetch(`${BASE}${startPath}`, {
       method: "POST", headers: { Authorization: `Bearer ${t}`, "Content-Type": "application/x-www-form-urlencoded" },
       body: form, signal: AbortSignal.timeout(20000),
     });
@@ -64,8 +79,8 @@ async function snovTask<T>(startPath: string, resultPath: string, form: URLSearc
     const hash = ((await s.json()) as { data?: { task_hash?: string } })?.data?.task_hash;
     if (!hash) return null;
     for (let i = 0; i < 25; i++) {
-      await sleep(i < 2 ? 2500 : 2000);
-      const r = await fetch(`${BASE}${resultPath}?task_hash=${hash}`, { headers: { Authorization: `Bearer ${t}` }, signal: AbortSignal.timeout(20000) });
+      await sleep(i < 2 ? 1500 : 800);
+      const r = await snovFetch(`${BASE}${resultPath}?task_hash=${hash}`, { headers: { Authorization: `Bearer ${t}` }, signal: AbortSignal.timeout(20000) });
       if (!r.ok) continue;
       const d = (await r.json()) as { status?: string; data?: T[] };
       if (d.status === "completed") return d.data || [];
@@ -125,5 +140,45 @@ export async function snovFindEmails(people: SnovPerson[]): Promise<Map<number, 
       if (hit?.email) out.set(start + i, hit.email.trim().toLowerCase());
     });
   }));
+  return out;
+}
+
+/**
+ * Company name for a domain via Snov's Domain Search (1 credit when it knows the company, free otherwise).
+ * Used by Enrich's company-LinkedIn step: when Blitz can't find a domain, the proper company name Snov returns
+ * is searched on Blitz by name. Returns domain -> company name for the ones Snov knows.
+ */
+export async function snovCompanyNames(domains: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (!snovConfigured() || !domains.length) return out;
+  const t = await snovToken();
+  if (!t) return out;
+  let next = 0;
+  const worker = async () => {
+    while (next < domains.length) {
+      const domain = domains[next++];
+      try {
+        const s = await snovFetch(`${BASE}/v2/domain-search/start`, {
+          method: "POST", headers: { Authorization: `Bearer ${t}`, "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ domain }), signal: AbortSignal.timeout(20000),
+        });
+        if (!s.ok) continue;
+        const hash = ((await s.json()) as { meta?: { task_hash?: string } })?.meta?.task_hash;
+        if (!hash) continue;
+        for (let i = 0; i < 12; i++) {
+          await sleep(i < 2 ? 1500 : 1000);
+          const r = await snovFetch(`${BASE}/v2/domain-search/result/${hash}`, { headers: { Authorization: `Bearer ${t}` }, signal: AbortSignal.timeout(20000) });
+          if (!r.ok) continue;
+          const d = (await r.json()) as { status?: string; data?: { company_name?: string } | unknown[] };
+          if (d.status === "completed") {
+            const name = !Array.isArray(d.data) ? String(d.data?.company_name || "").trim() : "";
+            if (name) out.set(domain, name);
+            break;
+          }
+        }
+      } catch { /* best-effort */ }
+    }
+  };
+  await Promise.all([worker(), worker()]);
   return out;
 }

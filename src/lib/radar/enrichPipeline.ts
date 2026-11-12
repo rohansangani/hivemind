@@ -22,17 +22,20 @@
  */
 import { radarSql, selectFrom, insertRows, patchByFilter } from "@/lib/radar/supabase";
 import { cleanCity } from "@/lib/radar/cityNames";
+import { snovConfigured, snovFindEmails, snovCompanyNames } from "@/lib/radar/snov";
 import {
   blitzKey, mapPool, BLITZ_RPS, BlitzUnavailableError, blitzDomainToLinkedin, blitzCompanySearchByName,
   blitzWaterfallIcp, blitzWorkEmail, blitzPhone, type BlitzIcpTier, type BlitzIcpResult,
 } from "@/lib/radar/blitz";
 
-export type EnrichPhase = "reuse" | "resolve" | "search" | "email" | "anymail" | "debounce" | "verify" | "phone" | "save" | "done";
-export const PHASES: EnrichPhase[] = ["reuse", "resolve", "search", "email", "anymail", "debounce", "verify", "phone", "save", "done"];
+export type EnrichPhase = "reuse" | "resolve" | "search" | "email" | "snov" | "anymail" | "debounce" | "verify" | "phone" | "save" | "done";
+export const PHASES: EnrichPhase[] = ["reuse", "resolve", "search", "email", "snov", "anymail", "debounce", "verify", "phone", "save", "done"];
 
 export interface EnrichOptions {
   maxPerCompany: number;      // Waterfall max_results (1-100)
-  anymailFallback: boolean;   // step 4
+  /** Step 4: Snov.io email finder (name + domain) for people Blitz had no email for — before Anymail. Also Snov-assisted company lookup in step 1. Default on (needs SNOV_CLIENT_ID/SECRET). */
+  snovFallback?: boolean;
+  anymailFallback: boolean;   // step 5
   anymailVerify: boolean;     // step 6
   phones: boolean;            // step 7
   /** Drop HR & finance titles (junior support is always dropped). */
@@ -170,7 +173,7 @@ export async function refreshCounts(jobId: number): Promise<Record<string, unkno
       'methods', (SELECT COALESCE(jsonb_object_agg(m, n), '{}'::jsonb) FROM (SELECT resolve_method m, count(*) n FROM enrich2_companies WHERE job_id = ${jobId} AND resolve_method IS NOT NULL AND resolve_method <> 'radar_checked' GROUP BY 1) x),
       'people', p.total, 'from_radar_people', p.from_radar, 'kept', p.kept, 'dropped', p.dropped, 'phase1', p.p1, 'phase2', p.p2,
       'email_eligible', p.email_eligible, 'email_tried', p.email_tried, 'email_blitz', p.email_blitz,
-      'anymail_tried', p.anymail_tried, 'email_anymail', p.email_anymail, 'with_email', p.with_email,
+      'snov_tried', p.snov_tried, 'email_snov', p.email_snov, 'anymail_tried', p.anymail_tried, 'email_anymail', p.email_anymail, 'with_email', p.with_email,
       'debounced', p.debounced, 'db_safe', p.db_safe, 'db_risky', p.db_risky, 'db_invalid', p.db_invalid, 'db_unknown', p.db_unknown,
       'verify_eligible', p.verify_eligible, 'verified', p.verified, 'verify_valid', p.verify_valid,
       'final_safe', p.final_safe, 'final_risky', p.final_risky, 'final_invalid', p.final_invalid, 'final_unknown', p.final_unknown,
@@ -186,6 +189,8 @@ export async function refreshCounts(jobId: number): Promise<Record<string, unkno
       count(*) FILTER (WHERE dropped_reason IS NULL AND linkedin_url IS NOT NULL) email_eligible,
       count(*) FILTER (WHERE dropped_reason IS NULL AND email_tried) email_tried,
       count(*) FILTER (WHERE dropped_reason IS NULL AND email_source = 'blitz') email_blitz,
+      count(*) FILTER (WHERE dropped_reason IS NULL AND snov_tried) snov_tried,
+      count(*) FILTER (WHERE dropped_reason IS NULL AND email_source = 'snov') email_snov,
       count(*) FILTER (WHERE dropped_reason IS NULL AND anymail_tried) anymail_tried,
       count(*) FILTER (WHERE dropped_reason IS NULL AND email_source = 'anymail') email_anymail,
       count(*) FILTER (WHERE dropped_reason IS NULL AND email IS NOT NULL) with_email,
@@ -245,7 +250,7 @@ export async function runEnrichTick(jobId: number, budgetMs: number): Promise<bo
       if (did === "next") {
         const i = PHASES.indexOf(phase);
         phase = PHASES[i + 1];
-        while ((phase === "anymail" && !job.options.anymailFallback) || (phase === "verify" && !job.options.anymailVerify) || (phase === "phone" && !job.options.phones)) {
+        while ((phase === "snov" && (job.options.snovFallback === false || !snovConfigured())) || (phase === "anymail" && !job.options.anymailFallback) || (phase === "verify" && !job.options.anymailVerify) || (phase === "phone" && !job.options.phones)) {
           phase = PHASES[PHASES.indexOf(phase) + 1];
         }
         await patchByFilter("enrich2_jobs", `id=eq.${jobId}`, { phase, fail_count: 0 });
@@ -295,7 +300,30 @@ async function runPhaseBatch(job: EnrichJobRow, phase: EnrichPhase, left: () => 
     if (!rows.length) return "next";
     await stage(`Step 1 · Finding company LinkedIn pages — ${rows.length} compan${rows.length === 1 ? "y" : "ies"} in this batch`, true);
     const updates = await mapPool(rows as Record<string, unknown>[], BLITZ_RPS, async (co) => resolveCompany(co, BLITZ));
-    // Second pass: Blitz found nothing (or only a low-confidence name match) → ask Apify's domain-based finder.
+    // Second pass: Blitz found nothing (or only a low-confidence match) → Snov.io tells us the company's proper name
+    // from its domain, and we search Blitz by that name.
+    if (job.options.snovFallback !== false && snovConfigured()) {
+      const miss = updates.filter((u) => u.status === "unresolved" || u.status === "low");
+      if (miss.length) {
+        await stage(`Step 1 · Snov.io company names for ${miss.length} compan${miss.length === 1 ? "y" : "ies"} Blitz couldn't find`, true);
+        const names = await snovCompanyNames(miss.map((u) => String(u.domain))).catch(() => new Map<string, string>());
+        for (const u of miss) {
+          const nm = names.get(String(u.domain));
+          if (!nm || left() < 20000) continue;
+          const domain = String(u.domain);
+          const results = await blitzCompanySearchByName([nm], BLITZ).catch(() => []);
+          let pick: { url: string; name: string; conf: "high" | "medium" } | null = null;
+          for (const r of results) {
+            if (!r.linkedin_url) continue;
+            const rd = cleanDomain(String(r.domain || r.website || ""));
+            if (rd && (rd === domain || rd === parentDomain(domain))) { pick = { url: r.linkedin_url, name: r.name || nm, conf: "high" }; break; }
+            if (!pick && normName(r.name) === normName(nm)) pick = { url: r.linkedin_url, name: r.name || nm, conf: "medium" };
+          }
+          if (pick) Object.assign(u, { company_linkedin_url: pick.url, company_name: pick.name, resolve_method: "snov", confidence: pick.conf, status: "resolved" });
+        }
+      }
+    }
+    // Third pass: still missing → ask Apify's domain-based finder.
     if (job.options.apifyFallback !== false) {
       const missing = updates.filter((u) => u.status === "unresolved" || u.status === "low");
       if (missing.length) {
@@ -344,6 +372,22 @@ async function runPhaseBatch(job: EnrichJobRow, phase: EnrichPhase, left: () => 
       return { id: p.id, job_id: id, email_tried: true, ...(email ? { email, email_source: "blitz" } : {}) };
     });
     await upsertPeople(res);
+    return "more";
+  }
+
+  if (phase === "snov") {
+    const { rows } = await selectFrom("enrich2_people", `select=id,first_name,last_name,domain&job_id=eq.${id}&dropped_reason=is.null&email=is.null&snov_tried=is.false&order=id.asc&limit=${Math.max(10, Math.min(100, Math.floor(left() / 1000)))}`);
+    if (!rows.length) return "next";
+    await stage(`Step 4 · Snov.io email finder (name + domain) for people Blitz had no email for — ${c.snov_tried || 0} searched, ${c.email_snov || 0} found`, true);
+    const people = rows as { id: number; first_name: string | null; last_name: string | null; domain: string | null }[];
+    const searchable = people.map((p, i) => ({ p, i })).filter((x) => x.p.first_name && x.p.last_name && x.p.domain);
+    const found = searchable.length
+      ? await snovFindEmails(searchable.map((x) => ({ first_name: x.p.first_name as string, last_name: x.p.last_name as string, domain: String(x.p.domain) }))).catch(() => new Map<number, string>())
+      : new Map<number, string>();
+    const hit = new Map<number, string>();
+    found.forEach((email, k) => hit.set(searchable[k].p.id, email));
+    // Rows Snov can't search (no name/domain) or didn't find are marked tried too, so they move on to Anymail.
+    await upsertPeople(people.map((p) => ({ id: p.id, job_id: id, snov_tried: true, ...(hit.get(p.id) ? { email: hit.get(p.id), email_source: "snov" } : {}) })));
     return "more";
   }
 
