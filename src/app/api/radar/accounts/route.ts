@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 // Streams can run long for "export all matching" (hundreds of thousands of rows).
 export const maxDuration = 280;
-import { selectFrom, requireRadarAccess, updateRow, setMarkedIrrelevant, deleteMarkedIrrelevant, fetchAllIds, firmographicFilters, inFilter, multiValues } from "@/lib/radar/supabase";
+import { selectFrom, requireRadarAccess, updateRow, setMarkedIrrelevant, deleteMarkedIrrelevant, fetchAllIds, firmographicFilters, inFilter, multiValues, verticalsFilter } from "@/lib/radar/supabase";
 import { streamFilteredCsv, streamAccountsWithContactsCsv } from "@/lib/radar/csvStream";
 import { logAccountExport } from "@/lib/radar/accountExport";
 import { logRadarActivity } from "@/lib/radar/activityLog";
@@ -31,7 +31,7 @@ function buildAccountsFilter(body: Record<string, unknown>, canReview: boolean):
   // Installed app: any of the picked apps (names are matched inside the stored comma-separated list).
   const apps = multiValues(body.installedApp);
   if (apps.length) query += `&or=(${apps.map((a) => `installed_apps.ilike.${encodeURIComponent(`"*${a.replace(/[\\"]/g, "")}*"`)}`).join(",")})`;
-  query += inFilter("vertical", vertical);
+  query += vertical ? verticalsFilter(vertical as string | string[]) : "";
   query += inFilter("account_type", accountType);
   if (customer === "true") query += `&customer=eq.true`;
   else if (customer === "false") query += `&customer=eq.false`;

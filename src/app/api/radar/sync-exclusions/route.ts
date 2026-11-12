@@ -149,7 +149,7 @@ async function runSync(): Promise<{ status: number; body: Record<string, unknown
           COUNT(*) FILTER (WHERE validated_at IS NOT NULL) AS validated
         FROM contacts WHERE vertical IN ('B2B','D2C','US','Crossborder') GROUP BY vertical
       ) c ON c.vertical = v.vertical
-      LEFT JOIN (SELECT vertical, COUNT(*) AS acc FROM accounts WHERE vertical IN ('B2B','D2C','US','Crossborder') GROUP BY vertical) a ON a.vertical = v.vertical
+      LEFT JOIN (SELECT av AS vertical, COUNT(*) AS acc FROM accounts, unnest(CASE WHEN verticals IS NULL OR cardinality(verticals) = 0 THEN ARRAY[vertical] ELSE verticals END) av WHERE av IN ('B2B','D2C','US','Crossborder') GROUP BY av) a ON a.vertical = v.vertical
       ON CONFLICT (snapshot_date, vertical) DO UPDATE SET
         contacts=EXCLUDED.contacts, nonempty_domains=EXCLUDED.nonempty_domains, avg_per_domain=EXCLUDED.avg_per_domain,
         verified=EXCLUDED.verified, validated=EXCLUDED.validated, total_accounts=EXCLUDED.total_accounts

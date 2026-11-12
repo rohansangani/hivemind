@@ -99,9 +99,11 @@ async function fetchContactsForAccounts(accounts: Record<string, unknown>[]): Pr
   const CHUNK = 100;
   const chunked = <T,>(xs: T[]) => Array.from({ length: Math.ceil(xs.length / CHUNK) }, (_, i) => xs.slice(i * CHUNK, i * CHUNK + CHUNK));
   const enc = (v: unknown) => encodeURIComponent(String(v));
+  // An account can carry several verticals (accounts.verticals; `vertical` is its main one).
+  const has = (a: Record<string, unknown>, v: string) => (Array.isArray(a.verticals) && (a.verticals as string[]).length ? (a.verticals as string[]) : [a.vertical as string]).includes(v);
   const ownIds = accounts.filter((a) => a.vertical !== "Crossborder").map((a) => a.id);
-  const xbDomains = [...new Set(accounts.filter((a) => a.vertical === "Crossborder" && a.domain).map((a) => String(a.domain).toLowerCase()))];
-  const b2bDomains = [...new Set(accounts.filter((a) => a.vertical === "B2B" && a.domain).map((a) => String(a.domain).toLowerCase()))];
+  const xbDomains = [...new Set(accounts.filter((a) => has(a, "Crossborder") && a.domain).map((a) => String(a.domain).toLowerCase()))];
+  const b2bDomains = [...new Set(accounts.filter((a) => has(a, "B2B") && a.domain).map((a) => String(a.domain).toLowerCase()))];
   const queries: string[] = [
     ...chunked(ownIds).map((c) => `select=*&account_id=in.(${c.map(enc).join(",")})`),
     ...chunked(xbDomains).map((c) => `select=*&domain=in.(${c.map((d) => encodeFilterValue(d)).join(",")})`),
@@ -124,7 +126,8 @@ async function fetchContactsForAccounts(accounts: Record<string, unknown>[]): Pr
       // Crossborder only mirrors people who live under the other verticals — when the domain also has
       // a real (non-Crossborder) account in this result, list them there once, not twice.
       if (a.vertical === "Crossborder") { if (!realDomains.has(ad)) targets.add(String(a.id)); }
-      else if (a.vertical === "B2B" && Array.isArray(c.verticals) && (c.verticals as string[]).includes("B2B")) targets.add(String(a.id));
+      else if (has(a, "Crossborder")) targets.add(String(a.id)); // merged row: also lists everyone at its domain
+      else if (has(a, "B2B") && Array.isArray(c.verticals) && (c.verticals as string[]).includes("B2B")) targets.add(String(a.id));
     }
     for (const t of targets) {
       const k = `${t}|${c.id}`;

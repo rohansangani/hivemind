@@ -49,7 +49,7 @@ async function computeFacets(table: "accounts" | "contacts", body: Body, include
   const isAcc = table === "accounts";
   const from = isAcc ? "accounts" : "contacts_view";
   const facets: Facet[] = [
-    { key: "vertical", expr: isAcc ? "ARRAY[vertical]" : "verticals", array: true },
+    { key: "vertical", expr: isAcc ? "COALESCE(NULLIF(verticals, '{}'::text[]), ARRAY[vertical])" : "verticals", array: true },
     ...COMMON,
     { key: "state", expr: "state" }, { key: "city", expr: "city" },
     ...(isAcc ? [] : [{ key: "emailStatus", expr: "COALESCE(email_status, 'unvalidated')" }]),
