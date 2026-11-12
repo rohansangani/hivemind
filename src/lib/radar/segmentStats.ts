@@ -4,34 +4,52 @@ import { radarSql } from "@/lib/radar/supabase";
  * Per-segment dashboard numbers (India = D2C + B2B + Crossborder, US, Crossborder): KPIs and firmographic splits for the
  * segment's ACCOUNTS (account-level analysis only), in a single scan. Crossborder is an overlay vertical — its
  * contacts are those whose `verticals` include it, its accounts' contact counts go by domain.
+ *
+ * "tam" (ClickPost TAM tab) = every India StoreLeads-file account with monthly sales >= INR 10 lakh (table `tam_india`,
+ * see docs/sql/2026-11-12_tam_india.sql) — the market, not just what's in Radar. Firmographics come from the file;
+ * Radar fills what the file lacks (employees, LinkedIn…) and supplies customer / lifecycle / source / contacts by domain.
  */
-export type Segment = "india" | "us" | "crossborder";
+export type Segment = "india" | "us" | "crossborder" | "tam";
 export interface SegmentRow { k: string; v: string | null; n: number }
 
 const esc = (s: string) => `'${s.replace(/'/g, "''")}'`;
 
 export async function segmentStats(segment: Segment, sub: string): Promise<{ accounts: SegmentRow[] }> {
   // Crossborder is part of India, so the India tab includes it (and can also be narrowed to just D2C / B2B / Crossborder).
-  const verts = segment === "india" ? (sub === "D2C" ? ["D2C"] : sub === "B2B" ? ["B2B"] : sub === "Crossborder" ? ["Crossborder"] : ["D2C", "B2B", "Crossborder"]) : segment === "us" ? ["US"] : ["Crossborder"];
+  const verts = segment === "tam" ? [] : segment === "india" ? (sub === "D2C" ? ["D2C"] : sub === "B2B" ? ["B2B"] : sub === "Crossborder" ? ["Crossborder"] : ["D2C", "B2B", "Crossborder"]) : segment === "us" ? ["US"] : ["Crossborder"];
   const vlist = verts.map(esc).join(",");
 
   // An account matches a segment if ANY vertical on its list does (one row can carry several). Its contact count is the
   // larger of the contacts linked to it (account_id / extra_verticals) and, when it carries the Crossborder tag, the
   // contacts at its domain tagged Crossborder (Crossborder accounts own nobody themselves) — max, so nobody counts twice.
   const direct = `SELECT id, count(*)::int n FROM (
-        SELECT c.account_id id FROM contacts c WHERE c.account_id IN (SELECT id FROM a) AND c.marked_irrelevant IS NOT TRUE
+        SELECT c.account_id::text id FROM contacts c WHERE c.account_id::text IN (SELECT id FROM a) AND c.marked_irrelevant IS NOT TRUE
         UNION ALL
         SELECT a.id FROM a JOIN contacts c ON c.match_domain = radar_norm_domain(a.domain) AND c.marked_irrelevant IS NOT TRUE AND a.vl && c.extra_verticals
       ) u GROUP BY id`;
   const overlayCounts = `SELECT a.id, count(c.id)::int n FROM a JOIN contacts c ON c.match_domain = radar_norm_domain(a.domain) AND 'Crossborder' = ANY(c.verticals) AND c.marked_irrelevant IS NOT TRUE WHERE 'Crossborder' = ANY(a.vl) GROUP BY a.id`;
   const countsCte = `cc AS (SELECT id, max(n)::int n FROM (${direct} UNION ALL ${overlayCounts}) m GROUP BY id)`;
 
-  const accountsQ = `
-WITH a AS MATERIALIZED (
-  SELECT id, vertical, COALESCE(NULLIF(verticals, '{}'::text[]), ARRAY[vertical]) AS vl, domain, linkedin_url, industry_category, employee_bucket, revenue_bucket, monthly_revenue_bucket, platform, country, state, source,
+  const aCte = segment === "tam"
+    ? `a AS MATERIALIZED (
+  SELECT t.domain AS id, 'India TAM'::text AS vertical, ARRAY['India TAM']::text[] AS vl, t.domain,
+         COALESCE(NULLIF(t.linkedin_url, ''), r.linkedin_url) AS linkedin_url, COALESCE(NULLIF(t.industry_category, ''), r.industry_category) AS industry_category,
+         COALESCE(t.employee_bucket, r.employee_bucket) AS employee_bucket, t.revenue_bucket, t.monthly_revenue_bucket,
+         COALESCE(NULLIF(t.platform, ''), r.platform) AS platform, 'India'::text AS country, COALESCE(NULLIF(t.state, ''), r.state) AS state,
+         COALESCE(r.source, 'Not in Radar yet') AS source, r.account_type, r.customer, r.hubspot_lifecycle_stage,
+         CASE WHEN t.has_description OR COALESCE(r.description, '') <> '' THEN 'y' END AS description
+  FROM tam_india t
+  LEFT JOIN LATERAL (SELECT * FROM accounts x WHERE lower(btrim(x.domain)) IN (t.domain, 'www.' || t.domain) AND x.marked_irrelevant IS NOT TRUE ORDER BY (x.vertical = 'D2C') DESC LIMIT 1) r ON true)`
+    : `a AS MATERIALIZED (
+  SELECT id::text AS id, vertical, COALESCE(NULLIF(verticals, '{}'::text[]), ARRAY[vertical]) AS vl, domain, linkedin_url, industry_category, employee_bucket, revenue_bucket, monthly_revenue_bucket, platform, country, state, source,
          account_type, customer, hubspot_lifecycle_stage, description
-  FROM accounts WHERE COALESCE(NULLIF(verticals, '{}'::text[]), ARRAY[vertical]) && ARRAY[${vlist}]::text[] AND marked_irrelevant IS NOT TRUE),
-${countsCte},
+  FROM accounts WHERE COALESCE(NULLIF(verticals, '{}'::text[]), ARRAY[vertical]) && ARRAY[${vlist}]::text[] AND marked_irrelevant IS NOT TRUE)`;
+  // TAM: contacts are counted by domain (anyone Radar has at that company, any vertical).
+  const tamCounts = `cc AS (SELECT a.id, count(c.id)::int n FROM a JOIN contacts c ON c.match_domain = a.domain AND c.marked_irrelevant IS NOT TRUE GROUP BY a.id)`;
+
+  const accountsQ = `
+WITH ${aCte},
+${segment === "tam" ? tamCounts : countsCte},
 j AS (SELECT a.*, COALESCE(cc.n, 0) cn FROM a LEFT JOIN cc ON cc.id = a.id)
 SELECT 'kpi' k, 'accounts' v, count(*)::int n FROM j
 UNION ALL SELECT 'kpi', 'with_domain', count(*) FILTER (WHERE domain IS NOT NULL AND domain <> '')::int FROM j
