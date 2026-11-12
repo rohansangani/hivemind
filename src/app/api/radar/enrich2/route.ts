@@ -61,6 +61,7 @@ export async function POST(req: NextRequest) {
         maxPerCompany: Math.min(100, Math.max(1, Number(o.maxPerCompany) || 25)),
         snovFallback: o.snovFallback !== false,
         anymailFallback: o.anymailFallback !== false,
+        snovVerify: o.snovVerify !== false,
         anymailVerify: o.anymailVerify !== false,
         phones: o.phones === true,
         excludeSupportHrFinance: o.excludeSupportHrFinance !== false,
