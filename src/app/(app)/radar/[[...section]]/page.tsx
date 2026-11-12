@@ -667,7 +667,7 @@ const CITY_OPTIONS = [
 ];
 
 const SEG_TABS: { id: "overview" | SegmentKey; label: string }[] = [
-  { id: "overview", label: "Overview" }, { id: "india", label: "India" }, { id: "us", label: "US" }, { id: "crossborder", label: "Crossborder" }, { id: "tam", label: "ClickPost TAM" },
+  { id: "overview", label: "Overview" }, { id: "india", label: "India" }, { id: "us", label: "US" }, { id: "crossborder", label: "Crossborder" },
 ];
 const SEG_PALETTE = ["var(--tag-blue-fg)", "var(--tag-purple-fg)", "var(--tag-orange-fg)", "var(--tag-green-fg)", "var(--tag-pink-fg)", "var(--tag-yellow-fg)", "var(--tag-red-fg)"];
 const GREY = "color-mix(in srgb, var(--hm-text-tertiary) 55%, transparent)";
@@ -678,6 +678,8 @@ const PER_ACCOUNT_ORDER = ["0", "1", "2-3", "4-10", "11+"];
 
 function RadarDashboardTabs() {
   const [tab, setTab] = useState<"overview" | SegmentKey>("overview");
+  // ClickPost TAM lives under India (a second view next to the India accounts).
+  const [indiaView, setIndiaView] = useState<"accounts" | "tam">("accounts");
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3 flex-wrap">
@@ -686,8 +688,15 @@ function RadarDashboardTabs() {
             <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)} className={`radar-tab ${tab === t.id ? "active" : ""}`}>{t.label}</button>
           ))}
         </div>
+        {tab === "india" && (
+          <div className="flex items-center gap-1 ml-2">
+            {([["accounts", "India accounts"], ["tam", "ClickPost TAM"]] as const).map(([id, label]) => (
+              <button key={id} onClick={() => setIndiaView(id)} className={`h-7 px-2.5 rounded-full border text-[12px] font-medium transition-colors ${indiaView === id ? "border-[var(--hm-primary)] bg-[var(--hm-bg-tertiary)] text-[var(--hm-text)]" : "border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:bg-[var(--hm-bg-secondary)]"}`}>{label}</button>
+            ))}
+          </div>
+        )}
       </div>
-      {tab === "overview" ? <RadarDashboard /> : <SegmentDashboard key={tab} segment={tab} sub="all" />}
+      {tab === "overview" ? <RadarDashboard /> : <SegmentDashboard key={tab === "india" ? `india-${indiaView}` : tab} segment={tab === "india" && indiaView === "tam" ? "tam" : tab} sub="all" />}
     </div>
   );
 }
