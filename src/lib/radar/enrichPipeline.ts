@@ -22,21 +22,25 @@
  */
 import { radarSql, selectFrom, insertRows, patchByFilter } from "@/lib/radar/supabase";
 import { cleanCity } from "@/lib/radar/cityNames";
-import { snovConfigured, snovFindEmails, snovCompanyNames, snovEmailsByLinkedin } from "@/lib/radar/snov";
+import { snovConfigured, snovFindEmails, snovCompanyNames, snovEmailsByLinkedin, snovVerify } from "@/lib/radar/snov";
 import {
   blitzKey, mapPool, BLITZ_RPS, BlitzUnavailableError, blitzDomainToLinkedin, blitzCompanySearchByName,
   blitzWaterfallIcp, blitzWorkEmail, blitzPhone, type BlitzIcpTier, type BlitzIcpResult,
 } from "@/lib/radar/blitz";
 
-export type EnrichPhase = "reuse" | "resolve" | "search" | "email" | "snov" | "anymail" | "debounce" | "verify" | "phone" | "save" | "done";
-export const PHASES: EnrichPhase[] = ["reuse", "resolve", "search", "email", "snov", "anymail", "debounce", "verify", "phone", "save", "done"];
+export type EnrichPhase = "reuse" | "resolve" | "search" | "email" | "snov" | "anymail" | "debounce" | "snovverify" | "verify" | "phone" | "save" | "done";
+export const PHASES: EnrichPhase[] = ["reuse", "resolve", "search", "email", "snov", "anymail", "debounce", "snovverify", "verify", "phone", "save", "done"];
+
+export const snovVerifyOn = (o: { snovVerify?: boolean }) => o.snovVerify !== false && snovConfigured();
 
 export interface EnrichOptions {
   maxPerCompany: number;      // Waterfall max_results (1-100)
   /** Step 4: Snov.io email finder (name + domain) for people Blitz had no email for — before Anymail. Also Snov-assisted company lookup in step 1. Default on (needs SNOV_CLIENT_ID/SECRET). */
   snovFallback?: boolean;
   anymailFallback: boolean;   // step 5
-  anymailVerify: boolean;     // step 6
+  /** Step 6a: Snov.io verifier on Debounce's Risky/Unknown, before Anymail verify. Default on (needs SNOV_CLIENT_ID/SECRET). */
+  snovVerify?: boolean;
+  anymailVerify: boolean;     // step 6b
   phones: boolean;            // step 7
   /** Drop HR & finance titles (junior support is always dropped). */
   excludeSupportHrFinance: boolean;
@@ -176,6 +180,7 @@ export async function refreshCounts(jobId: number): Promise<Record<string, unkno
       'snov_tried', p.snov_tried, 'email_snov', p.email_snov, 'anymail_tried', p.anymail_tried, 'email_anymail', p.email_anymail, 'with_email', p.with_email,
       'debounced', p.debounced, 'db_safe', p.db_safe, 'db_risky', p.db_risky, 'db_invalid', p.db_invalid, 'db_unknown', p.db_unknown,
       'verify_eligible', p.verify_eligible, 'verified', p.verified, 'verify_valid', p.verify_valid,
+      'snov_verify_tried', p.snov_verify_tried, 'snov_verified', p.snov_verified, 'snov_verify_valid', p.snov_verify_valid, 'snov_verify_invalid', p.snov_verify_invalid,
       'final_safe', p.final_safe, 'final_risky', p.final_risky, 'final_invalid', p.final_invalid, 'final_unknown', p.final_unknown,
       'phone_tried', p.phone_tried, 'phones', p.phones, 'saved', p.saved
     ) AS c
@@ -200,10 +205,14 @@ export async function refreshCounts(jobId: number): Promise<Record<string, unkno
       count(*) FILTER (WHERE dropped_reason IS NULL AND debounce_result = 'invalid') db_invalid,
       count(*) FILTER (WHERE dropped_reason IS NULL AND debounce_result IN ('unknown','error')) db_unknown,
       count(*) FILTER (WHERE dropped_reason IS NULL AND debounce_result IN ('risky','unknown','error')) verify_eligible,
-      count(*) FILTER (WHERE dropped_reason IS NULL AND verify_result IS NOT NULL) verified,
-      count(*) FILTER (WHERE dropped_reason IS NULL AND verify_result = 'valid') verify_valid,
-      count(*) FILTER (WHERE dropped_reason IS NULL AND verify_result = 'invalid') verify_invalid,
-      count(*) FILTER (WHERE dropped_reason IS NULL AND verify_result = 'risky') verify_risky,
+      count(*) FILTER (WHERE dropped_reason IS NULL AND verify_result IS NOT NULL AND verify_source IS DISTINCT FROM 'snov') verified,
+      count(*) FILTER (WHERE dropped_reason IS NULL AND verify_result = 'valid' AND verify_source IS DISTINCT FROM 'snov') verify_valid,
+      count(*) FILTER (WHERE dropped_reason IS NULL AND verify_result = 'invalid' AND verify_source IS DISTINCT FROM 'snov') verify_invalid,
+      count(*) FILTER (WHERE dropped_reason IS NULL AND verify_result = 'risky' AND verify_source IS DISTINCT FROM 'snov') verify_risky,
+      count(*) FILTER (WHERE dropped_reason IS NULL AND snov_verify_tried) snov_verify_tried,
+      count(*) FILTER (WHERE dropped_reason IS NULL AND verify_source = 'snov') snov_verified,
+      count(*) FILTER (WHERE dropped_reason IS NULL AND verify_source = 'snov' AND verify_result = 'valid') snov_verify_valid,
+      count(*) FILTER (WHERE dropped_reason IS NULL AND verify_source = 'snov' AND verify_result = 'invalid') snov_verify_invalid,
       count(*) FILTER (WHERE dropped_reason IS NULL AND final_status = 'safe to send') final_safe,
       count(*) FILTER (WHERE dropped_reason IS NULL AND final_status = 'risky') final_risky,
       count(*) FILTER (WHERE dropped_reason IS NULL AND final_status = 'invalid') final_invalid,
@@ -250,7 +259,7 @@ export async function runEnrichTick(jobId: number, budgetMs: number): Promise<bo
       if (did === "next") {
         const i = PHASES.indexOf(phase);
         phase = PHASES[i + 1];
-        while ((phase === "snov" && (job.options.snovFallback === false || !snovConfigured())) || (phase === "anymail" && !job.options.anymailFallback) || (phase === "verify" && !job.options.anymailVerify) || (phase === "phone" && !job.options.phones)) {
+        while ((phase === "snov" && (job.options.snovFallback === false || !snovConfigured())) || (phase === "anymail" && !job.options.anymailFallback) || (phase === "snovverify" && !snovVerifyOn(job.options)) || (phase === "verify" && !job.options.anymailVerify) || (phase === "phone" && !job.options.phones)) {
           phase = PHASES[PHASES.indexOf(phase) + 1];
         }
         await patchByFilter("enrich2_jobs", `id=eq.${jobId}`, { phase, fail_count: 0 });
@@ -420,10 +429,27 @@ async function runPhaseBatch(job: EnrichJobRow, phase: EnrichPhase, left: () => 
     const res = await mapPool(rows as { id: number; email: string }[], 4, async (p) => {
       if (left() < 25000) return null;
       const r = await debounceCheck(p.email, DEBOUNCE);
-      const final = job.options.anymailVerify && (r === "risky" || r === "unknown" || r === "error") ? null : r === "error" ? "unknown" : r;
+      const final = (job.options.anymailVerify || snovVerifyOn(job.options)) && (r === "risky" || r === "unknown" || r === "error") ? null : r === "error" ? "unknown" : r;
       return { id: p.id, job_id: id, debounce_result: r, ...(final ? { final_status: final } : {}) };
     });
     await upsertPeople(res);
+    return "more";
+  }
+
+  if (phase === "snovverify") {
+    const { rows } = await selectFrom("enrich2_people", `select=id,email,debounce_result&job_id=eq.${id}&dropped_reason=is.null&debounce_result=in.(risky,unknown,error)&verify_result=is.null&snov_verify_tried=is.false&order=id.asc&limit=${Math.max(10, Math.min(100, Math.floor(left() / 1500)))}`);
+    if (!rows.length) return "next";
+    await stage(`Step 6a · Snov.io verify on Debounce's Risky/Unknown — ${c.snov_verify_tried || 0}/${c.verify_eligible || 0} checked, ${c.snov_verify_valid || 0} valid, ${c.snov_verify_invalid || 0} invalid`, true);
+    const list = rows as { id: number; email: string; debounce_result: string }[];
+    const verdicts = await snovVerify(list.map((p) => p.email.toLowerCase())).catch(() => new Map());
+    const anymailLater = !!job.options.anymailVerify && !!ANYMAIL;
+    await upsertPeople(list.map((p) => {
+      const v = verdicts.get(p.email.toLowerCase());
+      if (v === "valid") return { id: p.id, job_id: id, snov_verify_tried: true, verify_result: "valid", verify_source: "snov", final_status: "safe to send" };
+      if (v === "invalid") return { id: p.id, job_id: id, snov_verify_tried: true, verify_result: "invalid", verify_source: "snov", final_status: "invalid" };
+      // Snov couldn't settle it (catch-all / unknown / no answer): Anymail gets it next; with Anymail off it keeps Debounce's call.
+      return { id: p.id, job_id: id, snov_verify_tried: true, ...(anymailLater ? {} : { final_status: p.debounce_result === "error" ? "unknown" : p.debounce_result }) };
+    }));
     return "more";
   }
 
@@ -436,7 +462,7 @@ async function runPhaseBatch(job: EnrichJobRow, phase: EnrichPhase, left: () => 
       if (left() < 15000) return null;
       const v = await anymailVerify(p.email, ANYMAIL);
       const final = v === "valid" ? "safe to send" : v === "invalid" ? "invalid" : v === "risky" ? "risky" : p.debounce_result === "error" ? "unknown" : p.debounce_result;
-      return { id: p.id, job_id: id, verify_result: v, final_status: final };
+      return { id: p.id, job_id: id, verify_result: v, verify_source: "anymail", final_status: final };
     });
     await upsertPeople(res);
     return "more";

@@ -4266,7 +4266,7 @@ interface EnrichJobRow {
 
 interface Enrich2Job {
   id: number; label: string; vertical: string; created_by: string | null; status: string; phase: string; stage: string | null;
-  options: { maxPerCompany: number; snovFallback?: boolean; anymailFallback: boolean; anymailVerify: boolean; phones: boolean; excludeSupportHrFinance: boolean; useRadarFirst?: boolean; apifyFallback?: boolean };
+  options: { maxPerCompany: number; snovFallback?: boolean; snovVerify?: boolean; anymailFallback: boolean; anymailVerify: boolean; phones: boolean; excludeSupportHrFinance: boolean; useRadarFirst?: boolean; apifyFallback?: boolean };
   counts: Record<string, number | Record<string, number>>; error: string | null; created_at: string; updated_at: string;
 }
 interface Enrich2Person {
@@ -4276,7 +4276,7 @@ interface Enrich2Person {
 }
 interface Enrich2Input { domain: string; brand?: string; linkedin?: string; altDomains?: string[] }
 
-const ENRICH2_PHASES = ["reuse", "resolve", "search", "email", "snov", "anymail", "debounce", "verify", "phone", "save", "done"];
+const ENRICH2_PHASES = ["reuse", "resolve", "search", "email", "snov", "anymail", "debounce", "snovverify", "verify", "phone", "save", "done"];
 
 const ENRICH_MAX_PER_JOB = 5000; // keep in step with the cap in api/radar/enrich2/route.ts
 async function enrich2Call<T = Record<string, unknown>>(body: Record<string, unknown>): Promise<T> {
@@ -4304,6 +4304,7 @@ function EnrichV2Section() {
   const [maxPer, setMaxPer] = useState(25);
   const [snovFallback, setSnovFallback] = useState(true);
   const [anymailFallback, setAnymailFallback] = useState(true);
+  const [snovVerify, setSnovVerify] = useState(true);
   const [anymailVerify, setAnymailVerify] = useState(true);
   const [phones, setPhones] = useState(true);
   const [apifyFallback, setApifyFallback] = useState(true);
@@ -4435,7 +4436,7 @@ function EnrichV2Section() {
     if (!confirm(`Enrich ${companies.length.toLocaleString()} compan${companies.length === 1 ? "y" : "ies"}?${splitNote}\n\nUp to ${maxPer} contacts each → up to ~${credits.toLocaleString()} Blitz records for people, plus 1 per email found. Debounce and Anymail charges apply per email.`)) return;
     setStarting(true);
     try {
-      const options = { maxPerCompany: maxPer, snovFallback, anymailFallback, anymailVerify, phones, excludeSupportHrFinance: excludeShf, apifyFallback, useRadarFirst, countries: splitList(countriesText), cities: splitList(citiesText) };
+      const options = { maxPerCompany: maxPer, snovFallback, anymailFallback, snovVerify, anymailVerify, phones, excludeSupportHrFinance: excludeShf, apifyFallback, useRadarFirst, countries: splitList(countriesText), cities: splitList(citiesText) };
       const size = Math.ceil(companies.length / parts);
       const started: Enrich2Job[] = [];
       for (let i = 0; i < parts; i++) {
@@ -4581,7 +4582,8 @@ function EnrichV2Section() {
           {toggle(useRadarFirst, setUseRadarFirst, "Use what's already in Radar first", "Domains Radar already has contacts for are taken as-is (status, phone, LinkedIn) — only the gaps and unknown domains are enriched")}
           {toggle(snovFallback, setSnovFallback, "Snov.io before Anymail", "Email search (name + domain, then LinkedIn URL) for people Blitz has no email for, and company-name lookup for companies Blitz can't find · 1 Snov credit per hit")}
           {toggle(anymailFallback, setAnymailFallback, "Anymail Finder for missing emails", "LinkedIn URL search for whoever Blitz and Snov.io missed · 1 credit per email found")}
-          {toggle(anymailVerify, setAnymailVerify, "Anymail verify Risky / Unknown", "Second pass on everything Debounce didn't call Safe or Invalid · 0.2 credit each")}
+          {toggle(snovVerify, setSnovVerify, "Snov.io verify Risky / Unknown", "Second pass on everything Debounce didn't call Safe or Invalid · 1 Snov credit each")}
+          {toggle(anymailVerify, setAnymailVerify, "Anymail verify what's still Risky / Unknown", "Third pass on whatever Debounce and Snov.io couldn't settle · 0.2 credit each")}
           {toggle(apifyFallback, setApifyFallback, "Apify LinkedIn finder for companies Blitz misses", "Second pass for domains Blitz can't match · ~$0.009 per company page found, nothing for misses")}
           {toggle(excludeShf, setExcludeShf, "Drop HR & finance titles", "Interns, trainees, students and junior support are always dropped")}
           {toggle(phones, setPhones, "Find phone numbers (Blitz)", "Needs a LinkedIn URL · ~12–15% hit on Indian lists, ~30% on US")}
@@ -4643,8 +4645,10 @@ function EnrichV2Section() {
                 { key: "debounce", label: "Debounce", on: true, value: `${fmt(n("debounced"))} / ${fmt(n("with_email"))}`, p: pct(n("debounced"), n("with_email")),
                   sub: `${fmt(n("db_safe"))} safe · ${fmt(n("db_risky"))} risky · ${fmt(n("db_invalid"))} invalid · ${fmt(n("db_unknown"))} unknown` },
                 // Stays visible when the step was switched off / cut short (e.g. Anymail out of credits) but already produced results.
-                { key: "verify", label: "Anymail verify", on: o.anymailVerify || n("verified") > 0, value: `${fmt(n("verify_valid"))} valid`, p: pct(n("verified"), n("verify_eligible")), wrap: true,
-                  sub: `${fmt(n("verified"))}/${fmt(n("verify_eligible"))} Risky/Unknown re-checked · ${fmt(n("verify_valid"))} valid → safe · ${fmt(n("verify_invalid"))} invalid · ${fmt(n("verify_risky"))} still risky${n("verify_eligible") > n("verified") ? ` · ${fmt(n("verify_eligible") - n("verified"))} not checked (keep Debounce's result)` : ""}` },
+                { key: "snovverify", label: "Snov.io verify", on: o.snovVerify !== false && job.counts.snov_verify_tried !== undefined, value: `${fmt(n("snov_verify_valid"))} valid`, p: pct(n("snov_verify_tried"), n("verify_eligible")), wrap: true,
+                  sub: `${fmt(n("snov_verify_tried"))}/${fmt(n("verify_eligible"))} Risky/Unknown re-checked · ${fmt(n("snov_verify_valid"))} valid → safe · ${fmt(n("snov_verify_invalid"))} invalid · ${fmt(Math.max(0, n("snov_verify_tried") - n("snov_verified")))} still unsure → Anymail` },
+                { key: "verify", label: "Anymail verify", on: o.anymailVerify || n("verified") > 0, value: `${fmt(n("verify_valid"))} valid`, p: pct(n("verified"), Math.max(0, n("verify_eligible") - n("snov_verified"))), wrap: true,
+                  sub: `${fmt(n("verified"))}/${fmt(Math.max(0, n("verify_eligible") - n("snov_verified")))} left after Snov.io re-checked · ${fmt(n("verify_valid"))} valid → safe · ${fmt(n("verify_invalid"))} invalid · ${fmt(n("verify_risky"))} still risky${n("verify_eligible") - n("snov_verified") > n("verified") ? ` · ${fmt(n("verify_eligible") - n("snov_verified") - n("verified"))} not checked (keep Debounce's result)` : ""}` },
                 { key: "phone", label: "Phones", on: o.phones, value: `${fmt(n("phones"))} found`, p: pct(n("phone_tried"), n("email_eligible")),
                   sub: `${fmt(n("phone_tried"))}/${fmt(n("email_eligible"))} looked up` },
                 { key: "save", label: "Saved to Radar", on: true, value: `${fmt(n("saved"))} / ${fmt(n("kept"))}`, p: pct(n("saved"), n("kept")), sub: `${job.vertical} vertical` },
