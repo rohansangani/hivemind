@@ -7,8 +7,8 @@ import { snovConfigured, snovFindEmails } from "@/lib/radar/snov";
  * to Radar: fills the email on a matching contact that has none, updates a contact that already has
  * that email, or adds a new contact in the chosen vertical. Nothing is ever sent to anyone.
  * Pricing (Anymail): 1 credit only when a valid email is found; not found = free.
- * When Anymail finds nothing (and Snov.io is configured) the person is retried through Snov.io's Email Finder
- * (name + domain, SMTP-valid results only) before being reported as not found.
+ * Snov.io's Email Finder runs FIRST (when configured; name + domain, SMTP-valid results only); whoever it doesn't
+ * find goes to Anymail before being reported as not found.
  */
 
 export interface FindPerson {
@@ -162,35 +162,36 @@ export async function findPeopleChunk(
   type Out = { idx: number; p: FindPerson; status: FindOutcome["status"]; email: string | null; saved: Saved; by?: "anymail" | "snov" };
   const outs: Out[] = [];
   let fatal: Error | null = null;
-  // Pass 1 — Anymail Person search.
-  const looked: { idx: number; p: FindPerson; r: FindOutcome }[] = [];
-  await Promise.all(slice.map(async (p, i) => {
-    const idx = offset + i;
-    try {
-      looked.push({ idx, p, r: await anymailFindPerson(p, key) });
-    } catch (e) {
-      if (/Anymail Finder/.test((e as Error).message)) fatal = e as Error;
-      else outs.push({ idx, p, status: "error", email: null, saved: "none" });
-    }
-  }));
-
-  // Pass 2 — Snov.io Email Finder for people Anymail didn't find (needs first + last name and a domain).
+  // Pass 1 — Snov.io Email Finder (needs first + last name and a domain); SMTP-valid results only.
   const snovFound = new Map<number, string>();
   if (snovConfigured()) {
-    const cand = looked.filter((x) => x.r.status !== "valid" && x.p.first_name && x.p.last_name && normDomain(x.p.domain));
+    const cand = slice.map((p, i) => ({ p, idx: offset + i })).filter((x) => x.p.first_name && x.p.last_name && normDomain(x.p.domain));
     if (cand.length) {
       const res = await snovFindEmails(cand.map((x) => ({ first_name: x.p.first_name as string, last_name: x.p.last_name as string, domain: normDomain(x.p.domain) }))).catch(() => new Map<number, string>());
       res.forEach((email, i) => snovFound.set(cand[i].idx, email));
     }
   }
 
-  await Promise.all(looked.map(async ({ idx, p, r }) => {
-    const email = r.status === "valid" ? r.email : snovFound.get(idx) || null;
-    const by: "anymail" | "snov" | undefined = r.status === "valid" ? "anymail" : email ? "snov" : undefined;
-    if (email) {
-      const saved: Saved = await saveFound(p, email, vertical, nowISO).catch(() => "none" as Saved);
-      outs.push({ idx, p, status: "valid", email, saved, by });
-    } else outs.push({ idx, p, status: r.status, email: null, saved: "none" });
+  // Pass 2 — Anymail Person search for everyone Snov didn't find (or couldn't search, e.g. LinkedIn-only rows).
+  await Promise.all(slice.map(async (p, i) => {
+    const idx = offset + i;
+    try {
+      let email = snovFound.get(idx) || null;
+      let by: "anymail" | "snov" | undefined = email ? "snov" : undefined;
+      let status: FindOutcome["status"] = "valid";
+      if (!email) {
+        const r = await anymailFindPerson(p, key);
+        status = r.status;
+        if (r.status === "valid" && r.email) { email = r.email; by = "anymail"; }
+      }
+      if (email) {
+        const saved: Saved = await saveFound(p, email, vertical, nowISO).catch(() => "none" as Saved);
+        outs.push({ idx, p, status: "valid", email, saved, by });
+      } else outs.push({ idx, p, status, email: null, saved: "none" });
+    } catch (e) {
+      if (/Anymail Finder/.test((e as Error).message)) fatal = e as Error;
+      else outs.push({ idx, p, status: "error", email: null, saved: "none" });
+    }
   }));
 
   if (outs.length && jobId) {
