@@ -10,7 +10,7 @@ import { radarSql } from "@/lib/radar/supabase";
  * see docs/sql/2026-11-12_tam_india.sql) — the market, not just what's in Radar. Firmographics come from the file;
  * Radar fills what the file lacks (employees, LinkedIn…) and supplies customer / lifecycle / source / contacts by domain.
  */
-export type Segment = "india" | "us" | "crossborder" | "tam" | "dtc" | "slus" | "slca";
+export type Segment = "india" | "us" | "eu" | "crossborder" | "tam" | "dtc" | "slus" | "slca";
 
 /** Views that are simply "every account whose source is X" (any vertical). */
 const SOURCE_SEGMENTS: Partial<Record<Segment, string>> = { dtc: "DTCConnect", slus: "StoreLeadsUS", slca: "StoreLeadsCanada" };
@@ -20,7 +20,7 @@ const esc = (s: string) => `'${s.replace(/'/g, "''")}'`;
 
 export async function segmentStats(segment: Segment, sub: string): Promise<{ accounts: SegmentRow[] }> {
   // Crossborder is part of India, so the India tab includes it (and can also be narrowed to just D2C / B2B / Crossborder).
-  const verts = segment === "tam" || SOURCE_SEGMENTS[segment] ? [] : segment === "india" ? (sub === "D2C" ? ["D2C"] : sub === "B2B" ? ["B2B"] : sub === "Crossborder" ? ["Crossborder"] : ["D2C", "B2B", "Crossborder"]) : segment === "us" ? ["US"] : ["Crossborder"];
+  const verts = segment === "tam" || SOURCE_SEGMENTS[segment] ? [] : segment === "india" ? (sub === "D2C" ? ["D2C"] : sub === "B2B" ? ["B2B"] : sub === "Crossborder" ? ["Crossborder"] : ["D2C", "B2B", "Crossborder"]) : segment === "us" ? ["US"] : segment === "eu" ? ["EU"] : ["Crossborder"];
   const vlist = verts.map(esc).join(",");
 
   // An account matches a segment if ANY vertical on its list does (one row can carry several). Its contact count is the

@@ -26,7 +26,7 @@ interface GrowthRow {
 async function computeStats() {
     // Counts: ONE accounts scan and ONE contacts scan (was 16 separate PostgREST counts fired in parallel, which
     // contended with each other and pushed the whole dashboard past its time limit).
-    const V = ["B2B", "D2C", "US", "Crossborder"];
+    const V = ["B2B", "D2C", "US", "Crossborder", "EU"];
     const ne = "hubspot_excluded IS NOT TRUE";
     const blank = `(email IS NULL OR email = '') AND ${ne}`;
     const [accRows, accTotalRows, conRows, statusMatrix, domainStats, accountCoverage, growthRaw] = await Promise.all([
@@ -45,9 +45,9 @@ async function computeStats() {
     const totalAccounts = accTotalRows[0]?.n ?? 0;
     const c = conRows[0] || {};
     const totalContacts = c.total ?? 0, blankEmailContacts = c.blank ?? 0, blankUnassigned = c.blank_unassigned ?? 0;
-    const [b2bAccounts, d2cAccounts, usAccounts, cbAccounts] = V.map(accBy);
-    const [b2bContacts, d2cContacts, usContacts, cbContacts] = V.map((v) => c[`c_${v.toLowerCase()}`] ?? 0);
-    const [blankB2B, blankD2C, blankUS, blankCB] = V.map((v) => c[`b_${v.toLowerCase()}`] ?? 0);
+    const [b2bAccounts, d2cAccounts, usAccounts, cbAccounts, euAccounts] = V.map(accBy);
+    const [b2bContacts, d2cContacts, usContacts, cbContacts, euContacts] = V.map((v) => c[`c_${v.toLowerCase()}`] ?? 0);
+    const [blankB2B, blankD2C, blankUS, blankCB, blankEU] = V.map((v) => c[`b_${v.toLowerCase()}`] ?? 0);
 
     const growth = growthRaw.map((r) => ({
       snapshot_date: r.out_snapshot_date,
@@ -66,9 +66,9 @@ async function computeStats() {
       total_accounts: totalAccounts,
       total_contacts: totalContacts,
       blank_email_contacts: blankEmailContacts,
-      blank_email_verticals: { B2B: blankB2B, D2C: blankD2C, US: blankUS, Crossborder: blankCB, unassigned: blankUnassigned },
-      verticals: { B2B: b2bAccounts, D2C: d2cAccounts, US: usAccounts, Crossborder: cbAccounts },
-      contact_verticals: { B2B: b2bContacts, D2C: d2cContacts, US: usContacts, Crossborder: cbContacts },
+      blank_email_verticals: { B2B: blankB2B, D2C: blankD2C, US: blankUS, Crossborder: blankCB, EU: blankEU, unassigned: blankUnassigned },
+      verticals: { B2B: b2bAccounts, D2C: d2cAccounts, US: usAccounts, Crossborder: cbAccounts, EU: euAccounts },
+      contact_verticals: { B2B: b2bContacts, D2C: d2cContacts, US: usContacts, Crossborder: cbContacts, EU: euContacts },
       contact_status_matrix: statusMatrix,
       contact_domain_stats: domainStats,
     };
