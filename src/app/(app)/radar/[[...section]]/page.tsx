@@ -646,7 +646,7 @@ const STATUS_META: Array<{ key: string; label: string; color: string }> = [
 
 /* ── Dashboard tabs: Overview · India · US · Crossborder ───────────────── */
 
-type SegmentKey = "india" | "us" | "crossborder";
+type SegmentKey = "india" | "us" | "crossborder" | "tam";
 interface SegRow { k: string; v: string | null; n: number }
 interface SegData { accounts: SegRow[] }
 
@@ -667,7 +667,7 @@ const CITY_OPTIONS = [
 ];
 
 const SEG_TABS: { id: "overview" | SegmentKey; label: string }[] = [
-  { id: "overview", label: "Overview" }, { id: "india", label: "India" }, { id: "us", label: "US" }, { id: "crossborder", label: "Crossborder" },
+  { id: "overview", label: "Overview" }, { id: "india", label: "India" }, { id: "us", label: "US" }, { id: "crossborder", label: "Crossborder" }, { id: "tam", label: "ClickPost TAM" },
 ];
 const SEG_PALETTE = ["var(--tag-blue-fg)", "var(--tag-purple-fg)", "var(--tag-orange-fg)", "var(--tag-green-fg)", "var(--tag-pink-fg)", "var(--tag-yellow-fg)", "var(--tag-red-fg)"];
 const GREY = "color-mix(in srgb, var(--hm-text-tertiary) 55%, transparent)";
@@ -744,8 +744,8 @@ function SegmentDashboard({ segment, sub }: { segment: SegmentKey; sub: string }
 
   const nAcc = kpi(A, "accounts");
   const empty = nAcc - kpi(A, "with_contacts");
-  const isIndia = segment === "india";
-  const title = segment === "india" ? "India" : segment === "us" ? "US" : "Crossborder";
+  const isIndia = segment === "india" || segment === "tam";
+  const title = segment === "india" ? "India" : segment === "us" ? "US" : segment === "tam" ? "TAM" : "Crossborder";
 
   const completeness = (items: [string, number, number][]) => items.map(([k, n, d]) => ({ k, n, p: pct(n, d) }));
   const accComp = completeness([
@@ -755,6 +755,12 @@ function SegmentDashboard({ segment, sub }: { segment: SegmentKey; sub: string }
 
   return (
     <div className="space-y-5">
+      {segment === "tam" && (
+        <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] px-4 py-3 text-[12.5px] text-[var(--hm-text-secondary)]">
+          <b className="text-[var(--hm-text)]">ClickPost TAM</b> — every India StoreLeads account with estimated monthly sales of <b>₹10 lakh or more</b> (≈ $11,364/month at ₹88 per USD; StoreLeads&apos; estimates, Oct 2026 file).
+          Firmographics come from the file; Radar fills what it lacks. &ldquo;Have contacts&rdquo; counts the people Radar holds at the same company domain.
+        </div>
+      )}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3.5">
         <KpiTile icon="accounts" label={`${title} accounts`} value={fmt(nAcc)} foot={`${fmt(kpi(A, "with_contacts"))} have contacts (${pct(kpi(A, "with_contacts"), nAcc)}%) · ${fmt(empty)} empty`} ratio={kpi(A, "with_contacts") / (nAcc || 1)} />
         <KpiTile icon="icp" label="LinkedIn coverage" value={`${pct(kpi(A, "with_linkedin"), nAcc)}%`} foot={`${fmt(kpi(A, "with_linkedin"))} of ${fmt(nAcc)} accounts`} ratio={kpi(A, "with_linkedin") / (nAcc || 1)} />
