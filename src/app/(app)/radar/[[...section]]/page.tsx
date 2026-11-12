@@ -606,9 +606,9 @@ interface RadarStats {
   total_accounts: number;
   total_contacts: number;
   blank_email_contacts: number;
-  blank_email_verticals: { B2B: number; D2C: number; US: number; Crossborder?: number; unassigned: number };
-  verticals: { B2B: number; D2C: number; US: number; Crossborder?: number };
-  contact_verticals: { B2B: number; D2C: number; US: number; Crossborder?: number };
+  blank_email_verticals: { B2B: number; D2C: number; US: number; Crossborder?: number; EU?: number; unassigned: number };
+  verticals: { B2B: number; D2C: number; US: number; Crossborder?: number; EU?: number };
+  contact_verticals: { B2B: number; D2C: number; US: number; Crossborder?: number; EU?: number };
   contact_status_matrix: StatusMatrixRow[];
   contact_domain_stats: DomainStatsRow[];
   account_coverage: AccountCoverageRow[];
@@ -630,6 +630,7 @@ const VERTICAL_COLORS: Record<string, string> = {
   D2C: "var(--tag-purple-fg)",
   Crossborder: "var(--tag-pink-fg)",
   US: "var(--tag-orange-fg)",
+  EU: "var(--tag-green-fg)",
   unassigned: "var(--hm-text-tertiary)",
 };
 
@@ -646,7 +647,7 @@ const STATUS_META: Array<{ key: string; label: string; color: string }> = [
 
 /* ── Dashboard tabs: Overview · India · US · Crossborder ───────────────── */
 
-type SegmentKey = "india" | "us" | "crossborder" | "tam" | "dtc" | "slus" | "slca";
+type SegmentKey = "india" | "us" | "eu" | "crossborder" | "tam" | "dtc" | "slus" | "slca";
 interface SegRow { k: string; v: string | null; n: number }
 interface SegData { accounts: SegRow[] }
 
@@ -667,7 +668,7 @@ const CITY_OPTIONS = [
 ];
 
 const SEG_TABS: { id: "overview" | SegmentKey; label: string }[] = [
-  { id: "overview", label: "Overview" }, { id: "india", label: "India" }, { id: "us", label: "US + CN" }, { id: "crossborder", label: "Crossborder" },
+  { id: "overview", label: "Overview" }, { id: "india", label: "India" }, { id: "us", label: "US + CN" }, { id: "eu", label: "EU" }, { id: "crossborder", label: "Crossborder" },
 ];
 const SEG_PALETTE = ["var(--tag-blue-fg)", "var(--tag-purple-fg)", "var(--tag-orange-fg)", "var(--tag-green-fg)", "var(--tag-pink-fg)", "var(--tag-yellow-fg)", "var(--tag-red-fg)"];
 const GREY = "color-mix(in srgb, var(--hm-text-tertiary) 55%, transparent)";
@@ -763,7 +764,7 @@ function SegmentDashboard({ segment, sub }: { segment: SegmentKey; sub: string }
   const nAcc = kpi(A, "accounts");
   const empty = nAcc - kpi(A, "with_contacts");
   const isIndia = segment === "india" || segment === "tam" || segment === "dtc" || segment === "slus" || segment === "slca"; // shows the State / province card
-  const title = segment === "india" ? "India" : segment === "us" ? "US + CN" : segment === "tam" ? "StoreLeads India" : segment === "dtc" ? "DTCConnect" : segment === "slus" ? "StoreLeadsUS" : segment === "slca" ? "StoreLeadsCanada" : "Crossborder";
+  const title = segment === "india" ? "India" : segment === "us" ? "US + CN" : segment === "eu" ? "EU" : segment === "tam" ? "StoreLeads India" : segment === "dtc" ? "DTCConnect" : segment === "slus" ? "StoreLeadsUS" : segment === "slca" ? "StoreLeadsCanada" : "Crossborder";
 
   const completeness = (items: [string, number, number][]) => items.map(([k, n, d]) => ({ k, n, p: pct(n, d) }));
   const accComp = completeness([
@@ -780,7 +781,7 @@ function SegmentDashboard({ segment, sub }: { segment: SegmentKey; sub: string }
         </div>
       )}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3.5">
-        <KpiTile icon="accounts" label={segment === "india" || segment === "us" || segment === "crossborder" ? `${title} accounts` : "Accounts"} value={fmt(nAcc)} foot={`${fmt(kpi(A, "with_contacts"))} have contacts (${pct(kpi(A, "with_contacts"), nAcc)}%) · ${fmt(empty)} empty`} ratio={kpi(A, "with_contacts") / (nAcc || 1)} />
+        <KpiTile icon="accounts" label={segment === "india" || segment === "us" || segment === "eu" || segment === "crossborder" ? `${title} accounts` : "Accounts"} value={fmt(nAcc)} foot={`${fmt(kpi(A, "with_contacts"))} have contacts (${pct(kpi(A, "with_contacts"), nAcc)}%) · ${fmt(empty)} empty`} ratio={kpi(A, "with_contacts") / (nAcc || 1)} />
         <KpiTile icon="icp" label="LinkedIn coverage" value={`${pct(kpi(A, "with_linkedin"), nAcc)}%`} foot={`${fmt(kpi(A, "with_linkedin"))} of ${fmt(nAcc)} accounts`} ratio={kpi(A, "with_linkedin") / (nAcc || 1)} />
         <KpiTile icon="validate" label="Industry known" value={`${pct(kpi(A, "with_industry"), nAcc)}%`} foot={`${fmt(kpi(A, "with_industry"))} accounts categorised`} ratio={kpi(A, "with_industry") / (nAcc || 1)} />
         <KpiTile icon="dashboard" label="Revenue known" value={`${pct(kpi(A, "with_revenue"), nAcc)}%`} foot={`${fmt(kpi(A, "with_revenue"))} accounts with a revenue band`} ratio={kpi(A, "with_revenue") / (nAcc || 1)} />
@@ -891,11 +892,11 @@ function RadarDashboard() {
   if (!stats) return null;
 
   const v = stats.verticals;
-  const acctAssigned = v.B2B + v.D2C + v.US + (v.Crossborder || 0);
+  const acctAssigned = v.B2B + v.D2C + v.US + (v.Crossborder || 0) + (v.EU || 0);
   const acctUnassigned = Math.max(0, stats.total_accounts - acctAssigned);
 
   const cv = stats.contact_verticals;
-  const cvAssigned = cv.B2B + cv.D2C + cv.US;
+  const cvAssigned = cv.B2B + cv.D2C + cv.US + (cv.EU || 0);
   const cvUnassigned = Math.max(0, stats.total_contacts - cvAssigned);
   const blankV = stats.blank_email_verticals;
 
@@ -927,13 +928,13 @@ function RadarDashboard() {
         <DistributionCard
           title="Accounts by vertical"
           meta={`${fmt(acctAssigned)} assigned`}
-          rows={([["B2B", v.B2B], ["D2C", v.D2C], ["US", v.US], ["Crossborder", v.Crossborder || 0], ["unassigned", acctUnassigned]] as [string, number][])
+          rows={([["B2B", v.B2B], ["D2C", v.D2C], ["US", v.US], ["EU", v.EU || 0], ["Crossborder", v.Crossborder || 0], ["unassigned", acctUnassigned]] as [string, number][])
             .map(([key, n]) => ({ key, label: key, value: n, color: VERTICAL_COLORS[key] }))}
         />
         <DistributionCard
           title="Contacts by vertical"
           meta={`${fmt(cvAssigned)} assigned`}
-          rows={([["B2B", cv.B2B, blankV.B2B], ["D2C", cv.D2C, blankV.D2C], ["US", cv.US, blankV.US], ["Crossborder", cv.Crossborder || 0, blankV.Crossborder || 0], ["unassigned", cvUnassigned, blankV.unassigned]] as [string, number, number][])
+          rows={([["B2B", cv.B2B, blankV.B2B], ["D2C", cv.D2C, blankV.D2C], ["US", cv.US, blankV.US], ["EU", cv.EU || 0, blankV.EU || 0], ["Crossborder", cv.Crossborder || 0, blankV.Crossborder || 0], ["unassigned", cvUnassigned, blankV.unassigned]] as [string, number, number][])
             .map(([key, n, blank]) => ({ key, label: key, value: n, color: VERTICAL_COLORS[key], note: blank ? `${fmt(blank)} blank` : "", overlap: key === OVERLAY_VERTICAL }))}
         />
         <DistributionCard
@@ -1029,7 +1030,7 @@ function DistributionCard({ title, meta, rows, className = "" }: {
 }
 
 function ContactStatusMatrix({ stats }: { stats: RadarStats }) {
-  const verticals = ["B2B", "D2C", "US", "Crossborder"];
+  const verticals = ["B2B", "D2C", "US", "EU", "Crossborder"];
   const matrix = stats.contact_status_matrix.filter((r) => r.vertical !== "Unassigned");
   const domainStats = stats.contact_domain_stats.filter((r) => r.vertical !== "Unassigned");
 
@@ -1108,7 +1109,7 @@ function ContactStatusMatrix({ stats }: { stats: RadarStats }) {
 }
 
 function AccountCoverageTable({ coverage }: { coverage: AccountCoverageRow[] }) {
-  const order = ["B2B", "D2C", "US", "Crossborder", "Unassigned"];
+  const order = ["B2B", "D2C", "US", "EU", "Crossborder", "Unassigned"];
   const by: Record<string, AccountCoverageRow> = {};
   for (const r of coverage) by[r.vertical] = r;
   const rows = order.filter((v) => by[v]);
@@ -1172,7 +1173,7 @@ function AccountCoverageTable({ coverage }: { coverage: AccountCoverageRow[] }) 
 
 /* ── Shared data-table shell ───────────────────────────────────────────── */
 
-const VERTICALS = ["", "B2B", "US", "D2C", "Crossborder"];
+const VERTICALS = ["", "B2B", "US", "D2C", "EU", "Crossborder"];
 const PAGE_SIZE = 50;
 
 interface RadarOptions {
@@ -1264,7 +1265,7 @@ interface FilterField {
 interface FilterGroup { id: string; label: string; icon: string; fields: FilterField[] }
 
 const YES_NO = { true: "Yes", false: "No" };
-const VERTICAL_FILTER: FilterField = { key: "vertical", label: "Vertical", kind: "select", options: () => ["B2B", "D2C", "US", "Crossborder"] };
+const VERTICAL_FILTER: FilterField = { key: "vertical", label: "Vertical", kind: "select", options: () => ["B2B", "D2C", "US", "EU", "Crossborder"] };
 // Account type filter is hidden for now (ACCOUNT_TYPE_OPTIONS kept for the API / dashboard).
 const SEGMENT_FIELDS = (sources: (o: RadarOptions | null) => string[], sourceCounts: (o: RadarOptions | null) => Record<string, number> | undefined, vertCounts: (o: RadarOptions | null) => Record<string, number> | undefined): FilterField[] => [
   { ...VERTICAL_FILTER, counts: vertCounts },
