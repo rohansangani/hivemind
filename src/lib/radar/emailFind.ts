@@ -1,4 +1,5 @@
 import { radarSql, selectFrom, patchByFilter, insertRows, verticalsFilter } from "@/lib/radar/supabase";
+import { snovConfigured, snovFindEmails } from "@/lib/radar/snov";
 
 /**
  * Find Emails (Radar > Validate > Find Emails) — for each person (name + company domain, or a
@@ -6,6 +7,8 @@ import { radarSql, selectFrom, patchByFilter, insertRows, verticalsFilter } from
  * to Radar: fills the email on a matching contact that has none, updates a contact that already has
  * that email, or adds a new contact in the chosen vertical. Nothing is ever sent to anyone.
  * Pricing (Anymail): 1 credit only when a valid email is found; not found = free.
+ * When Anymail finds nothing (and Snov.io is configured) the person is retried through Snov.io's Email Finder
+ * (name + domain, SMTP-valid results only) before being reported as not found.
  */
 
 export interface FindPerson {
@@ -31,6 +34,7 @@ export async function ensureFindResultsTable(): Promise<void> {
     checked_at timestamptz NOT NULL DEFAULT now(),
     UNIQUE (job_id, idx)
   )`);
+  await radarSql(`ALTER TABLE email_find_results ADD COLUMN IF NOT EXISTS found_by text`); // 'anymail' | 'snov'
   tableReady = true;
 }
 
@@ -155,29 +159,47 @@ export async function findPeopleChunk(
   await ensureFindResultsTable();
   const nowISO = new Date().toISOString();
 
-  type Out = { idx: number; p: FindPerson; status: FindOutcome["status"]; email: string | null; saved: Saved };
+  type Out = { idx: number; p: FindPerson; status: FindOutcome["status"]; email: string | null; saved: Saved; by?: "anymail" | "snov" };
   const outs: Out[] = [];
   let fatal: Error | null = null;
+  // Pass 1 — Anymail Person search.
+  const looked: { idx: number; p: FindPerson; r: FindOutcome }[] = [];
   await Promise.all(slice.map(async (p, i) => {
     const idx = offset + i;
     try {
-      const r = await anymailFindPerson(p, key);
-      let saved: Saved = "none";
-      if (r.status === "valid" && r.email) saved = await saveFound(p, r.email, vertical, nowISO).catch(() => "none" as Saved);
-      outs.push({ idx, p, status: r.status, email: r.email, saved });
+      looked.push({ idx, p, r: await anymailFindPerson(p, key) });
     } catch (e) {
       if (/Anymail Finder/.test((e as Error).message)) fatal = e as Error;
       else outs.push({ idx, p, status: "error", email: null, saved: "none" });
     }
   }));
 
+  // Pass 2 — Snov.io Email Finder for people Anymail didn't find (needs first + last name and a domain).
+  const snovFound = new Map<number, string>();
+  if (snovConfigured()) {
+    const cand = looked.filter((x) => x.r.status !== "valid" && x.p.first_name && x.p.last_name && normDomain(x.p.domain));
+    if (cand.length) {
+      const res = await snovFindEmails(cand.map((x) => ({ first_name: x.p.first_name as string, last_name: x.p.last_name as string, domain: normDomain(x.p.domain) }))).catch(() => new Map<number, string>());
+      res.forEach((email, i) => snovFound.set(cand[i].idx, email));
+    }
+  }
+
+  await Promise.all(looked.map(async ({ idx, p, r }) => {
+    const email = r.status === "valid" ? r.email : snovFound.get(idx) || null;
+    const by: "anymail" | "snov" | undefined = r.status === "valid" ? "anymail" : email ? "snov" : undefined;
+    if (email) {
+      const saved: Saved = await saveFound(p, email, vertical, nowISO).catch(() => "none" as Saved);
+      outs.push({ idx, p, status: "valid", email, saved, by });
+    } else outs.push({ idx, p, status: r.status, email: null, saved: "none" });
+  }));
+
   if (outs.length && jobId) {
     const values = outs.map((o) =>
-      `(${Number(jobId)}, ${o.idx}, ${q(o.p.first_name)}, ${q(o.p.last_name || o.p.full_name)}, ${q(o.p.company)}, ${q(normDomain(o.p.domain))}, ${q(normLinkedinUrl(o.p.linkedin_url))}, ${q(o.email)}, '${o.status}', '${o.saved}', '${esc(vertical)}')`
+      `(${Number(jobId)}, ${o.idx}, ${q(o.p.first_name)}, ${q(o.p.last_name || o.p.full_name)}, ${q(o.p.company)}, ${q(normDomain(o.p.domain))}, ${q(normLinkedinUrl(o.p.linkedin_url))}, ${q(o.email)}, '${o.status}', '${o.saved}', '${esc(vertical)}', ${o.by ? `'${o.by}'` : "NULL"})`
     ).join(",");
-    await radarSql(`INSERT INTO email_find_results (job_id, idx, first_name, last_name, company, domain, linkedin_url, found_email, anymail_status, saved, vertical)
+    await radarSql(`INSERT INTO email_find_results (job_id, idx, first_name, last_name, company, domain, linkedin_url, found_email, anymail_status, saved, vertical, found_by)
       VALUES ${values}
-      ON CONFLICT (job_id, idx) DO UPDATE SET found_email = EXCLUDED.found_email, anymail_status = EXCLUDED.anymail_status, saved = EXCLUDED.saved, checked_at = now()`);
+      ON CONFLICT (job_id, idx) DO UPDATE SET found_email = EXCLUDED.found_email, anymail_status = EXCLUDED.anymail_status, saved = EXCLUDED.saved, found_by = EXCLUDED.found_by, checked_at = now()`);
   }
   if (fatal) throw fatal;
   return {

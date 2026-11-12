@@ -1054,7 +1054,7 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
       cnt(`${base}&select=id`), cnt(`${base}&anymail_status=eq.valid&select=id`),
       cnt(`${base}&anymail_status=in.(not_found,blacklisted)&select=id`), cnt(`${base}&anymail_status=eq.error&select=id`),
       cnt(`${base}&saved=eq.added&select=id`), cnt(`${base}&saved=eq.updated&select=id`),
-      radarFetch(`${base}&select=idx,first_name,last_name,company,domain,linkedin_url,found_email,anymail_status,saved,vertical,checked_at&order=idx.asc&limit=${lim}&offset=${Math.max(Number(offset) || 0, 0)}`),
+      radarFetch(`${base}&select=idx,first_name,last_name,company,domain,linkedin_url,found_email,anymail_status,saved,vertical,found_by,checked_at&order=idx.asc&limit=${lim}&offset=${Math.max(Number(offset) || 0, 0)}`),
     ]);
     const rows = rowsRes.ok ? await rowsRes.json() : [];
     return { status: 200, body: { summary: { total, found, notFound, failed, added, updated }, rows } };
@@ -1084,7 +1084,7 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
       restCount(`${base}&anymail_status=eq.error&select=id`),
       restCount(`${base}&in_radar=eq.true&select=id`),
       restCount(`${base}&added=eq.true&select=id`),
-      radarFetch(`${base}&select=email,result_status,anymail_status,in_radar,added,vertical,checked_at&order=id.asc&limit=${lim}&offset=${Math.max(Number(offset) || 0, 0)}`),
+      radarFetch(`${base}&select=email,result_status,anymail_status,in_radar,added,vertical,checked_by,checked_at&order=id.asc&limit=${lim}&offset=${Math.max(Number(offset) || 0, 0)}`),
       restCount(`${base}&anymail_status=eq.skipped&select=id`),
     ]);
     const rows = rowsRes.ok ? await rowsRes.json() : [];

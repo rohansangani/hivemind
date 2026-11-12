@@ -1,8 +1,9 @@
 import { radarSql, selectFrom, patchByFilter, insertRows } from "@/lib/radar/supabase";
+import { snovConfigured, snovVerify } from "@/lib/radar/snov";
 
 /**
  * Email Validation (Radar > Validate > Email Validation) — verifies a CSV list of emails with
- * Anymail Finder's verifier, saves each result straight onto the matching Radar contact(s) (adds a
+ * Snov.io's verifier first (when configured) and then Anymail Finder's verifier on whatever Snov couldn't settle, saves each result straight onto the matching Radar contact(s) (adds a
  * new contact in the chosen vertical when the email isn't in Radar yet), and keeps a per-email
  * results table so the job's results can be shown and exported. Nothing is ever sent to the
  * addresses — verification only.
@@ -62,6 +63,7 @@ export async function ensureVerifyResultsTable(): Promise<void> {
     checked_at timestamptz NOT NULL DEFAULT now(),
     UNIQUE (job_id, email)
   )`);
+  await radarSql(`ALTER TABLE email_verify_results ADD COLUMN IF NOT EXISTS checked_by text`); // 'snov' | 'anymail'
   tableReady = true;
 }
 
@@ -97,7 +99,7 @@ export async function verifyEmailListChunk(
     byEmail.set(k, [...(byEmail.get(k) || []), { id: r.id, email_status: r.email_status }]);
   }
 
-  type Out = { email: string; status: string | null; inRadar: boolean; added: boolean; skipped?: boolean };
+  type Out = { email: string; status: string | null; inRadar: boolean; added: boolean; skipped?: boolean; by?: "snov" | "anymail" };
   const outs: Out[] = [];
   let fatal: Error | null = null;
   let toCheck = emails;
@@ -111,37 +113,59 @@ export async function verifyEmailListChunk(
       else toCheck.push(email);
     }
   }
-  for (let i = 0; i < toCheck.length && !fatal; i += CONC) {
-    await Promise.all(toCheck.slice(i, i + CONC).map(async (email) => {
+  const save = async (email: string, status: string | null, by: "snov" | "anymail") => {
+    const rows = byEmail.get(email) || [];
+    let added = false;
+    if (status) {
+      if (rows.length) {
+        // A previously-verified (real delivery) contact only downgrades on a hard "invalid"; any
+        // other result just refreshes the check date — same rule the Debounce flow always used.
+        const keep = rows.filter((r) => (r.email_status || "").toLowerCase() === "verified" && status !== "invalid").map((r) => r.id);
+        const setIds = rows.filter((r) => !keep.includes(r.id)).map((r) => r.id);
+        if (setIds.length) await patchByFilter("contacts", `id=in.(${setIds.join(",")})`, { email_status: status, validated_at: nowISO, debounce_fail_count: 0 });
+        if (keep.length) await patchByFilter("contacts", `id=in.(${keep.join(",")})`, { validated_at: nowISO });
+      } else if (canAdd) {
+        await insertRows("contacts", [{ email, vertical, email_status: status, validated_at: nowISO, domain: email.split("@")[1], source: "Email Validation (Anymail)" }],
+          { onConflict: "email,vertical", ignoreDuplicates: true, returnMinimal: true });
+        added = true;
+      }
+    }
+    outs.push({ email, status, inRadar: rows.length > 0, added, by });
+  };
+
+  // Pass 1 — Snov.io (when configured): settles valid / invalid. Anything it calls unknown/catch-all, or can't
+  // answer, falls through to Anymail below. Snov failing never stops the job.
+  let forAnymail = toCheck;
+  if (snovConfigured() && toCheck.length) {
+    const verdicts = await snovVerify(toCheck).catch(() => new Map());
+    forAnymail = [];
+    for (let i = 0; i < toCheck.length; i += CONC) {
+      await Promise.all(toCheck.slice(i, i + CONC).map(async (email) => {
+        const v = verdicts.get(email);
+        if (v === "valid" || v === "invalid") {
+          try { await save(email, v === "valid" ? "safe to send" : "invalid", "snov"); }
+          catch { outs.push({ email, status: null, inRadar: (byEmail.get(email) || []).length > 0, added: false }); }
+        } else forAnymail.push(email);
+      }));
+    }
+  }
+
+  // Pass 2 — Anymail Finder on the rest.
+  for (let i = 0; i < forAnymail.length && !fatal; i += CONC) {
+    await Promise.all(forAnymail.slice(i, i + CONC).map(async (email) => {
       try {
         let status = await anymailVerify(email, key);
         if (!status) status = await anymailVerify(email, key); // one quick retry before giving up on it
-        const rows = byEmail.get(email) || [];
-        let added = false;
-        if (status) {
-          if (rows.length) {
-            // A previously-verified (real delivery) contact only downgrades on a hard "invalid"; any
-            // other result just refreshes the check date — same rule the Debounce flow always used.
-            const keep = rows.filter((r) => (r.email_status || "").toLowerCase() === "verified" && status !== "invalid").map((r) => r.id);
-            const setIds = rows.filter((r) => !keep.includes(r.id)).map((r) => r.id);
-            if (setIds.length) await patchByFilter("contacts", `id=in.(${setIds.join(",")})`, { email_status: status, validated_at: nowISO, debounce_fail_count: 0 });
-            if (keep.length) await patchByFilter("contacts", `id=in.(${keep.join(",")})`, { validated_at: nowISO });
-          } else if (canAdd) {
-            await insertRows("contacts", [{ email, vertical, email_status: status, validated_at: nowISO, domain: email.split("@")[1], source: "Email Validation (Anymail)" }],
-              { onConflict: "email,vertical", ignoreDuplicates: true, returnMinimal: true });
-            added = true;
-          }
-        }
-        outs.push({ email, status, inRadar: rows.length > 0, added });
+        await save(email, status, "anymail");
       } catch (e) {
         if (/Anymail Finder/.test((e as Error).message)) fatal = e as Error; else outs.push({ email, status: null, inRadar: (byEmail.get(email) || []).length > 0, added: false });
       }
     }));
   }
   if (outs.length && jobId) {
-    const values = outs.map((o) => `(${Number(jobId)}, '${esc(o.email)}', ${o.status ? `'${esc(o.status)}'` : "NULL"}, ${o.skipped ? "'skipped'" : o.status ? `'${RAW_OF[o.status]}'` : "'error'"}, ${o.inRadar}, ${o.added}, ${vertical ? `'${esc(vertical)}'` : "NULL"})`).join(",");
-    await radarSql(`INSERT INTO email_verify_results (job_id, email, result_status, anymail_status, in_radar, added, vertical) VALUES ${values}
-      ON CONFLICT (job_id, email) DO UPDATE SET result_status = EXCLUDED.result_status, anymail_status = EXCLUDED.anymail_status, in_radar = EXCLUDED.in_radar, added = EXCLUDED.added, checked_at = now()`);
+    const values = outs.map((o) => `(${Number(jobId)}, '${esc(o.email)}', ${o.status ? `'${esc(o.status)}'` : "NULL"}, ${o.skipped ? "'skipped'" : o.status ? `'${RAW_OF[o.status]}'` : "'error'"}, ${o.inRadar}, ${o.added}, ${vertical ? `'${esc(vertical)}'` : "NULL"}, ${o.by ? `'${o.by}'` : "NULL"})`).join(",");
+    await radarSql(`INSERT INTO email_verify_results (job_id, email, result_status, anymail_status, in_radar, added, vertical, checked_by) VALUES ${values}
+      ON CONFLICT (job_id, email) DO UPDATE SET result_status = EXCLUDED.result_status, anymail_status = EXCLUDED.anymail_status, in_radar = EXCLUDED.in_radar, added = EXCLUDED.added, checked_by = EXCLUDED.checked_by, checked_at = now()`);
   }
   if (fatal) throw fatal;
   return {
