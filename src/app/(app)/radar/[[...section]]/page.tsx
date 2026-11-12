@@ -780,7 +780,7 @@ function SegmentDashboard({ segment, sub }: { segment: SegmentKey; sub: string }
         </div>
       )}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3.5">
-        <KpiTile icon="accounts" label={`${title} accounts`} value={fmt(nAcc)} foot={`${fmt(kpi(A, "with_contacts"))} have contacts (${pct(kpi(A, "with_contacts"), nAcc)}%) · ${fmt(empty)} empty`} ratio={kpi(A, "with_contacts") / (nAcc || 1)} />
+        <KpiTile icon="accounts" label={segment === "india" || segment === "us" || segment === "crossborder" ? `${title} accounts` : "Accounts"} value={fmt(nAcc)} foot={`${fmt(kpi(A, "with_contacts"))} have contacts (${pct(kpi(A, "with_contacts"), nAcc)}%) · ${fmt(empty)} empty`} ratio={kpi(A, "with_contacts") / (nAcc || 1)} />
         <KpiTile icon="icp" label="LinkedIn coverage" value={`${pct(kpi(A, "with_linkedin"), nAcc)}%`} foot={`${fmt(kpi(A, "with_linkedin"))} of ${fmt(nAcc)} accounts`} ratio={kpi(A, "with_linkedin") / (nAcc || 1)} />
         <KpiTile icon="validate" label="Industry known" value={`${pct(kpi(A, "with_industry"), nAcc)}%`} foot={`${fmt(kpi(A, "with_industry"))} accounts categorised`} ratio={kpi(A, "with_industry") / (nAcc || 1)} />
         <KpiTile icon="dashboard" label="Revenue known" value={`${pct(kpi(A, "with_revenue"), nAcc)}%`} foot={`${fmt(kpi(A, "with_revenue"))} accounts with a revenue band`} ratio={kpi(A, "with_revenue") / (nAcc || 1)} />
