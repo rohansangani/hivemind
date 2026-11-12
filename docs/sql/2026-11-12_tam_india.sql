@@ -1,5 +1,5 @@
 -- Radar DB — "ClickPost TAM" dashboard tab: India StoreLeads file accounts with monthly sales >= INR 10 lakh.
--- Loaded from IndiaStoreLeadsOct26.csv (domain-deduped; sales are StoreLeads' USD estimates; threshold = INR 1,000,000 / 88 INR per USD ≈ $11,364/mo).
+-- Loaded from IndiaStoreLeadsOct26.csv (domain-deduped; sales are StoreLeads' USD estimates; threshold = INR 1,000,000 / 95 INR per USD ≈ $10,526/mo).
 -- Bucket/category columns reuse the exact functions accounts uses, so the TAM analysis is directly comparable to the India tab.
 CREATE TABLE IF NOT EXISTS tam_india (
   domain text PRIMARY KEY,

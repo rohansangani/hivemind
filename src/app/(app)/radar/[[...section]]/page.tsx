@@ -766,7 +766,7 @@ function SegmentDashboard({ segment, sub }: { segment: SegmentKey; sub: string }
     <div className="space-y-5">
       {segment === "tam" && (
         <div className="rounded-xl border border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] px-4 py-3 text-[12.5px] text-[var(--hm-text-secondary)]">
-          <b className="text-[var(--hm-text)]">StoreLeads India</b> — every account in the India StoreLeads file with estimated monthly sales of <b>₹10 lakh or more</b> (≈ $11,364/month at ₹88 per USD; StoreLeads&apos; estimates, Oct 2026 file).
+          <b className="text-[var(--hm-text)]">StoreLeads India</b> — every account in the India StoreLeads file with estimated monthly sales of <b>₹10 lakh or more</b> (≈ $10,526/month at ₹95 per USD; StoreLeads&apos; estimates, Oct 2026 file).
           Firmographics come from the file; Radar fills what it lacks. &ldquo;Have contacts&rdquo; counts the people Radar holds at the same company domain.
         </div>
       )}
