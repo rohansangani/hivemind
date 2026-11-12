@@ -5,7 +5,7 @@ import { radarSql } from "@/lib/radar/supabase";
  * segment's ACCOUNTS (account-level analysis only), in a single scan. Crossborder is an overlay vertical — its
  * contacts are those whose `verticals` include it, its accounts' contact counts go by domain.
  *
- * "tam" (ClickPost TAM tab) = every India StoreLeads-file account with monthly sales >= INR 10 lakh (table `tam_india`,
+ * "tam" (StoreLeads India view under the India tab) = every India StoreLeads-file account with monthly sales >= INR 10 lakh (table `tam_india`,
  * see docs/sql/2026-11-12_tam_india.sql) — the market, not just what's in Radar. Firmographics come from the file;
  * Radar fills what the file lacks (employees, LinkedIn…) and supplies customer / lifecycle / source / contacts by domain.
  */
