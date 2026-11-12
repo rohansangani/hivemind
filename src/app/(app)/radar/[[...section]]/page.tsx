@@ -39,7 +39,7 @@ const SECTIONS: Array<{ id: SectionId; label: string; blurb: string }> = [
   { id: "accounts",  label: "Accounts",  blurb: "Browse and filter the accounts database." },
   { id: "contacts",  label: "Contacts",  blurb: "Query validated contacts across the database." },
   { id: "icp",       label: "ICP Base",  blurb: "Define Ideal Customer Profiles to auto-fill Enrich searches." },
-  { id: "enrich",    label: "Enrich",    blurb: "Blitz → Anymail → Debounce → Anymail verify: find ICP contacts + emails for company domains." },
+  { id: "enrich",    label: "Enrich",    blurb: "Blitz → Snov.io → Anymail → Debounce → Anymail verify: find ICP contacts + emails for company domains." },
   { id: "validate",  label: "Validate",  blurb: "Generate email patterns, test deliverability, save confirmed emails." },
   { id: "checkdb",   label: "Check DB",  blurb: "Paste or upload domains, company names or LinkedIn URLs to see what already exists — with full account and contact details." },
   { id: "logs",      label: "Logs",      blurb: "Admin-only audit trail of edits, deletes, uploads, exports, and validate/enrich runs." },
@@ -4266,7 +4266,7 @@ interface EnrichJobRow {
 
 interface Enrich2Job {
   id: number; label: string; vertical: string; created_by: string | null; status: string; phase: string; stage: string | null;
-  options: { maxPerCompany: number; anymailFallback: boolean; anymailVerify: boolean; phones: boolean; excludeSupportHrFinance: boolean; useRadarFirst?: boolean; apifyFallback?: boolean };
+  options: { maxPerCompany: number; snovFallback?: boolean; anymailFallback: boolean; anymailVerify: boolean; phones: boolean; excludeSupportHrFinance: boolean; useRadarFirst?: boolean; apifyFallback?: boolean };
   counts: Record<string, number | Record<string, number>>; error: string | null; created_at: string; updated_at: string;
 }
 interface Enrich2Person {
@@ -4276,7 +4276,7 @@ interface Enrich2Person {
 }
 interface Enrich2Input { domain: string; brand?: string; linkedin?: string; altDomains?: string[] }
 
-const ENRICH2_PHASES = ["reuse", "resolve", "search", "email", "anymail", "debounce", "verify", "phone", "save", "done"];
+const ENRICH2_PHASES = ["reuse", "resolve", "search", "email", "snov", "anymail", "debounce", "verify", "phone", "save", "done"];
 
 const ENRICH_MAX_PER_JOB = 5000; // keep in step with the cap in api/radar/enrich2/route.ts
 async function enrich2Call<T = Record<string, unknown>>(body: Record<string, unknown>): Promise<T> {
@@ -4302,6 +4302,7 @@ function EnrichV2Section() {
   const [csvCompanies, setCsvCompanies] = useState<Enrich2Input[]>([]);
   const [csvName, setCsvName] = useState("");
   const [maxPer, setMaxPer] = useState(25);
+  const [snovFallback, setSnovFallback] = useState(true);
   const [anymailFallback, setAnymailFallback] = useState(true);
   const [anymailVerify, setAnymailVerify] = useState(true);
   const [phones, setPhones] = useState(true);
@@ -4434,7 +4435,7 @@ function EnrichV2Section() {
     if (!confirm(`Enrich ${companies.length.toLocaleString()} compan${companies.length === 1 ? "y" : "ies"}?${splitNote}\n\nUp to ${maxPer} contacts each → up to ~${credits.toLocaleString()} Blitz records for people, plus 1 per email found. Debounce and Anymail charges apply per email.`)) return;
     setStarting(true);
     try {
-      const options = { maxPerCompany: maxPer, anymailFallback, anymailVerify, phones, excludeSupportHrFinance: excludeShf, apifyFallback, useRadarFirst, countries: splitList(countriesText), cities: splitList(citiesText) };
+      const options = { maxPerCompany: maxPer, snovFallback, anymailFallback, anymailVerify, phones, excludeSupportHrFinance: excludeShf, apifyFallback, useRadarFirst, countries: splitList(countriesText), cities: splitList(citiesText) };
       const size = Math.ceil(companies.length / parts);
       const started: Enrich2Job[] = [];
       for (let i = 0; i < parts; i++) {
@@ -4577,7 +4578,8 @@ function EnrichV2Section() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
           {toggle(useRadarFirst, setUseRadarFirst, "Use what's already in Radar first", "Domains Radar already has contacts for are taken as-is (status, phone, LinkedIn) — only the gaps and unknown domains are enriched")}
-          {toggle(anymailFallback, setAnymailFallback, "Anymail Finder for missing emails", "LinkedIn URL search when Blitz has no email · 1 credit per email found")}
+          {toggle(snovFallback, setSnovFallback, "Snov.io before Anymail", "Name + domain email search for people Blitz has no email for, and company-name lookup for companies Blitz can't find · 1 Snov credit per hit")}
+          {toggle(anymailFallback, setAnymailFallback, "Anymail Finder for missing emails", "LinkedIn URL search for whoever Blitz and Snov.io missed · 1 credit per email found")}
           {toggle(anymailVerify, setAnymailVerify, "Anymail verify Risky / Unknown", "Second pass on everything Debounce didn't call Safe or Invalid · 0.2 credit each")}
           {toggle(apifyFallback, setApifyFallback, "Apify LinkedIn finder for companies Blitz misses", "Second pass for domains Blitz can't match · ~$0.009 per company page found, nothing for misses")}
           {toggle(excludeShf, setExcludeShf, "Drop HR & finance titles", "Interns, trainees, students and junior support are always dropped")}
@@ -4628,13 +4630,15 @@ function EnrichV2Section() {
                 { key: "reuse", label: "Already in Radar", on: o.useRadarFirst !== false, value: `${fmt(n("from_radar_people"))} contacts`, p: phaseIdx > 0 || job.status === "done" ? 100 : 0,
                   sub: `${fmt(n("from_radar_companies"))} companies covered from Radar — no credits used` },
                 { key: "resolve", label: "Company LinkedIn", on: true, value: `${fmt(n("resolved"))} / ${fmt(n("companies"))}`, p: pct(n("companies") - n("pending_resolve"), n("companies")),
-                  sub: `${fmt(n("unresolved"))} not found · ${fmt(n("low"))} low-confidence skipped${(job.counts.methods as Record<string, number> | undefined)?.apify ? ` · ${fmt((job.counts.methods as Record<string, number>).apify)} via Apify` : ""}` },
+                  sub: `${fmt(n("unresolved"))} not found · ${fmt(n("low"))} low-confidence skipped${(job.counts.methods as Record<string, number> | undefined)?.snov ? ` · ${fmt((job.counts.methods as Record<string, number>).snov)} via Snov.io` : ""}${(job.counts.methods as Record<string, number> | undefined)?.apify ? ` · ${fmt((job.counts.methods as Record<string, number>).apify)} via Apify` : ""}` },
                 { key: "search", label: "Blitz ICP search", on: true, value: `${fmt(n("kept"))} contacts`, p: pct(n("searched"), n("resolved")),
                   sub: `${fmt(n("searched"))}/${fmt(n("resolved"))} companies · P1 ${fmt(n("phase1"))} · P2 ${fmt(n("phase2"))} · ${fmt(n("dropped"))} filtered out` },
                 { key: "email", label: "Blitz emails", on: true, value: `${fmt(n("email_blitz"))} found`, p: pct(n("email_tried"), n("email_eligible")),
                   sub: `${fmt(n("email_tried"))}/${fmt(n("email_eligible"))} looked up` },
-                { key: "anymail", label: "Anymail Finder", on: o.anymailFallback, value: `${fmt(n("email_anymail"))} found`, p: pct(n("anymail_tried"), Math.max(0, n("kept") - n("email_blitz"))),
-                  sub: `${fmt(n("anymail_tried"))} searched (Blitz misses)` },
+                { key: "snov", label: "Snov.io emails", on: o.snovFallback !== false && job.counts.snov_tried !== undefined, value: `${fmt(n("email_snov"))} found`, p: pct(n("snov_tried"), Math.max(0, n("kept") - n("email_blitz"))),
+                  sub: `${fmt(n("snov_tried"))} searched (Blitz misses)` },
+                { key: "anymail", label: "Anymail Finder", on: o.anymailFallback, value: `${fmt(n("email_anymail"))} found`, p: pct(n("anymail_tried"), Math.max(0, n("kept") - n("email_blitz") - n("email_snov"))),
+                  sub: `${fmt(n("anymail_tried"))} searched (Blitz + Snov.io misses)` },
                 { key: "debounce", label: "Debounce", on: true, value: `${fmt(n("debounced"))} / ${fmt(n("with_email"))}`, p: pct(n("debounced"), n("with_email")),
                   sub: `${fmt(n("db_safe"))} safe · ${fmt(n("db_risky"))} risky · ${fmt(n("db_invalid"))} invalid · ${fmt(n("db_unknown"))} unknown` },
                 // Stays visible when the step was switched off / cut short (e.g. Anymail out of credits) but already produced results.
