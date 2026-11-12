@@ -1,7 +1,7 @@
 import { radarSql } from "@/lib/radar/supabase";
 
 /**
- * Per-segment dashboard numbers (India = D2C + B2B, US, Crossborder): KPIs and firmographic splits for the
+ * Per-segment dashboard numbers (India = D2C + B2B + Crossborder, US, Crossborder): KPIs and firmographic splits for the
  * segment's ACCOUNTS (account-level analysis only), in a single scan. Crossborder is an overlay vertical — its
  * contacts are those whose `verticals` include it, its accounts' contact counts go by domain.
  */
@@ -11,11 +11,22 @@ export interface SegmentRow { k: string; v: string | null; n: number }
 const esc = (s: string) => `'${s.replace(/'/g, "''")}'`;
 
 export async function segmentStats(segment: Segment, sub: string): Promise<{ accounts: SegmentRow[] }> {
-  const verts = segment === "india" ? (sub === "D2C" ? ["D2C"] : sub === "B2B" ? ["B2B"] : ["D2C", "B2B"]) : segment === "us" ? ["US"] : ["Crossborder"];
+  // Crossborder is part of India, so the India tab includes it (and can also be narrowed to just D2C / B2B / Crossborder).
+  const verts = segment === "india" ? (sub === "D2C" ? ["D2C"] : sub === "B2B" ? ["B2B"] : sub === "Crossborder" ? ["Crossborder"] : ["D2C", "B2B", "Crossborder"]) : segment === "us" ? ["US"] : ["Crossborder"];
   const vlist = verts.map(esc).join(",");
   const overlay = segment === "crossborder";
 
-  const countsCte = overlay
+  // Per-account contact counts. India can contain Crossborder accounts, whose contacts are tagged via the Crossborder
+  // overlay (by domain), so for those take the larger of the account-link count and the overlay count (no double count).
+  const direct = `SELECT id, count(*)::int n FROM (
+        SELECT c.account_id id FROM contacts c WHERE c.account_id IN (SELECT id FROM a) AND c.marked_irrelevant IS NOT TRUE
+        UNION ALL
+        SELECT a.id FROM a JOIN contacts c ON c.match_domain = radar_norm_domain(a.domain) AND c.marked_irrelevant IS NOT TRUE AND a.vertical = ANY(c.extra_verticals)
+      ) u GROUP BY id`;
+  const overlayCounts = `SELECT a.id, count(c.id)::int n FROM a JOIN contacts c ON c.match_domain = radar_norm_domain(a.domain) AND 'Crossborder' = ANY(c.verticals) AND c.marked_irrelevant IS NOT TRUE WHERE a.vertical = 'Crossborder' GROUP BY a.id`;
+  const countsCte = segment === "india" && verts.includes("Crossborder")
+    ? `cc AS (SELECT id, max(n)::int n FROM (${direct} UNION ALL ${overlayCounts}) m GROUP BY id)`
+    : overlay
     ? `cc AS (SELECT a.id, count(c.id)::int n FROM a JOIN contacts c ON c.match_domain = radar_norm_domain(a.domain) AND 'Crossborder' = ANY(c.verticals) AND c.marked_irrelevant IS NOT TRUE GROUP BY a.id)`
     : `cc AS (SELECT id, count(*)::int n FROM (
         SELECT c.account_id id FROM contacts c WHERE c.account_id IN (SELECT id FROM a) AND c.marked_irrelevant IS NOT TRUE

@@ -678,7 +678,7 @@ const PER_ACCOUNT_ORDER = ["0", "1", "2-3", "4-10", "11+"];
 
 function RadarDashboardTabs() {
   const [tab, setTab] = useState<"overview" | SegmentKey>("overview");
-  const [sub, setSub] = useState<"all" | "D2C" | "B2B">("all");
+  const [sub, setSub] = useState<"all" | "D2C" | "B2B" | "Crossborder">("all");
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3 flex-wrap">
@@ -689,9 +689,9 @@ function RadarDashboardTabs() {
         </div>
         {tab === "india" && (
           <div className="flex items-center gap-1 ml-2">
-            {(["all", "D2C", "B2B"] as const).map((o) => (
+            {(["all", "D2C", "B2B", "Crossborder"] as const).map((o) => (
               <button key={o} onClick={() => setSub(o)} className={`h-7 px-2.5 rounded-full border text-[12px] font-medium transition-colors ${sub === o ? "border-[var(--hm-primary)] bg-[var(--hm-bg-tertiary)] text-[var(--hm-text)]" : "border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:text-[var(--hm-text)]"}`}>
-                {o === "all" ? "D2C + B2B" : o}
+                {o === "all" ? "D2C + B2B + Crossborder" : o}
               </button>
             ))}
           </div>
