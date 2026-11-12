@@ -667,7 +667,7 @@ const CITY_OPTIONS = [
 ];
 
 const SEG_TABS: { id: "overview" | SegmentKey; label: string }[] = [
-  { id: "overview", label: "Overview" }, { id: "india", label: "India" }, { id: "us", label: "US" }, { id: "crossborder", label: "Crossborder" },
+  { id: "overview", label: "Overview" }, { id: "india", label: "India" }, { id: "us", label: "US + CN" }, { id: "crossborder", label: "Crossborder" },
 ];
 const SEG_PALETTE = ["var(--tag-blue-fg)", "var(--tag-purple-fg)", "var(--tag-orange-fg)", "var(--tag-green-fg)", "var(--tag-pink-fg)", "var(--tag-yellow-fg)", "var(--tag-red-fg)"];
 const GREY = "color-mix(in srgb, var(--hm-text-tertiary) 55%, transparent)";
@@ -699,7 +699,7 @@ function RadarDashboardTabs() {
         )}
         {tab === "us" && (
           <div className="flex items-center gap-1 ml-2">
-            {([["accounts", "US accounts"], ["slus", "StoreLeadsUS"], ["slca", "StoreLeadsCanada"]] as const).map(([id, label]) => (
+            {([["accounts", "US + CN accounts"], ["slus", "StoreLeadsUS"], ["slca", "StoreLeadsCanada"]] as const).map(([id, label]) => (
               <button key={id} onClick={() => setUsView(id)} className={`h-7 px-2.5 rounded-full border text-[12px] font-medium transition-colors ${usView === id ? "border-[var(--hm-primary)] bg-[var(--hm-bg-tertiary)] text-[var(--hm-text)]" : "border-[var(--hm-border)] text-[var(--hm-text-secondary)] hover:bg-[var(--hm-bg-secondary)]"}`}>{label}</button>
             ))}
           </div>
@@ -763,7 +763,7 @@ function SegmentDashboard({ segment, sub }: { segment: SegmentKey; sub: string }
   const nAcc = kpi(A, "accounts");
   const empty = nAcc - kpi(A, "with_contacts");
   const isIndia = segment === "india" || segment === "tam" || segment === "dtc" || segment === "slus" || segment === "slca"; // shows the State / province card
-  const title = segment === "india" ? "India" : segment === "us" ? "US" : segment === "tam" ? "StoreLeads India" : segment === "dtc" ? "DTCConnect" : segment === "slus" ? "StoreLeadsUS" : segment === "slca" ? "StoreLeadsCanada" : "Crossborder";
+  const title = segment === "india" ? "India" : segment === "us" ? "US + CN" : segment === "tam" ? "StoreLeads India" : segment === "dtc" ? "DTCConnect" : segment === "slus" ? "StoreLeadsUS" : segment === "slca" ? "StoreLeadsCanada" : "Crossborder";
 
   const completeness = (items: [string, number, number][]) => items.map(([k, n, d]) => ({ k, n, p: pct(n, d) }));
   const accComp = completeness([
