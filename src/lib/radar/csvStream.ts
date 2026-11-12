@@ -151,8 +151,10 @@ export function streamAccountsWithContactsCsv(
           chunk += [...accCols, ...conCols.map((c) => `contact_${c}`)].join(",") + "\n";
         }
         if (accRows.length) {
+          // An account can carry several verticals (accounts.verticals); one tagged with the overlay vertical also lists everyone at its domain.
+          const hasOverlay = (a: Record<string, unknown>) => (Array.isArray(a.verticals) && (a.verticals as string[]).length ? (a.verticals as string[]) : [a.vertical as string]).includes(overlayVertical);
           const owned = accRows.filter((a) => a.vertical !== overlayVertical).map((a) => String(a.id));
-          const overlayDomains = [...new Set(accRows.filter((a) => a.vertical === overlayVertical).map((a) => normDomain(a.domain)).filter(Boolean))];
+          const overlayDomains = [...new Set(accRows.filter(hasOverlay).map((a) => normDomain(a.domain)).filter(Boolean))];
           const [byAcc, byDom] = await Promise.all([contactsFor("account_id", owned), contactsFor("match_domain", overlayDomains)]);
           const map = new Map<string, Record<string, unknown>[]>();
           for (const c of byAcc) { const k = String(c.account_id); (map.get(k) || map.set(k, []).get(k)!).push(c); }
@@ -160,7 +162,10 @@ export function streamAccountsWithContactsCsv(
           for (const c of byDom) { const k = String(c.match_domain); (domMap.get(k) || domMap.set(k, []).get(k)!).push(c); }
           const blank = conCols.map(() => csvCell(null)).join(",");
           for (const a of accRows) {
-            const list = (a.vertical === overlayVertical ? domMap.get(normDomain(a.domain)) : map.get(String(a.id))) || [];
+            const own = a.vertical === overlayVertical ? [] : map.get(String(a.id)) || [];
+            const ov = hasOverlay(a) ? domMap.get(normDomain(a.domain)) || [] : [];
+            const ids = new Set(own.map((c) => String(c.id)));
+            const list = [...own, ...ov.filter((c) => !ids.has(String(c.id)))];
             const left = accCols!.map((c) => csvCell(a[c])).join(",");
             if (!list.length) chunk += `${left},${blank}\n`;
             else for (const c of list) chunk += `${left},${conCols.map((k) => csvCell(c[k])).join(",")}\n`;

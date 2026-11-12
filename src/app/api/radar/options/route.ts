@@ -110,7 +110,7 @@ export async function GET(req: NextRequest) {
     const [aSrc, cSrc, aVert, cVert] = await Promise.all([
       grp(`SELECT source v, count(*)::int n FROM accounts WHERE source IS NOT NULL AND source <> '' AND marked_irrelevant IS NOT TRUE GROUP BY 1 ORDER BY 2 DESC`),
       grp(`SELECT source v, count(*)::int n FROM contacts WHERE source IS NOT NULL AND source <> '' AND marked_irrelevant IS NOT TRUE GROUP BY 1 ORDER BY 2 DESC`),
-      grp(`SELECT vertical v, count(*)::int n FROM accounts WHERE vertical IS NOT NULL AND marked_irrelevant IS NOT TRUE GROUP BY 1`),
+      grp(`SELECT v, count(*)::int n FROM accounts, unnest(CASE WHEN verticals IS NULL OR cardinality(verticals) = 0 THEN ARRAY[vertical] ELSE verticals END) v WHERE v IS NOT NULL AND marked_irrelevant IS NOT TRUE GROUP BY 1`),
       grp(`SELECT v, count(*)::int n FROM contacts, unnest(verticals) v WHERE marked_irrelevant IS NOT TRUE GROUP BY 1`),
     ]);
     const obj = (rows: { v: string; n: number }[]) => Object.fromEntries(rows.map((r) => [r.v, r.n]));

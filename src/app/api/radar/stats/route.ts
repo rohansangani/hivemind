@@ -29,8 +29,10 @@ async function computeStats() {
     const V = ["B2B", "D2C", "US", "Crossborder"];
     const ne = "hubspot_excluded IS NOT TRUE";
     const blank = `(email IS NULL OR email = '') AND ${ne}`;
-    const [accRows, conRows, statusMatrix, domainStats, accountCoverage, growthRaw] = await Promise.all([
-      radarSql<{ vertical: string | null; n: number }>("SELECT vertical, count(*)::int n FROM accounts GROUP BY vertical"),
+    const [accRows, accTotalRows, conRows, statusMatrix, domainStats, accountCoverage, growthRaw] = await Promise.all([
+      // An account counts under every vertical on its list (one row can carry several).
+      radarSql<{ vertical: string | null; n: number }>("SELECT v AS vertical, count(*)::int n FROM accounts, LATERAL unnest(CASE WHEN verticals IS NULL OR cardinality(verticals) = 0 THEN ARRAY[vertical] ELSE verticals END) v GROUP BY v"),
+      radarSql<{ n: number }>("SELECT count(*)::int n FROM accounts"),
       radarSql<Record<string, number>>(`SELECT count(*) FILTER (WHERE ${ne})::int total, count(*) FILTER (WHERE ${blank})::int blank, count(*) FILTER (WHERE vertical IS NULL AND ${blank})::int blank_unassigned, ${
         V.map((v) => `count(*) FILTER (WHERE '${v}' = ANY(verticals) AND ${ne})::int c_${v}, count(*) FILTER (WHERE '${v}' = ANY(verticals) AND ${blank})::int b_${v}`).join(", ")
       } FROM contacts`),
@@ -40,7 +42,7 @@ async function computeStats() {
       rpc<GrowthRow>("read_growth_snapshots"),
     ]);
     const accBy = (v: string) => accRows.find((r) => r.vertical === v)?.n ?? 0;
-    const totalAccounts = accRows.reduce((t, r) => t + r.n, 0);
+    const totalAccounts = accTotalRows[0]?.n ?? 0;
     const c = conRows[0] || {};
     const totalContacts = c.total ?? 0, blankEmailContacts = c.blank ?? 0, blankUnassigned = c.blank_unassigned ?? 0;
     const [b2bAccounts, d2cAccounts, usAccounts, cbAccounts] = V.map(accBy);

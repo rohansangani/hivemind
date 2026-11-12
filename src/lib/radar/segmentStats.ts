@@ -14,31 +14,23 @@ export async function segmentStats(segment: Segment, sub: string): Promise<{ acc
   // Crossborder is part of India, so the India tab includes it (and can also be narrowed to just D2C / B2B / Crossborder).
   const verts = segment === "india" ? (sub === "D2C" ? ["D2C"] : sub === "B2B" ? ["B2B"] : sub === "Crossborder" ? ["Crossborder"] : ["D2C", "B2B", "Crossborder"]) : segment === "us" ? ["US"] : ["Crossborder"];
   const vlist = verts.map(esc).join(",");
-  const overlay = segment === "crossborder";
 
-  // Per-account contact counts. India can contain Crossborder accounts, whose contacts are tagged via the Crossborder
-  // overlay (by domain), so for those take the larger of the account-link count and the overlay count (no double count).
+  // An account matches a segment if ANY vertical on its list does (one row can carry several). Its contact count is the
+  // larger of the contacts linked to it (account_id / extra_verticals) and, when it carries the Crossborder tag, the
+  // contacts at its domain tagged Crossborder (Crossborder accounts own nobody themselves) — max, so nobody counts twice.
   const direct = `SELECT id, count(*)::int n FROM (
         SELECT c.account_id id FROM contacts c WHERE c.account_id IN (SELECT id FROM a) AND c.marked_irrelevant IS NOT TRUE
         UNION ALL
-        SELECT a.id FROM a JOIN contacts c ON c.match_domain = radar_norm_domain(a.domain) AND c.marked_irrelevant IS NOT TRUE AND a.vertical = ANY(c.extra_verticals)
+        SELECT a.id FROM a JOIN contacts c ON c.match_domain = radar_norm_domain(a.domain) AND c.marked_irrelevant IS NOT TRUE AND a.vl && c.extra_verticals
       ) u GROUP BY id`;
-  const overlayCounts = `SELECT a.id, count(c.id)::int n FROM a JOIN contacts c ON c.match_domain = radar_norm_domain(a.domain) AND 'Crossborder' = ANY(c.verticals) AND c.marked_irrelevant IS NOT TRUE WHERE a.vertical = 'Crossborder' GROUP BY a.id`;
-  const countsCte = segment === "india" && verts.includes("Crossborder")
-    ? `cc AS (SELECT id, max(n)::int n FROM (${direct} UNION ALL ${overlayCounts}) m GROUP BY id)`
-    : overlay
-    ? `cc AS (SELECT a.id, count(c.id)::int n FROM a JOIN contacts c ON c.match_domain = radar_norm_domain(a.domain) AND 'Crossborder' = ANY(c.verticals) AND c.marked_irrelevant IS NOT TRUE GROUP BY a.id)`
-    : `cc AS (SELECT id, count(*)::int n FROM (
-        SELECT c.account_id id FROM contacts c WHERE c.account_id IN (SELECT id FROM a) AND c.marked_irrelevant IS NOT TRUE
-        UNION ALL
-        SELECT a.id FROM a JOIN contacts c ON c.match_domain = radar_norm_domain(a.domain) AND c.marked_irrelevant IS NOT TRUE AND a.vertical = ANY(c.extra_verticals)
-      ) u GROUP BY id)`;
+  const overlayCounts = `SELECT a.id, count(c.id)::int n FROM a JOIN contacts c ON c.match_domain = radar_norm_domain(a.domain) AND 'Crossborder' = ANY(c.verticals) AND c.marked_irrelevant IS NOT TRUE WHERE 'Crossborder' = ANY(a.vl) GROUP BY a.id`;
+  const countsCte = `cc AS (SELECT id, max(n)::int n FROM (${direct} UNION ALL ${overlayCounts}) m GROUP BY id)`;
 
   const accountsQ = `
 WITH a AS MATERIALIZED (
-  SELECT id, vertical, domain, linkedin_url, industry_category, employee_bucket, revenue_bucket, monthly_revenue_bucket, platform, country, state, source,
+  SELECT id, vertical, COALESCE(NULLIF(verticals, '{}'::text[]), ARRAY[vertical]) AS vl, domain, linkedin_url, industry_category, employee_bucket, revenue_bucket, monthly_revenue_bucket, platform, country, state, source,
          account_type, customer, hubspot_lifecycle_stage, description
-  FROM accounts WHERE vertical IN (${vlist}) AND marked_irrelevant IS NOT TRUE),
+  FROM accounts WHERE COALESCE(NULLIF(verticals, '{}'::text[]), ARRAY[vertical]) && ARRAY[${vlist}]::text[] AND marked_irrelevant IS NOT TRUE),
 ${countsCte},
 j AS (SELECT a.*, COALESCE(cc.n, 0) cn FROM a LEFT JOIN cc ON cc.id = a.id)
 SELECT 'kpi' k, 'accounts' v, count(*)::int n FROM j

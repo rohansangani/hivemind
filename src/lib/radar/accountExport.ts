@@ -6,7 +6,7 @@
  * both paths filter/export identically.
  */
 
-import { selectFrom, firmographicFilters } from "@/lib/radar/supabase";
+import { selectFrom, firmographicFilters, verticalsFilter } from "@/lib/radar/supabase";
 import { fetchAllPages, csvCell, buildInFilter, splitFilterCombos, encodeIlikeValue, mapWithConcurrency, type ArrayFieldConfig } from "@/lib/radar/contactExport";
 
 // Same reasoning as CONTACT_ARRAY_FIELDS in contactExport.ts — every one of these accepts a single
@@ -39,7 +39,7 @@ export function buildAccountQuery(filters: Record<string, unknown>): string {
   let q = "select=*&order=name.asc";
   // Every column below accepts a single string OR an array of any length (see ACCOUNT_ARRAY_FIELDS
   // above for how a large array stays safe).
-  if (filters.vertical) q += buildInFilter("vertical", filters.vertical);
+  if (filters.vertical) q += verticalsFilter(filters.vertical as string | string[]); // an account matches if ANY of its verticals is picked
   if (filters.industry) q += buildInFilter("industry", filters.industry);
   if (filters.subIndustry) q += buildInFilter("sub_industry", filters.subIndustry);
   if (filters.accountSize) q += buildInFilter("account_size", filters.accountSize);
