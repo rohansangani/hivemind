@@ -4505,9 +4505,10 @@ function EnrichV2Section() {
         <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Enrich companies</h2>
         <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">
           Give company domains — Radar finds each company&apos;s LinkedIn page, pulls ICP contacts with <strong>Blitz</strong> (7 title tiers), finds emails
-          with Blitz then <strong>Anymail Finder</strong>, validates every email with <strong>Debounce</strong>, re-checks Risky/Unknown with Anymail, and saves it all to Radar.
+          with Blitz, then <strong>Snov.io</strong>, then <strong>Anymail Finder</strong>, validates every email with <strong>Debounce</strong>, re-checks Risky/Unknown with Anymail, and saves it all to Radar.
         </p>
       </div>
+      <EnrichCredits />
       <div ref={scopeRef} className="px-5 py-5 space-y-4">
         {missingKeys.length > 0 && (
           <div className="rounded-lg p-3 text-[12.5px] bg-[var(--tag-yellow-bg)] text-[var(--tag-yellow-fg)]">
@@ -4764,6 +4765,36 @@ function EnrichV2Section() {
 
 /** Legacy Apify leads-finder Enrich — no longer rendered (replaced by EnrichV2Section). */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
+/** Credits left on every provider Enrich spends (Blitz, Snov.io, Anymail, Apify), with a refresh. */
+function EnrichCredits() {
+  type It = { label: string; value: string | null; low?: boolean; error?: string; hint?: string };
+  const [items, setItems] = useState<It[] | null>(null);
+  const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(true);
+  const load = useCallback(() => {
+    setLoading(true);
+    fetch("/api/radar/enrich-credits")
+      .then(async (r) => { const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.error || "Couldn't load credits"); return d; })
+      .then((d: { items: It[] }) => { setItems(d.items); setErr(""); })
+      .catch((e) => setErr(e.message))
+      .finally(() => setLoading(false));
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  return (
+    <div className="flex items-center justify-end flex-wrap gap-x-5 gap-y-1 px-5 py-2 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] text-[12px]">
+      {err ? <span className="text-[var(--tag-red-fg)]">{err}</span> : (items || [{ label: "Blitz" }, { label: "Snov.io" }, { label: "Anymail" }, { label: "Apify" }] as It[]).map((it) => (
+        <span key={it.label} className="inline-flex items-center gap-1.5" title={it.error || it.hint || ""}>
+          <span className="text-[var(--hm-text-tertiary)]">{it.label}</span>
+          {it.error ? <span className="text-[var(--tag-red-fg)]">unavailable</span>
+            : <b className={`tabular-nums font-semibold ${it.low ? "text-[var(--tag-red-fg)]" : "text-[var(--hm-text)]"}`}>{items ? it.value ?? "—" : "…"}</b>}
+          {it.low && !it.error && <span className="text-[var(--tag-red-fg)]">· low</span>}
+        </span>
+      ))}
+      <button onClick={load} disabled={loading} className="radar-btn-ghost" style={{ height: 22, padding: "0 8px" }} title="Refresh">{loading ? "…" : "↻"}</button>
+    </div>
+  );
+}
+
 function EnrichSection() {
   const [jobLabel, setJobLabel] = useState("");
   const [domain, setDomain] = useState("");
