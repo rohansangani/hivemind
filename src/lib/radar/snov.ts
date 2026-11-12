@@ -182,3 +182,45 @@ export async function snovCompanyNames(domains: string[]): Promise<Map<string, s
   await Promise.all([worker(), worker()]);
   return out;
 }
+
+/**
+ * Email for a LinkedIn profile URL (Snov's two-step v1 flow: add-url-for-search, then get-emails-from-url).
+ * Only an email Snov marks "valid" is returned. Slower than name + domain (about 3 requests per URL), so callers
+ * pass a deadline and URLs not reached by then are simply left unanswered.
+ */
+export async function snovEmailsByLinkedin(urls: string[], deadline: number): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (!snovConfigured() || !urls.length) return out;
+  const t = await snovToken();
+  if (!t) return out;
+  let next = 0;
+  const worker = async () => {
+    while (next < urls.length && Date.now() < deadline) {
+      const url = urls[next++];
+      try {
+        const a = await snovFetch(`${BASE}/v1/add-url-for-search`, {
+          method: "POST", headers: { Authorization: `Bearer ${t}`, "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ url }), signal: AbortSignal.timeout(20000),
+        });
+        if (!a.ok) continue;
+        for (let i = 0; i < 6 && Date.now() < deadline; i++) {
+          await sleep(i === 0 ? 1200 : 1500);
+          const r = await snovFetch(`${BASE}/v1/get-emails-from-url`, {
+            method: "POST", headers: { Authorization: `Bearer ${t}`, "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({ url }), signal: AbortSignal.timeout(20000),
+          });
+          if (!r.ok) break;
+          const d = (await r.json()) as { success?: boolean; status?: string; data?: { emails?: { email?: string; status?: string }[] } };
+          if (d.status === "in_progress") continue;
+          if (d.success) {
+            const hit = (d.data?.emails || []).find((e) => e.email && String(e.status || "").toLowerCase() === "valid");
+            if (hit?.email) out.set(url, hit.email.trim().toLowerCase());
+          }
+          break;
+        }
+      } catch { /* best-effort */ }
+    }
+  };
+  await Promise.all([worker(), worker(), worker()]);
+  return out;
+}

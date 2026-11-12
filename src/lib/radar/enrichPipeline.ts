@@ -22,7 +22,7 @@
  */
 import { radarSql, selectFrom, insertRows, patchByFilter } from "@/lib/radar/supabase";
 import { cleanCity } from "@/lib/radar/cityNames";
-import { snovConfigured, snovFindEmails, snovCompanyNames } from "@/lib/radar/snov";
+import { snovConfigured, snovFindEmails, snovCompanyNames, snovEmailsByLinkedin } from "@/lib/radar/snov";
 import {
   blitzKey, mapPool, BLITZ_RPS, BlitzUnavailableError, blitzDomainToLinkedin, blitzCompanySearchByName,
   blitzWaterfallIcp, blitzWorkEmail, blitzPhone, type BlitzIcpTier, type BlitzIcpResult,
@@ -376,17 +376,24 @@ async function runPhaseBatch(job: EnrichJobRow, phase: EnrichPhase, left: () => 
   }
 
   if (phase === "snov") {
-    const { rows } = await selectFrom("enrich2_people", `select=id,first_name,last_name,domain&job_id=eq.${id}&dropped_reason=is.null&email=is.null&snov_tried=is.false&order=id.asc&limit=${Math.max(10, Math.min(100, Math.floor(left() / 1000)))}`);
+    const { rows } = await selectFrom("enrich2_people", `select=id,first_name,last_name,domain,linkedin_url&job_id=eq.${id}&dropped_reason=is.null&email=is.null&snov_tried=is.false&order=id.asc&limit=${Math.max(10, Math.min(40, Math.floor(left() / 4000)))}`);
     if (!rows.length) return "next";
-    await stage(`Step 4 · Snov.io email finder (name + domain) for people Blitz had no email for — ${c.snov_tried || 0} searched, ${c.email_snov || 0} found`, true);
-    const people = rows as { id: number; first_name: string | null; last_name: string | null; domain: string | null }[];
-    const searchable = people.map((p, i) => ({ p, i })).filter((x) => x.p.first_name && x.p.last_name && x.p.domain);
-    const found = searchable.length
-      ? await snovFindEmails(searchable.map((x) => ({ first_name: x.p.first_name as string, last_name: x.p.last_name as string, domain: String(x.p.domain) }))).catch(() => new Map<number, string>())
-      : new Map<number, string>();
+    await stage(`Step 4 · Snov.io email finder for people Blitz had no email for — ${c.snov_tried || 0} searched, ${c.email_snov || 0} found`, true);
+    const people = rows as { id: number; first_name: string | null; last_name: string | null; domain: string | null; linkedin_url: string | null }[];
     const hit = new Map<number, string>();
-    found.forEach((email, k) => hit.set(searchable[k].p.id, email));
-    // Rows Snov can't search (no name/domain) or didn't find are marked tried too, so they move on to Anymail.
+    // 4a · name + company domain (fast: 10 people per request).
+    const searchable = people.filter((p) => p.first_name && p.last_name && p.domain);
+    if (searchable.length) {
+      const found = await snovFindEmails(searchable.map((p) => ({ first_name: p.first_name as string, last_name: p.last_name as string, domain: String(p.domain) }))).catch(() => new Map<number, string>());
+      found.forEach((email, k) => hit.set(searchable[k].id, email));
+    }
+    // 4b · LinkedIn profile URL for whoever 4a missed (slower: ~3 requests each, so it stops at the tick's deadline).
+    const rest = people.filter((p) => !hit.has(p.id) && p.linkedin_url);
+    if (rest.length && left() > 25000) {
+      const byUrl = await snovEmailsByLinkedin(rest.map((p) => String(p.linkedin_url)), Date.now() + left() - 20000).catch(() => new Map<string, string>());
+      for (const p of rest) { const e = byUrl.get(String(p.linkedin_url)); if (e) hit.set(p.id, e); }
+    }
+    // Everyone in the batch is marked tried (found or not) so the misses move on to Anymail.
     await upsertPeople(people.map((p) => ({ id: p.id, job_id: id, snov_tried: true, ...(hit.get(p.id) ? { email: hit.get(p.id), email_source: "snov" } : {}) })));
     return "more";
   }

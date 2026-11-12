@@ -4578,7 +4578,7 @@ function EnrichV2Section() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
           {toggle(useRadarFirst, setUseRadarFirst, "Use what's already in Radar first", "Domains Radar already has contacts for are taken as-is (status, phone, LinkedIn) — only the gaps and unknown domains are enriched")}
-          {toggle(snovFallback, setSnovFallback, "Snov.io before Anymail", "Name + domain email search for people Blitz has no email for, and company-name lookup for companies Blitz can't find · 1 Snov credit per hit")}
+          {toggle(snovFallback, setSnovFallback, "Snov.io before Anymail", "Email search (name + domain, then LinkedIn URL) for people Blitz has no email for, and company-name lookup for companies Blitz can't find · 1 Snov credit per hit")}
           {toggle(anymailFallback, setAnymailFallback, "Anymail Finder for missing emails", "LinkedIn URL search for whoever Blitz and Snov.io missed · 1 credit per email found")}
           {toggle(anymailVerify, setAnymailVerify, "Anymail verify Risky / Unknown", "Second pass on everything Debounce didn't call Safe or Invalid · 0.2 credit each")}
           {toggle(apifyFallback, setApifyFallback, "Apify LinkedIn finder for companies Blitz misses", "Second pass for domains Blitz can't match · ~$0.009 per company page found, nothing for misses")}
@@ -4636,7 +4636,7 @@ function EnrichV2Section() {
                 { key: "email", label: "Blitz emails", on: true, value: `${fmt(n("email_blitz"))} found`, p: pct(n("email_tried"), n("email_eligible")),
                   sub: `${fmt(n("email_tried"))}/${fmt(n("email_eligible"))} looked up` },
                 { key: "snov", label: "Snov.io emails", on: o.snovFallback !== false && job.counts.snov_tried !== undefined, value: `${fmt(n("email_snov"))} found`, p: pct(n("snov_tried"), Math.max(0, n("kept") - n("email_blitz"))),
-                  sub: `${fmt(n("snov_tried"))} searched (Blitz misses)` },
+                  sub: `${fmt(n("snov_tried"))} searched (Blitz misses) · name+domain, then LinkedIn URL` },
                 { key: "anymail", label: "Anymail Finder", on: o.anymailFallback, value: `${fmt(n("email_anymail"))} found`, p: pct(n("anymail_tried"), Math.max(0, n("kept") - n("email_blitz") - n("email_snov"))),
                   sub: `${fmt(n("anymail_tried"))} searched (Blitz + Snov.io misses)` },
                 { key: "debounce", label: "Debounce", on: true, value: `${fmt(n("debounced"))} / ${fmt(n("with_email"))}`, p: pct(n("debounced"), n("with_email")),
