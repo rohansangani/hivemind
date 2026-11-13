@@ -412,7 +412,7 @@ async function runPhaseBatch(job: EnrichJobRow, phase: EnrichPhase, left: () => 
     const { rows } = await selectFrom("enrich2_people", `select=id,linkedin_url&job_id=eq.${id}&dropped_reason=is.null&email=is.null&anymail_tried=is.false&linkedin_url=not.is.null&order=id.asc&limit=60`);
     if (!rows.length) return "next";
     await stage(`Step 4 · Anymail Finder (LinkedIn URL) for people Blitz had no email for — ${c.anymail_tried || 0} searched, ${c.email_anymail || 0} found`, true);
-    const res = await mapPool(rows as { id: number; linkedin_url: string }[], 25, async (p) => {
+    const res = await mapPool(rows as { id: number; linkedin_url: string }[], 40, async (p) => {
       if (left() < 15000) return null;
       const email = await anymailFindByLinkedin(p.linkedin_url, ANYMAIL);
       return { id: p.id, job_id: id, anymail_tried: true, ...(email ? { email, email_source: "anymail" } : {}) };
@@ -458,7 +458,7 @@ async function runPhaseBatch(job: EnrichJobRow, phase: EnrichPhase, left: () => 
     const { rows } = await selectFrom("enrich2_people", `select=id,email,debounce_result&job_id=eq.${id}&dropped_reason=is.null&debounce_result=in.(risky,unknown,error)&verify_result=is.null&order=id.asc&limit=100`);
     if (!rows.length) return "next";
     await stage(`Step 6 · Anymail verify on Debounce's Risky/Unknown — ${c.verified || 0}/${c.verify_eligible || 0} checked, ${c.verify_valid || 0} confirmed valid`, true);
-    const res = await mapPool(rows as { id: number; email: string; debounce_result: string }[], 25, async (p) => {
+    const res = await mapPool(rows as { id: number; email: string; debounce_result: string }[], 40, async (p) => {
       if (left() < 15000) return null;
       const v = await anymailVerify(p.email, ANYMAIL);
       const final = v === "valid" ? "safe to send" : v === "invalid" ? "invalid" : v === "risky" ? "risky" : p.debounce_result === "error" ? "unknown" : p.debounce_result;
