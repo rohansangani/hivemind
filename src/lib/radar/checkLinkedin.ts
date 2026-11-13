@@ -9,7 +9,7 @@
  * round-trip to radar-clickpost — now an in-process call instead.
  */
 import { selectFrom, patchByFilter, insertRows, verticalsFilter } from "@/lib/radar/supabase";
-import { blitzKey, blitzPerson, BlitzUnavailableError, mapPool, BLITZ_RPS, type BlitzPerson } from "@/lib/radar/blitz";
+import { blitzKey, blitzPerson, BlitzUnavailableError, mapPool, BLITZ_INFLIGHT, type BlitzPerson } from "@/lib/radar/blitz";
 
 /** Which provider in the waterfall answered for a profile (Blitz → Anymail Finder → Apify). */
 export type LinkedInSource = "blitz" | "anymail" | "apify";
@@ -206,7 +206,7 @@ export async function runLinkedInCheck(urls: string[], _mode: string | undefined
   if (BLITZ && remaining.length) {
     await stage(`Blitz API — looking up ${remaining.length} profile${remaining.length === 1 ? "" : "s"}`);
     try {
-      const hits = await mapPool(remaining, BLITZ_RPS, async (u) => {
+      const hits = await mapPool(remaining, BLITZ_INFLIGHT, async (u) => {
         const p = await blitzPerson(u, BLITZ);
         if (!p) return null;
         const item = blitzToItem(p, u);

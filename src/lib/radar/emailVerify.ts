@@ -10,7 +10,7 @@ import { snovConfigured, snovVerify } from "@/lib/radar/snov";
  */
 
 export const ANYMAIL_CHUNK = 20; // emails per validate_chunk call (Anymail documents no rate limit)
-const CONC = 10;
+const CONC = 20; // = ANYMAIL_CHUNK: whole chunk in one wave (Anymail documents no rate limit)
 
 export function anymailKey(): string | undefined {
   return process.env.ANYMAIL_FINDER_API_KEY || process.env.RADAR_ANYMAIL_FINDER_API_KEY;

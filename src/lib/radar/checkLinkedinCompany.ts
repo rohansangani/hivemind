@@ -16,7 +16,7 @@
  * misleading), phone (no column on accounts).
  */
 import { selectFrom, patchByFilter, insertRows, verticalsFilter } from "@/lib/radar/supabase";
-import { blitzKey, blitzCompany, BlitzUnavailableError, mapPool, BLITZ_RPS, type BlitzCompany } from "@/lib/radar/blitz";
+import { blitzKey, blitzCompany, BlitzUnavailableError, mapPool, BLITZ_INFLIGHT, type BlitzCompany } from "@/lib/radar/blitz";
 import type { LinkedInStageFn } from "@/lib/radar/checkLinkedin";
 
 export interface LinkedInCompanyCheckResult {
@@ -210,7 +210,7 @@ export async function runLinkedInCompanyCheck(urls: string[], vertical: string, 
   if (BLITZ) {
     await stage(`Blitz API — looking up ${remaining.length} compan${remaining.length === 1 ? "y" : "ies"}`);
     try {
-      const hits = await mapPool(remaining, BLITZ_RPS, async (u) => {
+      const hits = await mapPool(remaining, BLITZ_INFLIGHT, async (u) => {
         const c = await blitzCompany(u, BLITZ);
         return c ? blitzToCompanyItem(c, u) : null;
       });
