@@ -9,6 +9,8 @@
  */
 
 export const BLITZ_RPS = 25;
+/** Requests kept in flight. Starts are still paced to BLITZ_RPS by blitzSlot; with ~2 s calls, 25 in flight would only reach ~12/s. */
+export const BLITZ_INFLIGHT = 50;
 const BLITZ_BASE = "https://api.blitz-api.ai";
 
 export function blitzKey(): string | null {

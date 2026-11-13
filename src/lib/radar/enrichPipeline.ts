@@ -24,7 +24,7 @@ import { radarSql, selectFrom, insertRows, patchByFilter } from "@/lib/radar/sup
 import { cleanCity } from "@/lib/radar/cityNames";
 import { snovConfigured, snovFindEmails, snovCompanyNames, snovEmailsByLinkedin, snovVerify } from "@/lib/radar/snov";
 import {
-  blitzKey, mapPool, BLITZ_RPS, BlitzUnavailableError, blitzDomainToLinkedin, blitzCompanySearchByName,
+  blitzKey, mapPool, BLITZ_INFLIGHT, BlitzUnavailableError, blitzDomainToLinkedin, blitzCompanySearchByName,
   blitzWaterfallIcp, blitzWorkEmail, blitzPhone, type BlitzIcpTier, type BlitzIcpResult,
 } from "@/lib/radar/blitz";
 
@@ -308,7 +308,7 @@ async function runPhaseBatch(job: EnrichJobRow, phase: EnrichPhase, left: () => 
     const { rows } = await selectFrom("enrich2_companies", `select=*&job_id=eq.${id}&status=eq.pending&order=id.asc&limit=100`);
     if (!rows.length) return "next";
     await stage(`Step 1 · Finding company LinkedIn pages — ${rows.length} compan${rows.length === 1 ? "y" : "ies"} in this batch`, true);
-    const updates = await mapPool(rows as Record<string, unknown>[], BLITZ_RPS, async (co) => resolveCompany(co, BLITZ));
+    const updates = await mapPool(rows as Record<string, unknown>[], BLITZ_INFLIGHT, async (co) => resolveCompany(co, BLITZ));
     // Second pass: Blitz found nothing (or only a low-confidence match) → Snov.io tells us the company's proper name
     // from its domain, and we search Blitz by that name.
     if (job.options.snovFallback !== false && snovConfigured()) {
@@ -353,7 +353,7 @@ async function runPhaseBatch(job: EnrichJobRow, phase: EnrichPhase, left: () => 
     const { rows } = await selectFrom("enrich2_companies", `select=*&job_id=eq.${id}&status=eq.resolved&order=id.asc&limit=25`);
     if (!rows.length) return "next";
     await stage(`Step 2 · Blitz ICP search (7 title tiers) — ${rows.length} compan${rows.length === 1 ? "y" : "ies"} in this batch, ${(c.searched || 0)}/${(c.resolved || 0)} done`, true);
-    const out = await mapPool(rows as Record<string, unknown>[], BLITZ_RPS, async (co) => {
+    const out = await mapPool(rows as Record<string, unknown>[], BLITZ_INFLIGHT, async (co) => {
       const res = await blitzWaterfallIcp(String(co.company_linkedin_url), tiersFor(job.options), job.options.maxPerCompany, BLITZ);
       return { co, res };
     });
@@ -375,7 +375,7 @@ async function runPhaseBatch(job: EnrichJobRow, phase: EnrichPhase, left: () => 
     const { rows } = await selectFrom("enrich2_people", `select=id,linkedin_url&job_id=eq.${id}&dropped_reason=is.null&email_tried=is.false&linkedin_url=not.is.null&order=id.asc&limit=250`);
     if (!rows.length) return "next";
     await stage(`Step 3 · Blitz work emails — ${c.email_tried || 0}/${c.email_eligible || 0} looked up, ${c.email_blitz || 0} found`, true);
-    const res = await mapPool(rows as { id: number; linkedin_url: string }[], BLITZ_RPS, async (p) => {
+    const res = await mapPool(rows as { id: number; linkedin_url: string }[], BLITZ_INFLIGHT, async (p) => {
       if (left() < 4000) return null;
       const email = await blitzWorkEmail(p.linkedin_url, BLITZ);
       return { id: p.id, job_id: id, email_tried: true, ...(email ? { email, email_source: "blitz" } : {}) };
@@ -412,7 +412,7 @@ async function runPhaseBatch(job: EnrichJobRow, phase: EnrichPhase, left: () => 
     const { rows } = await selectFrom("enrich2_people", `select=id,linkedin_url&job_id=eq.${id}&dropped_reason=is.null&email=is.null&anymail_tried=is.false&linkedin_url=not.is.null&order=id.asc&limit=60`);
     if (!rows.length) return "next";
     await stage(`Step 4 · Anymail Finder (LinkedIn URL) for people Blitz had no email for — ${c.anymail_tried || 0} searched, ${c.email_anymail || 0} found`, true);
-    const res = await mapPool(rows as { id: number; linkedin_url: string }[], 12, async (p) => {
+    const res = await mapPool(rows as { id: number; linkedin_url: string }[], 25, async (p) => {
       if (left() < 15000) return null;
       const email = await anymailFindByLinkedin(p.linkedin_url, ANYMAIL);
       return { id: p.id, job_id: id, anymail_tried: true, ...(email ? { email, email_source: "anymail" } : {}) };
@@ -458,7 +458,7 @@ async function runPhaseBatch(job: EnrichJobRow, phase: EnrichPhase, left: () => 
     const { rows } = await selectFrom("enrich2_people", `select=id,email,debounce_result&job_id=eq.${id}&dropped_reason=is.null&debounce_result=in.(risky,unknown,error)&verify_result=is.null&order=id.asc&limit=100`);
     if (!rows.length) return "next";
     await stage(`Step 6 · Anymail verify on Debounce's Risky/Unknown — ${c.verified || 0}/${c.verify_eligible || 0} checked, ${c.verify_valid || 0} confirmed valid`, true);
-    const res = await mapPool(rows as { id: number; email: string; debounce_result: string }[], 12, async (p) => {
+    const res = await mapPool(rows as { id: number; email: string; debounce_result: string }[], 25, async (p) => {
       if (left() < 15000) return null;
       const v = await anymailVerify(p.email, ANYMAIL);
       const final = v === "valid" ? "safe to send" : v === "invalid" ? "invalid" : v === "risky" ? "risky" : p.debounce_result === "error" ? "unknown" : p.debounce_result;
@@ -473,7 +473,7 @@ async function runPhaseBatch(job: EnrichJobRow, phase: EnrichPhase, left: () => 
     const { rows } = await selectFrom("enrich2_people", `select=id,linkedin_url&job_id=eq.${id}&dropped_reason=is.null&phone_tried=is.false&linkedin_url=not.is.null&order=id.asc&limit=250`);
     if (!rows.length) return "next";
     await stage(`Step 7 · Blitz phone numbers — ${c.phone_tried || 0}/${c.email_eligible || 0} looked up, ${c.phones || 0} found`, true);
-    const res = await mapPool(rows as { id: number; linkedin_url: string }[], BLITZ_RPS, async (p) => {
+    const res = await mapPool(rows as { id: number; linkedin_url: string }[], BLITZ_INFLIGHT, async (p) => {
       if (left() < 4000) return null;
       const phone = await blitzPhone(p.linkedin_url, BLITZ).catch((e) => { if (e instanceof BlitzUnavailableError) throw e; return null; });
       return { id: p.id, job_id: id, phone_tried: true, ...(phone ? { phone } : {}) };
@@ -611,7 +611,8 @@ export async function apifyFindLinkedin(domains: string[]): Promise<Map<string, 
   if (!token || !domains.length) return out;
   const chunks: string[][] = [];
   for (let i = 0; i < domains.length; i += 50) chunks.push(domains.slice(i, i + 50));
-  await Promise.all(chunks.map(async (chunk) => {
+  // Apify plan allows 32 concurrent runs; keep headroom so runs never queue past the 150 s wait.
+  await mapPool(chunks, 20, async (chunk) => {
     try {
       const r = await fetch(`https://api.apify.com/v2/acts/s-r~free-linkedin-company-finder---linkedin-address-from-any-site/run-sync-get-dataset-items?token=${token}&timeout=150`, {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -627,7 +628,7 @@ export async function apifyFindLinkedin(domains: string[]): Promise<Map<string, 
     } catch (e) {
       console.error("[enrich2] apify company finder failed:", (e as Error).message);
     }
-  }));
+  });
   return out;
 }
 
