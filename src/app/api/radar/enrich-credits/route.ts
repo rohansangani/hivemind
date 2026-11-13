@@ -19,8 +19,8 @@ export async function GET(req: NextRequest) {
     try {
       const r = await fetch("https://api.blitz-api.ai/v2/account/key-info", { headers: { "x-api-key": key }, signal: AbortSignal.timeout(15000), cache: "no-store" });
       if (!r.ok) return { label: "Blitz", value: null, error: `Blitz answered ${r.status}` };
-      const d = (await r.json()) as { remaining_credits?: number; credits_remaining?: number; valid?: boolean };
-      const n = d.remaining_credits ?? d.credits_remaining;
+      const d = (await r.json()) as { records_remaining?: number; fair_usage?: { records_remaining?: number }; remaining_credits?: number; credits_remaining?: number; valid?: boolean };
+      const n = d.records_remaining ?? d.fair_usage?.records_remaining ?? d.remaining_credits ?? d.credits_remaining;
       if (n == null) return { label: "Blitz", value: null, error: d.valid === false ? "Blitz rejected the API key" : "Blitz didn't report credits" };
       return { label: "Blitz", value: Number(n).toLocaleString("en-US"), low: Number(n) < 2000 };
     } catch (e) { return { label: "Blitz", value: null, error: (e as Error).message || "Couldn't reach Blitz" }; }
