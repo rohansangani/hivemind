@@ -3,7 +3,7 @@ import { after } from "next/server";
 import { requireRadarAccess, radarSql, selectFrom, radarFetch, rpc, verticalsFilter } from "@/lib/radar/supabase";
 import { fetchAllPages } from "@/lib/radar/contactExport";
 import { anymailKey, ensureVerifyResultsTable } from "@/lib/radar/emailVerify";
-import { normDomain, normLinkedinUrl, type FindPerson } from "@/lib/radar/emailFind";
+import { normDomain, normLinkedinUrl, debounceLeadFinderKey, ensureFindResultsTable, type FindPerson } from "@/lib/radar/emailFind";
 import { instantly } from "@/lib/instantly";
 import { logRadarActivity } from "@/lib/radar/activityLog";
 import { db } from "@/lib/db";
@@ -965,8 +965,8 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
 
   // ── RETEST JOB actions ──
   if (action === "retest_job_start") {
-    const { userEmail: bodyUserEmail, label, vertical, emailStatus, emails, provider, people, skipSafe } = reqBody as {
-      skipSafe?: boolean; userEmail?: string; label?: string; vertical?: string; emailStatus?: string[]; emails?: string[]; provider?: string; people?: FindPerson[];
+    const { userEmail: bodyUserEmail, label, vertical, emailStatus, emails, provider, people, skipSafe, debounceFinder } = reqBody as {
+      skipSafe?: boolean; debounceFinder?: boolean; userEmail?: string; label?: string; vertical?: string; emailStatus?: string[]; emails?: string[]; provider?: string; people?: FindPerson[];
     };
     await ensureRetestJobsTable();
     const filters: Record<string, unknown> = {};
@@ -989,6 +989,10 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
         clean.push({ first_name: first || undefined, last_name: last || undefined, full_name: full || undefined, domain: domain || undefined, company: company || undefined, linkedin_url: li || undefined, title: String(raw.title || "").trim() || undefined });
       }
       if (!clean.length) return { status: 400, body: { error: "No usable people — each needs a first + last name (or full name) AND a company domain, or a LinkedIn URL." } };
+      if (debounceFinder) {
+        if (!debounceLeadFinderKey()) return { status: 503, body: { error: "DeBounce isn't set up — add DEBOUNCE_API_KEY to the environment first." } };
+        filters.debounce_finder = true;
+      }
       filters.provider = "anymail_find";
       filters.people = clean;
       filters.email_count = clean.length;
@@ -1044,21 +1048,23 @@ Return ONLY compact JSON, no prose: {"r":[{"e":"email","c":85}],"a":[{"e":"email
   if (action === "find_job_results") {
     const { jobId, offset = 0, limit = 500 } = reqBody as { jobId?: number; offset?: number; limit?: number };
     if (!jobId) return { status: 400, body: { error: "No jobId" } };
+    await ensureFindResultsTable();
     const base = `email_find_results?job_id=eq.${Number(jobId)}`;
     const lim = Math.min(Math.max(Number(limit) || 500, 1), 1000);
     const cnt = async (path: string): Promise<number> => {
       const r = await radarFetch(path, { headers: { Prefer: "count=exact", Range: "0-0" } });
       return r.ok ? (parseInt((r.headers.get("content-range") || "").split("/")[1] || "0", 10) || 0) : 0;
     };
-    const [total, found, notFound, failed, added, updated, rowsRes, snov] = await Promise.all([
+    const [total, found, notFound, failed, added, updated, rowsRes, snov, debounce, debounceTried] = await Promise.all([
       cnt(`${base}&select=id`), cnt(`${base}&anymail_status=eq.valid&select=id`),
       cnt(`${base}&anymail_status=in.(not_found,blacklisted)&select=id`), cnt(`${base}&anymail_status=eq.error&select=id`),
       cnt(`${base}&saved=eq.added&select=id`), cnt(`${base}&saved=eq.updated&select=id`),
-      radarFetch(`${base}&select=idx,first_name,last_name,company,domain,linkedin_url,found_email,anymail_status,saved,vertical,found_by,checked_at&order=idx.asc&limit=${lim}&offset=${Math.max(Number(offset) || 0, 0)}`),
+      radarFetch(`${base}&select=idx,first_name,last_name,company,domain,linkedin_url,found_email,anymail_status,saved,vertical,found_by,debounce_tried,checked_at&order=idx.asc&limit=${lim}&offset=${Math.max(Number(offset) || 0, 0)}`),
       cnt(`${base}&found_by=eq.snov&select=id`),
+      cnt(`${base}&found_by=eq.debounce&select=id`), cnt(`${base}&debounce_tried=eq.true&select=id`),
     ]);
     const rows = rowsRes.ok ? await rowsRes.json() : [];
-    return { status: 200, body: { summary: { total, found, notFound, failed, added, updated, snov }, rows } };
+    return { status: 200, body: { summary: { total, found, notFound, failed, added, updated, snov, debounce, debounceTried }, rows } };
   }
 
   if (action === "retest_job_status") {

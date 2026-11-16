@@ -9,6 +9,8 @@ import { snovConfigured, snovFindEmails } from "@/lib/radar/snov";
  * Pricing (Anymail): 1 credit only when a valid email is found; not found = free.
  * Snov.io's Email Finder runs FIRST (when configured; name + domain, SMTP-valid results only); whoever it doesn't
  * find goes to Anymail before being reported as not found.
+ * DeBounce Lead Finder (optional, per job) runs FIRST, then Snov, then Anymail: 40 DeBounce credits per search
+ * whether or not an email is found, and only ONE search may run on the account at a time — so it runs one by one.
  */
 
 export interface FindPerson {
@@ -17,6 +19,7 @@ export interface FindPerson {
 }
 
 export const FIND_CHUNK = 20;      // people per validate_chunk call (Anymail documents no rate limit)
+const LF_DEADLINE_MS = 75_000;    // DeBounce Lead Finder pass stops starting new searches after this (function limit is 180 s; Snov + Anymail still run after)
 const FIND_TIMEOUT_MS = 100_000;   // Anymail suggests up to 180s; capped so one slow lookup can't outlive the function
 
 let tableReady = false;
@@ -34,7 +37,8 @@ export async function ensureFindResultsTable(): Promise<void> {
     checked_at timestamptz NOT NULL DEFAULT now(),
     UNIQUE (job_id, idx)
   )`);
-  await radarSql(`ALTER TABLE email_find_results ADD COLUMN IF NOT EXISTS found_by text`); // 'anymail' | 'snov'
+  await radarSql(`ALTER TABLE email_find_results ADD COLUMN IF NOT EXISTS found_by text`); // 'anymail' | 'snov' | 'debounce'
+  await radarSql(`ALTER TABLE email_find_results ADD COLUMN IF NOT EXISTS debounce_tried boolean NOT NULL DEFAULT false`);
   tableReady = true;
 }
 
@@ -92,10 +96,40 @@ async function anymailFindPerson(p: FindPerson, key: string): Promise<FindOutcom
   } finally { clearTimeout(t); }
 }
 
+export function debounceLeadFinderKey(): string | null {
+  return (process.env.DEBOUNCE_API_KEY || process.env.RADAR_DEBOUNCE_API_KEY || "").trim() || null;
+}
+
+/**
+ * DeBounce Lead Finder (https://leadfinder.debounce.io/v1/): first + last name + company domain -> a verified email.
+ * Billed 40 credits per finished search (found or not), 1 credit when the domain is catch-all (search stops).
+ * One search at a time per account: "Maximum concurrent calls reached" is retried until the deadline.
+ * Returns { email } (null = none found), or { stop } when DeBounce can't be used at all for this run.
+ */
+async function debounceLeadFind(p: FindPerson, key: string, deadline: number): Promise<{ email: string | null; stop?: string }> {
+  const url = `https://leadfinder.debounce.io/v1/?api=${encodeURIComponent(key)}&firstname=${encodeURIComponent(p.first_name || "")}&lastname=${encodeURIComponent(p.last_name || "")}&domain=${encodeURIComponent(normDomain(p.domain))}`;
+  for (let attempt = 0; attempt < 8 && Date.now() < deadline; attempt++) {
+    try {
+      const r = await fetch(url, { signal: AbortSignal.timeout(60_000), cache: "no-store" });
+      const d = (await r.json().catch(() => null)) as { debounce?: { email?: string; description?: string; error?: string }; success?: string } | null;
+      const msg = `${d?.debounce?.error || ""} ${d?.debounce?.description || ""}`.toLowerCase();
+      if (/concurrent/.test(msg)) { await new Promise((res) => setTimeout(res, 2500)); continue; }
+      if (r.status === 401 || /wrong api|invalid api/.test(msg)) return { email: null, stop: "DeBounce rejected the API key" };
+      if (/balance|credit|insufficient|at least 40/.test(msg) && String(d?.success) !== "1") return { email: null, stop: "DeBounce Lead Finder needs at least 40 credits" };
+      if (String(d?.success) === "1") {
+        const email = String(d?.debounce?.email || "").trim().toLowerCase();
+        return { email: /^[^@\s]+@[^@\s]+$/.test(email) ? email : null };
+      }
+      return { email: null };
+    } catch { return { email: null }; }
+  }
+  return { email: null };
+}
+
 type Saved = "added" | "updated" | "exists" | "none";
 
 /** Saves one found email to Radar. Returns how it landed. */
-async function saveFound(p: FindPerson, email: string, vertical: string, nowISO: string): Promise<Saved> {
+async function saveFound(p: FindPerson, email: string, vertical: string, nowISO: string, sourceLabel = "Email Finder (Anymail)"): Promise<Saved> {
   const STATUS = "safe to send"; // Anymail only returns "valid" — same meaning as Debounce's safe-to-send
   const domain = normDomain(p.domain) || email.split("@")[1];
   const li = normLinkedinUrl(p.linkedin_url);
@@ -131,7 +165,7 @@ async function saveFound(p: FindPerson, email: string, vertical: string, nowISO:
   // 3) New to Radar -> add it to the chosen vertical.
   const row: Record<string, unknown> = {
     email, vertical, email_status: STATUS, validated_at: nowISO, domain,
-    source: "Email Finder (Anymail)",
+    source: sourceLabel,
     first_name: p.first_name || null, last_name: p.last_name || null,
     full_name: p.full_name || [p.first_name, p.last_name].filter(Boolean).join(" ") || null,
     company_name: p.company || null, title: p.title || null, linkedin_url: li || null,
@@ -151,6 +185,7 @@ export async function findPeopleChunk(
   jobId: number | null,
   vertical: string,
   key: string,
+  opts: { debounceFinder?: boolean } = {},
 ): Promise<{ processed: number; validated: number; failed: number; next_offset: number; done: boolean }> {
   const slice = people.slice(offset, offset + FIND_CHUNK);
   const nextOffset = offset + slice.length;
@@ -158,26 +193,47 @@ export async function findPeopleChunk(
   if (!slice.length) return { processed: 0, validated: 0, failed: 0, next_offset: nextOffset, done: true };
   await ensureFindResultsTable();
   const nowISO = new Date().toISOString();
+  const started = Date.now();
 
-  type Out = { idx: number; p: FindPerson; status: FindOutcome["status"]; email: string | null; saved: Saved; by?: "anymail" | "snov" };
+  type Out = { idx: number; p: FindPerson; status: FindOutcome["status"]; email: string | null; saved: Saved; by?: "anymail" | "snov" | "debounce"; lfTried?: boolean };
   const outs: Out[] = [];
   let fatal: Error | null = null;
-  // Pass 1 — Snov.io Email Finder (needs first + last name and a domain); SMTP-valid results only.
-  const snovFound = new Map<number, string>();
-  if (snovConfigured()) {
-    const cand = slice.map((p, i) => ({ p, idx: offset + i })).filter((x) => x.p.first_name && x.p.last_name && normDomain(x.p.domain));
-    if (cand.length) {
-      const res = await snovFindEmails(cand.map((x) => ({ first_name: x.p.first_name as string, last_name: x.p.last_name as string, domain: normDomain(x.p.domain) }))).catch(() => new Map<number, string>());
-      res.forEach((email, i) => snovFound.set(cand[i].idx, email));
+  const hits = new Map<number, { email: string; by: "snov" | "debounce" }>();
+  const lfTried = new Set<number>();
+
+  // Pass 1 — DeBounce Lead Finder (opt-in; name + domain). 40 credits per finished search whether or not it finds anything, and
+  // DeBounce runs ONE search per account at a time — so strictly one by one, stopping at the deadline (the rest fall through
+  // to Snov / Anymail) or as soon as DeBounce can't be used (bad key, under 40 credits).
+  const lfKey = opts.debounceFinder ? debounceLeadFinderKey() : null;
+  if (lfKey) {
+    const deadline = started + LF_DEADLINE_MS;
+    for (let i = 0; i < slice.length && Date.now() < deadline; i++) {
+      const p = slice[i];
+      if (!(p.first_name && p.last_name && normDomain(p.domain))) continue;
+      const r = await debounceLeadFind(p, lfKey, deadline);
+      if (r.stop) { console.error("[find-emails] DeBounce Lead Finder stopped:", r.stop); break; }
+      lfTried.add(offset + i);
+      if (r.email) hits.set(offset + i, { email: r.email, by: "debounce" });
     }
   }
 
-  // Pass 2 — Anymail Person search for everyone Snov didn't find (or couldn't search, e.g. LinkedIn-only rows).
+  // Pass 2 — Snov.io Email Finder for everyone DeBounce didn't find (needs first + last name and a domain); SMTP-valid results only.
+  if (snovConfigured()) {
+    const cand = slice.map((p, i) => ({ p, idx: offset + i })).filter((x) => !hits.has(x.idx) && x.p.first_name && x.p.last_name && normDomain(x.p.domain));
+    if (cand.length) {
+      const res = await snovFindEmails(cand.map((x) => ({ first_name: x.p.first_name as string, last_name: x.p.last_name as string, domain: normDomain(x.p.domain) }))).catch(() => new Map<number, string>());
+      res.forEach((email, i) => hits.set(cand[i].idx, { email, by: "snov" }));
+    }
+  }
+
+  // Pass 3 — Anymail Person search for everyone still without an email (also LinkedIn-only rows the earlier passes couldn't search).
   await Promise.all(slice.map(async (p, i) => {
     const idx = offset + i;
+    const lf = lfTried.has(idx);
     try {
-      let email = snovFound.get(idx) || null;
-      let by: "anymail" | "snov" | undefined = email ? "snov" : undefined;
+      const hit = hits.get(idx);
+      let email = hit?.email || null;
+      let by: "anymail" | "snov" | "debounce" | undefined = hit?.by;
       let status: FindOutcome["status"] = "valid";
       if (!email) {
         const r = await anymailFindPerson(p, key);
@@ -185,22 +241,22 @@ export async function findPeopleChunk(
         if (r.status === "valid" && r.email) { email = r.email; by = "anymail"; }
       }
       if (email) {
-        const saved: Saved = await saveFound(p, email, vertical, nowISO).catch(() => "none" as Saved);
-        outs.push({ idx, p, status: "valid", email, saved, by });
-      } else outs.push({ idx, p, status, email: null, saved: "none" });
+        const saved: Saved = await saveFound(p, email, vertical, nowISO, by === "debounce" ? "Email Finder (DeBounce)" : undefined).catch(() => "none" as Saved);
+        outs.push({ idx, p, status: "valid", email, saved, by, lfTried: lf });
+      } else outs.push({ idx, p, status, email: null, saved: "none", lfTried: lf });
     } catch (e) {
       if (/Anymail Finder/.test((e as Error).message)) fatal = e as Error;
-      else outs.push({ idx, p, status: "error", email: null, saved: "none" });
+      else outs.push({ idx, p, status: "error", email: null, saved: "none", lfTried: lf });
     }
   }));
 
   if (outs.length && jobId) {
     const values = outs.map((o) =>
-      `(${Number(jobId)}, ${o.idx}, ${q(o.p.first_name)}, ${q(o.p.last_name || o.p.full_name)}, ${q(o.p.company)}, ${q(normDomain(o.p.domain))}, ${q(normLinkedinUrl(o.p.linkedin_url))}, ${q(o.email)}, '${o.status}', '${o.saved}', '${esc(vertical)}', ${o.by ? `'${o.by}'` : "NULL"})`
+      `(${Number(jobId)}, ${o.idx}, ${q(o.p.first_name)}, ${q(o.p.last_name || o.p.full_name)}, ${q(o.p.company)}, ${q(normDomain(o.p.domain))}, ${q(normLinkedinUrl(o.p.linkedin_url))}, ${q(o.email)}, '${o.status}', '${o.saved}', '${esc(vertical)}', ${o.by ? `'${o.by}'` : "NULL"}, ${o.lfTried ? "true" : "false"})`
     ).join(",");
-    await radarSql(`INSERT INTO email_find_results (job_id, idx, first_name, last_name, company, domain, linkedin_url, found_email, anymail_status, saved, vertical, found_by)
+    await radarSql(`INSERT INTO email_find_results (job_id, idx, first_name, last_name, company, domain, linkedin_url, found_email, anymail_status, saved, vertical, found_by, debounce_tried)
       VALUES ${values}
-      ON CONFLICT (job_id, idx) DO UPDATE SET found_email = EXCLUDED.found_email, anymail_status = EXCLUDED.anymail_status, saved = EXCLUDED.saved, found_by = EXCLUDED.found_by, checked_at = now()`);
+      ON CONFLICT (job_id, idx) DO UPDATE SET found_email = EXCLUDED.found_email, anymail_status = EXCLUDED.anymail_status, saved = EXCLUDED.saved, found_by = EXCLUDED.found_by, debounce_tried = EXCLUDED.debounce_tried, checked_at = now()`);
   }
   if (fatal) throw fatal;
   return {
