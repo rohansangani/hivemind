@@ -37,6 +37,8 @@ interface RetestFilters {
   // Anymail CSV jobs: leave emails Radar already has as safe to send / verified untouched (no credits spent).
   skip_safe?: boolean;
   people?: unknown[];
+  // Find Emails jobs: run DeBounce Lead Finder first (40 credits per search), then Snov, then Anymail.
+  debounce_finder?: boolean;
 }
 
 interface ContactRow {
@@ -186,7 +188,7 @@ export async function POST(req: NextRequest) {
         const key = anymailKey();
         if (!key) return NextResponse.json({ error: "Anymail Finder API key isn't configured (set ANYMAIL_FINDER_API_KEY in the environment)" }, { status: 503 });
         const jid = Number((body as { jobId?: number }).jobId) || null;
-        const out = await findPeopleChunk((filters as RetestFilters).people as FindPerson[], offset, jid, String(filters.vertical || ""), key);
+        const out = await findPeopleChunk((filters as RetestFilters).people as FindPerson[], offset, jid, String(filters.vertical || ""), key, { debounceFinder: !!(filters as RetestFilters).debounce_finder });
         return NextResponse.json({ ...out, skippedFresh: 0, gaveUp: 0 });
       }
       if (useAnymail && allEmails) {

@@ -9052,7 +9052,7 @@ const JOB_TONE: Record<string, string> = {
 /** Where a Validate job's results came from — started with / Snov.io / Anymail / saved to Radar (same card style as Enrich). */
 function SourceCards({ cards, running }: { cards: Array<{ label: string; value: string; sub: string; p: number; tone?: "green" | "red" }>; running: boolean }) {
   return (
-    <div data-job-keep className="grid gap-2 grid-cols-2 lg:grid-cols-4">
+    <div data-job-keep className={`grid gap-2 grid-cols-2 ${cards.length > 4 ? "lg:grid-cols-5" : "lg:grid-cols-4"}`}>
       {cards.map((c) => (
         <div key={c.label} className="rounded-lg border border-[var(--hm-border)] px-3 py-2.5">
           <div className="text-[11px] font-medium text-[var(--hm-text-secondary)] truncate">{c.label}</div>
@@ -9508,7 +9508,7 @@ interface FindResultRow {
   idx: number; first_name: string | null; last_name: string | null; company: string | null; domain: string | null; linkedin_url: string | null;
   found_email: string | null; anymail_status: string; saved: string; vertical: string | null; found_by?: string | null; checked_at: string;
 }
-interface FindSummary { total: number; found: number; notFound: number; failed: number; added: number; updated: number; snov?: number }
+interface FindSummary { total: number; found: number; notFound: number; failed: number; added: number; updated: number; snov?: number; debounce?: number; debounceTried?: number }
 
 function EmailFinderPanel() {
   const [label, setLabel] = useState("");
@@ -9521,6 +9521,7 @@ function EmailFinderPanel() {
   const [summary, setSummary] = useState<FindSummary | null>(null);
   const [rows, setRows] = useState<FindResultRow[]>([]);
   const [exporting, setExporting] = useState(false);
+  const [leadFinder, setLeadFinder] = useState(true); // DeBounce Lead Finder first (40 DeBounce credits per search)
   const MAX_PEOPLE = 10000;
 
   const post = async (body: Record<string, unknown>) => {
@@ -9584,7 +9585,7 @@ function EmailFinderPanel() {
     if (people.length > MAX_PEOPLE) { setError(`Max ${MAX_PEOPLE.toLocaleString()} people per job — split the list.`); return; }
     try {
       setStage(`Starting ${people.length.toLocaleString()} lookup(s)…`);
-      const d = await post({ action: "retest_job_start", provider: "anymail_find", label: label.trim(), vertical, people });
+      const d = await post({ action: "retest_job_start", provider: "anymail_find", label: label.trim(), vertical, people, debounceFinder: leadFinder });
       setPeople([]); setLabel("");
       J.started(d.jobId ?? null);
     } catch (e) { setError((e as Error).message); } finally { setStage(null); }
@@ -9603,7 +9604,7 @@ function EmailFinderPanel() {
       downloadCSV(all.map((r) => ({
         first_name: r.first_name || "", last_name: r.last_name || "", company: r.company || "", domain: r.domain || "", linkedin_url: r.linkedin_url || "",
         email_found: r.found_email || "",
-        found_by: r.found_by === "snov" ? "Snov.io" : r.found_by === "anymail" ? "Anymail" : "",
+        found_by: r.found_by === "debounce" ? "DeBounce" : r.found_by === "snov" ? "Snov.io" : r.found_by === "anymail" ? "Anymail" : "",
         result: r.anymail_status === "valid" ? "found (verified)" : r.anymail_status === "error" ? "couldn't search" : r.anymail_status.replace("_", " "),
         saved_to_radar: r.saved === "added" ? "added as new contact" : r.saved === "updated" ? "updated existing contact" : r.saved === "exists" ? "contact already had a different email" : "no",
         vertical: r.vertical || "", checked_at: fmtChecked(r.checked_at),
@@ -9680,13 +9681,18 @@ function EmailFinderPanel() {
           </div>
         )}
 
+        <label className="flex items-start gap-2 text-[12.5px] text-[var(--hm-text)] cursor-pointer">
+          <input type="checkbox" checked={leadFinder} onChange={(e) => setLeadFinder(e.target.checked)} className="mt-0.5" />
+          <span>DeBounce Lead Finder first <span className="text-[var(--hm-text-tertiary)]">— 40 DeBounce credits per person searched (found or not); needs name + company domain. Untick to start with Snov.io.</span></span>
+        </label>
+
         <button onClick={start} disabled={!!stage || !people.length || !label.trim() || !vertical} className="hm-btn hm-btn-primary w-full" style={{ height: 38, fontSize: 13 }}>
           {stage ? (
             <span className="inline-flex items-center gap-2"><span className="w-3 h-3 border-2 border-current/30 border-t-current rounded-full animate-spin" />{stage}</span>
           ) : `Find emails${people.length ? ` for ${people.length.toLocaleString()} person(s)` : ""}`}
         </button>
         <p className="text-[11.5px] text-[var(--hm-text-tertiary)] -mt-2">
-          Snov.io tries first (1 Snov credit per email found); anyone it misses goes to Anymail (1 credit only when a verified email is found — free when nothing is found, and repeat searches within 30 days are free).
+          Order: DeBounce Lead Finder first (40 DeBounce credits per search, whether or not an email is found — one search at a time, so it is the slow step), then Snov.io (1 credit per email found) for anyone DeBounce misses, then Anymail (1 credit only when a verified email is found; repeat searches within 30 days are free).
           Each lookup takes ~5–15 seconds; it runs in the background, so you can close this page and come back under Recent jobs.
         </p>
 
@@ -9702,7 +9708,7 @@ function EmailFinderPanel() {
             processed={job.processed || 0}
             total={total}
             noun="people"
-            liveText="Searching Anymail Finder (~5–15s per person) — found emails are saved to Radar as they come in"
+            liveText="Searching DeBounce, Snov.io and Anymail (~5–15s per person) — found emails are saved to Radar as they come in"
             doneText="Finished — every found email is saved to Radar."
             error={job.error}
             stats={[
@@ -9721,15 +9727,20 @@ function EmailFinderPanel() {
         {job && summary && (() => {
           const f = (n: number) => n.toLocaleString();
           const pc = (a: number, b: number) => (b ? Math.round((a / b) * 100) : 0);
+          const lf = summary.debounce ?? 0;
+          const lfTried = summary.debounceTried ?? 0;
+          const showLf = lfTried > 0 || lf > 0;
           const snov = summary.snov ?? 0;
-          const anyFound = Math.max(0, summary.found - snov);
-          const toAnymail = Math.max(0, total - snov);
+          const anyFound = Math.max(0, summary.found - snov - lf);
+          const toSnov = Math.max(0, total - lf);
+          const toAnymail = Math.max(0, toSnov - snov);
           const saved = summary.added + summary.updated;
           return (
             <SourceCards running={job.status === "running"} cards={[
               { label: "Started with", value: `${f(total)} people`, p: pc(job.processed || 0, total), sub: `${f(job.processed || 0)} searched so far` },
-              { label: "Snov.io (1st pass)", value: `${f(snov)} found`, p: pc(snov, total), sub: `${f(toAnymail)} not found → passed to Anymail` },
-              { label: "Anymail (2nd pass)", value: `${f(anyFound)} found`, p: pc(anyFound, Math.max(1, toAnymail)), sub: `${f(summary.notFound)} not found by either${summary.failed ? ` · ${f(summary.failed)} couldn't search` : ""}` },
+              ...(showLf ? [{ label: "DeBounce Lead Finder (1st)", value: `${f(lf)} found`, p: pc(lf, Math.max(1, lfTried)), sub: `${f(lfTried)} searched · ${f(lfTried * 40)} credits · ${f(toSnov)} → Snov.io` }] : []),
+              { label: showLf ? "Snov.io (2nd)" : "Snov.io (1st pass)", value: `${f(snov)} found`, p: pc(snov, Math.max(1, toSnov)), sub: `${f(toAnymail)} not found → passed to Anymail` },
+              { label: showLf ? "Anymail (3rd)" : "Anymail (2nd pass)", value: `${f(anyFound)} found`, p: pc(anyFound, Math.max(1, toAnymail)), sub: `${f(summary.notFound)} not found by any${summary.failed ? ` · ${f(summary.failed)} couldn't search` : ""}` },
               { label: "Saved to Radar", value: `${f(saved)} / ${f(summary.found)}`, p: pc(saved, summary.found), sub: `${f(summary.added)} new added · ${f(summary.updated)} existing updated` },
             ]} />
           );
@@ -9765,7 +9776,7 @@ function EmailFinderPanel() {
                           <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text-secondary)]">{r.company || r.domain || r.linkedin_url || "—"}</td>
                           <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)] font-mono text-[12px] text-[var(--hm-text)]">{r.found_email || "—"}</td>
                           <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)]"><span className={`text-[11px] px-2 py-0.5 rounded-md font-medium ${tone(r.anymail_status)}`}>{r.anymail_status === "valid" ? "found" : r.anymail_status === "error" ? "couldn't search" : r.anymail_status.replace("_", " ")}</span></td>
-                          <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text-secondary)]">{r.found_by === "snov" ? "Snov.io" : r.found_by === "anymail" ? "Anymail" : "—"}</td>
+                          <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text-secondary)]">{r.found_by === "debounce" ? "DeBounce" : r.found_by === "snov" ? "Snov.io" : r.found_by === "anymail" ? "Anymail" : "—"}</td>
                           <td className="px-3 py-1.5 border-b border-[var(--hm-border-light)] text-[var(--hm-text-secondary)]">{r.saved === "added" ? "added (new)" : r.saved === "updated" ? "updated" : r.saved === "exists" ? "has other email" : "—"}</td>
                         </tr>
                       ))}
