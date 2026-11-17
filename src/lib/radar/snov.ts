@@ -11,8 +11,11 @@
 const BASE = "https://api.snov.io";
 const BATCH = 10; // emails / people per request (Snov's documented max)
 
+/** Snov.io is switched OFF everywhere (Enrich + Validate) — too slow. Flip to true to bring it back; every Snov step is gated on snovConfigured(). */
+const SNOV_ENABLED = false;
+
 export function snovConfigured(): boolean {
-  return !!(process.env.SNOV_CLIENT_ID?.trim() && process.env.SNOV_CLIENT_SECRET?.trim());
+  return SNOV_ENABLED && !!(process.env.SNOV_CLIENT_ID?.trim() && process.env.SNOV_CLIENT_SECRET?.trim());
 }
 
 let tokenCache: { token: string; exp: number } | null = null;

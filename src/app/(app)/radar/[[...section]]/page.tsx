@@ -39,7 +39,7 @@ const SECTIONS: Array<{ id: SectionId; label: string; blurb: string }> = [
   { id: "accounts",  label: "Accounts",  blurb: "Browse and filter the accounts database." },
   { id: "contacts",  label: "Contacts",  blurb: "Query validated contacts across the database." },
   { id: "icp",       label: "ICP Base",  blurb: "Define Ideal Customer Profiles to auto-fill Enrich searches." },
-  { id: "enrich",    label: "Enrich",    blurb: "Blitz → Snov.io → Anymail → Debounce → Anymail verify: find ICP contacts + emails for company domains." },
+  { id: "enrich",    label: "Enrich",    blurb: "Blitz → Anymail → Debounce → Anymail verify: find ICP contacts + emails for company domains." },
   { id: "validate",  label: "Validate",  blurb: "Generate email patterns, test deliverability, save confirmed emails." },
   { id: "checkdb",   label: "Check DB",  blurb: "Paste or upload domains, company names or LinkedIn URLs to see what already exists — with full account and contact details." },
   { id: "logs",      label: "Logs",      blurb: "Admin-only audit trail of edits, deletes, uploads, exports, and validate/enrich runs." },
@@ -4324,9 +4324,7 @@ function EnrichV2Section() {
   const [csvCompanies, setCsvCompanies] = useState<Enrich2Input[]>([]);
   const [csvName, setCsvName] = useState("");
   const [maxPer, setMaxPer] = useState(25);
-  const [snovFallback, setSnovFallback] = useState(true);
   const [anymailFallback, setAnymailFallback] = useState(true);
-  const [snovVerify, setSnovVerify] = useState(true);
   const [anymailVerify, setAnymailVerify] = useState(true);
   const [phones, setPhones] = useState(true);
   const [apifyFallback, setApifyFallback] = useState(true);
@@ -4458,7 +4456,7 @@ function EnrichV2Section() {
     if (!confirm(`Enrich ${companies.length.toLocaleString()} compan${companies.length === 1 ? "y" : "ies"}?${splitNote}\n\nUp to ${maxPer} contacts each → up to ~${credits.toLocaleString()} Blitz records for people, plus 1 per email found. Debounce and Anymail charges apply per email.`)) return;
     setStarting(true);
     try {
-      const options = { maxPerCompany: maxPer, snovFallback, anymailFallback, snovVerify, anymailVerify, phones, excludeSupportHrFinance: excludeShf, apifyFallback, useRadarFirst, countries: splitList(countriesText), cities: splitList(citiesText) };
+      const options = { maxPerCompany: maxPer, snovFallback: false, anymailFallback, snovVerify: false, anymailVerify, phones, excludeSupportHrFinance: excludeShf, apifyFallback, useRadarFirst, countries: splitList(countriesText), cities: splitList(citiesText) };
       const size = Math.ceil(companies.length / parts);
       const started: Enrich2Job[] = [];
       for (let i = 0; i < parts; i++) {
@@ -4528,7 +4526,7 @@ function EnrichV2Section() {
         <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Enrich companies</h2>
         <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">
           Give company domains — Radar finds each company&apos;s LinkedIn page, pulls ICP contacts with <strong>Blitz</strong> (7 title tiers), finds emails
-          with Blitz, then <strong>Snov.io</strong>, then <strong>Anymail Finder</strong>, validates every email with <strong>Debounce</strong>, re-checks Risky/Unknown with Anymail, and saves it all to Radar.
+          with Blitz, then <strong>Anymail Finder</strong>, validates every email with <strong>Debounce</strong>, re-checks Risky/Unknown with Anymail, and saves it all to Radar.
         </p>
       </div>
       <EnrichCredits />
@@ -4602,10 +4600,8 @@ function EnrichV2Section() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
           {toggle(useRadarFirst, setUseRadarFirst, "Use what's already in Radar first", "Domains Radar already has contacts for are taken as-is (status, phone, LinkedIn) — only the gaps and unknown domains are enriched")}
-          {toggle(snovFallback, setSnovFallback, "Snov.io before Anymail", "Email search (name + domain, then LinkedIn URL) for people Blitz has no email for, and company-name lookup for companies Blitz can't find · 1 Snov credit per hit")}
-          {toggle(anymailFallback, setAnymailFallback, "Anymail Finder for missing emails", "LinkedIn URL search for whoever Blitz and Snov.io missed · 1 credit per email found")}
-          {toggle(snovVerify, setSnovVerify, "Snov.io verify Risky / Unknown", "Second pass on everything Debounce didn't call Safe or Invalid · 1 Snov credit each")}
-          {toggle(anymailVerify, setAnymailVerify, "Anymail verify what's still Risky / Unknown", "Third pass on whatever Debounce and Snov.io couldn't settle · 0.2 credit each")}
+          {toggle(anymailFallback, setAnymailFallback, "Anymail Finder for missing emails", "LinkedIn URL search for whoever Blitz missed · 1 credit per email found")}
+          {toggle(anymailVerify, setAnymailVerify, "Anymail verify what's still Risky / Unknown", "Second pass on whatever Debounce called Risky / Unknown · 0.2 credit each")}
           {toggle(apifyFallback, setApifyFallback, "Apify LinkedIn finder for companies Blitz misses", "Second pass for domains Blitz can't match · ~$0.009 per company page found, nothing for misses")}
           {toggle(excludeShf, setExcludeShf, "Drop HR & finance titles", "Interns, trainees, students and junior support are always dropped")}
           {toggle(phones, setPhones, "Find phone numbers (Blitz)", "Needs a LinkedIn URL · ~12–15% hit on Indian lists, ~30% on US")}
@@ -4660,17 +4656,17 @@ function EnrichV2Section() {
                   sub: `${fmt(n("searched"))}/${fmt(n("resolved"))} companies · P1 ${fmt(n("phase1"))} · P2 ${fmt(n("phase2"))} · ${fmt(n("dropped"))} filtered out` },
                 { key: "email", label: "Blitz emails", on: true, value: `${fmt(n("email_blitz"))} found`, p: pct(n("email_tried"), n("email_eligible")),
                   sub: `${fmt(n("email_tried"))}/${fmt(n("email_eligible"))} looked up` },
-                { key: "snov", label: "Snov.io emails", on: o.snovFallback !== false && job.counts.snov_tried !== undefined, value: `${fmt(n("email_snov"))} found`, p: pct(n("snov_tried"), Math.max(0, n("kept") - n("email_blitz"))),
+                { key: "snov", label: "Snov.io emails", on: n("snov_tried") > 0, value: `${fmt(n("email_snov"))} found`, p: pct(n("snov_tried"), Math.max(0, n("kept") - n("email_blitz"))),
                   sub: `${fmt(n("snov_tried"))} searched (Blitz misses) · name+domain, then LinkedIn URL` },
                 { key: "anymail", label: "Anymail Finder", on: o.anymailFallback, value: `${fmt(n("email_anymail"))} found`, p: pct(n("anymail_tried"), Math.max(0, n("kept") - n("email_blitz") - n("email_snov"))),
-                  sub: `${fmt(n("anymail_tried"))} searched (Blitz + Snov.io misses)` },
+                  sub: `${fmt(n("anymail_tried"))} searched (Blitz misses)` },
                 { key: "debounce", label: "Debounce", on: true, value: `${fmt(n("debounced"))} / ${fmt(n("with_email"))}`, p: pct(n("debounced"), n("with_email")),
                   sub: `${fmt(n("db_safe"))} safe · ${fmt(n("db_risky"))} risky · ${fmt(n("db_invalid"))} invalid · ${fmt(n("db_unknown"))} unknown` },
                 // Stays visible when the step was switched off / cut short (e.g. Anymail out of credits) but already produced results.
-                { key: "snovverify", label: "Snov.io verify", on: o.snovVerify !== false && job.counts.snov_verify_tried !== undefined, value: `${fmt(n("snov_verify_valid"))} valid`, p: pct(n("snov_verify_tried"), n("verify_eligible")), wrap: true,
+                { key: "snovverify", label: "Snov.io verify", on: n("snov_verify_tried") > 0, value: `${fmt(n("snov_verify_valid"))} valid`, p: pct(n("snov_verify_tried"), n("verify_eligible")), wrap: true,
                   sub: `${fmt(n("snov_verify_tried"))}/${fmt(n("verify_eligible"))} Risky/Unknown re-checked · ${fmt(n("snov_verify_valid"))} valid → safe · ${fmt(n("snov_verify_invalid"))} invalid · ${fmt(Math.max(0, n("snov_verify_tried") - n("snov_verified")))} still unsure → Anymail` },
                 { key: "verify", label: "Anymail verify", on: o.anymailVerify || n("verified") > 0, value: `${fmt(n("verify_valid"))} valid`, p: pct(n("verified"), Math.max(0, n("verify_eligible") - n("snov_verified"))), wrap: true,
-                  sub: `${fmt(n("verified"))}/${fmt(Math.max(0, n("verify_eligible") - n("snov_verified")))} left after Snov.io re-checked · ${fmt(n("verify_valid"))} valid → safe · ${fmt(n("verify_invalid"))} invalid · ${fmt(n("verify_risky"))} still risky${n("verify_eligible") - n("snov_verified") > n("verified") ? ` · ${fmt(n("verify_eligible") - n("snov_verified") - n("verified"))} not checked (keep Debounce's result)` : ""}` },
+                  sub: `${fmt(n("verified"))}/${fmt(Math.max(0, n("verify_eligible") - n("snov_verified")))} left after Debounce · ${fmt(n("verify_valid"))} valid → safe · ${fmt(n("verify_invalid"))} invalid · ${fmt(n("verify_risky"))} still risky${n("verify_eligible") - n("snov_verified") > n("verified") ? ` · ${fmt(n("verify_eligible") - n("snov_verified") - n("verified"))} not checked (keep Debounce's result)` : ""}` },
                 { key: "phone", label: "Phones", on: o.phones, value: `${fmt(n("phones"))} found`, p: pct(n("phone_tried"), n("email_eligible")),
                   sub: `${fmt(n("phone_tried"))}/${fmt(n("email_eligible"))} looked up` },
                 { key: "save", label: "Saved to Radar", on: true, value: `${fmt(n("saved"))} / ${fmt(n("kept"))}`, p: pct(n("saved"), n("kept")), sub: `${job.vertical} vertical` },
@@ -4791,7 +4787,7 @@ function EnrichV2Section() {
 
 /** Legacy Apify leads-finder Enrich — no longer rendered (replaced by EnrichV2Section). */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-/** Credits left on every provider Enrich spends (Blitz, Snov.io, Anymail, Apify), with a refresh. */
+/** Credits left on every provider Enrich spends (Blitz, Anymail, Apify), with a refresh. */
 function EnrichCredits() {
   type It = { label: string; value: string | null; low?: boolean; error?: string; hint?: string };
   const [items, setItems] = useState<It[] | null>(null);
@@ -4808,7 +4804,7 @@ function EnrichCredits() {
   useEffect(() => { load(); }, [load]);
   return (
     <div className="flex items-center justify-end flex-wrap gap-x-5 gap-y-1 px-5 py-2 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] text-[12px]">
-      {err ? <span className="text-[var(--tag-red-fg)]">{err}</span> : (items || [{ label: "Blitz" }, { label: "Snov.io" }, { label: "Anymail" }, { label: "Apify" }] as It[]).map((it) => (
+      {err ? <span className="text-[var(--tag-red-fg)]">{err}</span> : (items || [{ label: "Blitz" }, { label: "Anymail" }, { label: "Apify" }] as It[]).map((it) => (
         <span key={it.label} className="inline-flex items-center gap-1.5" title={it.error || it.hint || ""}>
           <span className="text-[var(--hm-text-tertiary)]">{it.label}</span>
           {it.error ? <span className="text-[var(--tag-red-fg)]">unavailable</span>
@@ -6321,11 +6317,10 @@ interface ValidateJob {
 }
 interface InstantlyTag { id: string; label: string; }
 
-/** Anymail Finder + Snov.io credits left, with a refresh — shown on the Validate tools that spend them. */
+/** Anymail Finder credits left, with a refresh — shown on the Validate tools that spend them. */
 function AnymailCredits() {
   type CS = { left: number | null; err: string; loading: boolean };
   const [any, setAny] = useState<CS>({ left: null, err: "", loading: true });
-  const [snov, setSnov] = useState<CS>({ left: null, err: "", loading: true });
   const load = useCallback(() => {
     const go = (url: string, set: (s: CS | ((p: CS) => CS)) => void) => {
       set((s) => ({ ...s, loading: true }));
@@ -6335,7 +6330,6 @@ function AnymailCredits() {
         .catch((e) => set({ left: null, err: e.message, loading: false }));
     };
     go("/api/radar/anymail-credits", setAny);
-    go("/api/radar/snov-credits", setSnov);
   }, []);
   useEffect(() => { load(); }, [load]);
   const item = (label: string, st: CS) => {
@@ -6351,9 +6345,8 @@ function AnymailCredits() {
   };
   return (
     <div className="flex items-center justify-end gap-5 px-5 py-2 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)] text-[12px]">
-      {item("Snov.io credits left", snov)}
       {item("Anymail Finder credits left", any)}
-      <button onClick={load} disabled={any.loading || snov.loading} className="radar-btn-ghost" style={{ height: 22, padding: "0 8px" }} title="Refresh">{any.loading || snov.loading ? "…" : "↻"}</button>
+      <button onClick={load} disabled={any.loading} className="radar-btn-ghost" style={{ height: 22, padding: "0 8px" }} title="Refresh">{any.loading ? "…" : "↻"}</button>
     </div>
   );
 }
@@ -7544,8 +7537,8 @@ function ValidateSection() {
               {/* Prominent mode toggle — matches radar's own Patterns / Retest split */}
               <div className="grid grid-cols-1 sm:grid-cols-3 border-b border-[var(--hm-border)] bg-[var(--hm-bg-secondary)]">
                 {([
-                  { id: "patterns", label: "Find Emails", hint: "Snov.io then Anymail person search", icon: "search" },
-                  { id: "retest", label: "Risky Email Validation", hint: "Snov.io then Anymail verifier on a CSV", icon: "validate" },
+                  { id: "patterns", label: "Find Emails", hint: "DeBounce then Anymail person search", icon: "search" },
+                  { id: "retest", label: "Risky Email Validation", hint: "Anymail verifier on a CSV", icon: "validate" },
                   { id: "linkedin", label: "Check LinkedIn", hint: "Employer / domain drift", icon: "contacts" },
                 ] as const).map((m) => {
                   const on = inputMode === m.id;
@@ -9360,7 +9353,7 @@ function EmailValidationPanel() {
       <div className="px-5 py-4 border-b border-[var(--hm-border)]">
         <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Risky Email Validation</h2>
         <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">
-          Upload a CSV of emails — each one is checked with <strong>Snov.io</strong> first, and anything Snov can&apos;t settle (catch-all / unknown) is then checked with <strong>Anymail Finder</strong> (nothing is sent to anyone). Results are saved to Radar
+          Upload a CSV of emails — each one is checked with <strong>Anymail Finder</strong> (nothing is sent to anyone). Results are saved to Radar
           automatically: existing contacts get their email status updated, and emails not in Radar yet are added to the vertical you pick.
         </p>
       </div>
@@ -9446,8 +9439,8 @@ function EmailValidationPanel() {
           return (
             <SourceCards running={job.status === "running"} cards={[
               { label: "Started with", value: `${f(totalEmails)} emails`, p: pc(job.processed || 0, totalEmails), sub: `${f(job.processed || 0)} processed${skipped ? ` · ${f(skipped)} skipped (already safe)` : ""}` },
-              { label: "Snov.io (1st pass)", value: `${f(snov)} settled`, p: pc(snov, totalEmails), sub: `${f(snovValid)} valid · ${f(snovInvalid)} invalid · ${f(Math.max(0, totalEmails - skipped - snov))} passed to Anymail` },
-              { label: "Anymail (2nd pass)", value: `${f(anymail)} checked`, p: pc(anymail, Math.max(1, totalEmails - skipped - snov)), sub: `${f(anyValid)} valid · ${f(summary.risky)} risky · ${f(anyInvalid)} invalid${summary.failed ? ` · ${f(summary.failed)} couldn't verify` : ""}` },
+              ...(snov > 0 ? [{ label: "Snov.io (old jobs)", value: `${f(snov)} settled`, p: pc(snov, totalEmails), sub: `${f(snovValid)} valid · ${f(snovInvalid)} invalid · ${f(Math.max(0, totalEmails - skipped - snov))} passed to Anymail` }] : []),
+              { label: "Anymail", value: `${f(anymail)} checked`, p: pc(anymail, Math.max(1, totalEmails - skipped - snov)), sub: `${f(anyValid)} valid · ${f(summary.risky)} risky · ${f(anyInvalid)} invalid${summary.failed ? ` · ${f(summary.failed)} couldn't verify` : ""}` },
               { label: "Saved to Radar", value: `${f(saved)} / ${f(totalEmails)}`, p: pc(saved, totalEmails), sub: `${f(summary.existing)} existing updated · ${f(summary.added)} new added` },
             ]} />
           );
@@ -9623,7 +9616,7 @@ function EmailFinderPanel() {
       <div className="px-5 py-4 border-b border-[var(--hm-border)]">
         <h2 className="text-[14px] font-semibold text-[var(--hm-text)]">Find Emails</h2>
         <p className="text-[12.5px] text-[var(--hm-text-tertiary)] mt-0.5">
-          Give a person&apos;s name and company domain (type them in, or upload a CSV) — <strong>Snov.io</strong> looks for their email first, and anyone it can&apos;t find goes to <strong>Anymail Finder</strong>
+          Give a person&apos;s name and company domain (type them in, or upload a CSV) — <strong>DeBounce Lead Finder</strong> looks for their email first (optional), then <strong>Anymail Finder</strong>
           (nothing is sent to anyone). Found emails are saved to Radar automatically: filled onto a matching contact, or added as a new one in the vertical you pick.
         </p>
       </div>
@@ -9683,7 +9676,7 @@ function EmailFinderPanel() {
 
         <label className="flex items-start gap-2 text-[12.5px] text-[var(--hm-text)] cursor-pointer">
           <input type="checkbox" checked={leadFinder} onChange={(e) => setLeadFinder(e.target.checked)} className="mt-0.5" />
-          <span>DeBounce Lead Finder first <span className="text-[var(--hm-text-tertiary)]">— 40 DeBounce credits per person searched (found or not); needs name + company domain. Untick to start with Snov.io.</span></span>
+          <span>DeBounce Lead Finder first <span className="text-[var(--hm-text-tertiary)]">— 40 DeBounce credits per person searched (found or not); needs name + company domain. Untick to use Anymail only.</span></span>
         </label>
 
         <button onClick={start} disabled={!!stage || !people.length || !label.trim() || !vertical} className="hm-btn hm-btn-primary w-full" style={{ height: 38, fontSize: 13 }}>
@@ -9692,7 +9685,7 @@ function EmailFinderPanel() {
           ) : `Find emails${people.length ? ` for ${people.length.toLocaleString()} person(s)` : ""}`}
         </button>
         <p className="text-[11.5px] text-[var(--hm-text-tertiary)] -mt-2">
-          Order: DeBounce Lead Finder first (40 DeBounce credits per search, whether or not an email is found — one search at a time, so it is the slow step), then Snov.io (1 credit per email found) for anyone DeBounce misses, then Anymail (1 credit only when a verified email is found; repeat searches within 30 days are free).
+          Order: DeBounce Lead Finder first (40 DeBounce credits per search, whether or not an email is found — one search at a time, so it is the slow step), then Anymail (1 credit only when a verified email is found; repeat searches within 30 days are free).
           Each lookup takes ~5–15 seconds; it runs in the background, so you can close this page and come back under Recent jobs.
         </p>
 
@@ -9708,7 +9701,7 @@ function EmailFinderPanel() {
             processed={job.processed || 0}
             total={total}
             noun="people"
-            liveText="Searching DeBounce, Snov.io and Anymail (~5–15s per person) — found emails are saved to Radar as they come in"
+            liveText="Searching DeBounce and Anymail (~5–15s per person) — found emails are saved to Radar as they come in"
             doneText="Finished — every found email is saved to Radar."
             error={job.error}
             stats={[
@@ -9734,13 +9727,14 @@ function EmailFinderPanel() {
           const anyFound = Math.max(0, summary.found - snov - lf);
           const toSnov = Math.max(0, total - lf);
           const toAnymail = Math.max(0, toSnov - snov);
+          const showSnov = snov > 0;   // only old jobs ran Snov
           const saved = summary.added + summary.updated;
           return (
             <SourceCards running={job.status === "running"} cards={[
               { label: "Started with", value: `${f(total)} people`, p: pc(job.processed || 0, total), sub: `${f(job.processed || 0)} searched so far` },
-              ...(showLf ? [{ label: "DeBounce Lead Finder (1st)", value: `${f(lf)} found`, p: pc(lf, Math.max(1, lfTried)), sub: `${f(lfTried)} searched · ${f(lfTried * 40)} credits · ${f(toSnov)} → Snov.io` }] : []),
-              { label: showLf ? "Snov.io (2nd)" : "Snov.io (1st pass)", value: `${f(snov)} found`, p: pc(snov, Math.max(1, toSnov)), sub: `${f(toAnymail)} not found → passed to Anymail` },
-              { label: showLf ? "Anymail (3rd)" : "Anymail (2nd pass)", value: `${f(anyFound)} found`, p: pc(anyFound, Math.max(1, toAnymail)), sub: `${f(summary.notFound)} not found by any${summary.failed ? ` · ${f(summary.failed)} couldn't search` : ""}` },
+              ...(showLf ? [{ label: "DeBounce Lead Finder (1st)", value: `${f(lf)} found`, p: pc(lf, Math.max(1, lfTried)), sub: `${f(lfTried)} searched · ${f(lfTried * 40)} credits · ${f(toSnov)} → ${showSnov ? "Snov.io" : "Anymail"}` }] : []),
+              ...(showSnov ? [{ label: "Snov.io (old jobs)", value: `${f(snov)} found`, p: pc(snov, Math.max(1, toSnov)), sub: `${f(toAnymail)} not found → passed to Anymail` }] : []),
+              { label: showLf ? "Anymail (2nd)" : "Anymail", value: `${f(anyFound)} found`, p: pc(anyFound, Math.max(1, toAnymail)), sub: `${f(summary.notFound)} not found by any${summary.failed ? ` · ${f(summary.failed)} couldn't search` : ""}` },
               { label: "Saved to Radar", value: `${f(saved)} / ${f(summary.found)}`, p: pc(saved, summary.found), sub: `${f(summary.added)} new added · ${f(summary.updated)} existing updated` },
             ]} />
           );

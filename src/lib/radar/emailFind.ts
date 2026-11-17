@@ -7,9 +7,8 @@ import { snovConfigured, snovFindEmails } from "@/lib/radar/snov";
  * to Radar: fills the email on a matching contact that has none, updates a contact that already has
  * that email, or adds a new contact in the chosen vertical. Nothing is ever sent to anyone.
  * Pricing (Anymail): 1 credit only when a valid email is found; not found = free.
- * Snov.io's Email Finder runs FIRST (when configured; name + domain, SMTP-valid results only); whoever it doesn't
- * find goes to Anymail before being reported as not found.
- * DeBounce Lead Finder (optional, per job) runs FIRST, then Snov, then Anymail: 40 DeBounce credits per search
+ * Snov.io is switched off (snov.ts SNOV_ENABLED) — its pass below is skipped while snovConfigured() is false.
+ * DeBounce Lead Finder (optional, per job) runs FIRST, then Anymail: 40 DeBounce credits per search
  * whether or not an email is found, and only ONE search may run on the account at a time — so it runs one by one.
  */
 

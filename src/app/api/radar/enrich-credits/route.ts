@@ -57,6 +57,6 @@ export async function GET(req: NextRequest) {
     } catch (e) { return { label: "Apify", value: null, error: (e as Error).message || "Couldn't reach Apify" }; }
   };
 
-  const items = await Promise.all([blitz(), snov(), anymail(), apify()]);
+  const items = await Promise.all([blitz(), anymail(), apify()]);
   return NextResponse.json({ items });
 }
