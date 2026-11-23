@@ -4698,7 +4698,8 @@ function EnrichV2Section() {
                       : <span className="text-[var(--tag-green-fg)]">Finished — {fmt(n("saved"))} contacts saved to Radar ({job.vertical}).</span>}
                   </p>
                   <div className="grid gap-2 p-4 grid-cols-2 lg:grid-cols-4">
-                    {steps.map((st, i) => {
+                    {/* Snov is retired — only show its cards on old jobs that actually ran it. */}
+                    {steps.filter((st) => !(st.key === "snov" || st.key === "snovverify") || st.on).map((st, i) => {
                       const idx = ENRICH2_PHASES.indexOf(st.key);
                       const active = running && st.key === job.phase;
                       const doneStep = idx < phaseIdx || job.status === "done";
