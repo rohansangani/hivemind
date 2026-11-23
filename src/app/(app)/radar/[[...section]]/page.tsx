@@ -8273,7 +8273,14 @@ function CheckDbSection() {
     a.click();
     URL.revokeObjectURL(url);
   };
-  const esc = (v: unknown) => `"${(v == null ? "" : typeof v === "object" ? JSON.stringify(v) : String(v)).replace(/"/g, '""')}"`;
+  // Excel/Numbers hard-limit a cell to 32,767 chars; a longer one (e.g. a 46k-char `keywords` blob) spills into the
+  // following rows and the sheet then looks like it has far fewer rows than the file really does — so cap cells.
+  const CELL_MAX = 32000;
+  const esc = (v: unknown) => {
+    let t = v == null ? "" : typeof v === "object" ? JSON.stringify(v) : String(v);
+    if (t.length > CELL_MAX) t = t.slice(0, CELL_MAX) + "… [truncated]";
+    return `"${t.replace(/"/g, '""')}"`;
+  };
 
   const exportFound = () => {
     if (!result?.data.length) return;
