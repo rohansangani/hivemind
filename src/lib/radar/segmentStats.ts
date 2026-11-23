@@ -29,10 +29,13 @@ export async function segmentStats(segment: Segment, sub: string): Promise<{ acc
   const direct = `SELECT id, count(*)::int n FROM (
         SELECT c.account_id::text id FROM contacts c WHERE c.account_id::text IN (SELECT id FROM a) AND c.marked_irrelevant IS NOT TRUE
         UNION ALL
-        SELECT a.id FROM a JOIN contacts c ON c.match_domain = radar_norm_domain(a.domain) AND c.marked_irrelevant IS NOT TRUE AND a.vl && c.extra_verticals
+        SELECT a.id FROM a JOIN ce c ON c.match_domain = a.nd AND a.vl && c.extra_verticals
       ) u GROUP BY id`;
-  const overlayCounts = `SELECT a.id, count(c.id)::int n FROM a JOIN contacts c ON c.match_domain = radar_norm_domain(a.domain) AND 'Crossborder' = ANY(c.verticals) AND c.marked_irrelevant IS NOT TRUE WHERE 'Crossborder' = ANY(a.vl) GROUP BY a.id`;
-  const countsCte = `cc AS (SELECT id, max(n)::int n FROM (${direct} UNION ALL ${overlayCounts}) m GROUP BY id)`;
+  // Crossborder-tagged accounts only (a.nd is precomputed once in \`a\`: running radar_norm_domain's regexes inside the join was the slow part on 700k+ accounts).
+  const overlayCounts = `SELECT a.id, count(c.id)::int n FROM (SELECT * FROM a WHERE 'Crossborder' = ANY(a.vl)) a JOIN contacts c ON c.match_domain = a.nd AND 'Crossborder' = ANY(c.verticals) AND c.marked_irrelevant IS NOT TRUE GROUP BY a.id`;
+  // ce = the (few) contacts that carry extra verticals, materialised once so the join to \`a\` stays small.
+  const countsCte = `ce AS MATERIALIZED (SELECT match_domain, extra_verticals FROM contacts WHERE cardinality(extra_verticals) > 0 AND marked_irrelevant IS NOT TRUE),
+cc AS (SELECT id, max(n)::int n FROM (${direct} UNION ALL ${overlayCounts}) m GROUP BY id)`;
 
   const aCte = segment === "tam"
     ? `a AS MATERIALIZED (
@@ -45,36 +48,42 @@ export async function segmentStats(segment: Segment, sub: string): Promise<{ acc
   FROM tam_india t
   LEFT JOIN LATERAL (SELECT * FROM accounts x WHERE lower(btrim(x.domain)) IN (t.domain, 'www.' || t.domain) AND x.marked_irrelevant IS NOT TRUE ORDER BY (x.vertical = 'D2C') DESC LIMIT 1) r ON true)`
     : `a AS MATERIALIZED (
-  SELECT id::text AS id, vertical, COALESCE(NULLIF(verticals, '{}'::text[]), ARRAY[vertical]) AS vl, domain, linkedin_url, industry_category, employee_bucket, revenue_bucket, monthly_revenue_bucket, platform, country, state, source,
+  SELECT id::text AS id, vertical, COALESCE(NULLIF(verticals, '{}'::text[]), ARRAY[vertical]) AS vl, radar_norm_domain(domain) AS nd, domain, linkedin_url, industry_category, employee_bucket, revenue_bucket, monthly_revenue_bucket, platform, country, state, source,
          account_type, customer, hubspot_lifecycle_stage, description
   FROM accounts WHERE ${SOURCE_SEGMENTS[segment] ? `source = ${esc(SOURCE_SEGMENTS[segment]!)}` : `COALESCE(NULLIF(verticals, '{}'::text[]), ARRAY[vertical]) && ARRAY[${vlist}]::text[]`} AND marked_irrelevant IS NOT TRUE)`;
   // TAM: contacts are counted by domain (anyone Radar has at that company, any vertical).
   const tamCounts = `cc AS (SELECT a.id, count(c.id)::int n FROM a JOIN contacts c ON c.match_domain = a.domain AND c.marked_irrelevant IS NOT TRUE GROUP BY a.id)`;
 
+  // One pass for the KPI counts and one GROUPING SETS pass for every breakdown (was ~20 separate group-bys over the same
+  // CTE — at 800k+ accounts that alone blew the 60s budget). Output rows keep the same {k, v, n} shape.
   const accountsQ = `
 WITH ${aCte},
 ${segment === "tam" ? tamCounts : countsCte},
-j AS (SELECT a.*, COALESCE(cc.n, 0) cn FROM a LEFT JOIN cc ON cc.id = a.id)
-SELECT 'kpi' k, 'accounts' v, count(*)::int n FROM j
-UNION ALL SELECT 'kpi', 'with_domain', count(*) FILTER (WHERE domain IS NOT NULL AND domain <> '')::int FROM j
-UNION ALL SELECT 'kpi', 'with_linkedin', count(*) FILTER (WHERE linkedin_url IS NOT NULL AND linkedin_url <> '')::int FROM j
-UNION ALL SELECT 'kpi', 'with_industry', count(*) FILTER (WHERE industry_category IS NOT NULL AND industry_category <> '')::int FROM j
-UNION ALL SELECT 'kpi', 'with_revenue', count(*) FILTER (WHERE revenue_bucket IS NOT NULL AND revenue_bucket <> 'Unknown')::int FROM j
-UNION ALL SELECT 'kpi', 'with_employees', count(*) FILTER (WHERE employee_bucket IS NOT NULL)::int FROM j
-UNION ALL SELECT 'kpi', 'with_description', count(*) FILTER (WHERE description IS NOT NULL AND description <> '')::int FROM j
-UNION ALL SELECT 'kpi', 'with_contacts', count(*) FILTER (WHERE cn > 0)::int FROM j
-UNION ALL SELECT 'industry', industry_category, count(*)::int FROM j GROUP BY 2
-UNION ALL SELECT 'employees', employee_bucket, count(*)::int FROM j GROUP BY 2
-UNION ALL SELECT 'revenue', revenue_bucket, count(*)::int FROM j GROUP BY 2
-UNION ALL SELECT 'monthly', monthly_revenue_bucket, count(*)::int FROM j GROUP BY 2
-UNION ALL SELECT 'platform', platform, count(*)::int FROM j GROUP BY 2
-UNION ALL SELECT 'country', country, count(*)::int FROM j GROUP BY 2
-UNION ALL SELECT 'state', state, count(*)::int FROM j GROUP BY 2
-UNION ALL SELECT 'source', source, count(*)::int FROM j GROUP BY 2
-UNION ALL SELECT 'accountType', account_type, count(*)::int FROM j GROUP BY 2
-UNION ALL SELECT 'customer', CASE WHEN customer IS TRUE THEN 'Customer' ELSE 'Not a customer' END, count(*)::int FROM j GROUP BY 2
-UNION ALL SELECT 'lifecycle', hubspot_lifecycle_stage, count(*)::int FROM j GROUP BY 2
-UNION ALL SELECT 'perAccount', CASE WHEN cn = 0 THEN '0' WHEN cn = 1 THEN '1' WHEN cn <= 3 THEN '2-3' WHEN cn <= 10 THEN '4-10' ELSE '11+' END, count(*)::int FROM j GROUP BY 2`;
+j AS MATERIALIZED (SELECT a.*, COALESCE(cc.n, 0) cn,
+    CASE WHEN a.customer IS TRUE THEN 'Customer' ELSE 'Not a customer' END AS cust_label,
+    CASE WHEN COALESCE(cc.n, 0) = 0 THEN '0' WHEN cc.n = 1 THEN '1' WHEN cc.n <= 3 THEN '2-3' WHEN cc.n <= 10 THEN '4-10' ELSE '11+' END AS per_acc
+  FROM a LEFT JOIN cc ON cc.id = a.id),
+kp AS (SELECT count(*)::int accounts,
+    count(*) FILTER (WHERE domain IS NOT NULL AND domain <> '')::int with_domain,
+    count(*) FILTER (WHERE linkedin_url IS NOT NULL AND linkedin_url <> '')::int with_linkedin,
+    count(*) FILTER (WHERE industry_category IS NOT NULL AND industry_category <> '')::int with_industry,
+    count(*) FILTER (WHERE revenue_bucket IS NOT NULL AND revenue_bucket <> 'Unknown')::int with_revenue,
+    count(*) FILTER (WHERE employee_bucket IS NOT NULL)::int with_employees,
+    count(*) FILTER (WHERE description IS NOT NULL AND description <> '')::int with_description,
+    count(*) FILTER (WHERE cn > 0)::int with_contacts FROM j),
+gs AS (SELECT industry_category, employee_bucket, revenue_bucket, monthly_revenue_bucket, platform, country, state, source, account_type, cust_label, hubspot_lifecycle_stage, per_acc,
+    GROUPING(industry_category) g_industry, GROUPING(employee_bucket) g_employees, GROUPING(revenue_bucket) g_revenue, GROUPING(monthly_revenue_bucket) g_monthly,
+    GROUPING(platform) g_platform, GROUPING(country) g_country, GROUPING(state) g_state, GROUPING(source) g_source, GROUPING(account_type) g_accountType,
+    GROUPING(cust_label) g_customer, GROUPING(hubspot_lifecycle_stage) g_lifecycle, GROUPING(per_acc) g_perAccount, count(*)::int n
+  FROM j GROUP BY GROUPING SETS ((industry_category), (employee_bucket), (revenue_bucket), (monthly_revenue_bucket), (platform), (country), (state), (source), (account_type), (cust_label), (hubspot_lifecycle_stage), (per_acc)))
+SELECT 'kpi' k, x.v, x.n FROM kp, LATERAL (VALUES ('accounts', kp.accounts), ('with_domain', kp.with_domain), ('with_linkedin', kp.with_linkedin), ('with_industry', kp.with_industry),
+    ('with_revenue', kp.with_revenue), ('with_employees', kp.with_employees), ('with_description', kp.with_description), ('with_contacts', kp.with_contacts)) x(v, n)
+UNION ALL SELECT CASE WHEN g_industry = 0 THEN 'industry' WHEN g_employees = 0 THEN 'employees' WHEN g_revenue = 0 THEN 'revenue' WHEN g_monthly = 0 THEN 'monthly' WHEN g_platform = 0 THEN 'platform'
+    WHEN g_country = 0 THEN 'country' WHEN g_state = 0 THEN 'state' WHEN g_source = 0 THEN 'source' WHEN g_accountType = 0 THEN 'accountType' WHEN g_customer = 0 THEN 'customer'
+    WHEN g_lifecycle = 0 THEN 'lifecycle' ELSE 'perAccount' END,
+  CASE WHEN g_industry = 0 THEN industry_category WHEN g_employees = 0 THEN employee_bucket WHEN g_revenue = 0 THEN revenue_bucket WHEN g_monthly = 0 THEN monthly_revenue_bucket WHEN g_platform = 0 THEN platform
+    WHEN g_country = 0 THEN country WHEN g_state = 0 THEN state WHEN g_source = 0 THEN source WHEN g_accountType = 0 THEN account_type WHEN g_customer = 0 THEN cust_label
+    WHEN g_lifecycle = 0 THEN hubspot_lifecycle_stage ELSE per_acc END, n FROM gs`;
 
   return { accounts: await radarSql<SegmentRow>(accountsQ) };
 }
