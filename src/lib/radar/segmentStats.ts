@@ -10,7 +10,7 @@ import { radarSql } from "@/lib/radar/supabase";
  * see docs/sql/2026-11-12_tam_india.sql) — the market, not just what's in Radar. Firmographics come from the file;
  * Radar fills what the file lacks (employees, LinkedIn…) and supplies customer / lifecycle / source / contacts by domain.
  */
-export type Segment = "india" | "us" | "eu" | "crossborder" | "tam" | "dtc" | "slus" | "slca";
+export type Segment = "india" | "us" | "eu" | "crossborder" | "global" | "tam" | "dtc" | "slus" | "slca";
 
 /** Views that are simply "every account whose source is X" (any vertical). */
 const SOURCE_SEGMENTS: Partial<Record<Segment, string>> = { dtc: "DTCConnect", slus: "StoreLeadsUS", slca: "StoreLeadsCanada" };
@@ -20,7 +20,7 @@ const esc = (s: string) => `'${s.replace(/'/g, "''")}'`;
 
 export async function segmentStats(segment: Segment, sub: string): Promise<{ accounts: SegmentRow[] }> {
   // Crossborder is part of India, so the India tab includes it (and can also be narrowed to just D2C / B2B / Crossborder).
-  const verts = segment === "tam" || SOURCE_SEGMENTS[segment] ? [] : segment === "india" ? (sub === "D2C" ? ["D2C"] : sub === "B2B" ? ["B2B"] : sub === "Crossborder" ? ["Crossborder"] : ["D2C", "B2B", "Crossborder"]) : segment === "us" ? ["US"] : segment === "eu" ? ["EU"] : ["Crossborder"];
+  const verts = segment === "tam" || segment === "global" || SOURCE_SEGMENTS[segment] ? [] : segment === "india" ? (sub === "D2C" ? ["D2C"] : sub === "B2B" ? ["B2B"] : sub === "Crossborder" ? ["Crossborder"] : ["D2C", "B2B", "Crossborder"]) : segment === "us" ? ["US"] : segment === "eu" ? ["EU"] : ["Crossborder"];
   const vlist = verts.map(esc).join(",");
 
   // An account matches a segment if ANY vertical on its list does (one row can carry several). Its contact count is the
@@ -50,7 +50,7 @@ cc AS (SELECT id, max(n)::int n FROM (${direct} UNION ALL ${overlayCounts}) m GR
     : `a AS MATERIALIZED (
   SELECT id::text AS id, vertical, COALESCE(NULLIF(verticals, '{}'::text[]), ARRAY[vertical]) AS vl, radar_norm_domain(domain) AS nd, domain, linkedin_url, industry_category, employee_bucket, revenue_bucket, monthly_revenue_bucket, platform, country, state, source,
          account_type, customer, hubspot_lifecycle_stage, description
-  FROM accounts WHERE ${SOURCE_SEGMENTS[segment] ? `source = ${esc(SOURCE_SEGMENTS[segment]!)}` : `COALESCE(NULLIF(verticals, '{}'::text[]), ARRAY[vertical]) && ARRAY[${vlist}]::text[]`} AND marked_irrelevant IS NOT TRUE)`;
+  FROM accounts WHERE ${segment === "global" ? "TRUE" : SOURCE_SEGMENTS[segment] ? `source = ${esc(SOURCE_SEGMENTS[segment]!)}` : `COALESCE(NULLIF(verticals, '{}'::text[]), ARRAY[vertical]) && ARRAY[${vlist}]::text[]`} AND marked_irrelevant IS NOT TRUE)`;
   // TAM: contacts are counted by domain (anyone Radar has at that company, any vertical).
   const tamCounts = `cc AS (SELECT a.id, count(c.id)::int n FROM a JOIN contacts c ON c.match_domain = a.domain AND c.marked_irrelevant IS NOT TRUE GROUP BY a.id)`;
 
