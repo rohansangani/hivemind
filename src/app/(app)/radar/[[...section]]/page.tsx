@@ -648,7 +648,7 @@ const STATUS_META: Array<{ key: string; label: string; color: string }> = [
 
 /* ── Dashboard tabs: Overview · India · US · Crossborder ───────────────── */
 
-type SegmentKey = "india" | "us" | "eu" | "crossborder" | "tam" | "dtc" | "slus" | "slca";
+type SegmentKey = "india" | "us" | "eu" | "crossborder" | "global" | "tam" | "dtc" | "slus" | "slca";
 interface SegRow { k: string; v: string | null; n: number }
 interface SegData { accounts: SegRow[] }
 
@@ -669,7 +669,7 @@ const CITY_OPTIONS = [
 ];
 
 const SEG_TABS: { id: "overview" | SegmentKey; label: string }[] = [
-  { id: "overview", label: "Overview" }, { id: "india", label: "India" }, { id: "us", label: "US + CN" }, { id: "eu", label: "EU" }, { id: "crossborder", label: "Crossborder" },
+  { id: "overview", label: "Overview" }, { id: "india", label: "India" }, { id: "us", label: "US + CN" }, { id: "eu", label: "EU" }, { id: "global", label: "Global" }, { id: "crossborder", label: "Crossborder" },
 ];
 const SEG_PALETTE = ["var(--tag-blue-fg)", "var(--tag-purple-fg)", "var(--tag-orange-fg)", "var(--tag-green-fg)", "var(--tag-pink-fg)", "var(--tag-yellow-fg)", "var(--tag-red-fg)"];
 const GREY = "color-mix(in srgb, var(--hm-text-tertiary) 55%, transparent)";
@@ -765,7 +765,7 @@ function SegmentDashboard({ segment, sub }: { segment: SegmentKey; sub: string }
   const nAcc = kpi(A, "accounts");
   const empty = nAcc - kpi(A, "with_contacts");
   const isIndia = segment === "india" || segment === "tam" || segment === "dtc" || segment === "slus" || segment === "slca"; // shows the State / province card
-  const title = segment === "india" ? "India" : segment === "us" ? "US + CN" : segment === "eu" ? "EU" : segment === "tam" ? "StoreLeads India" : segment === "dtc" ? "DTCConnect" : segment === "slus" ? "StoreLeadsUS" : segment === "slca" ? "StoreLeadsCanada" : "Crossborder";
+  const title = segment === "india" ? "India" : segment === "us" ? "US + CN" : segment === "eu" ? "EU" : segment === "global" ? "Global" : segment === "tam" ? "StoreLeads India" : segment === "dtc" ? "DTCConnect" : segment === "slus" ? "StoreLeadsUS" : segment === "slca" ? "StoreLeadsCanada" : "Crossborder";
 
   const completeness = (items: [string, number, number][]) => items.map(([k, n, d]) => ({ k, n, p: pct(n, d) }));
   const accComp = completeness([
@@ -782,7 +782,7 @@ function SegmentDashboard({ segment, sub }: { segment: SegmentKey; sub: string }
         </div>
       )}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3.5">
-        <KpiTile icon="accounts" label={segment === "india" || segment === "us" || segment === "eu" || segment === "crossborder" ? `${title} accounts` : "Accounts"} value={fmt(nAcc)} foot={`${fmt(kpi(A, "with_contacts"))} have contacts (${pct(kpi(A, "with_contacts"), nAcc)}%) · ${fmt(empty)} empty`} ratio={kpi(A, "with_contacts") / (nAcc || 1)} />
+        <KpiTile icon="accounts" label={segment === "india" || segment === "us" || segment === "eu" || segment === "global" || segment === "crossborder" ? `${title} accounts` : "Accounts"} value={fmt(nAcc)} foot={`${fmt(kpi(A, "with_contacts"))} have contacts (${pct(kpi(A, "with_contacts"), nAcc)}%) · ${fmt(empty)} empty`} ratio={kpi(A, "with_contacts") / (nAcc || 1)} />
         <KpiTile icon="icp" label="LinkedIn coverage" value={`${pct(kpi(A, "with_linkedin"), nAcc)}%`} foot={`${fmt(kpi(A, "with_linkedin"))} of ${fmt(nAcc)} accounts`} ratio={kpi(A, "with_linkedin") / (nAcc || 1)} />
         <KpiTile icon="validate" label="Industry known" value={`${pct(kpi(A, "with_industry"), nAcc)}%`} foot={`${fmt(kpi(A, "with_industry"))} accounts categorised`} ratio={kpi(A, "with_industry") / (nAcc || 1)} />
         <KpiTile icon="dashboard" label="Revenue known" value={`${pct(kpi(A, "with_revenue"), nAcc)}%`} foot={`${fmt(kpi(A, "with_revenue"))} accounts with a revenue band`} ratio={kpi(A, "with_revenue") / (nAcc || 1)} />
