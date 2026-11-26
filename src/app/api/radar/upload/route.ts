@@ -931,7 +931,7 @@ async function handleJobAction(body: JobActionBody): Promise<{ status: number; b
        LANGUAGE plpgsql
       AS $function$
       DECLARE
-        v_vert text := CASE WHEN p_vertical IN ('B2B','D2C','US','Crossborder') THEN p_vertical ELSE NULL END;
+        v_vert text := CASE WHEN p_vertical IN ('B2B','D2C','US','EU','Global','Crossborder') THEN p_vertical ELSE NULL END;
         v_valid_count int;
         v_invalid_count int;
       BEGIN
