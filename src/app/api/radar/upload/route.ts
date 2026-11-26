@@ -123,7 +123,7 @@ interface UploadBody {
 // Canonical stored spelling per vertical — B2B/D2C/US are codes, Crossborder is a word (the DB
 // CHECK constraint only accepts these exact strings). Anything else passes through upper-cased,
 // as before, so the constraint still rejects it loudly.
-const CANON_VERTICAL: Record<string, string> = { B2B: "B2B", D2C: "D2C", US: "US", CROSSBORDER: "Crossborder" };
+const CANON_VERTICAL: Record<string, string> = { B2B: "B2B", D2C: "D2C", US: "US", EU: "EU", GLOBAL: "Global", CROSSBORDER: "Crossborder" };
 function canonVertical(v: unknown): string {
   const raw = (v == null ? "" : String(v)).trim();
   if (!raw) return "";
