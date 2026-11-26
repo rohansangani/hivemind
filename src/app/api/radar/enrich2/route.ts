@@ -15,7 +15,7 @@ import { snovConfigured } from "@/lib/radar/snov";
  * never two at once (DB lease). Everything is resumable and saved to Radar at the end.
  */
 const TICK_MS = 245000;
-const VERTICALS = ["B2B", "D2C", "US", "Crossborder"];
+const VERTICALS = ["B2B", "D2C", "US", "EU", "Global", "Crossborder"];
 const JOB_COLS = "id,label,vertical,created_by,status,phase,stage,options,counts,error,created_at,updated_at";
 
 export async function GET(req: NextRequest) {

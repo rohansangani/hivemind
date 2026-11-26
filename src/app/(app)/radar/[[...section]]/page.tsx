@@ -1176,7 +1176,7 @@ function AccountCoverageTable({ coverage }: { coverage: AccountCoverageRow[] }) 
 
 /* ── Shared data-table shell ───────────────────────────────────────────── */
 
-const VERTICALS = ["", "B2B", "US", "D2C", "EU", "Crossborder"];
+const VERTICALS = ["", "B2B", "US", "D2C", "EU", "Global", "Crossborder"];
 const PAGE_SIZE = 50;
 
 interface RadarOptions {
@@ -2453,6 +2453,8 @@ function EditRecordPanel<T extends { id: string }>({
                   <option value="B2B">B2B</option>
                   <option value="US">US</option>
                   <option value="D2C">D2C</option>
+                  <option value="EU">EU</option>
+                  <option value="Global">Global</option>
                   <option value="Crossborder">Crossborder</option>
                 </select>
               ) : f.type === "email_status" ? (
@@ -3816,14 +3818,14 @@ function UploadSection() {
   // again silently — a DB CHECK constraint now rejects it outright at insert time too, but
   // catching it here means the user sees exactly which CSV values are bad before importing,
   // instead of a bulk 400 partway through. Any column mapped straight to vertical/a:vertical/
-  // c:vertical whose values aren't B2B/D2C/US/Crossborder (case-insensitive) gets flagged.
+  // c:vertical whose values aren't B2B/D2C/US/EU/Global/Crossborder (case-insensitive) gets flagged.
   const verticalMapWarning = (() => {
     if (!parsed) return null;
     const badCols: { col: string; bad: string[] }[] = [];
     for (const [csvCol, dbKey] of Object.entries(mapping)) {
       if (dbKey !== "vertical" && dbKey !== "a:vertical" && dbKey !== "c:vertical") continue;
       const bad = [...new Set(
-        parsed.rows.map((r) => (r[csvCol] || "").trim()).filter((v) => v && !["B2B", "D2C", "US", "CROSSBORDER"].includes(v.toUpperCase().replace(/[^A-Z0-9]/g, "")))
+        parsed.rows.map((r) => (r[csvCol] || "").trim()).filter((v) => v && !["B2B", "D2C", "US", "EU", "GLOBAL", "CROSSBORDER"].includes(v.toUpperCase().replace(/[^A-Z0-9]/g, "")))
       )].slice(0, 5);
       if (bad.length) badCols.push({ col: csvCol, bad });
     }
@@ -3884,7 +3886,7 @@ function UploadSection() {
     if (!parsed || !parsed.rows.length) return;
     if (!mappedCount) { setMsg({ kind: "err", text: "Map at least one column first." }); return; }
     if (!uploadVertical) { setMsg({ kind: "err", text: "Select a vertical for this upload first." }); return; }
-    if (verticalMapWarning) { setMsg({ kind: "err", text: "Fix the Vertical column mapping — some values aren't B2B/D2C/US/Crossborder." }); return; }
+    if (verticalMapWarning) { setMsg({ kind: "err", text: "Fix the Vertical column mapping — some values aren't B2B/D2C/US/EU/Global/Crossborder." }); return; }
 
     setBusy(true);
     setMsg(null);
@@ -3992,6 +3994,8 @@ function UploadSection() {
               <option value="">— Select —</option>
               <option value="B2B">B2B</option>
               <option value="D2C">D2C</option>
+              <option value="EU">EU</option>
+              <option value="Global">Global</option>
               <option value="Crossborder">Crossborder</option>
               <option value="US">US</option>
             </select>
@@ -4072,7 +4076,7 @@ function UploadSection() {
 
           {verticalMapWarning && (
             <div className="rounded-lg p-3 text-[12.5px] bg-[var(--tag-red-bg)] text-[var(--tag-red-fg)] dark:bg-[var(--tag-red-bg)]/20 dark:text-[var(--tag-red-fg)]">
-              <strong>Vertical column has values other than B2B/D2C/US/Crossborder</strong> — fix the mapping or the source data before importing:
+              <strong>Vertical column has values other than B2B/D2C/US/EU/Global/Crossborder</strong> — fix the mapping or the source data before importing:
               <ul className="mt-1 space-y-0.5 list-disc list-inside">
                 {verticalMapWarning.map(({ col, bad }) => (
                   <li key={col}>&quot;{col}&quot;: {bad.join(", ")}{bad.length === 5 ? "…" : ""}</li>
@@ -5799,6 +5803,8 @@ function EnrichSection() {
                         <option value="B2B">B2B</option>
                         <option value="US">US</option>
                         <option value="D2C">D2C</option>
+                        <option value="EU">EU</option>
+                        <option value="Global">Global</option>
                         <option value="Crossborder">Crossborder</option>
                       </select>
                       <button
@@ -5869,6 +5875,8 @@ function EnrichSection() {
                           <option value="B2B">B2B</option>
                           <option value="US">US</option>
                           <option value="D2C">D2C</option>
+                          <option value="EU">EU</option>
+                          <option value="Global">Global</option>
                           <option value="Crossborder">Crossborder</option>
                         </select>
                         <button
@@ -6010,6 +6018,8 @@ function EnrichSection() {
                     <option value="B2B">B2B</option>
                     <option value="US">US</option>
                     <option value="D2C">D2C</option>
+                    <option value="EU">EU</option>
+                    <option value="Global">Global</option>
                     <option value="Crossborder">Crossborder</option>
                   </select>
                   <button
@@ -7625,6 +7635,8 @@ function ValidateSection() {
                         <option value="B2B">B2B</option>
                         <option value="US">US</option>
                         <option value="D2C">D2C</option>
+                        <option value="EU">EU</option>
+                        <option value="Global">Global</option>
                         <option value="Crossborder">Crossborder</option>
                       </select>
                       <p className="text-[11px] text-[var(--hm-text-tertiary)] mt-1">
@@ -8458,7 +8470,7 @@ function CheckDbSection() {
 
 /* ── ICP Base ──────────────────────────────────────────────────────────── */
 
-const ICP_VERTICALS = ["B2B", "D2C", "US", "Crossborder"] as const;
+const ICP_VERTICALS = ["B2B", "D2C", "US", "EU", "Global", "Crossborder"] as const;
 type IcpVertical = (typeof ICP_VERTICALS)[number];
 
 const ICP_SENIORITY = ["founder", "owner", "c_suite", "partner", "director", "vp", "head", "manager", "senior", "entry", "trainee"];
@@ -9381,6 +9393,8 @@ function EmailValidationPanel() {
               <option value="">Select…</option>
               <option value="B2B">B2B</option>
               <option value="D2C">D2C</option>
+              <option value="EU">EU</option>
+              <option value="Global">Global</option>
               <option value="Crossborder">Crossborder</option>
               <option value="US">US</option>
             </select>
@@ -9644,6 +9658,8 @@ function EmailFinderPanel() {
               <option value="">Select…</option>
               <option value="B2B">B2B</option>
               <option value="D2C">D2C</option>
+              <option value="EU">EU</option>
+              <option value="Global">Global</option>
               <option value="Crossborder">Crossborder</option>
               <option value="US">US</option>
             </select>
