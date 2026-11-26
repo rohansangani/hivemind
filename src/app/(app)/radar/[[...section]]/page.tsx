@@ -607,9 +607,9 @@ interface RadarStats {
   accounts_assigned?: number;
   total_contacts: number;
   blank_email_contacts: number;
-  blank_email_verticals: { B2B: number; D2C: number; US: number; Crossborder?: number; EU?: number; unassigned: number };
-  verticals: { B2B: number; D2C: number; US: number; Crossborder?: number; EU?: number };
-  contact_verticals: { B2B: number; D2C: number; US: number; Crossborder?: number; EU?: number };
+  blank_email_verticals: { B2B: number; D2C: number; US: number; Crossborder?: number; EU?: number; Global?: number; unassigned: number };
+  verticals: { B2B: number; D2C: number; US: number; Crossborder?: number; EU?: number; Global?: number };
+  contact_verticals: { B2B: number; D2C: number; US: number; Crossborder?: number; EU?: number; Global?: number };
   contact_status_matrix: StatusMatrixRow[];
   contact_domain_stats: DomainStatsRow[];
   account_coverage: AccountCoverageRow[];
@@ -632,6 +632,7 @@ const VERTICAL_COLORS: Record<string, string> = {
   Crossborder: "var(--tag-pink-fg)",
   US: "var(--tag-orange-fg)",
   EU: "var(--tag-green-fg)",
+  Global: "var(--tag-yellow-fg)",
   unassigned: "var(--hm-text-tertiary)",
 };
 
@@ -894,11 +895,11 @@ function RadarDashboard() {
 
   const v = stats.verticals;
   // Distinct accounts with a vertical — NOT the sum of the vertical counts, which overlap (one account can be in several).
-  const acctAssigned = stats.accounts_assigned ?? Math.min(stats.total_accounts, v.B2B + v.D2C + v.US + (v.Crossborder || 0) + (v.EU || 0));
+  const acctAssigned = stats.accounts_assigned ?? Math.min(stats.total_accounts, v.B2B + v.D2C + v.US + (v.Crossborder || 0) + (v.EU || 0) + (v.Global || 0));
   const acctUnassigned = Math.max(0, stats.total_accounts - acctAssigned);
 
   const cv = stats.contact_verticals;
-  const cvAssigned = cv.B2B + cv.D2C + cv.US + (cv.EU || 0);
+  const cvAssigned = cv.B2B + cv.D2C + cv.US + (cv.EU || 0) + (cv.Global || 0);
   const cvUnassigned = Math.max(0, stats.total_contacts - cvAssigned);
   const blankV = stats.blank_email_verticals;
 
@@ -930,13 +931,13 @@ function RadarDashboard() {
         <DistributionCard
           title="Accounts by vertical"
           meta={`${fmt(acctAssigned)} assigned`}
-          rows={([["B2B", v.B2B], ["D2C", v.D2C], ["US", v.US], ["EU", v.EU || 0], ["Crossborder", v.Crossborder || 0], ["unassigned", acctUnassigned]] as [string, number][])
+          rows={([["B2B", v.B2B], ["D2C", v.D2C], ["US", v.US], ["EU", v.EU || 0], ["Global", v.Global || 0], ["Crossborder", v.Crossborder || 0], ["unassigned", acctUnassigned]] as [string, number][])
             .map(([key, n]) => ({ key, label: key, value: n, color: VERTICAL_COLORS[key] }))}
         />
         <DistributionCard
           title="Contacts by vertical"
           meta={`${fmt(cvAssigned)} assigned`}
-          rows={([["B2B", cv.B2B, blankV.B2B], ["D2C", cv.D2C, blankV.D2C], ["US", cv.US, blankV.US], ["EU", cv.EU || 0, blankV.EU || 0], ["Crossborder", cv.Crossborder || 0, blankV.Crossborder || 0], ["unassigned", cvUnassigned, blankV.unassigned]] as [string, number, number][])
+          rows={([["B2B", cv.B2B, blankV.B2B], ["D2C", cv.D2C, blankV.D2C], ["US", cv.US, blankV.US], ["EU", cv.EU || 0, blankV.EU || 0], ["Global", cv.Global || 0, blankV.Global || 0], ["Crossborder", cv.Crossborder || 0, blankV.Crossborder || 0], ["unassigned", cvUnassigned, blankV.unassigned]] as [string, number, number][])
             .map(([key, n, blank]) => ({ key, label: key, value: n, color: VERTICAL_COLORS[key], note: blank ? `${fmt(blank)} blank` : "", overlap: key === OVERLAY_VERTICAL }))}
         />
         <DistributionCard
@@ -1032,7 +1033,7 @@ function DistributionCard({ title, meta, rows, className = "" }: {
 }
 
 function ContactStatusMatrix({ stats }: { stats: RadarStats }) {
-  const verticals = ["B2B", "D2C", "US", "EU", "Crossborder"];
+  const verticals = ["B2B", "D2C", "US", "EU", "Global", "Crossborder"];
   const matrix = stats.contact_status_matrix.filter((r) => r.vertical !== "Unassigned");
   const domainStats = stats.contact_domain_stats.filter((r) => r.vertical !== "Unassigned");
 
@@ -1111,7 +1112,7 @@ function ContactStatusMatrix({ stats }: { stats: RadarStats }) {
 }
 
 function AccountCoverageTable({ coverage }: { coverage: AccountCoverageRow[] }) {
-  const order = ["B2B", "D2C", "US", "EU", "Crossborder", "Unassigned"];
+  const order = ["B2B", "D2C", "US", "EU", "Global", "Crossborder", "Unassigned"];
   const by: Record<string, AccountCoverageRow> = {};
   for (const r of coverage) by[r.vertical] = r;
   const rows = order.filter((v) => by[v]);
@@ -1267,7 +1268,7 @@ interface FilterField {
 interface FilterGroup { id: string; label: string; icon: string; fields: FilterField[] }
 
 const YES_NO = { true: "Yes", false: "No" };
-const VERTICAL_FILTER: FilterField = { key: "vertical", label: "Vertical", kind: "select", options: () => ["B2B", "D2C", "US", "EU", "Crossborder"] };
+const VERTICAL_FILTER: FilterField = { key: "vertical", label: "Vertical", kind: "select", options: () => ["B2B", "D2C", "US", "EU", "Global", "Crossborder"] };
 // Account type filter is hidden for now (ACCOUNT_TYPE_OPTIONS kept for the API / dashboard).
 const SEGMENT_FIELDS = (sources: (o: RadarOptions | null) => string[], sourceCounts: (o: RadarOptions | null) => Record<string, number> | undefined, vertCounts: (o: RadarOptions | null) => Record<string, number> | undefined): FilterField[] => [
   { ...VERTICAL_FILTER, counts: vertCounts },
@@ -2094,6 +2095,7 @@ const VERTICAL_TAG: Record<string, string> = {
   D2C: "bg-[var(--tag-purple-bg)] text-[var(--tag-purple-fg)]",
   CROSSBORDER: "bg-[var(--tag-pink-bg)] text-[var(--tag-pink-fg)]",
   US: "bg-[var(--tag-orange-bg)] text-[var(--tag-orange-fg)]",
+  GLOBAL: "bg-[var(--tag-yellow-bg)] text-[var(--tag-yellow-fg)]",
 };
 function VerticalBadge({ v }: { v: string | null }) {
   if (!v) return <span className="text-[var(--hm-text-tertiary)]">—</span>;
