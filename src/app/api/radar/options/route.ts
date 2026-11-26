@@ -96,30 +96,36 @@ function refresh(): Promise<void> {
   return inflight;
 }
 
+/** Source + vertical lists (with counts) are relabelled/merged by SQL, so they are always read live — never stale. */
+async function liveLists() {
+  const grp = (sql: string) => radarSql<{ v: string; n: number }>(sql);
+  const [aSrc, cSrc, aVert, cVert] = await Promise.all([
+    grp(`SELECT source v, count(*)::int n FROM accounts WHERE source IS NOT NULL AND source <> '' AND marked_irrelevant IS NOT TRUE GROUP BY 1 ORDER BY 2 DESC`),
+    grp(`SELECT source v, count(*)::int n FROM contacts WHERE source IS NOT NULL AND source <> '' AND marked_irrelevant IS NOT TRUE GROUP BY 1 ORDER BY 2 DESC`),
+    grp(`SELECT v, count(*)::int n FROM accounts, unnest(CASE WHEN verticals IS NULL OR cardinality(verticals) = 0 THEN ARRAY[vertical] ELSE verticals END) v WHERE v IS NOT NULL AND marked_irrelevant IS NOT TRUE GROUP BY 1`),
+    grp(`SELECT v, count(*)::int n FROM contacts, unnest(verticals) v WHERE marked_irrelevant IS NOT TRUE GROUP BY 1`),
+  ]);
+  const obj = (rows: { v: string; n: number }[]) => Object.fromEntries(rows.map((r) => [r.v, r.n]));
+  return {
+    accountSources: aSrc.map((r) => r.v), accountSourceCounts: obj(aSrc),
+    contactSources: cSrc.map((r) => r.v), contactSourceCounts: obj(cSrc),
+    accountVerticalCounts: obj(aVert), contactVerticalCounts: obj(cVert),
+  };
+}
+
 export async function GET(req: NextRequest) {
   const access = await requireRadarAccess(req);
   if (access instanceof NextResponse) return access;
 
   try {
     const headers = { "Cache-Control": "private, no-cache" };
+    // ?live=1 → just the source/vertical lists (a few seconds). The page asks for these separately so a slow full
+    // refresh can never leave the Source / Vertical dropdowns stale.
+    if (new URL(req.url).searchParams.get("live")) return NextResponse.json(await liveLists(), { headers });
     const age = cache ? Date.now() - cache.at : Infinity;
     if (!cache || age >= STALE_MS) await refresh();
     else if (age >= FRESH_MS) after(() => refresh().catch(() => {}));
-    // Source + vertical lists (with counts) get relabelled/merged by SQL — always read them live so they're never stale.
-    const grp = (sql: string) => radarSql<{ v: string; n: number }>(sql);
-    const [aSrc, cSrc, aVert, cVert] = await Promise.all([
-      grp(`SELECT source v, count(*)::int n FROM accounts WHERE source IS NOT NULL AND source <> '' AND marked_irrelevant IS NOT TRUE GROUP BY 1 ORDER BY 2 DESC`),
-      grp(`SELECT source v, count(*)::int n FROM contacts WHERE source IS NOT NULL AND source <> '' AND marked_irrelevant IS NOT TRUE GROUP BY 1 ORDER BY 2 DESC`),
-      grp(`SELECT v, count(*)::int n FROM accounts, unnest(CASE WHEN verticals IS NULL OR cardinality(verticals) = 0 THEN ARRAY[vertical] ELSE verticals END) v WHERE v IS NOT NULL AND marked_irrelevant IS NOT TRUE GROUP BY 1`),
-      grp(`SELECT v, count(*)::int n FROM contacts, unnest(verticals) v WHERE marked_irrelevant IS NOT TRUE GROUP BY 1`),
-    ]);
-    const obj = (rows: { v: string; n: number }[]) => Object.fromEntries(rows.map((r) => [r.v, r.n]));
-    return NextResponse.json({
-      ...cache!.data,
-      accountSources: aSrc.map((r) => r.v), accountSourceCounts: obj(aSrc),
-      contactSources: cSrc.map((r) => r.v), contactSourceCounts: obj(cSrc),
-      accountVerticalCounts: obj(aVert), contactVerticalCounts: obj(cVert),
-    }, { headers });
+    return NextResponse.json({ ...cache!.data, ...(await liveLists()) }, { headers });
   } catch (err) {
     console.error("Radar options error:", err);
     return NextResponse.json({ error: "Failed to load filter options" }, { status: 502 });

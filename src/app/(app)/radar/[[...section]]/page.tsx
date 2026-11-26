@@ -1664,10 +1664,12 @@ function DataTable<T extends { id: string }>({
   useEffect(() => {
     // Last options are remembered in this browser so the dropdowns are filled instantly; fresh ones replace them.
     try { const raw = localStorage.getItem("radar.options.v2"); if (raw) setOptions(JSON.parse(raw)); } catch {}
-    const load = () => fetch("/api/radar/options")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (d) { setOptions(d); try { localStorage.setItem("radar.options.v2", JSON.stringify(d)); } catch {} } })
-      .catch(() => {});
+    // Merge into the current options (never replace): the quick live source/vertical lists and the slower full set arrive separately.
+    const merge = (d: Record<string, unknown> | null) => { if (d) setOptions((prev) => { const next = { ...(prev || {}), ...d } as typeof prev; try { localStorage.setItem("radar.options.v2", JSON.stringify(next)); } catch {} return next; }); };
+    const load = () => {
+      fetch("/api/radar/options?live=1").then((r) => (r.ok ? r.json() : null)).then(merge).catch(() => {});
+      fetch("/api/radar/options").then((r) => (r.ok ? r.json() : null)).then(merge).catch(() => {});
+    };
     load();
     // Long-open tabs: refresh the lists (sources, counts…) whenever the tab is focused again, at most once a minute.
     let last = Date.now();
@@ -3239,10 +3241,12 @@ function ExportSection() {
   useEffect(() => {
     // Last options are remembered in this browser so the dropdowns are filled instantly; fresh ones replace them.
     try { const raw = localStorage.getItem("radar.options.v2"); if (raw) setOptions(JSON.parse(raw)); } catch {}
-    const load = () => fetch("/api/radar/options")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (d) { setOptions(d); try { localStorage.setItem("radar.options.v2", JSON.stringify(d)); } catch {} } })
-      .catch(() => {});
+    // Merge into the current options (never replace): the quick live source/vertical lists and the slower full set arrive separately.
+    const merge = (d: Record<string, unknown> | null) => { if (d) setOptions((prev) => { const next = { ...(prev || {}), ...d } as typeof prev; try { localStorage.setItem("radar.options.v2", JSON.stringify(next)); } catch {} return next; }); };
+    const load = () => {
+      fetch("/api/radar/options?live=1").then((r) => (r.ok ? r.json() : null)).then(merge).catch(() => {});
+      fetch("/api/radar/options").then((r) => (r.ok ? r.json() : null)).then(merge).catch(() => {});
+    };
     load();
     // Long-open tabs: refresh the lists (sources, counts…) whenever the tab is focused again, at most once a minute.
     let last = Date.now();
