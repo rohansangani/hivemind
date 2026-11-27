@@ -7,9 +7,9 @@ import { mapWithConcurrency } from "@/lib/radar/contactExport";
 import { currentUserHasPermission } from "@/lib/authz";
 
 /**
- * Maps every Radar contact/account onto a HubSpot lifecycle stage + lead status — derived
- * ENTIRELY from the HubSpot CONTACT object, aggregated by email domain, never the company
- * object. Rationale (explicit ask, 2026-09): a company's own HubSpot lifecycle stage can lag or
+ * Maps every Radar contact/account onto a HubSpot lifecycle stage + lead status, per domain, taking the MORE
+ * ADVANCED stage of the HubSpot contacts (by email domain) and the HubSpot company (by domain) — 2026-11-27 ask:
+ * Lead < MQL < SQL < Opportunity < Customer (Customer outranks everything). Originally contact-only. Rationale for the contact side (2026-09): a company's own HubSpot lifecycle stage can lag or
  * disagree with its people — e.g. sushant.mohan@clickpost.ai is a real "customer" contact in
  * HubSpot even if the ClickPost company record itself sits at some other stage. The domain's
  * derived stage/status is the SAME value applied to the account AND to every Radar contact that
@@ -42,13 +42,13 @@ function normalizeDomain(raw: string | null | undefined): string | null {
   return cleaned || null;
 }
 
-// HubSpot's own default lifecycle-stage ordering (least to most advanced) — "customer" outranks
-// every pre-sale stage, so one customer contact at a domain is enough to mark the whole domain.
-// An unrecognized/custom stage value sorts below every known stage but still beats having none.
-const STAGE_PRIORITY = ["subscriber", "lead", "marketingqualifiedlead", "salesqualifiedlead", "opportunity", "customer", "evangelist", "other"];
+// Lifecycle-stage ordering (least to most advanced): Lead < MQL < SQL < Opportunity < Customer. Values are
+// compared with spaces/case stripped ("Marketing Qualified Lead" = "marketingqualifiedlead"). Non-pipeline stages
+// ("Other", "Disqualified") sit below every real stage; an unrecognised/custom stage still beats having none.
+const STAGE_PRIORITY = ["other", "disqualified", "subscriber", "lead", "marketingqualifiedlead", "salesqualifiedlead", "opportunity", "evangelist", "customer"];
 function stageRank(stage: string | null): number {
   if (!stage) return -2;
-  const i = STAGE_PRIORITY.indexOf(stage.toLowerCase());
+  const i = STAGE_PRIORITY.indexOf(stage.toLowerCase().replace(/[^a-z]/g, ""));
   return i >= 0 ? i : -1;
 }
 
@@ -58,18 +58,20 @@ async function runMatch() {
   const orgId = integ.organizationId;
 
   const hsContacts = await db.hubspotContact.findMany({ where: { organizationId: orgId }, select: { email: true, lifecycleStage: true, leadStatus: true } });
+  const hsCompanies = await db.hubspotCompany.findMany({ where: { organizationId: orgId }, select: { domain: true, website: true, lifecycleStage: true, leadStatus: true } });
 
-  // Aggregate by domain (from the contact's own email) — the winning stage/status per domain is
-  // whichever contact there ranks highest on STAGE_PRIORITY, ties broken by first-seen.
+  // Two sources feed one per-domain value: HubSpot CONTACTS (by their email domain) and HubSpot COMPANIES (by their
+  // domain / website). Whichever has the more advanced stage wins (see STAGE_PRIORITY); on a tie the lead status is
+  // taken from whichever has one.
   const domainMap = new Map<string, { stage: string | null; status: string | null }>();
-  for (const c of hsContacts) {
-    const domain = normalizeDomain((c.email || "").split("@")[1]);
-    if (!domain) continue;
+  const consider = (domain: string | null, stage: string | null, status: string | null) => {
+    if (!domain) return;
     const existing = domainMap.get(domain);
-    if (!existing || stageRank(c.lifecycleStage) > stageRank(existing.stage)) {
-      domainMap.set(domain, { stage: c.lifecycleStage, status: c.leadStatus });
-    }
-  }
+    if (!existing || stageRank(stage) > stageRank(existing.stage)) domainMap.set(domain, { stage, status });
+    else if (stageRank(stage) === stageRank(existing.stage) && !existing.status && status) existing.status = status;
+  };
+  for (const c of hsContacts) consider(normalizeDomain((c.email || "").split("@")[1]), c.lifecycleStage, c.leadStatus);
+  for (const c of hsCompanies) consider(normalizeDomain(c.domain || c.website), c.lifecycleStage, c.leadStatus);
 
   // Stage the domain map in Radar, tagged with this run, then apply it SET-BASED inside the DB in
   // one transaction. Replaces the old "blank every row, then rewrite in chunks" sweep, which
