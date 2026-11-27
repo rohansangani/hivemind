@@ -801,7 +801,6 @@ function SegmentDashboard({ segment, sub }: { segment: SegmentKey; sub: string }
         <DistributionCard title="Contacts per account" meta="how many contacts each account has" rows={ordered(group(A, "perAccount"), PER_ACCOUNT_ORDER)} />
         <DistributionCard title="HubSpot lifecycle stage" meta="top 8" rows={top(group(A, "lifecycle"), 8)} />
         <DistributionCard title="Customers" meta="" rows={top(group(A, "customer"), 2)} />
-        <DistributionCard title="Account type" meta="" rows={top(group(A, "accountType"), 6)} />
         <CompletenessCard title="Account data completeness" rows={accComp} />
       </div>
     </div>
